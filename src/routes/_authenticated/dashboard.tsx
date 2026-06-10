@@ -28,6 +28,7 @@ function Dashboard() {
   const [agentId, setAgentId] = useState<string>("");
   const [period, setPeriod] = useState<Period>("");
   const [search, setSearch] = useState("");
+  const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
@@ -79,9 +80,16 @@ function Dashboard() {
   }
 
   function exportPdf() {
-    const rows = filtered;
-    if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
-    const today = new Date().toLocaleDateString("he-IL");
+    const baseRows = systems ?? [];
+    const dayStart = new Date(pdfDate + "T00:00:00");
+    const dayEnd = new Date(pdfDate + "T23:59:59.999");
+    const rows = baseRows.filter((r: any) => {
+      if (status && r.status !== status) return false;
+      const u = new Date(r.updated_at);
+      return u >= dayStart && u <= dayEnd;
+    });
+    if (!rows.length) { toast.info("אין נתונים לייצוא בתאריך זה"); return; }
+    const dateLabel = dayStart.toLocaleDateString("he-IL");
     const statusLabel = status ? (STATUS_LABEL[status as SystemStatus] || status) : "כל הסטטוסים";
     const tableRows = rows.map((r: any) => `
       <tr>
@@ -93,7 +101,7 @@ function Dashboard() {
         <td>${new Date(r.updated_at).toLocaleString("he-IL")}</td>
       </tr>`).join("");
     const html = `<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8" />
-      <title>דוח מערכות ${today}</title>
+      <title>דוח מערכות ${dateLabel}</title>
       <style>
         @page { size: A4; margin: 14mm; }
         body { font-family: 'Heebo', Arial, sans-serif; color: #0f172a; }
@@ -106,7 +114,7 @@ function Dashboard() {
         .footer { margin-top: 12px; font-size: 11px; color: #94a3b8; }
       </style></head><body>
       <h1>דוח מערכות יומי</h1>
-      <div class="meta">תאריך: ${today} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
+      <div class="meta">תאריך: ${dateLabel} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
       <table>
         <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
         <tbody>${tableRows}</tbody>
@@ -132,9 +140,18 @@ function Dashboard() {
           <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
             <Download className="h-4 w-4" />ייצוא CSV
           </button>
-          <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Download className="h-4 w-4" />ייצוא PDF
-          </button>
+          <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-1 text-sm">
+            <input
+              type="date"
+              value={pdfDate}
+              onChange={(e) => setPdfDate(e.target.value)}
+              className="bg-transparent text-sm outline-none px-1"
+              aria-label="תאריך דוח PDF"
+            />
+            <button onClick={exportPdf} className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-accent">
+              <Download className="h-3.5 w-3.5" />ייצוא PDF
+            </button>
+          </div>
           {me?.isAdmin && (
             <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               <Plus className="h-4 w-4" />הוסף מערכת

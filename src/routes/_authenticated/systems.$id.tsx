@@ -48,6 +48,15 @@ function SystemDetail() {
     onSuccess: () => { toast.success("נמחק"); navigate({ to: "/dashboard" }); },
     onError: (e: any) => toast.error(e.message),
   });
+  const subMut = useMutation({
+    mutationFn: subFn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      setSubCode(""); setSubName("");
+      toast.success("תת-מערכת נוספה");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
   const s = data.system;

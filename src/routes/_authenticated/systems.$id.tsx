@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSystem, listAgents, updateSystem, addNote, deleteSystem } from "@/lib/systems.functions";
+import { getSystem, listAgents, updateSystem, addNote, deleteSystem, addSubSystem } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, type SystemStatus } from "@/lib/status";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ArrowRight, History, MessageSquare, Trash2, Send } from "lucide-react";
+import { ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/systems/$id")({

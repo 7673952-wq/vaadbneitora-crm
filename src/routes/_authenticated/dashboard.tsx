@@ -42,9 +42,13 @@ function Dashboard() {
     if (!systems) return [];
     if (!search.trim()) return systems;
     const s = search.trim().toLowerCase();
-    return systems.filter((r: any) =>
-      r.name?.toLowerCase().includes(s) || r.system_code?.toLowerCase().includes(s),
-    );
+    return systems.filter((r: any) => {
+      const nameMatch = r.name?.toLowerCase().includes(s);
+      const codeMatch = r.system_code?.toLowerCase().includes(s);
+      const agentMatch = r.agent?.display_name?.toLowerCase().includes(s);
+      const statusMatch = (STATUS_LABEL[r.status as SystemStatus] || "").includes(s);
+      return nameMatch || codeMatch || agentMatch || statusMatch;
+    });
   }, [systems, search]);
 
   const stats = useMemo(() => {

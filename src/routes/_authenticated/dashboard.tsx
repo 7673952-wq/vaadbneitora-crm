@@ -140,9 +140,18 @@ function Dashboard() {
           <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
             <Download className="h-4 w-4" />ייצוא CSV
           </button>
-          <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Download className="h-4 w-4" />ייצוא PDF
-          </button>
+          <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-1 text-sm">
+            <input
+              type="date"
+              value={pdfDate}
+              onChange={(e) => setPdfDate(e.target.value)}
+              className="bg-transparent text-sm outline-none px-1"
+              aria-label="תאריך דוח PDF"
+            />
+            <button onClick={exportPdf} className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-accent">
+              <Download className="h-3.5 w-3.5" />ייצוא PDF
+            </button>
+          </div>
           {me?.isAdmin && (
             <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               <Plus className="h-4 w-4" />הוסף מערכת

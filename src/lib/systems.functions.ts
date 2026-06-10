@@ -66,11 +66,15 @@ export const getSystem = createServerFn({ method: "POST" })
       .from("system_notes").select("*").eq("system_id", data.id).order("created_at", { ascending: false });
     const { data: transfers } = await context.supabase
       .from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false });
+    const { data: children } = await context.supabase
+      .from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
+      .eq("parent_system_id", data.id).order("created_at", { ascending: true });
     const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
 
     const pmap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
     return {
       system: { ...sys, agent_name: sys.assigned_agent_id ? pmap.get(sys.assigned_agent_id) ?? null : null },
+      children: children ?? [],
       notes: (notes ?? []).map((n) => ({ ...n, author_name: pmap.get(n.author_id ?? "") ?? "לא ידוע" })),
       transfers: (transfers ?? []).map((t) => ({
         ...t,
@@ -79,6 +83,38 @@ export const getSystem = createServerFn({ method: "POST" })
         by_name: t.transferred_by ? pmap.get(t.transferred_by) ?? "לא ידוע" : "מערכת",
       })),
     };
+  });
+
+export const addSubSystem = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { parent_id: string; system_code: string; name?: string }) =>
+    z.object({
+      parent_id: z.string().uuid(),
+      system_code: z.string().min(1).max(60),
+      name: z.string().max(200).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: parent, error: pe } = await context.supabase
+      .from("systems").select("id, name, assigned_agent_id").eq("id", data.parent_id).maybeSingle();
+    if (pe) throw new Error(pe.message);
+    if (!parent) throw new Error("מערכת אב לא נמצאה");
+
+    const { data: isAdmin } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId, _role: "admin",
+    });
+    if (!isAdmin && parent.assigned_agent_id !== context.userId) {
+      throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
+    }
+
+    const { data: row, error } = await context.supabase.from("systems").insert({
+      system_code: data.system_code,
+      name: data.name?.trim() || parent.name,
+      parent_system_id: data.parent_id,
+      status: "open",
+    }).select().single();
+    if (error) throw new Error(error.message);
+    return row;
   });
 
 export const createSystem = createServerFn({ method: "POST" })

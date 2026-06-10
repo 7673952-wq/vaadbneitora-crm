@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { getSystem, listAgents, updateSystem, addNote, deleteSystem } from "@/lib/systems.functions";
+import { getSystem, listAgents, updateSystem, addNote, deleteSystem, addSubSystem } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, type SystemStatus } from "@/lib/status";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ArrowRight, History, MessageSquare, Trash2, Send } from "lucide-react";
+import { ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
 export const Route = createFileRoute("/_authenticated/systems/$id")({
@@ -24,11 +24,14 @@ function SystemDetail() {
   const noteFn = useServerFn(addNote);
   const deleteFn = useServerFn(deleteSystem);
   const meFn = useServerFn(getMyRole);
+  const subFn = useServerFn(addSubSystem);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const [noteText, setNoteText] = useState("");
+  const [subCode, setSubCode] = useState("");
+  const [subName, setSubName] = useState("");
 
   const updateMut = useMutation({
     mutationFn: updateFn,
@@ -43,6 +46,15 @@ function SystemDetail() {
   const deleteMut = useMutation({
     mutationFn: deleteFn,
     onSuccess: () => { toast.success("נמחק"); navigate({ to: "/dashboard" }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const subMut = useMutation({
+    mutationFn: subFn,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      setSubCode(""); setSubName("");
+      toast.success("תת-מערכת נוספה");
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -136,6 +148,47 @@ function SystemDetail() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      <div className="bg-card border border-border rounded-2xl p-6">
+        <h2 className="font-semibold flex items-center gap-2 mb-4">
+          <Network className="h-4 w-4" />תתי-מערכות (מספרים נוספים) ({data.children.length})
+        </h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          תתי-מערכות יורשות אוטומטית את הסטטוס והנציג של המערכת הראשית.
+        </p>
+        {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (subCode.trim()) subMut.mutate({ data: { parent_id: id, system_code: subCode.trim(), name: subName.trim() || undefined } });
+            }}
+            className="flex gap-2 mb-4 flex-wrap"
+          >
+            <input value={subCode} onChange={(e) => setSubCode(e.target.value)} placeholder="מספר / מזהה"
+              className="flex-1 min-w-[140px] rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            <input value={subName} onChange={(e) => setSubName(e.target.value)} placeholder="שם (אופציונלי)"
+              className="flex-1 min-w-[140px] rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            <button type="submit" className="flex items-center gap-1 px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 text-sm">
+              <Plus className="h-4 w-4" />הוסף
+            </button>
+          </form>
+        )}
+        <div className="space-y-2">
+          {data.children.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">אין תתי-מערכות</p>}
+          {data.children.map((c: any) => (
+            <Link key={c.id} to="/systems/$id" params={{ id: c.id }}
+              className="flex items-center justify-between gap-3 border border-border rounded-lg p-3 bg-background hover:bg-accent/40 transition">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-xs font-mono text-muted-foreground shrink-0">{c.system_code}</span>
+                <span className="text-sm truncate">{c.name}</span>
+              </div>
+              <span className={`text-xs rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(STATUS_TONE[c.status as SystemStatus])}`}>
+                {STATUS_LABEL[c.status as SystemStatus]}
+              </span>
+            </Link>
+          ))}
         </div>
       </div>
     </div>

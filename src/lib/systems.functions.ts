@@ -158,4 +158,10 @@ export const listAgents = createServerFn({ method: "GET" })
       const arr = roleMap.get(r.user_id) ?? [];
       arr.push(r.role);
       roleMap.set(r.user_id, arr);
-    });
+    });    return (profiles ?? []).map((p) => ({
+      id: p.id,
+      display_name: p.display_name,
+      email: p.email,
+      roles: roleMap.get(p.id) ?? [],
+    }));
+  });

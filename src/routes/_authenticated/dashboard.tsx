@@ -80,9 +80,16 @@ function Dashboard() {
   }
 
   function exportPdf() {
-    const rows = filtered;
-    if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
-    const today = new Date().toLocaleDateString("he-IL");
+    const baseRows = systems ?? [];
+    const dayStart = new Date(pdfDate + "T00:00:00");
+    const dayEnd = new Date(pdfDate + "T23:59:59.999");
+    const rows = baseRows.filter((r: any) => {
+      if (status && r.status !== status) return false;
+      const u = new Date(r.updated_at);
+      return u >= dayStart && u <= dayEnd;
+    });
+    if (!rows.length) { toast.info("אין נתונים לייצוא בתאריך זה"); return; }
+    const dateLabel = dayStart.toLocaleDateString("he-IL");
     const statusLabel = status ? (STATUS_LABEL[status as SystemStatus] || status) : "כל הסטטוסים";
     const tableRows = rows.map((r: any) => `
       <tr>
@@ -94,7 +101,7 @@ function Dashboard() {
         <td>${new Date(r.updated_at).toLocaleString("he-IL")}</td>
       </tr>`).join("");
     const html = `<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8" />
-      <title>דוח מערכות ${today}</title>
+      <title>דוח מערכות ${dateLabel}</title>
       <style>
         @page { size: A4; margin: 14mm; }
         body { font-family: 'Heebo', Arial, sans-serif; color: #0f172a; }
@@ -107,7 +114,7 @@ function Dashboard() {
         .footer { margin-top: 12px; font-size: 11px; color: #94a3b8; }
       </style></head><body>
       <h1>דוח מערכות יומי</h1>
-      <div class="meta">תאריך: ${today} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
+      <div class="meta">תאריך: ${dateLabel} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
       <table>
         <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
         <tbody>${tableRows}</tbody>

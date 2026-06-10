@@ -132,6 +132,9 @@ function Dashboard() {
           <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
             <Download className="h-4 w-4" />ייצוא CSV
           </button>
+          <button onClick={exportPdf} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <Download className="h-4 w-4" />ייצוא PDF
+          </button>
           {me?.isAdmin && (
             <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               <Plus className="h-4 w-4" />הוסף מערכת

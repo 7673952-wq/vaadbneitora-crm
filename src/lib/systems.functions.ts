@@ -27,7 +27,7 @@ export const listSystems = createServerFn({ method: "POST" })
       .select("id, system_code, name, status, assigned_agent_id, notes, created_at, updated_at")
       .order("created_at", { ascending: false });
 
-    if (data.status) q = q.eq("status", data.status);
+    if (data.status) q = q.eq("status", data.status as any);
     if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
     if (data.period) {
       const now = new Date();

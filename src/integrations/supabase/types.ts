@@ -14,16 +14,175 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string
+          email: string | null
+          id: string
+        }
+        Insert: {
+          created_at?: string
+          display_name: string
+          email?: string | null
+          id: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string
+          email?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      system_notes: {
+        Row: {
+          author_id: string | null
+          body: string
+          created_at: string
+          id: string
+          system_id: string
+        }
+        Insert: {
+          author_id?: string | null
+          body: string
+          created_at?: string
+          id?: string
+          system_id: string
+        }
+        Update: {
+          author_id?: string | null
+          body?: string
+          created_at?: string
+          id?: string
+          system_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_notes_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      system_transfers: {
+        Row: {
+          created_at: string
+          from_agent_id: string | null
+          id: string
+          reason: string | null
+          system_id: string
+          to_agent_id: string | null
+          transferred_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          from_agent_id?: string | null
+          id?: string
+          reason?: string | null
+          system_id: string
+          to_agent_id?: string | null
+          transferred_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          from_agent_id?: string | null
+          id?: string
+          reason?: string | null
+          system_id?: string
+          to_agent_id?: string | null
+          transferred_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_transfers_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      systems: {
+        Row: {
+          assigned_agent_id: string | null
+          created_at: string
+          id: string
+          name: string
+          notes: string | null
+          status: Database["public"]["Enums"]["system_status"]
+          system_code: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_agent_id?: string | null
+          created_at?: string
+          id?: string
+          name: string
+          notes?: string | null
+          status?: Database["public"]["Enums"]["system_status"]
+          system_code: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_agent_id?: string | null
+          created_at?: string
+          id?: string
+          name?: string
+          notes?: string | null
+          status?: Database["public"]["Enums"]["system_status"]
+          system_code?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "agent"
+      system_status:
+        | "open"
+        | "closed"
+        | "pending_check_close"
+        | "pending_check_open"
+        | "problem"
+        | "open_only_bimot"
+        | "close_only_bimot"
+        | "open_in_simahedrin"
+        | "close_in_simahedrin"
+        | "send_to_yosela"
+        | "block_from_root"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +309,21 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "agent"],
+      system_status: [
+        "open",
+        "closed",
+        "pending_check_close",
+        "pending_check_open",
+        "problem",
+        "open_only_bimot",
+        "close_only_bimot",
+        "open_in_simahedrin",
+        "close_in_simahedrin",
+        "send_to_yosela",
+        "block_from_root",
+      ],
+    },
   },
 } as const

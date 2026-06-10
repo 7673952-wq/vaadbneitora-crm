@@ -60,6 +60,12 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "CRM ניהול מערכות" },
       { name: "description", content: "מערכת ניהול לקוחות ומערכות עם מעקב, היסטוריית העברות והרשאות." },
+      { property: "og:title", content: "CRM ניהול מערכות" },
+      { property: "og:description", content: "מערכת ניהול לקוחות ומערכות עם מעקב, היסטוריית העברות והרשאות." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+      { name: "twitter:title", content: "CRM ניהול מערכות" },
+      { name: "twitter:description", content: "מערכת ניהול לקוחות ומערכות עם מעקב, היסטוריית העברות והרשאות." },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

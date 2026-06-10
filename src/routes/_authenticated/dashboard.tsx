@@ -78,6 +78,49 @@ function Dashboard() {
     URL.revokeObjectURL(url);
   }
 
+  function exportPdf() {
+    const rows = filtered;
+    if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
+    const today = new Date().toLocaleDateString("he-IL");
+    const statusLabel = status ? (STATUS_LABEL[status as SystemStatus] || status) : "כל הסטטוסים";
+    const tableRows = rows.map((r: any) => `
+      <tr>
+        <td>${r.system_code ?? ""}</td>
+        <td>${r.name ?? ""}</td>
+        <td>${STATUS_LABEL[r.status as SystemStatus] || r.status}</td>
+        <td>${r.agent?.display_name ?? "—"}</td>
+        <td>${(r.notes ?? "").replace(/</g, "&lt;")}</td>
+        <td>${new Date(r.updated_at).toLocaleString("he-IL")}</td>
+      </tr>`).join("");
+    const html = `<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8" />
+      <title>דוח מערכות ${today}</title>
+      <style>
+        @page { size: A4; margin: 14mm; }
+        body { font-family: 'Heebo', Arial, sans-serif; color: #0f172a; }
+        h1 { font-size: 20px; margin: 0 0 4px; }
+        .meta { color: #64748b; font-size: 12px; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: right; vertical-align: top; }
+        th { background: #f1f5f9; font-weight: 600; }
+        tr:nth-child(even) td { background: #fafafa; }
+        .footer { margin-top: 12px; font-size: 11px; color: #94a3b8; }
+      </style></head><body>
+      <h1>דוח מערכות יומי</h1>
+      <div class="meta">תאריך: ${today} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
+      <table>
+        <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+      <div class="footer">הופק ב-${new Date().toLocaleString("he-IL")}</div>
+      <script>window.onload = () => { setTimeout(() => window.print(), 300); };</script>
+      </body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { toast.error("חסום על ידי דפדפן — אפשר חלונות קופצים"); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-end justify-between gap-4 flex-wrap">

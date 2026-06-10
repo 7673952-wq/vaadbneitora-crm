@@ -24,11 +24,14 @@ function SystemDetail() {
   const noteFn = useServerFn(addNote);
   const deleteFn = useServerFn(deleteSystem);
   const meFn = useServerFn(getMyRole);
+  const subFn = useServerFn(addSubSystem);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const [noteText, setNoteText] = useState("");
+  const [subCode, setSubCode] = useState("");
+  const [subName, setSubName] = useState("");
 
   const updateMut = useMutation({
     mutationFn: updateFn,

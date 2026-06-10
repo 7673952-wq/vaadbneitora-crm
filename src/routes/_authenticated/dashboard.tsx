@@ -28,6 +28,7 @@ function Dashboard() {
   const [agentId, setAgentId] = useState<string>("");
   const [period, setPeriod] = useState<Period>("");
   const [search, setSearch] = useState("");
+  const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });

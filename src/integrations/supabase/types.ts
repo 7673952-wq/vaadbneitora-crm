@@ -112,6 +112,7 @@ export type Database = {
           id: string
           name: string
           notes: string | null
+          parent_system_id: string | null
           status: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at: string
@@ -122,6 +123,7 @@ export type Database = {
           id?: string
           name: string
           notes?: string | null
+          parent_system_id?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at?: string
@@ -132,11 +134,20 @@ export type Database = {
           id?: string
           name?: string
           notes?: string | null
+          parent_system_id?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "systems_parent_system_id_fkey"
+            columns: ["parent_system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {

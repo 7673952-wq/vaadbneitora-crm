@@ -187,17 +187,11 @@ export const addNote = createServerFn({ method: "POST" })
 export const listAgents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data: roles } = await context.supabase.from("user_roles").select("user_id, role");
-    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name, email");
-    const roleMap = new Map<string, string[]>();
-    (roles ?? []).forEach((r) => {
-      const arr = roleMap.get(r.user_id) ?? [];
-      arr.push(r.role);
-      roleMap.set(r.user_id, arr);
-    });    return (profiles ?? []).map((p) => ({
+    const { data: profiles } = await context.supabase
+      .from("profiles")
+      .select("id, display_name");
+    return (profiles ?? []).map((p) => ({
       id: p.id,
       display_name: p.display_name,
-      email: p.email,
-      roles: roleMap.get(p.id) ?? [],
     }));
   });

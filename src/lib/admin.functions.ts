@@ -71,3 +71,29 @@ export const getMyRole = createServerFn({ method: "GET" })
     const roles = (data ?? []).map((r: any) => r.role);
     return { userId: context.userId, roles, isAdmin: roles.includes("admin") };
   });
+
+export const listUsersForAdmin = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("id, display_name"),
+      supabaseAdmin.from("user_roles").select("user_id, role"),
+      supabaseAdmin.auth.admin.listUsers(),
+    ]);
+    const roleMap = new Map<string, string[]>();
+    (roles ?? []).forEach((r: any) => {
+      const arr = roleMap.get(r.user_id) ?? [];
+      arr.push(r.role);
+      roleMap.set(r.user_id, arr);
+    });
+    const emailMap = new Map<string, string>();
+    (usersList?.users ?? []).forEach((u: any) => { if (u.email) emailMap.set(u.id, u.email); });
+    return (profiles ?? []).map((p: any) => ({
+      id: p.id,
+      display_name: p.display_name,
+      email: emailMap.get(p.id) ?? "",
+      roles: roleMap.get(p.id) ?? [],
+    }));
+  });

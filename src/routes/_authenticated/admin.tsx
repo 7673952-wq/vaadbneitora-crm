@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { listAgents } from "@/lib/systems.functions";
+import { listUsersForAdmin } from "@/lib/admin.functions";
 import { createUser, deleteUser, setUserRole, getMyRole } from "@/lib/admin.functions";
 import { useState } from "react";
 import { toast } from "sonner";

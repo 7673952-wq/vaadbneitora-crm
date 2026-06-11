@@ -32,6 +32,47 @@ export type Database = {
         }
         Relationships: []
       }
+      system_activity_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          field: string | null
+          id: string
+          new_value: string | null
+          old_value: string | null
+          system_id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          system_id: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          system_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_activity_log_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_notes: {
         Row: {
           author_id: string | null
@@ -106,10 +147,13 @@ export type Database = {
         Row: {
           assigned_agent_id: string | null
           created_at: string
+          handled_pending_at: string | null
           id: string
           name: string
           notes: string | null
           parent_system_id: string | null
+          phone: string | null
+          reminder_at: string | null
           status: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at: string
@@ -117,10 +161,13 @@ export type Database = {
         Insert: {
           assigned_agent_id?: string | null
           created_at?: string
+          handled_pending_at?: string | null
           id?: string
           name: string
           notes?: string | null
           parent_system_id?: string | null
+          phone?: string | null
+          reminder_at?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at?: string
@@ -128,10 +175,13 @@ export type Database = {
         Update: {
           assigned_agent_id?: string | null
           created_at?: string
+          handled_pending_at?: string | null
           id?: string
           name?: string
           notes?: string | null
           parent_system_id?: string | null
+          phone?: string | null
+          reminder_at?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code?: string
           updated_at?: string
@@ -191,6 +241,8 @@ export type Database = {
         | "close_in_simahedrin"
         | "send_to_yosela"
         | "block_from_root"
+        | "to_block"
+        | "to_open"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -331,6 +383,8 @@ export const Constants = {
         "close_in_simahedrin",
         "send_to_yosela",
         "block_from_root",
+        "to_block",
+        "to_open",
       ],
     },
   },

@@ -14,7 +14,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 function AdminPage() {
   const qc = useQueryClient();
-  const agentsFn = useServerFn(listAgents);
+  const agentsFn = useServerFn(listUsersForAdmin);
   const meFn = useServerFn(getMyRole);
   const createFn = useServerFn(createUser);
   const deleteFn = useServerFn(deleteUser);

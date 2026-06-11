@@ -44,7 +44,7 @@ export const listSystems = createServerFn({ method: "POST" })
 
     const { data: profiles } = await context.supabase
       .from("profiles")
-      .select("id, display_name, email");
+      .select("id, display_name");
 
     const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
     return (rows ?? []).map((r) => ({

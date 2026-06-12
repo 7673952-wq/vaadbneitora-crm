@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authenticated/systems/$id")({
   component: SystemDetail,
 });
 
-type TabKey = "details" | "tracking" | "history" | "subs" | "files";
+
 
 const FIELD_LABELS: Record<string, string> = {
   status: "סטטוס",

@@ -242,12 +242,10 @@ function SystemDetail() {
         </div>
       </div>
 
-      <TabsNav tab={tab} setTab={setTab} />
-
-      {tab === "details" && (
+      {/* ===== פרטים ===== */}
       <div className="bg-card border border-border rounded-2xl p-6">
+        <h2 className="font-semibold flex items-center gap-2 mb-4"><Info className="h-4 w-4" />פרטים</h2>
         <div className="grid md:grid-cols-2 gap-4">
-
           <div>
             <label className="text-sm font-medium block mb-2">סטטוס</label>
             <select value={s.status} onChange={(e) => {
@@ -313,95 +311,90 @@ function SystemDetail() {
             </div>
           )}
         </div>
-      </div>
-      )}
 
-      {tab === "tracking" && (
-      <div className="space-y-6">
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-semibold flex items-center gap-2 mb-4"><Bell className="h-4 w-4" />תזכורות</h2>
-        <div className="space-y-3">
-
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div className="flex items-center gap-2 text-sm">
-              <Bell className="h-4 w-4" />
-              {s.reminder_at ? (
-                <span>
-                  תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
-                  {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
-                    <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
-                  )}
-                </span>
-              ) : (
-                <span className="opacity-70">אין תזכורת מוגדרת</span>
-              )}
-            </div>
-            <div className="flex items-center gap-1 flex-wrap">
-              {(["day","week","month","2months","year"] as const).map((r) => (
-                <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
-                  {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
-                </button>
-              ))}
-              <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
-                className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
-              <button disabled={!customDate}
-                onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
-              {s.reminder_at && (
-                <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
-                  <BellOff className="h-3 w-3" />בטל
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Agent targeting */}
-          <div className="text-xs space-y-2">
-            <div className="flex items-center gap-3 flex-wrap">
-              <span className="opacity-80">שיוך התזכורת:</span>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name="reminder-scope" checked={reminderScope === "all"}
-                  onChange={() => { setReminderScope("all"); setReminderAgentIds([]); }} />
-                כל הנציגים
-              </label>
-              <label className="flex items-center gap-1 cursor-pointer">
-                <input type="radio" name="reminder-scope" checked={reminderScope === "specific"}
-                  onChange={() => setReminderScope("specific")} />
-                נציגים נבחרים
-              </label>
-              {reminderScope === "specific" && (
-                <>
-                  <button type="button" onClick={() => setReminderAgentIds((agents ?? []).map((a: any) => a.id))}
-                    className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">סמן הכל</button>
-                  <button type="button" onClick={() => setReminderAgentIds([])}
-                    className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">נקה</button>
-                </>
-              )}
-            </div>
-            {reminderScope === "specific" && (
-              <div className="flex flex-wrap gap-2 p-2 border border-input rounded-md bg-background max-h-40 overflow-auto">
-                {(agents ?? []).map((a: any) => {
-                  const checked = reminderAgentIds.includes(a.id);
-                  return (
-                    <label key={a.id} className={`flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer ${checked ? "bg-primary text-primary-foreground border-primary" : "border-input hover:bg-accent"}`}>
-                      <input type="checkbox" className="hidden" checked={checked}
-                        onChange={(e) => setReminderAgentIds((prev) => e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id))} />
-                      {a.display_name}
-                    </label>
-                  );
-                })}
-                {(agents ?? []).length === 0 && <span className="opacity-70">אין נציגים זמינים</span>}
+        {/* ===== מעקב — תזכורות ===== */}
+        <div className="mt-8 pt-6 border-t border-border">
+          <h2 className="font-semibold flex items-center gap-2 mb-4"><Bell className="h-4 w-4" />מעקב — תזכורות</h2>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm">
+                <Bell className="h-4 w-4" />
+                {s.reminder_at ? (
+                  <span>
+                    תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
+                    {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
+                      <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="opacity-70">אין תזכורת מוגדרת</span>
+                )}
               </div>
-            )}
+              <div className="flex items-center gap-1 flex-wrap">
+                {(["day","week","month","2months","year"] as const).map((r) => (
+                  <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
+                    className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
+                    {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
+                  </button>
+                ))}
+                <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
+                  className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
+                <button disabled={!customDate}
+                  onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
+                  className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
+                {s.reminder_at && (
+                  <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
+                    className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
+                    <BellOff className="h-3 w-3" />בטל
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="text-xs space-y-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="opacity-80">שיוך התזכורת:</span>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="reminder-scope" checked={reminderScope === "all"}
+                    onChange={() => { setReminderScope("all"); setReminderAgentIds([]); }} />
+                  כל הנציגים
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="reminder-scope" checked={reminderScope === "specific"}
+                    onChange={() => setReminderScope("specific")} />
+                  נציגים נבחרים
+                </label>
+                {reminderScope === "specific" && (
+                  <>
+                    <button type="button" onClick={() => setReminderAgentIds((agents ?? []).map((a: any) => a.id))}
+                      className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">סמן הכל</button>
+                    <button type="button" onClick={() => setReminderAgentIds([])}
+                      className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">נקה</button>
+                  </>
+                )}
+              </div>
+              {reminderScope === "specific" && (
+                <div className="flex flex-wrap gap-2 p-2 border border-input rounded-md bg-background max-h-40 overflow-auto">
+                  {(agents ?? []).map((a: any) => {
+                    const checked = reminderAgentIds.includes(a.id);
+                    return (
+                      <label key={a.id} className={`flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer ${checked ? "bg-primary text-primary-foreground border-primary" : "border-input hover:bg-accent"}`}>
+                        <input type="checkbox" className="hidden" checked={checked}
+                          onChange={(e) => setReminderAgentIds((prev) => e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id))} />
+                        {a.display_name}
+                      </label>
+                    );
+                  })}
+                  {(agents ?? []).length === 0 && <span className="opacity-70">אין נציגים זמינים</span>}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        </div>
 
-        <div className="bg-card border border-border rounded-2xl p-6">
+        {/* ===== הערות ===== */}
+        <div className="mt-8 pt-6 border-t border-border">
           <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
-
           <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
             className="flex gap-2 mb-4">
             <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="הוסף הערה..."
@@ -423,103 +416,103 @@ function SystemDetail() {
             ))}
           </div>
         </div>
-      </div>
-      )}
 
-      {tab === "history" && (
-      <div className="space-y-6">
-        <div className="bg-card border border-border rounded-2xl p-6">
+        {/* ===== היסטוריה משולבת (יומן + העברות נציג) ===== */}
+        <div className="mt-8 pt-6 border-t border-border">
+          <h2 className="font-semibold flex items-center gap-2 mb-4">
+            <History className="h-4 w-4" />היסטוריה ({data.activity.length + data.transfers.length})
+          </h2>
+          <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+            {(() => {
+              const merged = [
+                ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
+                ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
+              ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
-          <h2 className="font-semibold flex items-center gap-2 mb-4"><Activity className="h-4 w-4" />יומן שינויים ({data.activity.length})</h2>
-          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-            {data.activity.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין שינויים</p>}
-            {data.activity.map((a: any) => {
-              const oldDisp = a.field === "assigned_agent_id" ? (a.old_agent_name || formatValue(a.field, a.old_value)) : formatValue(a.field, a.old_value);
-              const newDisp = a.field === "assigned_agent_id" ? (a.new_agent_name || formatValue(a.field, a.new_value)) : formatValue(a.field, a.new_value);
-              const isStatus = a.field === "status";
-              return (
-                <div key={a.id} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
-                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                    <span className="font-medium text-foreground">{a.actor_name}</span>
-                    <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
-                  </div>
-                  <div className="text-sm flex items-center gap-2 flex-wrap">
-                    {a.action === "created" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
-                    )}
-                    {a.action === "deleted" && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
-                    )}
-                    {a.action === "updated" && (
-                      <>
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
-                          {FIELD_LABELS[a.field] || a.field}
-                        </span>
-                        {isStatus ? (
-                          <>
-                            <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
-                            <span className="text-muted-foreground">→</span>
-                            <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
-                            <span className="text-muted-foreground">→</span>
-                            <span className="font-medium text-sm">{newDisp}</span>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  {isStatus ? (
-                    <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                      <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
+              if (merged.length === 0) {
+                return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות</p>;
+              }
+              return merged.map((row) => {
+                if (row.kind === "transfer") {
+                  const t = row.item;
+                  return (
+                    <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-3">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
+                        <span className="font-medium text-foreground">{t.by_name}</span>
+                        <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
+                      </div>
+                      <div className="text-sm flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
+                        <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="font-medium text-sm">{t.to_name || "—"}</span>
+                      </div>
                     </div>
-                  ) : a.reason && (
-                    <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                      <span className="font-semibold">סיבה:</span> {a.reason}
+                  );
+                }
+                const a = row.item;
+                const oldDisp = a.field === "assigned_agent_id" ? (a.old_agent_name || formatValue(a.field, a.old_value)) : formatValue(a.field, a.old_value);
+                const newDisp = a.field === "assigned_agent_id" ? (a.new_agent_name || formatValue(a.field, a.new_value)) : formatValue(a.field, a.new_value);
+                const isStatus = a.field === "status";
+                return (
+                  <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
+                      <span className="font-medium text-foreground">{a.actor_name}</span>
+                      <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="text-sm flex items-center gap-2 flex-wrap">
+                      {a.action === "created" && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
+                      )}
+                      {a.action === "deleted" && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
+                      )}
+                      {a.action === "updated" && (
+                        <>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
+                            {FIELD_LABELS[a.field] || a.field}
+                          </span>
+                          {isStatus ? (
+                            <>
+                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className="font-medium text-sm">{newDisp}</span>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {isStatus ? (
+                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                        <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
+                      </div>
+                    ) : a.reason && (
+                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                        <span className="font-semibold">סיבה:</span> {a.reason}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
-
-        <div className="bg-card border border-border rounded-2xl p-6">
-
-        <h2 className="font-semibold flex items-center gap-2 mb-4"><History className="h-4 w-4" />היסטוריית העברות נציג ({data.transfers.length})</h2>
-        <div className="space-y-3 max-h-72 overflow-y-auto">
-          {data.transfers.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">אין העברות</p>}
-          {data.transfers.map((t: any) => (
-            <div key={t.id} className="border-r-2 border-primary pr-3">
-              <div className="text-sm">
-                <span className="text-muted-foreground">{t.from_name}</span>
-                <span className="mx-2">→</span>
-                <span className="font-medium">{t.to_name}</span>
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                ע"י {t.by_name} · {new Date(t.created_at).toLocaleString("he-IL")}
-              </div>
-            </div>
-          ))}
-        </div>
       </div>
-      </div>
-      )}
 
-      {tab === "subs" && (
-        isSub ? (
-          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground">
-            תת-מערכת לא יכולה להכיל תתי-מערכות.
-          </div>
-        ) : (
+      {/* ===== תתי-מערכות ===== */}
+      {!isSub && (
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4">
-            <Network className="h-4 w-4" />תתי-מערכות (מספרים נוספים) ({data.children.length})
+            <Network className="h-4 w-4" />תתי-מערכות ({data.children.length})
           </h2>
           <p className="text-xs text-muted-foreground mb-4">
-            תתי-מערכות יורשות אוטומטית את הסטטוס והנציג של המערכת הראשית. לא ניתן להוסיף תת-מערכת בתוך תת-מערכת.
+            תתי-מערכות יורשות אוטומטית את הסטטוס והנציג של המערכת הראשית.
           </p>
           {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
             <form
@@ -555,61 +548,60 @@ function SystemDetail() {
             ))}
           </div>
         </div>
-        )
       )}
 
-      {tab === "files" && (
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-            <h2 className="font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" />קבצים ({files?.length ?? 0})</h2>
-            {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
-              <div className="flex items-center gap-2">
-                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={uploading}
-                  className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
-                >
-                  <Upload className="h-4 w-4" />
-                  {uploading ? "מעלה..." : "העלה קובץ"}
-                </button>
-              </div>
-            )}
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">עד 15MB לקובץ. רק מנהל או הנציג המשויך יכולים להעלות.</p>
-          {!files || files.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">אין קבצים</p>
-          ) : (
-            <div className="divide-y divide-border">
-              {files.map((f: any) => (
-                <div key={f.id} className="flex items-center justify-between gap-3 py-3">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium truncate">{f.file_name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {(f.size_bytes / 1024).toFixed(1)} KB · {f.uploader_name ?? "—"} · {new Date(f.created_at).toLocaleString("he-IL")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button onClick={() => downloadFile(f.id)} className="p-2 rounded-lg hover:bg-accent" title="הורד">
-                      <Download className="h-4 w-4" />
-                    </button>
-                    {(me?.isAdmin || f.uploaded_by === me?.userId) && (
-                      <button onClick={() => { if (confirm("למחוק את הקובץ?")) deleteFileMut.mutate(f.id); }}
-                        className="p-2 rounded-lg text-destructive hover:bg-destructive/10" title="מחק">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
+      {/* ===== קבצים ===== */}
+      <div className="bg-card border border-border rounded-2xl p-6">
+        <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+          <h2 className="font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" />קבצים ({files?.length ?? 0})</h2>
+          {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
+            <div className="flex items-center gap-2">
+              <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+              >
+                <Upload className="h-4 w-4" />
+                {uploading ? "מעלה..." : "העלה קובץ"}
+              </button>
             </div>
           )}
         </div>
-      )}
+        <p className="text-xs text-muted-foreground mb-3">עד 15MB לקובץ. רק מנהל או הנציג המשויך יכולים להעלות.</p>
+        {!files || files.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">אין קבצים</p>
+        ) : (
+          <div className="divide-y divide-border">
+            {files.map((f: any) => (
+              <div key={f.id} className="flex items-center justify-between gap-3 py-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium truncate">{f.file_name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {(f.size_bytes / 1024).toFixed(1)} KB · {f.uploader_name ?? "—"} · {new Date(f.created_at).toLocaleString("he-IL")}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button onClick={() => downloadFile(f.id)} className="p-2 rounded-lg hover:bg-accent" title="הורד">
+                    <Download className="h-4 w-4" />
+                  </button>
+                  {(me?.isAdmin || f.uploaded_by === me?.userId) && (
+                    <button onClick={() => { if (confirm("למחוק את הקובץ?")) deleteFileMut.mutate(f.id); }}
+                      className="p-2 rounded-lg text-destructive hover:bg-destructive/10" title="מחק">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
+
 
   );
 }

@@ -20,15 +20,45 @@ function AuthedLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const myRoleFn = useServerFn(getMyRole);
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => myRoleFn() });
+  const [sessionReady, setSessionReady] = useState(false);
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: () => myRoleFn(),
+    enabled: sessionReady,
+    retry: false,
+    throwOnError: false,
+  });
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [displayName, setDisplayName] = useState<string>("");
 
   useEffect(() => {
+    let active = true;
+    supabase.auth.getSession().then(({ data }) => {
+      if (!active) return;
+      if (!data.session) {
+        navigate({ to: "/auth", replace: true });
+        return;
+      }
+      setSessionReady(true);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      if (!session) {
+        setSessionReady(false);
+        navigate({ to: "/auth", replace: true });
+        return;
+      }
+      setSessionReady(true);
+    });
+    return () => { active = false; subscription.unsubscribe(); };
+  }, [navigate]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
     supabase.auth.getUser().then(({ data }) => {
       setDisplayName((data.user?.user_metadata?.display_name as string) || data.user?.email || "");
     });
-  }, []);
+  }, [sessionReady]);
 
   async function signOut() {
     await queryClient.cancelQueries();
@@ -41,6 +71,10 @@ function AuthedLayout() {
     { to: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
     ...(me?.isAdmin ? [{ to: "/admin", label: "ניהול משתמשים", icon: Users }] : []),
   ];
+
+  if (!sessionReady) {
+    return <div dir="rtl" className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">טוען התחברות...</div>;
+  }
 
   return (
     <div dir="rtl" className="min-h-screen bg-background">

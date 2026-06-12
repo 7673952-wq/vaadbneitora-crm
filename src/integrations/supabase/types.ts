@@ -41,6 +41,7 @@ export type Database = {
           id: string
           new_value: string | null
           old_value: string | null
+          reason: string | null
           system_id: string
         }
         Insert: {
@@ -51,6 +52,7 @@ export type Database = {
           id?: string
           new_value?: string | null
           old_value?: string | null
+          reason?: string | null
           system_id: string
         }
         Update: {
@@ -61,6 +63,7 @@ export type Database = {
           id?: string
           new_value?: string | null
           old_value?: string | null
+          reason?: string | null
           system_id?: string
         }
         Relationships: [
@@ -146,6 +149,8 @@ export type Database = {
       systems: {
         Row: {
           assigned_agent_id: string | null
+          audio_url: string | null
+          caller_phone: string | null
           created_at: string
           handled_pending_at: string | null
           id: string
@@ -153,13 +158,17 @@ export type Database = {
           notes: string | null
           parent_system_id: string | null
           phone: string | null
+          reminder_agent_ids: string[] | null
           reminder_at: string | null
+          source: string | null
           status: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at: string
         }
         Insert: {
           assigned_agent_id?: string | null
+          audio_url?: string | null
+          caller_phone?: string | null
           created_at?: string
           handled_pending_at?: string | null
           id?: string
@@ -167,13 +176,17 @@ export type Database = {
           notes?: string | null
           parent_system_id?: string | null
           phone?: string | null
+          reminder_agent_ids?: string[] | null
           reminder_at?: string | null
+          source?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at?: string
         }
         Update: {
           assigned_agent_id?: string | null
+          audio_url?: string | null
+          caller_phone?: string | null
           created_at?: string
           handled_pending_at?: string | null
           id?: string
@@ -181,7 +194,9 @@ export type Database = {
           notes?: string | null
           parent_system_id?: string | null
           phone?: string | null
+          reminder_agent_ids?: string[] | null
           reminder_at?: string | null
+          source?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code?: string
           updated_at?: string
@@ -226,6 +241,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_change_reason: { Args: { p_reason: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "agent"

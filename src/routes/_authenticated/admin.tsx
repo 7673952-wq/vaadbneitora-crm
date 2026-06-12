@@ -4,10 +4,12 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listUsersForAdmin, createUser, deleteUser, setUserRole, getMyRole,
   updateUserDisplayName, updateUserEmail, updateUserPassword,
+  listStatusSettings, upsertStatusSetting, deleteStatusSetting,
 } from "@/lib/admin.functions";
+import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { useState } from "react";
 import { toast } from "sonner";
-import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X } from "lucide-react";
+import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול משתמשים | CRM" }] }),

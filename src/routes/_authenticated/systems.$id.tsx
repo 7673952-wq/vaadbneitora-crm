@@ -60,6 +60,8 @@ function SystemDetail() {
   const [customDate, setCustomDate] = useState<string>("");
   const [showParentPick, setShowParentPick] = useState(false);
   const [parentChoice, setParentChoice] = useState<string>("");
+  const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
+  const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
 
   const updateMut = useMutation({
     mutationFn: updateFn,

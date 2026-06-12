@@ -157,8 +157,8 @@ export const createSystem = createServerFn({ method: "POST" })
       assigned_agent_id: z.string().uuid().nullable().optional(),
       notes: z.string().max(2000).optional(),
       phone: z.string().max(60).optional(),
-      source: z.string().min(1).max(40),
-      caller_phone: z.string().min(2).max(40),
+      source: z.string().max(40).optional(),
+      caller_phone: z.string().max(40).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {

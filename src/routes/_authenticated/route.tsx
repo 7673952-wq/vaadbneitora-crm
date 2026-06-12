@@ -5,7 +5,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, Users, LogOut, BarChart3 } from "lucide-react";
+import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -71,7 +71,10 @@ function AuthedLayout() {
   const nav = [
     { to: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
     { to: "/reports", label: "דוחות", icon: BarChart3 },
-    ...(me?.isAdmin ? [{ to: "/admin", label: "ניהול", icon: Users }] : []),
+    ...(me?.isAdmin ? [
+      { to: "/manager-dashboard", label: "מנהלים", icon: TrendingUp },
+      { to: "/admin", label: "ניהול", icon: Users },
+    ] : []),
   ];
 
   if (!sessionReady) {

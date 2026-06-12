@@ -150,11 +150,11 @@ function SystemDetail() {
               <input
                 defaultValue={s.system_code || ""}
                 onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
-                className="text-xs font-mono opacity-80 bg-white/40 rounded px-1.5 py-0.5 border border-current/20 w-40"
+                className="text-base font-mono font-semibold opacity-90 bg-white/40 rounded px-2 py-1 border border-current/20 w-48"
                 title="מזהה מערכת (ניתן לעריכה ע״י מנהל)"
               />
             ) : (
-              <div className="text-xs font-mono opacity-70">{s.system_code}</div>
+              <div className="text-base font-mono font-semibold opacity-90">{s.system_code}</div>
             )}
             {me?.isAdmin ? (
               <input

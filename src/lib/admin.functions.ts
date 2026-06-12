@@ -2,20 +2,9 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-async function isAdminUser(context: { supabase: any; userId: string }) {
-  const { data, error } = await context.supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", context.userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return !!data;
-}
-
-async function assertAdmin(context: { supabase: any; userId: string }) {
-  const isAdmin = await isAdminUser(context);
-  if (!isAdmin) throw new Error("רק מנהל יכול לבצע פעולה זו");
+async function assertAdmin(context: { userId: string }) {
+  const { assertAdminUserId } = await import("@/lib/admin-role.server");
+  await assertAdminUserId(context.userId);
 }
 
 export const createUser = createServerFn({ method: "POST" })
@@ -114,10 +103,12 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { isAdminUserId } = await import("@/lib/admin-role.server");
     const { data } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId);
     const roles = (data ?? []).map((r: any) => r.role);
-    return { userId: context.userId, roles, isAdmin: roles.includes("admin") };
+    const isAdmin = roles.includes("admin") || await isAdminUserId(context.userId);
+    return { userId: context.userId, roles: isAdmin && !roles.includes("admin") ? [...roles, "admin"] : roles, isAdmin };
   });
 
 export const listUsersForAdmin = createServerFn({ method: "GET" })

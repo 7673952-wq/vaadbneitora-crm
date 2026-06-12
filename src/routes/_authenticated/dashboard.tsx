@@ -280,7 +280,7 @@ function Dashboard() {
           {me?.isAdmin && (
             <>
               <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-                ניהול מערכת
+                ניהול
               </Link>
               <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
                 <Plus className="h-4 w-4" />הוסף מערכת
@@ -456,7 +456,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] font-mono opacity-80">{r.system_code}</span>
+            <span className="text-sm font-mono font-semibold opacity-90">{r.system_code}</span>
             {r.parent_system_id && (
               <span className="text-[10px] bg-white/60 text-amber-900 border border-amber-300 rounded-full px-1.5 py-0.5 font-medium flex items-center gap-0.5">
                 <CornerUpRight className="h-2.5 w-2.5" />תת-מערכת

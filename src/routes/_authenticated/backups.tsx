@@ -3,10 +3,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import JSZip from "jszip";
 import { backupNow, listBackups, getBackupFileUrl, deleteBackup } from "@/lib/backups.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Download, Trash2, Database, RefreshCw, ShieldAlert } from "lucide-react";
+import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/backups")({
   component: BackupsPage,

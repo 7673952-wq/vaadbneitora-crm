@@ -57,6 +57,7 @@ export function cardToneClasses(tone: string): string {
     case "brightred":  return "bg-red-600 border-red-800 text-white hover:bg-red-700";
     case "amber":      return "bg-amber-50 border-amber-400 hover:bg-amber-100 text-amber-950";
     case "yellow":     return "bg-yellow-50 border-yellow-400 hover:bg-yellow-100 text-yellow-950";
+    case "teal":       return "bg-teal-100 border-teal-500 hover:bg-teal-200 text-teal-950";
     case "orange":     return "bg-orange-100 border-orange-500 hover:bg-orange-200 text-orange-950";
     case "sky":        return "bg-sky-100 border-sky-400 hover:bg-sky-200 text-sky-950";
     case "indigo":     return "bg-indigo-100 border-indigo-400 hover:bg-indigo-200 text-indigo-950";

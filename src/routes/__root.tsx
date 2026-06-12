@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import appCss from "../styles.css?url";
@@ -117,9 +117,18 @@ function RootComponent() {
 
 function StatusSettingsHydrator() {
   const fn = useServerFn(listStatusSettings);
+  const [hasSession, setHasSession] = useState(false);
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
+      setHasSession(!!session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
   const { data } = useQuery({
     queryKey: ["status_settings"],
     queryFn: () => fn(),
+    enabled: hasSession,
     staleTime: 60_000,
     retry: false,
     throwOnError: false,

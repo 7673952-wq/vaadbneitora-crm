@@ -10,16 +10,6 @@ const STATUS_VALUES = [
 const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
-async function setReason(supabase: any, reason?: string | null) {
-  if (!reason) return;
-  try {
-    // PostgREST allows raw SQL via rpc only; use direct query via .rpc fallback to set_config
-    await supabase.rpc("set_change_reason", { p_reason: reason });
-  } catch {
-    // ignore — reason will simply be null in log
-  }
-}
-
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { status?: string | null; agentId?: string | null; period?: string | null }) => d)

@@ -68,7 +68,7 @@ function SystemDetail() {
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
-  const [tab, setTab] = useState<TabKey>("details");
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 

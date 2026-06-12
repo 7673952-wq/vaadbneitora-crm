@@ -14,7 +14,7 @@ import {
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
 import * as XLSX from "xlsx";
 
 
@@ -84,6 +84,25 @@ function Dashboard() {
   const chartData = useMemo(() => STATUS_OPTIONS
     .map((s, i) => ({ name: s.label, value: stats[s.value] ?? 0, color: PIE_COLORS[i % PIE_COLORS.length] }))
     .filter((item) => item.value > 0), [stats]);
+
+  const agentChartData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (systems ?? []).forEach((s: any) => {
+      const n = s.agent?.display_name ?? "לא משויך";
+      counts[n] = (counts[n] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [systems]);
+
+  const trendData = useMemo(() => {
+    const buckets: Record<string, number> = {};
+    (systems ?? []).forEach((s: any) => {
+      const d = new Date(s.updated_at);
+      const key = `${d.getMonth() + 1}/${d.getDate()}`;
+      buckets[key] = (buckets[key] || 0) + 1;
+    });
+    return Object.entries(buckets).slice(-14).map(([name, value]) => ({ name, value }));
+  }, [systems]);
 
   // Pending sections
   const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
@@ -264,17 +283,71 @@ function Dashboard() {
         })}
       </div>
 
-      {chartData.length > 0 && (
+      {(chartData.length > 0 || agentChartData.length > 0) && (
+        <div className="grid lg:grid-cols-3 gap-4">
+          {chartData.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
+                      {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {chartData.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">כמות לפי סטטוס</h2>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={60} />
+                    <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="value">
+                      {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {agentChartData.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">מערכות לפי נציג</h2>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={agentChartData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#4f46e5" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {trendData.length > 1 && (
         <div className="bg-card border border-border rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
-          <div className="h-56">
+          <h2 className="text-sm font-semibold text-muted-foreground mb-3">פעילות לפי תאריך (עדכון אחרון)</h2>
+          <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
-                  {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                </Pie>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
                 <Tooltip />
-              </PieChart>
+                <Bar dataKey="value" fill="#0891b2" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
@@ -430,15 +503,27 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
       )}
 
 
-      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-80">
-        <span className="truncate">{r.agent?.display_name ?? "לא משויך"}</span>
-        {buildDialNumber(r.system_code) && (
-          <a href={`tel:${buildDialNumber(r.system_code)}`} onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
-            <Phone className="h-2.5 w-2.5" />ID
-          </a>
+      <div className="mt-2 space-y-1 text-[11px] opacity-90" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">נציג: {r.agent?.display_name ?? "לא משויך"}</span>
+          {r.system_code && (
+            <a href={`tel:${buildDialNumber(r.system_code)}`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-mono">
+              <Phone className="h-2.5 w-2.5" />{r.system_code}
+            </a>
+          )}
+        </div>
+        {r.caller_phone && (
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate">פונה: {r.caller_phone}</span>
+            <a href={`tel:${buildDialNumber(r.caller_phone)}`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700 font-mono">
+              <Phone className="h-2.5 w-2.5" />{r.caller_phone}
+            </a>
+          </div>
         )}
       </div>
+
     </div>
   );
 }

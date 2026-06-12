@@ -1,6 +1,6 @@
 export const STATUS_OPTIONS = [
   { value: "pending_check_close", label: "לבדיקה לחסימה", tone: "amber" },
-  { value: "pending_check_open", label: "לבדיקה לפתיחה", tone: "yellow" },
+  { value: "pending_check_open", label: "לבדיקה לפתיחה", tone: "teal" },
   { value: "open", label: "פתוח", tone: "green" },
   { value: "to_open", label: "לפתוח", tone: "lightgreen" },
   { value: "closed", label: "חסום", tone: "red" },
@@ -36,6 +36,7 @@ export function toneClasses(tone: string): string {
     case "brightred":  return "bg-red-700 text-white border border-red-900";
     case "amber":      return "bg-amber-200 text-amber-950 border border-amber-400";
     case "yellow":     return "bg-yellow-200 text-yellow-950 border border-yellow-400";
+    case "teal":       return "bg-teal-200 text-teal-950 border border-teal-500";
     case "orange":     return "bg-orange-200 text-orange-950 border border-orange-400";
     case "sky":        return "bg-sky-200 text-sky-950 border border-sky-400";
     case "indigo":     return "bg-indigo-200 text-indigo-50 border border-indigo-400";
@@ -56,6 +57,7 @@ export function cardToneClasses(tone: string): string {
     case "brightred":  return "bg-red-600 border-red-800 text-white hover:bg-red-700";
     case "amber":      return "bg-amber-50 border-amber-400 hover:bg-amber-100 text-amber-950";
     case "yellow":     return "bg-yellow-50 border-yellow-400 hover:bg-yellow-100 text-yellow-950";
+    case "teal":       return "bg-teal-100 border-teal-500 hover:bg-teal-200 text-teal-950";
     case "orange":     return "bg-orange-100 border-orange-500 hover:bg-orange-200 text-orange-950";
     case "sky":        return "bg-sky-100 border-sky-400 hover:bg-sky-200 text-sky-950";
     case "indigo":     return "bg-indigo-100 border-indigo-400 hover:bg-indigo-200 text-indigo-950";

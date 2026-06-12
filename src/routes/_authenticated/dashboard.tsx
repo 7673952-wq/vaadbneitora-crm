@@ -637,13 +637,8 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
                   {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">נציג מטפל</label>
-                <select value={form.assigned_agent_id} onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-                  <option value="">— לא משויך —</option>
-                  {agents.map((a) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-                </select>
+              <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+                המערכת תיפתח אוטומטית על שמך כנציג המטפל. ניתן לשייך לנציג אחר לאחר הפתיחה.
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">הערות</label>

@@ -14,7 +14,8 @@ import {
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from "recharts";
+import { ChevronDown, ChevronUp, ExternalLink, BarChart3 } from "lucide-react";
+import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
 
 
@@ -45,6 +46,15 @@ function Dashboard() {
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showCharts, setShowCharts] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("dashboardChartsOpen") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("dashboardChartsOpen", showCharts ? "1" : "0");
+    }
+  }, [showCharts]);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
@@ -291,74 +301,33 @@ function Dashboard() {
       </div>
 
       {(chartData.length > 0 || agentChartData.length > 0) && (
-        <div className="grid lg:grid-cols-3 gap-4">
-          {chartData.length > 0 && (
-            <div className="bg-card border border-border rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
-                      {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
+        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 border-b border-border">
+            <button onClick={() => setShowCharts(!showCharts)}
+              className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <BarChart3 className="h-4 w-4 text-indigo-600" />
+              תרשימים וניתוח נתונים
+              {showCharts ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            <div className="flex items-center gap-2">
+              <a href="/charts" target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
+                <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
+              </a>
+              <button onClick={() => setShowCharts(!showCharts)}
+                className="text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
+                {showCharts ? "סגור" : "הצג"}
+              </button>
             </div>
-          )}
-          {chartData.length > 0 && (
-            <div className="bg-card border border-border rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-muted-foreground mb-3">כמות לפי סטטוס</h2>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={60} />
-                    <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                    <Tooltip />
-                    <Bar dataKey="value">
-                      {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-          {agentChartData.length > 0 && (
-            <div className="bg-card border border-border rounded-xl p-4">
-              <h2 className="text-sm font-semibold text-muted-foreground mb-3">מערכות לפי נציג</h2>
-              <div className="h-56">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={agentChartData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                    <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
-                    <Tooltip />
-                    <Bar dataKey="value" fill="#4f46e5" />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-      {trendData.length > 1 && (
-        <div className="bg-card border border-border rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-muted-foreground mb-3">פעילות לפי תאריך (עדכון אחרון)</h2>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
-                <Tooltip />
-                <Bar dataKey="value" fill="#0891b2" />
-              </BarChart>
-            </ResponsiveContainer>
           </div>
+          {showCharts && (
+            <div className="p-4">
+              <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
+            </div>
+          )}
         </div>
       )}
+
 
 
       {/* Filters */}

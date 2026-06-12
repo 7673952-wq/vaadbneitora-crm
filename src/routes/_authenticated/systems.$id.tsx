@@ -292,36 +292,57 @@ function SystemDetail() {
 
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4"><Activity className="h-4 w-4" />יומן שינויים ({data.activity.length})</h2>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {data.activity.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין שינויים</p>}
-            {data.activity.map((a: any) => (
-              <div key={a.id} className="border-r-2 border-primary pr-3">
-                <div className="text-sm">
-                  {a.action === "created" && <><span className="font-medium">נוצרה מערכת</span> — {a.new_value}</>}
-                  {a.action === "deleted" && <><span className="font-medium text-destructive">נמחקה</span></>}
-                  {a.action === "updated" && (
-                    <>
-                      <span className="font-medium">{FIELD_LABELS[a.field] || a.field}</span>
-                      <span className="text-muted-foreground mx-1">:</span>
-                      <span className="text-muted-foreground">{formatValue(a.field, a.old_value)}</span>
-                      <span className="mx-1">→</span>
-                      <span className="font-medium">{formatValue(a.field, a.new_value)}</span>
-                    </>
+            {data.activity.map((a: any) => {
+              const oldDisp = a.field === "assigned_agent_id" ? (a.old_agent_name || formatValue(a.field, a.old_value)) : formatValue(a.field, a.old_value);
+              const newDisp = a.field === "assigned_agent_id" ? (a.new_agent_name || formatValue(a.field, a.new_value)) : formatValue(a.field, a.new_value);
+              const isStatus = a.field === "status";
+              return (
+                <div key={a.id} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
+                    <span className="font-medium text-foreground">{a.actor_name}</span>
+                    <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                  </div>
+                  <div className="text-sm flex items-center gap-2 flex-wrap">
+                    {a.action === "created" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
+                    )}
+                    {a.action === "deleted" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
+                    )}
+                    {a.action === "updated" && (
+                      <>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
+                          {FIELD_LABELS[a.field] || a.field}
+                        </span>
+                        {isStatus ? (
+                          <>
+                            <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-medium text-sm">{newDisp}</span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {a.reason && (
+                    <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                      <span className="font-semibold">סיבה:</span> {a.reason}
+                    </div>
                   )}
                 </div>
-                {a.reason && (
-                  <div className="text-xs mt-1 bg-amber-50 border border-amber-200 text-amber-900 rounded px-2 py-1 inline-block">
-                    סיבה: {a.reason}
-                  </div>
-                )}
-                <div className="text-xs text-muted-foreground mt-1">
-                  {a.actor_name} · {new Date(a.created_at).toLocaleString("he-IL")}
-                </div>
-              </div>
-            ))}
-
+              );
+            })}
           </div>
         </div>
+
       </div>
 
       <div className="bg-card border border-border rounded-2xl p-6">

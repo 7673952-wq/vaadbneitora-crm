@@ -137,9 +137,26 @@ function SystemDetail() {
 
       <div className={`border-2 rounded-2xl p-6 transition ${headerCard}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <div className="text-xs font-mono opacity-70">{s.system_code}</div>
-            <h1 className="text-3xl font-bold tracking-tight mt-1">{s.name}</h1>
+          <div className="min-w-0 flex-1">
+            {me?.isAdmin ? (
+              <input
+                defaultValue={s.system_code || ""}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
+                className="text-xs font-mono opacity-80 bg-white/40 rounded px-1.5 py-0.5 border border-current/20 w-40"
+                title="מזהה מערכת (ניתן לעריכה ע״י מנהל)"
+              />
+            ) : (
+              <div className="text-xs font-mono opacity-70">{s.system_code}</div>
+            )}
+            {me?.isAdmin ? (
+              <input
+                defaultValue={s.name || ""}
+                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
+                className="text-3xl font-bold tracking-tight mt-1 bg-transparent border-b border-current/20 focus:outline-none focus:border-current w-full"
+              />
+            ) : (
+              <h1 className="text-3xl font-bold tracking-tight mt-1">{s.name}</h1>
+            )}
             <div className="mt-3 flex items-center gap-3 flex-wrap">
               <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
                 {STATUS_LABEL[s.status as SystemStatus]}

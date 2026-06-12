@@ -36,7 +36,7 @@ function AdminPage() {
   });
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" });
+  const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" | "super_admin" });
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin_users"] });
@@ -118,7 +118,9 @@ function AdminPage() {
           <tbody>
             {(users ?? []).map((u: any) => {
               const roles = Array.isArray(u.roles) ? u.roles : [];
+              const isSuper = roles.includes("super_admin");
               const isAdmin = roles.includes("admin");
+              const currentRole = isSuper ? "super_admin" : isAdmin ? "admin" : "agent";
               const editingThis = editing?.id === u.id;
               return (
                 <tr key={u.id} className="border-b border-border last:border-0 align-top">
@@ -151,13 +153,14 @@ function AdminPage() {
 
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <select value={isAdmin ? "admin" : "agent"} disabled={u.id === me?.userId}
-                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" } })}
+                      <select value={currentRole} disabled={u.id === me?.userId}
+                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" | "super_admin" } })}
                         className="text-xs rounded-md border border-input bg-background px-2 py-1">
                         <option value="agent">נציג</option>
                         <option value="admin">מנהל</option>
+                        <option value="super_admin">מנהל ראשי</option>
                       </select>
-                      {isAdmin ? <Shield className="h-3.5 w-3.5 text-primary" /> : <UserIcon className="h-3.5 w-3.5 text-muted-foreground" />}
+                      {isSuper ? <Shield className="h-3.5 w-3.5 text-amber-600" /> : isAdmin ? <Shield className="h-3.5 w-3.5 text-primary" /> : <UserIcon className="h-3.5 w-3.5 text-muted-foreground" />}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">
@@ -194,6 +197,7 @@ function AdminPage() {
                 <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as any })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
                   <option value="agent">נציג</option>
                   <option value="admin">מנהל</option>
+                  <option value="super_admin">מנהל ראשי</option>
                 </select>
               </Field>
               <div className="flex gap-2 justify-end pt-2">

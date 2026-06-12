@@ -42,7 +42,7 @@ export type Database = {
           new_value: string | null
           old_value: string | null
           reason: string | null
-          system_id: string
+          system_id: string | null
         }
         Insert: {
           action: string
@@ -53,7 +53,7 @@ export type Database = {
           new_value?: string | null
           old_value?: string | null
           reason?: string | null
-          system_id: string
+          system_id?: string | null
         }
         Update: {
           action?: string
@@ -64,7 +64,7 @@ export type Database = {
           new_value?: string | null
           old_value?: string | null
           reason?: string | null
-          system_id?: string
+          system_id?: string | null
         }
         Relationships: [
           {

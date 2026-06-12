@@ -269,37 +269,6 @@ export type Database = {
         Returns: boolean
       }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
-      update_system_status_with_reason: {
-        Args: {
-          p_reason: string
-          p_status: Database["public"]["Enums"]["system_status"]
-          p_system_id: string
-        }
-        Returns: {
-          assigned_agent_id: string | null
-          audio_url: string | null
-          caller_phone: string | null
-          created_at: string
-          handled_pending_at: string | null
-          id: string
-          name: string
-          notes: string | null
-          parent_system_id: string | null
-          phone: string | null
-          reminder_agent_ids: string[] | null
-          reminder_at: string | null
-          source: string | null
-          status: Database["public"]["Enums"]["system_status"]
-          system_code: string
-          updated_at: string
-        }
-        SetofOptions: {
-          from: "*"
-          to: "systems"
-          isOneToOne: true
-          isSetofReturn: false
-        }
-      }
     }
     Enums: {
       app_role: "admin" | "agent"

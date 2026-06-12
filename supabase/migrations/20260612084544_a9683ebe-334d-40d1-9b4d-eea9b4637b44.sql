@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS public.update_system_status_with_reason(uuid, public.system_status, text);

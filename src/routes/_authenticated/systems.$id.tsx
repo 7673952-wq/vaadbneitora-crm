@@ -240,8 +240,14 @@ function SystemDetail() {
             )}
           </div>
         </div>
+      </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-current/20">
+      <TabsNav tab={tab} setTab={setTab} />
+
+      {tab === "details" && (
+      <div className="bg-card border border-border rounded-2xl p-6">
+        <div className="grid md:grid-cols-2 gap-4">
+
           <div>
             <label className="text-sm font-medium block mb-2">סטטוס</label>
             <select value={s.status} onChange={(e) => {
@@ -307,9 +313,15 @@ function SystemDetail() {
             </div>
           )}
         </div>
+      </div>
+      )}
 
-        {/* Reminder */}
-        <div className="mt-4 pt-4 border-t border-current/20 space-y-3">
+      {tab === "tracking" && (
+      <div className="space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-6">
+          <h2 className="font-semibold flex items-center gap-2 mb-4"><Bell className="h-4 w-4" />תזכורות</h2>
+        <div className="space-y-3">
+
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 text-sm">
               <Bell className="h-4 w-4" />
@@ -385,11 +397,11 @@ function SystemDetail() {
             )}
           </div>
         </div>
-      </div>
+        </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
+
           <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
             className="flex gap-2 mb-4">
             <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="הוסף הערה..."
@@ -411,8 +423,13 @@ function SystemDetail() {
             ))}
           </div>
         </div>
+      </div>
+      )}
 
+      {tab === "history" && (
+      <div className="space-y-6">
         <div className="bg-card border border-border rounded-2xl p-6">
+
           <h2 className="font-semibold flex items-center gap-2 mb-4"><Activity className="h-4 w-4" />יומן שינויים ({data.activity.length})</h2>
           <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {data.activity.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין שינויים</p>}
@@ -469,9 +486,8 @@ function SystemDetail() {
           </div>
         </div>
 
-      </div>
+        <div className="bg-card border border-border rounded-2xl p-6">
 
-      <div className="bg-card border border-border rounded-2xl p-6">
         <h2 className="font-semibold flex items-center gap-2 mb-4"><History className="h-4 w-4" />היסטוריית העברות נציג ({data.transfers.length})</h2>
         <div className="space-y-3 max-h-72 overflow-y-auto">
           {data.transfers.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">אין העברות</p>}

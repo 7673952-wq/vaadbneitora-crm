@@ -217,10 +217,22 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.system_code !== undefined && !isAdmin) {
       throw new Error("רק מנהל יכול לשנות את מזהה המערכת");
     }
-    await setReason(context.supabase, data.reason);
+    const startedAt = new Date().toISOString();
     const { id, reason: _r, ...patch } = data;
     const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
     if (error) throw new Error(error.message);
+    // PostgREST sends each call in its own transaction, so `set_config(..., true)`
+    // does not survive into the UPDATE's trigger. Patch the freshly-inserted
+    // activity rows with the reason directly.
+    if (data.reason && data.reason.trim()) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("system_activity_log")
+        .update({ reason: data.reason.trim() })
+        .eq("system_id", id)
+        .gte("created_at", startedAt)
+        .is("reason", null);
+    }
     return row;
   });
 
@@ -238,9 +250,24 @@ export const transferAgent = createServerFn({ method: "POST" })
     const { data: sys } = await context.supabase.from("systems").select("assigned_agent_id").eq("id", data.id).maybeSingle();
     if (!sys) throw new Error("מערכת לא נמצאה");
     if (!isAdmin && sys.assigned_agent_id !== context.userId) throw new Error("רק מנהל או הנציג הנוכחי יכולים להעביר");
-    await setReason(context.supabase, data.reason);
+    const startedAt = new Date().toISOString();
     const { error } = await context.supabase.from("systems").update({ assigned_agent_id: data.to_agent_id }).eq("id", data.id);
     if (error) throw new Error(error.message);
+    if (data.reason && data.reason.trim()) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("system_activity_log")
+        .update({ reason: data.reason.trim() })
+        .eq("system_id", data.id)
+        .gte("created_at", startedAt)
+        .is("reason", null);
+      await supabaseAdmin
+        .from("system_transfers")
+        .update({ reason: data.reason.trim() })
+        .eq("system_id", data.id)
+        .gte("created_at", startedAt)
+        .is("reason", null);
+    }
     return { ok: true };
   });
 

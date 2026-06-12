@@ -46,6 +46,15 @@ function Dashboard() {
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
   const [showExport, setShowExport] = useState(false);
+  const [showCharts, setShowCharts] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("dashboardChartsOpen") === "1";
+  });
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("dashboardChartsOpen", showCharts ? "1" : "0");
+    }
+  }, [showCharts]);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });

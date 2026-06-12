@@ -26,7 +26,7 @@ async function fetchAll(table: string) {
   const all: any[] = [];
   // eslint-disable-next-line no-constant-condition
   while (true) {
-    const { data, error } = await supabaseAdmin.from(table).select("*").range(from, from + pageSize - 1);
+    const { data, error } = await (supabaseAdmin as any).from(table).select("*").range(from, from + pageSize - 1);
     if (error) throw new Error(`${table}: ${error.message}`);
     if (!data || data.length === 0) break;
     all.push(...data);

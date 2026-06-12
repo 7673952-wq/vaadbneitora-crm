@@ -28,10 +28,10 @@ function AdminPage() {
   const emailFn = useServerFn(updateUserEmail);
   const pwFn = useServerFn(updateUserPassword);
 
-  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: users, error: usersError, isLoading: usersLoading } = useQuery({
     queryKey: ["agents"],
-    queryFn: () => agentsFn(),
+    queryFn: async () => agentsFn({ headers: await getAuthHeaders() }),
     enabled: me?.isAdmin === true,
   });
 
@@ -216,21 +216,23 @@ function StatusSettingsPanel() {
   const listFn = useServerFn(listStatusSettings);
   const upsertFn = useServerFn(upsertStatusSetting);
   const delFn = useServerFn(deleteStatusSetting);
-  const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: () => listFn() });
+  const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
 
   const refresh = async () => {
-    const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: () => listFn() });
+    const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
     applyStatusSettings(fresh as any);
     qc.invalidateQueries({ queryKey: ["systems"] });
   };
 
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+
   const upsertMut = useMutation({
-    mutationFn: upsertFn,
+    mutationFn: (vars: any) => withAuth(upsertFn, vars),
     onSuccess: async () => { await refresh(); toast.success("נשמר"); },
     onError: (e: any) => toast.error(e.message),
   });
   const delMut = useMutation({
-    mutationFn: delFn,
+    mutationFn: (vars: any) => withAuth(delFn, vars),
     onSuccess: async () => { await refresh(); toast.success("נמחק"); },
     onError: (e: any) => toast.error(e.message),
   });

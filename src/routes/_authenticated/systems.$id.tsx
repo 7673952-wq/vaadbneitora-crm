@@ -505,8 +505,15 @@ function SystemDetail() {
           ))}
         </div>
       </div>
+      </div>
+      )}
 
-      {!isSub && (
+      {tab === "subs" && (
+        isSub ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground">
+            תת-מערכת לא יכולה להכיל תתי-מערכות.
+          </div>
+        ) : (
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4">
             <Network className="h-4 w-4" />תתי-מערכות (מספרים נוספים) ({data.children.length})
@@ -548,8 +555,62 @@ function SystemDetail() {
             ))}
           </div>
         </div>
+        )
+      )}
+
+      {tab === "files" && (
+        <div className="bg-card border border-border rounded-2xl p-6">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <h2 className="font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" />קבצים ({files?.length ?? 0})</h2>
+            {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
+              <div className="flex items-center gap-2">
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploading ? "מעלה..." : "העלה קובץ"}
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">עד 15MB לקובץ. רק מנהל או הנציג המשויך יכולים להעלות.</p>
+          {!files || files.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">אין קבצים</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {files.map((f: any) => (
+                <div key={f.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{f.file_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {(f.size_bytes / 1024).toFixed(1)} KB · {f.uploader_name ?? "—"} · {new Date(f.created_at).toLocaleString("he-IL")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => downloadFile(f.id)} className="p-2 rounded-lg hover:bg-accent" title="הורד">
+                      <Download className="h-4 w-4" />
+                    </button>
+                    {(me?.isAdmin || f.uploaded_by === me?.userId) && (
+                      <button onClick={() => { if (confirm("למחוק את הקובץ?")) deleteFileMut.mutate(f.id); }}
+                        className="p-2 rounded-lg text-destructive hover:bg-destructive/10" title="מחק">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
+
   );
 }
 

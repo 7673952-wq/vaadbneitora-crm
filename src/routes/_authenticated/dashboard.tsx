@@ -124,13 +124,22 @@ function Dashboard() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  function exportCsv() {
-    const rows = filtered;
+  function filterByRange(rows: any[], fromIso: string | null, toIso: string | null) {
+    if (!fromIso && !toIso) return rows;
+    const from = fromIso ? new Date(fromIso).getTime() : -Infinity;
+    const to = toIso ? new Date(toIso).getTime() : Infinity;
+    return rows.filter((r: any) => {
+      const t = new Date(r.updated_at).getTime();
+      return t >= from && t <= to;
+    });
+  }
+
+  function exportCsv(rows: any[], label: string) {
     if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
-    const header = ["מזהה מערכת", "שם", "סטטוס", "נציג מטפל", "טלפון", "תת-מערכת של", "הערות", "עדכון אחרון"];
+    const header = ["מזהה מערכת", "שם", "סטטוס", "נציג מטפל", "טלפון", "פונה", "תת-מערכת של", "הערות", "עדכון אחרון"];
     const data = rows.map((r: any) => [
       r.system_code, r.name, STATUS_LABEL[r.status as SystemStatus] || r.status,
-      r.agent?.display_name || "", r.phone || "",
+      r.agent?.display_name || "", r.phone || "", r.caller_phone || "",
       r.parent ? `${r.parent.system_code} / ${r.parent.name}` : "",
       (r.notes || "").replace(/\n/g, " "), new Date(r.updated_at).toLocaleString("he-IL"),
     ]);
@@ -141,22 +150,13 @@ function Dashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `systems_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `systems_${label}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function exportPdf() {
-    const baseRows = systems ?? [];
-    const dayStart = new Date(pdfDate + "T00:00:00");
-    const dayEnd = new Date(pdfDate + "T23:59:59.999");
-    const rows = baseRows.filter((r: any) => {
-      if (status && r.status !== status) return false;
-      const u = new Date(r.updated_at);
-      return u >= dayStart && u <= dayEnd;
-    });
-    if (!rows.length) { toast.info("אין נתונים לייצוא בתאריך זה"); return; }
-    const dateLabel = dayStart.toLocaleDateString("he-IL");
+  function exportPdfRows(rows: any[], label: string) {
+    if (!rows.length) { toast.info("אין נתונים לייצוא בטווח זה"); return; }
     const statusLabel = status ? (STATUS_LABEL[status as SystemStatus] || status) : "כל הסטטוסים";
     const tableRows = rows.map((r: any) => `
       <tr>
@@ -164,11 +164,12 @@ function Dashboard() {
         <td>${r.name ?? ""}</td>
         <td>${STATUS_LABEL[r.status as SystemStatus] || r.status}</td>
         <td>${r.agent?.display_name ?? "—"}</td>
+        <td>${r.caller_phone ?? ""}</td>
         <td>${(r.notes ?? "").replace(/</g, "&lt;")}</td>
         <td>${new Date(r.updated_at).toLocaleString("he-IL")}</td>
       </tr>`).join("");
     const html = `<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8" />
-      <title>דוח מערכות ${dateLabel}</title>
+      <title>דוח מערכות ${label}</title>
       <style>
         @page { size: A4; margin: 14mm; }
         body { font-family: 'Heebo', Arial, sans-serif; color: #0f172a; }
@@ -180,10 +181,10 @@ function Dashboard() {
         tr:nth-child(even) td { background: #fafafa; }
         .footer { margin-top: 12px; font-size: 11px; color: #94a3b8; }
       </style></head><body>
-      <h1>דוח מערכות יומי</h1>
-      <div class="meta">תאריך: ${dateLabel} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
+      <h1>דוח מערכות</h1>
+      <div class="meta">טווח: ${label} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
       <table>
-        <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
+        <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>פונה</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
       <div class="footer">הופק ב-${new Date().toLocaleString("he-IL")}</div>
@@ -191,15 +192,13 @@ function Dashboard() {
       </body></html>`;
     const w = window.open("", "_blank");
     if (!w) { toast.error("חסום על ידי דפדפן — אפשר חלונות קופצים"); return; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    w.document.open(); w.document.write(html); w.document.close();
   }
 
-  function exportCrmXlsx() {
-    const rows = filtered.filter((r: any) => r.status === "to_block" || r.status === "to_open");
-    if (!rows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח לייצוא"); return; }
-    const data = rows.map((r: any) => ({
+  function exportCrmXlsx(rows: any[], label: string) {
+    const filteredRows = rows.filter((r: any) => r.status === "to_block" || r.status === "to_open");
+    if (!filteredRows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
+    const data = filteredRows.map((r: any) => ({
       phone_number: buildDialNumber(r.system_code),
       caller_id: buildDialNumber(r.caller_phone || r.phone || r.system_code),
       active: 1,
@@ -209,15 +208,29 @@ function Dashboard() {
     const ws = XLSX.utils.json_to_sheet(data, { header: ["phone_number", "caller_id", "active", "call_type", "status"] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CRM");
-    XLSX.writeFile(wb, `crm_block_open_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `crm_block_open_${label}.xlsx`);
   }
 
-  function exportMenu() {
-    const choice = window.prompt("בחר ייצוא: 1=CSV, 2=PDF, 3=Excel CRM", "1");
-    if (choice === "1") exportCsv();
-    else if (choice === "2") exportPdf();
-    else if (choice === "3") exportCrmXlsx();
+  function exportFullXlsx(rows: any[], label: string) {
+    if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
+    const data = rows.map((r: any) => ({
+      "מזהה מערכת": r.system_code,
+      "שם": r.name,
+      "סטטוס": STATUS_LABEL[r.status as SystemStatus] || r.status,
+      "נציג מטפל": r.agent?.display_name || "",
+      "טלפון": r.phone || "",
+      "פונה": r.caller_phone || "",
+      "מקור": r.source || "",
+      "תת-מערכת של": r.parent ? `${r.parent.system_code} / ${r.parent.name}` : "",
+      "הערות": r.notes || "",
+      "עדכון אחרון": new Date(r.updated_at).toLocaleString("he-IL"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Systems");
+    XLSX.writeFile(wb, `systems_${label}.xlsx`);
   }
+
 
   return (
     <div className="space-y-6">

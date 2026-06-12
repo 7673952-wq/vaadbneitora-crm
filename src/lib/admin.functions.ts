@@ -141,3 +141,55 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
       };
     });
   });
+
+export const listStatusSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("status_settings")
+      .select("status_key, label, tone, sort_order, is_custom")
+      .order("sort_order", { ascending: true });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+
+export const upsertStatusSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean }) =>
+    z.object({
+      status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
+      label: z.string().min(1).max(100),
+      tone: z.string().min(1).max(40),
+      sort_order: z.number().int().min(0).max(10000).optional(),
+      is_custom: z.boolean().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("status_settings").upsert({
+      status_key: data.status_key,
+      label: data.label,
+      tone: data.tone,
+      sort_order: data.sort_order ?? 0,
+      is_custom: data.is_custom ?? false,
+    });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteStatusSetting = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { status_key: string }) =>
+    z.object({ status_key: z.string().min(1).max(60) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Only allow deleting custom statuses (not the built-in enum values).
+    const { data: row } = await supabaseAdmin.from("status_settings").select("is_custom").eq("status_key", data.status_key).maybeSingle();
+    if (!row?.is_custom) throw new Error("לא ניתן למחוק סטטוס מובנה");
+    const { error } = await supabaseAdmin.from("status_settings").delete().eq("status_key", data.status_key);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });

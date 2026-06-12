@@ -214,6 +214,9 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים לעדכן");
     }
+    if (data.system_code !== undefined && !isAdmin) {
+      throw new Error("רק מנהל יכול לשנות את מזהה המערכת");
+    }
     await setReason(context.supabase, data.reason);
     const { id, reason: _r, ...patch } = data;
     const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();

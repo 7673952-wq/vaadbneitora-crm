@@ -25,8 +25,12 @@ function AdminPage() {
   const emailFn = useServerFn(updateUserEmail);
   const pwFn = useServerFn(updateUserPassword);
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
-  const { data: users } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
+  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const { data: users, error: usersError, isLoading: usersLoading } = useQuery({
+    queryKey: ["agents"],
+    queryFn: () => agentsFn(),
+    enabled: me?.isAdmin === true,
+  });
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" });
@@ -52,8 +56,20 @@ function AdminPage() {
   const pwMut = useMutation({ mutationFn: pwFn, onSuccess: () => { toast.success("סיסמה עודכנה"); invalidate(); setEditing(null); }, onError: onErr });
 
 
+  if (meLoading) {
+    return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
+  }
+
+  if (meError) {
+    return <AdminError message={meError.message} />;
+  }
+
   if (me && !me.isAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
+  }
+
+  if (usersError) {
+    return <AdminError message={usersError.message} />;
   }
 
   function startEdit(u: any, field: "name" | "email" | "password") {
@@ -178,13 +194,22 @@ function AdminPage() {
               <div className="flex gap-2 justify-end pt-2">
                 <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
                 <button type="submit" disabled={createMut.isPending} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-                  {createMut.isPending ? "יוצר..." : "צור משתמש"}
+              {createMut.isPending ? "יוצר..." : "צור משתמש"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function AdminError({ message }: { message: string }) {
+  return (
+    <div className="max-w-xl mx-auto text-center py-20">
+      <h2 className="text-xl font-semibold text-destructive">ניהול המשתמשים לא נטען</h2>
+      <p className="text-sm text-muted-foreground mt-2">{message}</p>
     </div>
   );
 }

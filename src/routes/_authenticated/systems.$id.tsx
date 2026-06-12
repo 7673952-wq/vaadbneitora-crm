@@ -8,14 +8,18 @@ import {
 } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import {
+  listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
+} from "@/lib/system-files.functions";
+import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
   type SystemStatus,
 } from "@/lib/status";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
+  Info, Paperclip, Upload, Download, FileText,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -23,6 +27,8 @@ export const Route = createFileRoute("/_authenticated/systems/$id")({
   head: () => ({ meta: [{ title: "מערכת | CRM" }] }),
   component: SystemDetail,
 });
+
+type TabKey = "details" | "tracking" | "history" | "subs" | "files";
 
 const FIELD_LABELS: Record<string, string> = {
   status: "סטטוס",
@@ -62,6 +68,52 @@ function SystemDetail() {
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
+  const [tab, setTab] = useState<TabKey>("details");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const filesFn = useServerFn(listSystemFiles);
+  const uploadFn = useServerFn(uploadSystemFile);
+  const fileUrlFn = useServerFn(getSystemFileUrl);
+  const deleteFileFn = useServerFn(deleteSystemFile);
+  const { data: files } = useQuery({
+    queryKey: ["system-files", id],
+    queryFn: () => filesFn({ data: { system_id: id } }),
+  });
+  const deleteFileMut = useMutation({
+    mutationFn: (file_id: string) => deleteFileFn({ data: { file_id } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system-files", id] }); toast.success("הקובץ נמחק"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  async function downloadFile(file_id: string) {
+    try {
+      const { url } = await fileUrlFn({ data: { file_id } });
+      window.open(url, "_blank");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 15 * 1024 * 1024) { toast.error("הקובץ גדול מדי (מקסימום 15MB)"); e.target.value = ""; return; }
+    try {
+      setUploading(true);
+      const buf = await f.arrayBuffer();
+      let bin = "";
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+      const b64 = btoa(bin);
+      await uploadFn({ data: { system_id: id, file_name: f.name, mime_type: f.type || "", data_base64: b64 } });
+      toast.success("הקובץ הועלה");
+      qc.invalidateQueries({ queryKey: ["system-files", id] });
+    } catch (err: any) {
+      toast.error(err.message ?? "שגיאה בהעלאה");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   const updateMut = useMutation({
     mutationFn: updateFn,
@@ -188,8 +240,14 @@ function SystemDetail() {
             )}
           </div>
         </div>
+      </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-current/20">
+      <TabsNav tab={tab} setTab={setTab} />
+
+      {tab === "details" && (
+      <div className="bg-card border border-border rounded-2xl p-6">
+        <div className="grid md:grid-cols-2 gap-4">
+
           <div>
             <label className="text-sm font-medium block mb-2">סטטוס</label>
             <select value={s.status} onChange={(e) => {
@@ -255,9 +313,15 @@ function SystemDetail() {
             </div>
           )}
         </div>
+      </div>
+      )}
 
-        {/* Reminder */}
-        <div className="mt-4 pt-4 border-t border-current/20 space-y-3">
+      {tab === "tracking" && (
+      <div className="space-y-6">
+        <div className="bg-card border border-border rounded-2xl p-6">
+          <h2 className="font-semibold flex items-center gap-2 mb-4"><Bell className="h-4 w-4" />תזכורות</h2>
+        <div className="space-y-3">
+
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 text-sm">
               <Bell className="h-4 w-4" />
@@ -333,11 +397,11 @@ function SystemDetail() {
             )}
           </div>
         </div>
-      </div>
+        </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
+
           <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
             className="flex gap-2 mb-4">
             <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="הוסף הערה..."
@@ -359,8 +423,13 @@ function SystemDetail() {
             ))}
           </div>
         </div>
+      </div>
+      )}
 
+      {tab === "history" && (
+      <div className="space-y-6">
         <div className="bg-card border border-border rounded-2xl p-6">
+
           <h2 className="font-semibold flex items-center gap-2 mb-4"><Activity className="h-4 w-4" />יומן שינויים ({data.activity.length})</h2>
           <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
             {data.activity.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין שינויים</p>}
@@ -417,9 +486,8 @@ function SystemDetail() {
           </div>
         </div>
 
-      </div>
+        <div className="bg-card border border-border rounded-2xl p-6">
 
-      <div className="bg-card border border-border rounded-2xl p-6">
         <h2 className="font-semibold flex items-center gap-2 mb-4"><History className="h-4 w-4" />היסטוריית העברות נציג ({data.transfers.length})</h2>
         <div className="space-y-3 max-h-72 overflow-y-auto">
           {data.transfers.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">אין העברות</p>}
@@ -437,8 +505,15 @@ function SystemDetail() {
           ))}
         </div>
       </div>
+      </div>
+      )}
 
-      {!isSub && (
+      {tab === "subs" && (
+        isSub ? (
+          <div className="bg-card border border-border rounded-2xl p-6 text-center text-muted-foreground">
+            תת-מערכת לא יכולה להכיל תתי-מערכות.
+          </div>
+        ) : (
         <div className="bg-card border border-border rounded-2xl p-6">
           <h2 className="font-semibold flex items-center gap-2 mb-4">
             <Network className="h-4 w-4" />תתי-מערכות (מספרים נוספים) ({data.children.length})
@@ -480,8 +555,62 @@ function SystemDetail() {
             ))}
           </div>
         </div>
+        )
+      )}
+
+      {tab === "files" && (
+        <div className="bg-card border border-border rounded-2xl p-6">
+          <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
+            <h2 className="font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" />קבצים ({files?.length ?? 0})</h2>
+            {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
+              <div className="flex items-center gap-2">
+                <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-2 px-3 py-2 bg-primary text-primary-foreground rounded-lg text-sm hover:opacity-90 disabled:opacity-50"
+                >
+                  <Upload className="h-4 w-4" />
+                  {uploading ? "מעלה..." : "העלה קובץ"}
+                </button>
+              </div>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">עד 15MB לקובץ. רק מנהל או הנציג המשויך יכולים להעלות.</p>
+          {!files || files.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">אין קבצים</p>
+          ) : (
+            <div className="divide-y divide-border">
+              {files.map((f: any) => (
+                <div key={f.id} className="flex items-center justify-between gap-3 py-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">{f.file_name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {(f.size_bytes / 1024).toFixed(1)} KB · {f.uploader_name ?? "—"} · {new Date(f.created_at).toLocaleString("he-IL")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => downloadFile(f.id)} className="p-2 rounded-lg hover:bg-accent" title="הורד">
+                      <Download className="h-4 w-4" />
+                    </button>
+                    {(me?.isAdmin || f.uploaded_by === me?.userId) && (
+                      <button onClick={() => { if (confirm("למחוק את הקובץ?")) deleteFileMut.mutate(f.id); }}
+                        className="p-2 rounded-lg text-destructive hover:bg-destructive/10" title="מחק">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
+
   );
 }
 

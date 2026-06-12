@@ -1,0 +1,109 @@
+import { createServerFn } from "@tanstack/react-start";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+
+export const listSystemFiles = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { system_id: string }) =>
+    z.object({ system_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: rows, error } = await context.supabase
+      .from("system_files")
+      .select("id, file_name, mime_type, size_bytes, storage_path, uploaded_by, created_at")
+      .eq("system_id", data.system_id)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error(error.message);
+    const uploaderIds = Array.from(new Set((rows ?? []).map((r) => r.uploaded_by).filter(Boolean)));
+    let names = new Map<string, string>();
+    if (uploaderIds.length > 0) {
+      const { data: profs } = await context.supabase
+        .from("profiles").select("id, display_name").in("id", uploaderIds as string[]);
+      (profs ?? []).forEach((p: any) => names.set(p.id, p.display_name));
+    }
+    return (rows ?? []).map((r) => ({
+      ...r,
+      uploader_name: r.uploaded_by ? names.get(r.uploaded_by) ?? null : null,
+    }));
+  });
+
+export const uploadSystemFile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { system_id: string; file_name: string; mime_type: string; data_base64: string }) =>
+    z.object({
+      system_id: z.string().uuid(),
+      file_name: z.string().min(1).max(255),
+      mime_type: z.string().max(150).default(""),
+      data_base64: z.string().min(1).max(20 * 1024 * 1024), // ~15MB binary cap
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    // Verify caller can upload to this system
+    const { data: sys, error: sysErr } = await context.supabase
+      .from("systems").select("id, assigned_agent_id").eq("id", data.system_id).maybeSingle();
+    if (sysErr || !sys) throw new Error("מערכת לא נמצאה");
+    const { isAdminUserId } = await import("@/lib/admin-role.server");
+    const isAdmin = await isAdminUserId(context.userId);
+    if (!isAdmin && sys.assigned_agent_id !== context.userId) {
+      throw new Error("רק מנהל או הנציג המשויך יכולים להעלות קבצים");
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const buffer = Buffer.from(data.data_base64, "base64");
+    const safeName = data.file_name.replace(/[^A-Za-z0-9._\u0590-\u05FF\- ]/g, "_");
+    const path = `${data.system_id}/${Date.now()}-${safeName}`;
+    const { error: upErr } = await supabaseAdmin.storage.from("system-files").upload(path, buffer, {
+      contentType: data.mime_type || "application/octet-stream",
+      upsert: false,
+    });
+    if (upErr) throw new Error(upErr.message);
+    const { error: dbErr } = await supabaseAdmin.from("system_files").insert({
+      system_id: data.system_id,
+      storage_path: path,
+      file_name: data.file_name,
+      mime_type: data.mime_type || null,
+      size_bytes: buffer.byteLength,
+      uploaded_by: context.userId,
+    });
+    if (dbErr) {
+      await supabaseAdmin.storage.from("system-files").remove([path]);
+      throw new Error(dbErr.message);
+    }
+    return { ok: true };
+  });
+
+export const getSystemFileUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { file_id: string }) =>
+    z.object({ file_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
+      .from("system_files").select("storage_path").eq("id", data.file_id).maybeSingle();
+    if (error || !row) throw new Error("הקובץ לא נמצא");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: signed, error: sErr } = await supabaseAdmin.storage
+      .from("system-files").createSignedUrl(row.storage_path, 60 * 10);
+    if (sErr) throw new Error(sErr.message);
+    return { url: signed.signedUrl };
+  });
+
+export const deleteSystemFile = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { file_id: string }) =>
+    z.object({ file_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: row, error } = await context.supabase
+      .from("system_files").select("storage_path, uploaded_by").eq("id", data.file_id).maybeSingle();
+    if (error || !row) throw new Error("הקובץ לא נמצא");
+    const { isAdminUserId } = await import("@/lib/admin-role.server");
+    const isAdmin = await isAdminUserId(context.userId);
+    if (!isAdmin && row.uploaded_by !== context.userId) {
+      throw new Error("רק מנהל או המעלה יכול למחוק את הקובץ");
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.storage.from("system-files").remove([row.storage_path]);
+    const { error: dErr } = await supabaseAdmin.from("system_files").delete().eq("id", data.file_id);
+    if (dErr) throw new Error(dErr.message);
+    return { ok: true };
+  });

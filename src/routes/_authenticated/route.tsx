@@ -72,7 +72,6 @@ function AuthedLayout() {
     { to: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
     ...(me?.isAdmin ? [
       { to: "/manager-dashboard", label: "דשבורד מנהלים", icon: TrendingUp },
-      { to: "/backups", label: "גיבויים", icon: Database },
     ] : []),
     ...(me?.isSuperAdmin ? [
       { to: "/admin", label: "ניהול", icon: Users },

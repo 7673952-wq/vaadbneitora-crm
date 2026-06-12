@@ -121,6 +121,8 @@ function StatusSettingsHydrator() {
     queryKey: ["status_settings"],
     queryFn: () => fn(),
     staleTime: 60_000,
+    retry: false,
+    throwOnError: false,
   });
   useEffect(() => { if (data) applyStatusSettings(data as any); }, [data]);
   return null;

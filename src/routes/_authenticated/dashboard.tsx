@@ -430,15 +430,27 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
       )}
 
 
-      <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-80">
-        <span className="truncate">{r.agent?.display_name ?? "לא משויך"}</span>
-        {buildDialNumber(r.system_code) && (
-          <a href={`tel:${buildDialNumber(r.system_code)}`} onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
-            <Phone className="h-2.5 w-2.5" />ID
-          </a>
+      <div className="mt-2 space-y-1 text-[11px] opacity-90" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between gap-2">
+          <span className="truncate">נציג: {r.agent?.display_name ?? "לא משויך"}</span>
+          {r.system_code && (
+            <a href={`tel:${buildDialNumber(r.system_code)}`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-mono">
+              <Phone className="h-2.5 w-2.5" />{r.system_code}
+            </a>
+          )}
+        </div>
+        {r.caller_phone && (
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate">פונה: {r.caller_phone}</span>
+            <a href={`tel:${buildDialNumber(r.caller_phone)}`}
+              className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700 font-mono">
+              <Phone className="h-2.5 w-2.5" />{r.caller_phone}
+            </a>
+          </div>
         )}
       </div>
+
     </div>
   );
 }

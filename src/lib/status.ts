@@ -1,6 +1,6 @@
 export const STATUS_OPTIONS = [
-  { value: "pending_check_close", label: "לבדיקה לחסימה", tone: "amber" },
-  { value: "pending_check_open", label: "לבדיקה לפתיחה", tone: "yellow" },
+  { value: "pending_check_close", label: "לבדיקה לחסימה", tone: "orange" },
+  { value: "pending_check_open", label: "לבדיקה לפתיחה", tone: "teal" },
   { value: "open", label: "פתוח", tone: "green" },
   { value: "to_open", label: "לפתוח", tone: "lightgreen" },
   { value: "closed", label: "חסום", tone: "red" },

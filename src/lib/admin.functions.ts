@@ -7,18 +7,23 @@ async function assertAdmin(context: { userId: string }) {
   await assertAdminUserId(context.userId);
 }
 
+async function assertSuperAdmin(context: { userId: string }) {
+  const { assertSuperAdminUserId } = await import("@/lib/admin-role.server");
+  await assertSuperAdminUserId(context.userId);
+}
+
 export const createUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" }) =>
+  .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" }) =>
     z.object({
       email: z.string().email(),
       password: z.string().min(6).max(72),
       display_name: z.string().min(1).max(100),
-      role: z.enum(["admin", "agent"]),
+      role: z.enum(["admin", "agent", "super_admin"]),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email, password: data.password, email_confirm: true,
@@ -38,7 +43,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     if (data.user_id === context.userId) throw new Error("לא ניתן למחוק את עצמך");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -48,14 +53,18 @@ export const deleteUser = createServerFn({ method: "POST" })
 
 export const setUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { user_id: string; role: "admin" | "agent" }) =>
-    z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent"]) }).parse(d),
+  .inputValidator((d: { user_id: string; role: "admin" | "agent" | "super_admin" }) =>
+    z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
-    const { error } = await supabaseAdmin.from("user_roles").insert({ user_id: data.user_id, role: data.role });
+    const rows: { user_id: string; role: "admin" | "agent" | "super_admin" }[] =
+      data.role === "super_admin"
+        ? [{ user_id: data.user_id, role: "admin" }, { user_id: data.user_id, role: "super_admin" }]
+        : [{ user_id: data.user_id, role: data.role }];
+    const { error } = await supabaseAdmin.from("user_roles").insert(rows);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -66,7 +75,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: data.display_name }).eq("id", data.user_id);
     if (error) throw new Error(error.message);
@@ -80,7 +89,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw new Error(error.message);
@@ -93,7 +102,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw new Error(error.message);
@@ -103,12 +112,15 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdminUserId } = await import("@/lib/admin-role.server");
+    const { isAdminUserId, isSuperAdminUserId } = await import("@/lib/admin-role.server");
     const { data } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId);
     const roles = (data ?? []).map((r: any) => r.role);
-    const isAdmin = roles.includes("admin") || await isAdminUserId(context.userId);
-    return { userId: context.userId, roles: isAdmin && !roles.includes("admin") ? [...roles, "admin"] : roles, isAdmin };
+    const isSuperAdmin = roles.includes("super_admin") || await isSuperAdminUserId(context.userId);
+    const isAdmin = isSuperAdmin || roles.includes("admin") || await isAdminUserId(context.userId);
+    if (isSuperAdmin && !roles.includes("super_admin")) roles.push("super_admin");
+    if (isAdmin && !roles.includes("admin")) roles.push("admin");
+    return { userId: context.userId, roles, isAdmin, isSuperAdmin };
   });
 
 export const listUsersForAdmin = createServerFn({ method: "GET" })

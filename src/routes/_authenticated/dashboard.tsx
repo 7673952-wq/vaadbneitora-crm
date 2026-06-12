@@ -695,3 +695,126 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
   );
 }
 
+type ExportFormat = "csv" | "pdf" | "xlsx" | "crm";
+type RangePreset = "day" | "week" | "month" | "year" | "all" | "custom";
+
+function ExportModal({ allRows, onClose, onExport }: {
+  allRows: any[];
+  onClose: () => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string) => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [preset, setPreset] = useState<RangePreset>("month");
+  const [from, setFrom] = useState<string>(today);
+  const [to, setTo] = useState<string>(today);
+  const [format, setFormat] = useState<ExportFormat>("xlsx");
+
+  function computeRange(): { fromIso: string | null; toIso: string | null; label: string } {
+    if (preset === "all") return { fromIso: null, toIso: null, label: "all" };
+    if (preset === "custom") {
+      if (!from || !to) return { fromIso: null, toIso: null, label: "custom" };
+      return {
+        fromIso: new Date(from + "T00:00:00").toISOString(),
+        toIso: new Date(to + "T23:59:59.999").toISOString(),
+        label: `${from}_${to}`,
+      };
+    }
+    const now = new Date();
+    const start = new Date(now);
+    if (preset === "day") start.setHours(0, 0, 0, 0);
+    else if (preset === "week") start.setDate(now.getDate() - 7);
+    else if (preset === "month") start.setMonth(now.getMonth() - 1);
+    else if (preset === "year") start.setFullYear(now.getFullYear() - 1);
+    return { fromIso: start.toISOString(), toIso: now.toISOString(), label: preset };
+  }
+
+  const countInRange = (() => {
+    const { fromIso, toIso } = computeRange();
+    if (!fromIso && !toIso) return allRows.length;
+    const f = fromIso ? new Date(fromIso).getTime() : -Infinity;
+    const t = toIso ? new Date(toIso).getTime() : Infinity;
+    return allRows.filter((r) => {
+      const u = new Date(r.updated_at).getTime();
+      return u >= f && u <= t;
+    }).length;
+  })();
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-xl font-bold mb-1">ייצוא לפי תאריכים</h2>
+        <p className="text-xs text-muted-foreground mb-4">סינון לפי תאריך עדכון אחרון של המערכת</p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium block mb-2">טווח תאריכים</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { v: "day", l: "יומי" },
+                { v: "week", l: "שבועי" },
+                { v: "month", l: "חודשי" },
+                { v: "year", l: "שנתי" },
+                { v: "all", l: "הכל" },
+                { v: "custom", l: "בחירת תאריכים" },
+              ] as { v: RangePreset; l: string }[]).map((p) => (
+                <button key={p.v} type="button" onClick={() => setPreset(p.v)}
+                  className={`text-sm py-2 rounded-lg border ${preset === p.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                  {p.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {preset === "custom" && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">מתאריך</label>
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">עד תאריך</label>
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium block mb-2">פורמט</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { v: "xlsx", l: "Excel מלא" },
+                { v: "csv", l: "CSV" },
+                { v: "pdf", l: "PDF להדפסה" },
+                { v: "crm", l: "Excel CRM (חסום/פתוח)" },
+              ] as { v: ExportFormat; l: string }[]).map((f) => (
+                <button key={f.v} type="button" onClick={() => setFormat(f.v)}
+                  className={`text-sm py-2 rounded-lg border ${format === f.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                  {f.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+            יישלחו לייצוא: <strong>{countInRange}</strong> מערכות
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
+            <button type="button" onClick={() => {
+              const { fromIso, toIso, label } = computeRange();
+              onExport(format, fromIso, toIso, label);
+            }}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+              ייצא
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+

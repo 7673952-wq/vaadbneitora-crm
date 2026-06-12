@@ -68,6 +68,52 @@ function SystemDetail() {
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
+  const [tab, setTab] = useState<TabKey>("details");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const filesFn = useServerFn(listSystemFiles);
+  const uploadFn = useServerFn(uploadSystemFile);
+  const fileUrlFn = useServerFn(getSystemFileUrl);
+  const deleteFileFn = useServerFn(deleteSystemFile);
+  const { data: files } = useQuery({
+    queryKey: ["system-files", id],
+    queryFn: () => filesFn({ data: { system_id: id } }),
+  });
+  const deleteFileMut = useMutation({
+    mutationFn: (file_id: string) => deleteFileFn({ data: { file_id } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system-files", id] }); toast.success("הקובץ נמחק"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  async function downloadFile(file_id: string) {
+    try {
+      const { url } = await fileUrlFn({ data: { file_id } });
+      window.open(url, "_blank");
+    } catch (e: any) {
+      toast.error(e.message);
+    }
+  }
+  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0];
+    if (!f) return;
+    if (f.size > 15 * 1024 * 1024) { toast.error("הקובץ גדול מדי (מקסימום 15MB)"); e.target.value = ""; return; }
+    try {
+      setUploading(true);
+      const buf = await f.arrayBuffer();
+      let bin = "";
+      const bytes = new Uint8Array(buf);
+      for (let i = 0; i < bytes.byteLength; i++) bin += String.fromCharCode(bytes[i]);
+      const b64 = btoa(bin);
+      await uploadFn({ data: { system_id: id, file_name: f.name, mime_type: f.type || "", data_base64: b64 } });
+      toast.success("הקובץ הועלה");
+      qc.invalidateQueries({ queryKey: ["system-files", id] });
+    } catch (err: any) {
+      toast.error(err.message ?? "שגיאה בהעלאה");
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }
 
   const updateMut = useMutation({
     mutationFn: updateFn,

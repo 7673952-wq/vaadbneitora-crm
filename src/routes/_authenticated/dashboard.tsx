@@ -9,10 +9,14 @@ import { getMyRole } from "@/lib/admin.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
   statusCardClasses, isPendingStatus, type SystemStatus,
+  CALLER_SOURCES, SOURCE_LABEL, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, FileSpreadsheet } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import * as XLSX from "xlsx";
+import { supabase } from "@/integrations/supabase/client";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -76,6 +80,9 @@ function Dashboard() {
     (systems ?? []).forEach((s: any) => { counts[s.status] = (counts[s.status] || 0) + 1; });
     return counts;
   }, [systems]);
+  const chartData = useMemo(() => STATUS_OPTIONS
+    .map((s, i) => ({ name: s.label, value: stats[s.value] ?? 0, color: PIE_COLORS[i % PIE_COLORS.length] }))
+    .filter((item) => item.value > 0), [stats]);
 
   // Pending sections
   const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
@@ -166,6 +173,29 @@ function Dashboard() {
     w.document.open();
     w.document.write(html);
     w.document.close();
+  }
+
+  function exportCrmXlsx() {
+    const rows = filtered.filter((r: any) => r.status === "to_block" || r.status === "to_open");
+    if (!rows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח לייצוא"); return; }
+    const data = rows.map((r: any) => ({
+      phone_number: buildDialNumber(r.system_code),
+      caller_id: buildDialNumber(r.caller_phone || r.phone || r.system_code),
+      active: 1,
+      call_type: "ALL",
+      status: r.status === "to_block" ? "BLOCKED" : "OPEN",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data, { header: ["phone_number", "caller_id", "active", "call_type", "status"] });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CRM");
+    XLSX.writeFile(wb, `crm_block_open_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  function exportMenu() {
+    const choice = window.prompt("בחר ייצוא: 1=CSV, 2=PDF, 3=Excel CRM", "1");
+    if (choice === "1") exportCsv();
+    else if (choice === "2") exportPdf();
+    else if (choice === "3") exportCrmXlsx();
   }
 
   return (

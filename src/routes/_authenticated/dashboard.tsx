@@ -44,6 +44,7 @@ function Dashboard() {
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
@@ -123,13 +124,22 @@ function Dashboard() {
     onError: (e: any) => toast.error(e.message),
   });
 
-  function exportCsv() {
-    const rows = filtered;
+  function filterByRange(rows: any[], fromIso: string | null, toIso: string | null) {
+    if (!fromIso && !toIso) return rows;
+    const from = fromIso ? new Date(fromIso).getTime() : -Infinity;
+    const to = toIso ? new Date(toIso).getTime() : Infinity;
+    return rows.filter((r: any) => {
+      const t = new Date(r.updated_at).getTime();
+      return t >= from && t <= to;
+    });
+  }
+
+  function exportCsv(rows: any[], label: string) {
     if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
-    const header = ["מזהה מערכת", "שם", "סטטוס", "נציג מטפל", "טלפון", "תת-מערכת של", "הערות", "עדכון אחרון"];
+    const header = ["מזהה מערכת", "שם", "סטטוס", "נציג מטפל", "טלפון", "פונה", "תת-מערכת של", "הערות", "עדכון אחרון"];
     const data = rows.map((r: any) => [
       r.system_code, r.name, STATUS_LABEL[r.status as SystemStatus] || r.status,
-      r.agent?.display_name || "", r.phone || "",
+      r.agent?.display_name || "", r.phone || "", r.caller_phone || "",
       r.parent ? `${r.parent.system_code} / ${r.parent.name}` : "",
       (r.notes || "").replace(/\n/g, " "), new Date(r.updated_at).toLocaleString("he-IL"),
     ]);
@@ -140,22 +150,13 @@ function Dashboard() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `systems_${new Date().toISOString().slice(0,10)}.csv`;
+    a.download = `systems_${label}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
 
-  function exportPdf() {
-    const baseRows = systems ?? [];
-    const dayStart = new Date(pdfDate + "T00:00:00");
-    const dayEnd = new Date(pdfDate + "T23:59:59.999");
-    const rows = baseRows.filter((r: any) => {
-      if (status && r.status !== status) return false;
-      const u = new Date(r.updated_at);
-      return u >= dayStart && u <= dayEnd;
-    });
-    if (!rows.length) { toast.info("אין נתונים לייצוא בתאריך זה"); return; }
-    const dateLabel = dayStart.toLocaleDateString("he-IL");
+  function exportPdfRows(rows: any[], label: string) {
+    if (!rows.length) { toast.info("אין נתונים לייצוא בטווח זה"); return; }
     const statusLabel = status ? (STATUS_LABEL[status as SystemStatus] || status) : "כל הסטטוסים";
     const tableRows = rows.map((r: any) => `
       <tr>
@@ -163,11 +164,12 @@ function Dashboard() {
         <td>${r.name ?? ""}</td>
         <td>${STATUS_LABEL[r.status as SystemStatus] || r.status}</td>
         <td>${r.agent?.display_name ?? "—"}</td>
+        <td>${r.caller_phone ?? ""}</td>
         <td>${(r.notes ?? "").replace(/</g, "&lt;")}</td>
         <td>${new Date(r.updated_at).toLocaleString("he-IL")}</td>
       </tr>`).join("");
     const html = `<!doctype html><html dir="rtl" lang="he"><head><meta charset="utf-8" />
-      <title>דוח מערכות ${dateLabel}</title>
+      <title>דוח מערכות ${label}</title>
       <style>
         @page { size: A4; margin: 14mm; }
         body { font-family: 'Heebo', Arial, sans-serif; color: #0f172a; }
@@ -179,10 +181,10 @@ function Dashboard() {
         tr:nth-child(even) td { background: #fafafa; }
         .footer { margin-top: 12px; font-size: 11px; color: #94a3b8; }
       </style></head><body>
-      <h1>דוח מערכות יומי</h1>
-      <div class="meta">תאריך: ${dateLabel} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
+      <h1>דוח מערכות</h1>
+      <div class="meta">טווח: ${label} · סטטוס: ${statusLabel} · סה"כ: ${rows.length}</div>
       <table>
-        <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
+        <thead><tr><th>מזהה</th><th>שם מערכת</th><th>סטטוס</th><th>נציג מטפל</th><th>פונה</th><th>הערות</th><th>עדכון אחרון</th></tr></thead>
         <tbody>${tableRows}</tbody>
       </table>
       <div class="footer">הופק ב-${new Date().toLocaleString("he-IL")}</div>
@@ -190,15 +192,13 @@ function Dashboard() {
       </body></html>`;
     const w = window.open("", "_blank");
     if (!w) { toast.error("חסום על ידי דפדפן — אפשר חלונות קופצים"); return; }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    w.document.open(); w.document.write(html); w.document.close();
   }
 
-  function exportCrmXlsx() {
-    const rows = filtered.filter((r: any) => r.status === "to_block" || r.status === "to_open");
-    if (!rows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח לייצוא"); return; }
-    const data = rows.map((r: any) => ({
+  function exportCrmXlsx(rows: any[], label: string) {
+    const filteredRows = rows.filter((r: any) => r.status === "to_block" || r.status === "to_open");
+    if (!filteredRows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
+    const data = filteredRows.map((r: any) => ({
       phone_number: buildDialNumber(r.system_code),
       caller_id: buildDialNumber(r.caller_phone || r.phone || r.system_code),
       active: 1,
@@ -208,15 +208,29 @@ function Dashboard() {
     const ws = XLSX.utils.json_to_sheet(data, { header: ["phone_number", "caller_id", "active", "call_type", "status"] });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "CRM");
-    XLSX.writeFile(wb, `crm_block_open_${new Date().toISOString().slice(0,10)}.xlsx`);
+    XLSX.writeFile(wb, `crm_block_open_${label}.xlsx`);
   }
 
-  function exportMenu() {
-    const choice = window.prompt("בחר ייצוא: 1=CSV, 2=PDF, 3=Excel CRM", "1");
-    if (choice === "1") exportCsv();
-    else if (choice === "2") exportPdf();
-    else if (choice === "3") exportCrmXlsx();
+  function exportFullXlsx(rows: any[], label: string) {
+    if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
+    const data = rows.map((r: any) => ({
+      "מזהה מערכת": r.system_code,
+      "שם": r.name,
+      "סטטוס": STATUS_LABEL[r.status as SystemStatus] || r.status,
+      "נציג מטפל": r.agent?.display_name || "",
+      "טלפון": r.phone || "",
+      "פונה": r.caller_phone || "",
+      "מקור": r.source || "",
+      "תת-מערכת של": r.parent ? `${r.parent.system_code} / ${r.parent.name}` : "",
+      "הערות": r.notes || "",
+      "עדכון אחרון": new Date(r.updated_at).toLocaleString("he-IL"),
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Systems");
+    XLSX.writeFile(wb, `systems_${label}.xlsx`);
   }
+
 
   return (
     <div className="space-y-6">
@@ -250,16 +264,9 @@ function Dashboard() {
           <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות · מציג {filtered.length}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportMenu} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Download className="h-4 w-4" />ייצוא
+          <button onClick={() => setShowExport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <Download className="h-4 w-4" />ייצוא לפי תאריכים
           </button>
-          <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-1 text-sm">
-            <input type="date" value={pdfDate} onChange={(e) => setPdfDate(e.target.value)}
-              className="bg-transparent text-sm outline-none px-1" aria-label="תאריך דוח PDF" />
-            <button onClick={exportPdf} className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium hover:bg-accent">
-              <Download className="h-3.5 w-3.5" />ייצוא PDF
-            </button>
-          </div>
           {me?.isAdmin && (
             <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               <Plus className="h-4 w-4" />הוסף מערכת
@@ -426,6 +433,21 @@ function Dashboard() {
           qc.invalidateQueries({ queryKey: ["systems"] });
           setShowCreate(false);
         }} />
+      )}
+
+      {showExport && (
+        <ExportModal
+          allRows={systems ?? []}
+          onClose={() => setShowExport(false)}
+          onExport={(format, fromIso, toIso, label) => {
+            const rows = filterByRange(systems ?? [], fromIso, toIso);
+            if (format === "csv") exportCsv(rows, label);
+            else if (format === "pdf") exportPdfRows(rows, label);
+            else if (format === "xlsx") exportFullXlsx(rows, label);
+            else if (format === "crm") exportCrmXlsx(rows, label);
+            setShowExport(false);
+          }}
+        />
       )}
     </div>
   );
@@ -668,6 +690,129 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+type ExportFormat = "csv" | "pdf" | "xlsx" | "crm";
+type RangePreset = "day" | "week" | "month" | "year" | "all" | "custom";
+
+function ExportModal({ allRows, onClose, onExport }: {
+  allRows: any[];
+  onClose: () => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string) => void;
+}) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [preset, setPreset] = useState<RangePreset>("month");
+  const [from, setFrom] = useState<string>(today);
+  const [to, setTo] = useState<string>(today);
+  const [format, setFormat] = useState<ExportFormat>("xlsx");
+
+  function computeRange(): { fromIso: string | null; toIso: string | null; label: string } {
+    if (preset === "all") return { fromIso: null, toIso: null, label: "all" };
+    if (preset === "custom") {
+      if (!from || !to) return { fromIso: null, toIso: null, label: "custom" };
+      return {
+        fromIso: new Date(from + "T00:00:00").toISOString(),
+        toIso: new Date(to + "T23:59:59.999").toISOString(),
+        label: `${from}_${to}`,
+      };
+    }
+    const now = new Date();
+    const start = new Date(now);
+    if (preset === "day") start.setHours(0, 0, 0, 0);
+    else if (preset === "week") start.setDate(now.getDate() - 7);
+    else if (preset === "month") start.setMonth(now.getMonth() - 1);
+    else if (preset === "year") start.setFullYear(now.getFullYear() - 1);
+    return { fromIso: start.toISOString(), toIso: now.toISOString(), label: preset };
+  }
+
+  const countInRange = (() => {
+    const { fromIso, toIso } = computeRange();
+    if (!fromIso && !toIso) return allRows.length;
+    const f = fromIso ? new Date(fromIso).getTime() : -Infinity;
+    const t = toIso ? new Date(toIso).getTime() : Infinity;
+    return allRows.filter((r) => {
+      const u = new Date(r.updated_at).getTime();
+      return u >= f && u <= t;
+    }).length;
+  })();
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-xl font-bold mb-1">ייצוא לפי תאריכים</h2>
+        <p className="text-xs text-muted-foreground mb-4">סינון לפי תאריך עדכון אחרון של המערכת</p>
+
+        <div className="space-y-4">
+          <div>
+            <label className="text-sm font-medium block mb-2">טווח תאריכים</label>
+            <div className="grid grid-cols-3 gap-2">
+              {([
+                { v: "day", l: "יומי" },
+                { v: "week", l: "שבועי" },
+                { v: "month", l: "חודשי" },
+                { v: "year", l: "שנתי" },
+                { v: "all", l: "הכל" },
+                { v: "custom", l: "בחירת תאריכים" },
+              ] as { v: RangePreset; l: string }[]).map((p) => (
+                <button key={p.v} type="button" onClick={() => setPreset(p.v)}
+                  className={`text-sm py-2 rounded-lg border ${preset === p.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                  {p.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {preset === "custom" && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">מתאריך</label>
+                <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">עד תאריך</label>
+                <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              </div>
+            </div>
+          )}
+
+          <div>
+            <label className="text-sm font-medium block mb-2">פורמט</label>
+            <div className="grid grid-cols-2 gap-2">
+              {([
+                { v: "xlsx", l: "Excel מלא" },
+                { v: "csv", l: "CSV" },
+                { v: "pdf", l: "PDF להדפסה" },
+                { v: "crm", l: "Excel CRM (חסום/פתוח)" },
+              ] as { v: ExportFormat; l: string }[]).map((f) => (
+                <button key={f.v} type="button" onClick={() => setFormat(f.v)}
+                  className={`text-sm py-2 rounded-lg border ${format === f.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                  {f.l}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+            יישלחו לייצוא: <strong>{countInRange}</strong> מערכות
+          </div>
+
+          <div className="flex gap-2 justify-end pt-2">
+            <button type="button" onClick={onClose}
+              className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
+            <button type="button" onClick={() => {
+              const { fromIso, toIso, label } = computeRange();
+              onExport(format, fromIso, toIso, label);
+            }}
+              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+              ייצא
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

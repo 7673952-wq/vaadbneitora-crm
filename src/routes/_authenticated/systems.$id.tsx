@@ -167,11 +167,18 @@ function SystemDetail() {
         <div className="grid md:grid-cols-2 gap-4 mt-6 pt-6 border-t border-current/20">
           <div>
             <label className="text-sm font-medium block mb-2">סטטוס</label>
-            <select value={s.status} onChange={(e) => updateMut.mutate({ data: { id, status: e.target.value } })}
+            <select value={s.status} onChange={(e) => {
+              const newStatus = e.target.value;
+              if (newStatus === s.status) return;
+              const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
+              if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
+              updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim() } });
+            }}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
+
           <div>
             <label className="text-sm font-medium block mb-2">נציג מטפל</label>
             <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })}
@@ -302,11 +309,17 @@ function SystemDetail() {
                     </>
                   )}
                 </div>
+                {a.reason && (
+                  <div className="text-xs mt-1 bg-amber-50 border border-amber-200 text-amber-900 rounded px-2 py-1 inline-block">
+                    סיבה: {a.reason}
+                  </div>
+                )}
                 <div className="text-xs text-muted-foreground mt-1">
                   {a.actor_name} · {new Date(a.created_at).toLocaleString("he-IL")}
                 </div>
               </div>
             ))}
+
           </div>
         </div>
       </div>

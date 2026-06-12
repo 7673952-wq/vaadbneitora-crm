@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),
@@ -32,9 +32,16 @@ function ManagerDashboard() {
 
   return (
     <div dir="rtl" className="space-y-6">
-      <div className="flex items-center gap-3">
-        <LayoutDashboard className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold">דשבורד מנהלים</h1>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <LayoutDashboard className="h-6 w-6 text-primary" />
+          <h1 className="text-2xl font-bold">דשבורד מנהלים</h1>
+        </div>
+        <Link to="/reports" className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90">
+          <BarChart3 className="h-4 w-4" />
+          דוחות מפורטים
+          <ArrowLeft className="h-4 w-4" />
+        </Link>
       </div>
 
       {/* KPI Cards */}

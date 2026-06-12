@@ -271,7 +271,7 @@ export type Database = {
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
     }
     Enums: {
-      app_role: "admin" | "agent"
+      app_role: "admin" | "agent" | "super_admin"
       system_status:
         | "open"
         | "closed"
@@ -413,7 +413,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "agent"],
+      app_role: ["admin", "agent", "super_admin"],
       system_status: [
         "open",
         "closed",

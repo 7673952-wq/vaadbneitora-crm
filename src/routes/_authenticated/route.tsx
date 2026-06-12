@@ -70,10 +70,11 @@ function AuthedLayout() {
 
   const nav = [
     { to: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
-    { to: "/reports", label: "דוחות", icon: BarChart3 },
     ...(me?.isAdmin ? [
-      { to: "/manager-dashboard", label: "מנהלים", icon: TrendingUp },
+      { to: "/manager-dashboard", label: "דשבורד מנהלים", icon: TrendingUp },
       { to: "/backups", label: "גיבויים", icon: Database },
+    ] : []),
+    ...(me?.isSuperAdmin ? [
       { to: "/admin", label: "ניהול", icon: Users },
     ] : []),
   ];
@@ -105,7 +106,7 @@ function AuthedLayout() {
           <div className="mr-auto flex items-center gap-3">
             <div className="text-sm">
               <div className="font-medium">{displayName}</div>
-              <div className="text-xs text-muted-foreground">{me?.isAdmin ? "מנהל" : "נציג"}</div>
+              <div className="text-xs text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : "נציג"}</div>
             </div>
             <button onClick={signOut} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-accent">
               <LogOut className="h-4 w-4" />

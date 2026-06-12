@@ -257,19 +257,24 @@ function SystemDetail() {
         </div>
 
         {/* Reminder */}
-        <div className="mt-4 pt-4 border-t border-current/20">
+        <div className="mt-4 pt-4 border-t border-current/20 space-y-3">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2 text-sm">
               <Bell className="h-4 w-4" />
               {s.reminder_at ? (
-                <span>תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong></span>
+                <span>
+                  תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
+                  {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
+                    <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
+                  )}
+                </span>
               ) : (
                 <span className="opacity-70">אין תזכורת מוגדרת</span>
               )}
             </div>
             <div className="flex items-center gap-1 flex-wrap">
               {(["day","week","month","2months","year"] as const).map((r) => (
-                <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r } })}
+                <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
                   className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
                   {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
                 </button>
@@ -277,7 +282,7 @@ function SystemDetail() {
               <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
                 className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
               <button disabled={!customDate}
-                onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString() } })}
+                onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
                 className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
               {s.reminder_at && (
                 <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
@@ -286,6 +291,46 @@ function SystemDetail() {
                 </button>
               )}
             </div>
+          </div>
+
+          {/* Agent targeting */}
+          <div className="text-xs space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="opacity-80">שיוך התזכורת:</span>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name="reminder-scope" checked={reminderScope === "all"}
+                  onChange={() => { setReminderScope("all"); setReminderAgentIds([]); }} />
+                כל הנציגים
+              </label>
+              <label className="flex items-center gap-1 cursor-pointer">
+                <input type="radio" name="reminder-scope" checked={reminderScope === "specific"}
+                  onChange={() => setReminderScope("specific")} />
+                נציגים נבחרים
+              </label>
+              {reminderScope === "specific" && (
+                <>
+                  <button type="button" onClick={() => setReminderAgentIds((agents ?? []).map((a: any) => a.id))}
+                    className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">סמן הכל</button>
+                  <button type="button" onClick={() => setReminderAgentIds([])}
+                    className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">נקה</button>
+                </>
+              )}
+            </div>
+            {reminderScope === "specific" && (
+              <div className="flex flex-wrap gap-2 p-2 border border-input rounded-md bg-background max-h-40 overflow-auto">
+                {(agents ?? []).map((a: any) => {
+                  const checked = reminderAgentIds.includes(a.id);
+                  return (
+                    <label key={a.id} className={`flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer ${checked ? "bg-primary text-primary-foreground border-primary" : "border-input hover:bg-accent"}`}>
+                      <input type="checkbox" className="hidden" checked={checked}
+                        onChange={(e) => setReminderAgentIds((prev) => e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id))} />
+                      {a.display_name}
+                    </label>
+                  );
+                })}
+                {(agents ?? []).length === 0 && <span className="opacity-70">אין נציגים זמינים</span>}
+              </div>
+            )}
           </div>
         </div>
       </div>

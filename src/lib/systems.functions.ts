@@ -150,10 +150,6 @@ export const createSystem = createServerFn({ method: "POST" })
     assigned_agent_id?: string | null; notes?: string; phone?: string;
     source?: string; caller_phone?: string;
   }) =>
-    system_code: string; name: string; status: string;
-    assigned_agent_id?: string | null; notes?: string; phone?: string;
-    source: string; caller_phone: string;
-  }) =>
     z.object({
       system_code: z.string().min(1).max(60),
       name: z.string().min(1).max(200),

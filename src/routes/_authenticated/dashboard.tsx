@@ -434,6 +434,21 @@ function Dashboard() {
           setShowCreate(false);
         }} />
       )}
+
+      {showExport && (
+        <ExportModal
+          allRows={systems ?? []}
+          onClose={() => setShowExport(false)}
+          onExport={(format, fromIso, toIso, label) => {
+            const rows = filterByRange(systems ?? [], fromIso, toIso);
+            if (format === "csv") exportCsv(rows, label);
+            else if (format === "pdf") exportPdfRows(rows, label);
+            else if (format === "xlsx") exportFullXlsx(rows, label);
+            else if (format === "crm") exportCrmXlsx(rows, label);
+            setShowExport(false);
+          }}
+        />
+      )}
     </div>
   );
 }

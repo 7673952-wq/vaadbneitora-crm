@@ -77,6 +77,36 @@ function BackupsPage() {
     }
   }
 
+  const [zipping, setZipping] = useState<string | null>(null);
+  async function downloadFolderZip(folder: string, files: { name: string }[]) {
+    try {
+      setZipping(folder);
+      const zip = new JSZip();
+      for (const f of files) {
+        const path = `${folder}/${f.name}`;
+        const { url } = await urlFn({ data: { path }, headers: await getAuthHeaders() });
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`הורדה נכשלה: ${f.name}`);
+        const blob = await resp.blob();
+        zip.file(f.name, blob);
+      }
+      const out = await zip.generateAsync({ type: "blob" });
+      const a = document.createElement("a");
+      const objUrl = URL.createObjectURL(out);
+      a.href = objUrl;
+      a.download = `backup-${folder}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objUrl);
+      toast.success("הזיפ הורד");
+    } catch (e: any) {
+      toast.error(e?.message ?? "שגיאה בהורדת הזיפ");
+    } finally {
+      setZipping(null);
+    }
+  }
+
   if (me && !me.isAdmin) {
     return (
       <div dir="rtl" className="max-w-2xl mx-auto mt-12 rounded-2xl border border-border bg-card p-8 text-center">
@@ -122,15 +152,26 @@ function BackupsPage() {
                     <div className="font-medium">{formatFolder(b.folder)}</div>
                     <div className="text-xs text-muted-foreground">{b.files.length} קבצים • {b.folder}</div>
                   </div>
-                  <button
-                    onClick={() => {
-                      if (confirm("למחוק את הגיבוי הזה?")) delMut.mutate(b.folder);
-                    }}
-                    className="text-destructive hover:bg-destructive/10 p-2 rounded-lg"
-                    title="מחק"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => downloadFolderZip(b.folder, b.files)}
+                      disabled={zipping === b.folder}
+                      className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
+                      title="הורד הכל כ-ZIP"
+                    >
+                      <Archive className="h-3.5 w-3.5" />
+                      {zipping === b.folder ? "מכין ZIP..." : "הורד הכל (ZIP)"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm("למחוק את הגיבוי הזה?")) delMut.mutate(b.folder);
+                      }}
+                      className="text-destructive hover:bg-destructive/10 p-2 rounded-lg"
+                      title="מחק"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {b.files.map((f) => {

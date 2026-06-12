@@ -366,7 +366,13 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 
       {!compact && (
         <div className="grid grid-cols-2 gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
-          <select value={r.status} onChange={(e) => onUpdate?.({ id: r.id, status: e.target.value })}
+          <select value={r.status} onChange={(e) => {
+            const newStatus = e.target.value;
+            if (newStatus === r.status) return;
+            const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
+            if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
+            onUpdate?.({ id: r.id, status: newStatus, reason: reason.trim() });
+          }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
@@ -377,6 +383,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
           </select>
         </div>
       )}
+
 
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-80">
         <span className="truncate">{r.agent?.display_name ?? "לא משויך"}</span>

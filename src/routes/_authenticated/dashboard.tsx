@@ -8,15 +8,14 @@ import {
 import { getMyRole } from "@/lib/admin.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
-  statusCardClasses, isPendingStatus, type SystemStatus,
+  statusCardClasses, type SystemStatus,
   CALLER_SOURCES, SOURCE_LABEL, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, FileSpreadsheet } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
 import * as XLSX from "xlsx";
-import { supabase } from "@/integrations/supabase/client";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -433,10 +432,10 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-80">
         <span className="truncate">{r.agent?.display_name ?? "לא משויך"}</span>
-        {r.phone && (
-          <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()}
+        {buildDialNumber(r.system_code) && (
+          <a href={`tel:${buildDialNumber(r.system_code)}`} onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
-            <Phone className="h-2.5 w-2.5" />חיוג
+            <Phone className="h-2.5 w-2.5" />ID
           </a>
         )}
       </div>
@@ -445,7 +444,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 }
 
 function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: "", name: "", status: "open", assigned_agent_id: "", notes: "", phone: "" });
+  const [form, setForm] = useState({ system_code: "", name: "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
@@ -478,6 +477,8 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
           parent_id: matchedParent.id,
           system_code: form.system_code,
           name: form.name.trim() || undefined,
+          source: form.source,
+          caller_phone: form.caller_phone,
         } });
         toast.success(`נוספה תת-מערכת למערכת "${matchedParent.name}"`);
       } else {
@@ -487,7 +488,9 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
           status: form.status,
           assigned_agent_id: form.assigned_agent_id || null,
           notes: form.notes,
-          phone: form.phone || undefined,
+          phone: buildDialNumber(form.system_code) || form.phone || undefined,
+          source: form.source,
+          caller_phone: form.caller_phone,
         } });
         toast.success("נוסף בהצלחה");
       }

@@ -4,8 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function assertAdmin(context: { supabase: any; userId: string }) {
   const { data: isAdmin } = await context.supabase.rpc("has_role", {
-    _user_id: context.userId,
-    _role: "admin",
+    _user_id: context.userId, _role: "admin",
   });
   if (!isAdmin) throw new Error("רק מנהל יכול לבצע פעולה זו");
 }
@@ -24,13 +23,10 @@ export const createUser = createServerFn({ method: "POST" })
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
-      email: data.email,
-      password: data.password,
-      email_confirm: true,
+      email: data.email, password: data.password, email_confirm: true,
       user_metadata: { display_name: data.display_name },
     });
     if (error) throw new Error(error.message);
-    // Override default role if needed (trigger adds 'agent' by default)
     if (data.role === "admin") {
       await supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: "admin" });
     }
@@ -63,6 +59,46 @@ export const setUserRole = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateUserDisplayName = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; display_name: string }) =>
+    z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("profiles").update({ display_name: data.display_name }).eq("id", data.user_id);
+    if (error) throw new Error(error.message);
+    await supabaseAdmin.auth.admin.updateUserById(data.user_id, { user_metadata: { display_name: data.display_name } });
+    return { ok: true };
+  });
+
+export const updateUserEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; email: string }) =>
+    z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const updateUserPassword = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; password: string }) =>
+    z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -78,7 +114,7 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
-      supabaseAdmin.from("profiles").select("id, display_name"),
+      supabaseAdmin.from("profiles").select("id, display_name, created_at"),
       supabaseAdmin.from("user_roles").select("user_id, role"),
       supabaseAdmin.auth.admin.listUsers(),
     ]);
@@ -88,12 +124,17 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
       arr.push(r.role);
       roleMap.set(r.user_id, arr);
     });
-    const emailMap = new Map<string, string>();
-    (usersList?.users ?? []).forEach((u: any) => { if (u.email) emailMap.set(u.id, u.email); });
-    return (profiles ?? []).map((p: any) => ({
-      id: p.id,
-      display_name: p.display_name,
-      email: emailMap.get(p.id) ?? "",
-      roles: roleMap.get(p.id) ?? [],
-    }));
+    const userMap = new Map<string, any>();
+    (usersList?.users ?? []).forEach((u: any) => userMap.set(u.id, u));
+    return (profiles ?? []).map((p: any) => {
+      const u = userMap.get(p.id);
+      return {
+        id: p.id,
+        display_name: p.display_name,
+        email: u?.email ?? "",
+        last_sign_in_at: u?.last_sign_in_at ?? null,
+        created_at: p.created_at,
+        roles: roleMap.get(p.id) ?? [],
+      };
+    });
   });

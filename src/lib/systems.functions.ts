@@ -11,14 +11,8 @@ const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
 async function isAdminUser(context: { supabase: any; userId: string }) {
-  const { data, error } = await context.supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", context.userId)
-    .eq("role", "admin")
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return !!data;
+  const { isAdminUserId } = await import("@/lib/admin-role.server");
+  return isAdminUserId(context.userId);
 }
 
 export const listSystems = createServerFn({ method: "POST" })

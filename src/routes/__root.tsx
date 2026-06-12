@@ -108,8 +108,20 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <StatusSettingsHydrator />
       <Outlet />
       <Toaster position="top-center" richColors dir="rtl" />
     </QueryClientProvider>
   );
+}
+
+function StatusSettingsHydrator() {
+  const fn = useServerFn(listStatusSettings);
+  const { data } = useQuery({
+    queryKey: ["status_settings"],
+    queryFn: () => fn(),
+    staleTime: 60_000,
+  });
+  useEffect(() => { if (data) applyStatusSettings(data as any); }, [data]);
+  return null;
 }

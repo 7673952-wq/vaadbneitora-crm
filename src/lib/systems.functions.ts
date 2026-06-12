@@ -3,24 +3,18 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const STATUS_VALUES = [
-  "pending_check_close",
-  "pending_check_open",
-  "open",
-  "to_open",
-  "closed",
-  "to_block",
-  "block_from_root",
-  "problem",
-  "open_only_bimot",
-  "close_only_bimot",
-  "open_in_simahedrin",
-  "close_in_simahedrin",
-  "send_to_yosela",
+  "pending_check_close", "pending_check_open", "open", "to_open", "closed",
+  "to_block", "block_from_root", "problem", "open_only_bimot", "close_only_bimot",
+  "open_in_simahedrin", "close_in_simahedrin", "send_to_yosela",
 ] as const;
-
 const statusSchema = z.enum(STATUS_VALUES);
-
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
+
+async function setReason(supabase: any, reason?: string | null) {
+  if (!reason) return;
+  // session-local config consumed by log_system_changes trigger
+  await supabase.rpc("set_change_reason", { p_reason: reason }).then(() => {}, () => {});
+}
 
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -28,7 +22,7 @@ export const listSystems = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     let q = context.supabase
       .from("systems")
-      .select("id, system_code, name, status, assigned_agent_id, notes, phone, reminder_at, handled_pending_at, parent_system_id, created_at, updated_at")
+      .select("id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at")
       .order("created_at", { ascending: false });
 
     if (data.status) q = q.eq("status", data.status as any);
@@ -42,16 +36,12 @@ export const listSystems = createServerFn({ method: "POST" })
       else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
       q = q.gte("updated_at", start.toISOString());
     }
-
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
 
-    const { data: profiles } = await context.supabase
-      .from("profiles")
-      .select("id, display_name");
+    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
     const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
 
-    // Build parent name map
     const parentIds = Array.from(new Set((rows ?? []).map((r) => r.parent_system_id).filter(Boolean) as string[]));
     let parentMap = new Map<string, { id: string; system_code: string; name: string }>();
     if (parentIds.length) {
@@ -59,7 +49,6 @@ export const listSystems = createServerFn({ method: "POST" })
         .from("systems").select("id, system_code, name").in("id", parentIds);
       parentMap = new Map((parents ?? []).map((p) => [p.id, p]));
     }
-
     return (rows ?? []).map((r) => ({
       ...r,
       agent: r.assigned_agent_id ? profileMap.get(r.assigned_agent_id) ?? null : null,
@@ -85,7 +74,7 @@ export const getSystem = createServerFn({ method: "POST" })
       .eq("parent_system_id", data.id).order("created_at", { ascending: true });
     const { data: activity } = await context.supabase
       .from("system_activity_log").select("*").eq("system_id", data.id)
-      .order("created_at", { ascending: false }).limit(200);
+      .order("created_at", { ascending: false }).limit(300);
     const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
 
     let parent: { id: string; system_code: string; name: string } | null = null;
@@ -94,13 +83,9 @@ export const getSystem = createServerFn({ method: "POST" })
         .from("systems").select("id, system_code, name").eq("id", sys.parent_system_id).maybeSingle();
       parent = p ?? null;
     }
-
     const pmap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
     return {
-      system: {
-        ...sys,
-        agent_name: sys.assigned_agent_id ? pmap.get(sys.assigned_agent_id) ?? null : null,
-      },
+      system: { ...sys, agent_name: sys.assigned_agent_id ? pmap.get(sys.assigned_agent_id) ?? null : null },
       parent,
       children: children ?? [],
       notes: (notes ?? []).map((n) => ({ ...n, author_name: pmap.get(n.author_id ?? "") ?? "לא ידוע" })),
@@ -113,7 +98,10 @@ export const getSystem = createServerFn({ method: "POST" })
       activity: (activity ?? []).map((a) => ({
         ...a,
         actor_name: a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת",
+        old_agent_name: a.field === "assigned_agent_id" && a.old_value ? pmap.get(a.old_value) ?? null : null,
+        new_agent_name: a.field === "assigned_agent_id" && a.new_value ? pmap.get(a.new_value) ?? null : null,
       })),
+      profiles: profiles ?? [],
     };
   });
 
@@ -127,236 +115,5 @@ export const addSubSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { data: parent, error: pe } = await context.supabase
-      .from("systems").select("id, name, assigned_agent_id, parent_system_id").eq("id", data.parent_id).maybeSingle();
-    if (pe) throw new Error(pe.message);
-    if (!parent) throw new Error("מערכת אב לא נמצאה");
-    if (parent.parent_system_id) {
-      throw new Error("לא ניתן להוסיף תת-מערכת בתוך תת-מערכת");
-    }
-
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId, _role: "admin",
-    });
-    if (!isAdmin && parent.assigned_agent_id !== context.userId) {
-      throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
-    }
-
-    const { data: row, error } = await context.supabase.from("systems").insert({
-      system_code: data.system_code,
-      name: data.name?.trim() || parent.name,
-      parent_system_id: data.parent_id,
-      status: "open",
-    }).select().single();
-    if (error) throw new Error(error.message);
-    return row;
-  });
-
-export const createSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_code: string; name: string; status: string; assigned_agent_id?: string | null; notes?: string; phone?: string }) =>
-    z.object({
-      system_code: z.string().min(1).max(60),
-      name: z.string().min(1).max(200),
-      status: statusSchema,
-      assigned_agent_id: z.string().uuid().nullable().optional(),
-      notes: z.string().max(2000).optional(),
-      phone: z.string().max(60).optional(),
-    }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId, _role: "admin",
-    });
-    if (!isAdmin) throw new Error("רק מנהל יכול להוסיף מערכות");
-    const { data: row, error } = await context.supabase.from("systems").insert({
-      system_code: data.system_code,
-      name: data.name,
-      status: data.status,
-      assigned_agent_id: data.assigned_agent_id ?? null,
-      notes: data.notes ?? null,
-      phone: data.phone || null,
-    }).select().single();
-    if (error) throw new Error(error.message);
-    return row;
-  });
-
-export const updateSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: {
-    id: string; status?: string; assigned_agent_id?: string | null;
-    name?: string; notes?: string; phone?: string | null;
-    reminder_at?: string | null;
-  }) =>
-    z.object({
-      id: z.string().uuid(),
-      status: statusSchema.optional(),
-      assigned_agent_id: z.string().uuid().nullable().optional(),
-      name: z.string().min(1).max(200).optional(),
-      notes: z.string().max(2000).optional(),
-      phone: z.string().max(60).nullable().optional(),
-      reminder_at: z.string().datetime().nullable().optional(),
-    }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    // AuthZ: admin or assigned agent
-    const { data: sys } = await context.supabase
-      .from("systems").select("id, assigned_agent_id").eq("id", data.id).maybeSingle();
-    if (!sys) throw new Error("מערכת לא נמצאה");
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId, _role: "admin",
-    });
-    if (!isAdmin && sys.assigned_agent_id !== context.userId) {
-      throw new Error("רק מנהל או הנציג המטפל יכולים לעדכן");
-    }
-
-    const { id, ...patch } = data;
-    const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
-    if (error) throw new Error(error.message);
-    return row;
-  });
-
-export const deleteSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId, _role: "admin",
-    });
-    if (!isAdmin) throw new Error("רק מנהל יכול למחוק מערכת");
-    const { error } = await context.supabase.from("systems").delete().eq("id", data.id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-export const addNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string; body: string }) =>
-    z.object({ system_id: z.string().uuid(), body: z.string().min(1).max(2000) }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { error } = await context.supabase.from("system_notes").insert({
-      system_id: data.system_id, body: data.body, author_id: context.userId,
-    });
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-export const setReminder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string; repeat?: string; custom_date?: string | null }) =>
-    z.object({
-      system_id: z.string().uuid(),
-      repeat: z.enum(REPEAT_VALUES).optional(),
-      custom_date: z.string().datetime().nullable().optional(),
-    }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    let when: Date | null = null;
-    if (data.repeat === "custom") {
-      if (!data.custom_date) throw new Error("יש לבחור תאריך");
-      when = new Date(data.custom_date);
-    } else if (data.repeat) {
-      when = new Date();
-      switch (data.repeat) {
-        case "day": when.setDate(when.getDate() + 1); break;
-        case "week": when.setDate(when.getDate() + 7); break;
-        case "month": when.setMonth(when.getMonth() + 1); break;
-        case "2months": when.setMonth(when.getMonth() + 2); break;
-        case "year": when.setFullYear(when.getFullYear() + 1); break;
-      }
-    }
-    const { error } = await context.supabase
-      .from("systems")
-      .update({ reminder_at: when ? when.toISOString() : null })
-      .eq("id", data.system_id);
-    if (error) throw new Error(error.message);
-    return { ok: true, reminder_at: when?.toISOString() ?? null };
-  });
-
-export const dismissReminder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
-  .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
-      .from("systems")
-      .update({ reminder_at: null })
-      .eq("id", data.system_id);
-    if (error) throw new Error(error.message);
-    return { ok: true };
-  });
-
-export const listDueReminders = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const nowIso = new Date().toISOString();
-    const { data, error } = await context.supabase
-      .from("systems")
-      .select("id, system_code, name, reminder_at")
-      .not("reminder_at", "is", null)
-      .lte("reminder_at", nowIso)
-      .order("reminder_at", { ascending: true })
-      .limit(50);
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
-
-export const setParent = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string; parent_system_id: string | null }) =>
-    z.object({
-      id: z.string().uuid(),
-      parent_system_id: z.string().uuid().nullable(),
-    }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", {
-      _user_id: context.userId, _role: "admin",
-    });
-    if (!isAdmin) throw new Error("רק מנהל יכול לשנות יחס מערכת/תת-מערכת");
-
-    if (data.parent_system_id === data.id) throw new Error("מערכת לא יכולה להיות אב של עצמה");
-
-    if (data.parent_system_id) {
-      // Validate parent is not itself a sub-system, and target has no children
-      const { data: parent } = await context.supabase
-        .from("systems").select("id, parent_system_id").eq("id", data.parent_system_id).maybeSingle();
-      if (!parent) throw new Error("מערכת אב לא נמצאה");
-      if (parent.parent_system_id) throw new Error("לא ניתן להפוך מערכת לתת-מערכת של תת-מערכת");
-
-      const { count } = await context.supabase
-        .from("systems").select("id", { count: "exact", head: true }).eq("parent_system_id", data.id);
-      if ((count ?? 0) > 0) {
-        throw new Error("לא ניתן להפוך מערכת בעלת תתי-מערכות לתת-מערכת");
-      }
-    }
-
-    const { data: row, error } = await context.supabase
-      .from("systems").update({ parent_system_id: data.parent_system_id }).eq("id", data.id).select().single();
-    if (error) throw new Error(error.message);
-    return row;
-  });
-
-export const listAgents = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data: profiles } = await context.supabase
-      .from("profiles")
-      .select("id, display_name");
-    return (profiles ?? []).map((p) => ({
-      id: p.id,
-      display_name: p.display_name,
-    }));
-  });
-
-export const listMainSystems = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("systems")
-      .select("id, system_code, name")
-      .is("parent_system_id", null)
-      .order("name", { ascending: true });
-    if (error) throw new Error(error.message);
-    return data ?? [];
-  });
+    const { data: parent } = await context.supabase
+      .from("systems").select("id, name, assigned_agent_

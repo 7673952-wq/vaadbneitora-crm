@@ -49,7 +49,7 @@ function AdminPage() {
       toast.success("משתמש נוצר");
       invalidate();
       setShowCreate(false);
-      setForm({ email: "", password: "", display_name: "", role: "agent" });
+      setForm({ email: "", password: "", display_name: "", role: "agent" as const });
     },
     onError: onErr,
   });

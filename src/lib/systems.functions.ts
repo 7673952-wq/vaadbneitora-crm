@@ -217,10 +217,21 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.system_code !== undefined && !isAdmin) {
       throw new Error("רק מנהל יכול לשנות את מזהה המערכת");
     }
-    await setReason(context.supabase, data.reason);
+    const startedAt = new Date().toISOString();
     const { id, reason: _r, ...patch } = data;
     const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
     if (error) throw new Error(error.message);
+    // PostgREST sends each call in its own transaction, so `set_config(..., true)`
+    // does not survive into the UPDATE's trigger. Patch the freshly-inserted
+    // activity rows with the reason directly.
+    if (data.reason && data.reason.trim()) {
+      await context.supabase
+        .from("system_activity_log")
+        .update({ reason: data.reason.trim() })
+        .eq("system_id", id)
+        .gte("created_at", startedAt)
+        .is("reason", null);
+    }
     return row;
   });
 

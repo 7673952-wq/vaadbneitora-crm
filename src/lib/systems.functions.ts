@@ -164,11 +164,13 @@ export const createSystem = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     if (!isAdmin) throw new Error("רק מנהל יכול להוסיף מערכות");
+    // Auto-assign the creator as the handling agent if none was selected.
+    const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: data.system_code,
       name: data.name,
       status: data.status,
-      assigned_agent_id: data.assigned_agent_id ?? null,
+      assigned_agent_id: assignedAgentId,
       notes: data.notes ?? null,
       phone: data.phone || null,
       source: data.source,
@@ -178,11 +180,12 @@ export const createSystem = createServerFn({ method: "POST" })
     return row;
   });
 
+
 export const updateSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {
     id: string; status?: string; assigned_agent_id?: string | null;
-    name?: string; notes?: string; phone?: string | null;
+    name?: string; system_code?: string; notes?: string; phone?: string | null;
     caller_phone?: string | null; source?: string | null; audio_url?: string | null;
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
     reason?: string;
@@ -192,6 +195,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       status: statusSchema.optional(),
       assigned_agent_id: z.string().uuid().nullable().optional(),
       name: z.string().min(1).max(200).optional(),
+      system_code: z.string().min(1).max(60).optional(),
       notes: z.string().max(2000).optional(),
       phone: z.string().max(60).nullable().optional(),
       caller_phone: z.string().max(60).nullable().optional(),
@@ -209,6 +213,9 @@ export const updateSystem = createServerFn({ method: "POST" })
     const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים לעדכן");
+    }
+    if (data.system_code !== undefined && !isAdmin) {
+      throw new Error("רק מנהל יכול לשנות את מזהה המערכת");
     }
     await setReason(context.supabase, data.reason);
     const { id, reason: _r, ...patch } = data;

@@ -32,6 +32,33 @@ export type Database = {
         }
         Relationships: []
       }
+      status_settings: {
+        Row: {
+          is_custom: boolean
+          label: string
+          sort_order: number
+          status_key: string
+          tone: string
+          updated_at: string
+        }
+        Insert: {
+          is_custom?: boolean
+          label: string
+          sort_order?: number
+          status_key: string
+          tone: string
+          updated_at?: string
+        }
+        Update: {
+          is_custom?: boolean
+          label?: string
+          sort_order?: number
+          status_key?: string
+          tone?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       system_activity_log: {
         Row: {
           action: string

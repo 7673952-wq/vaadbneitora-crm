@@ -1,4 +1,13 @@
-export const STATUS_OPTIONS = [
+// Status definitions. Defaults live here; admins can override label/tone/order
+// (and add custom statuses) at runtime via the status_settings table. The
+// exported arrays/objects below are MUTATED in place by `applyStatusSettings`
+// so existing consumers (which read `STATUS_LABEL[k]` / iterate `STATUS_OPTIONS`)
+// see the latest values on next render. Trigger a re-render by invalidating
+// affected queries after admin saves.
+
+export type StatusOption = { value: string; label: string; tone: string };
+
+const DEFAULT_STATUS_OPTIONS: StatusOption[] = [
   { value: "pending_check_close", label: "לבדיקה לחסימה", tone: "amber" },
   { value: "pending_check_open", label: "לבדיקה לפתיחה", tone: "teal" },
   { value: "open", label: "פתוח", tone: "green" },
@@ -12,19 +21,36 @@ export const STATUS_OPTIONS = [
   { value: "open_in_simahedrin", label: "לפתיחה בסימהדרין", tone: "cyan" },
   { value: "close_in_simahedrin", label: "לחסימה בסימהדרין", tone: "violet" },
   { value: "send_to_yosela", label: "לשלוח ליוסלה", tone: "fuchsia" },
+];
+
+// Mutable runtime arrays/maps. Imported by reference everywhere.
+export const STATUS_OPTIONS: StatusOption[] = [...DEFAULT_STATUS_OPTIONS];
+export const STATUS_LABEL: Record<string, string> = {};
+export const STATUS_TONE: Record<string, string> = {};
+function rebuildMaps() {
+  for (const k of Object.keys(STATUS_LABEL)) delete STATUS_LABEL[k];
+  for (const k of Object.keys(STATUS_TONE)) delete STATUS_TONE[k];
+  for (const s of STATUS_OPTIONS) {
+    STATUS_LABEL[s.value] = s.label;
+    STATUS_TONE[s.value] = s.tone;
+  }
+}
+rebuildMaps();
+
+export type SystemStatus = string;
+
+export function applyStatusSettings(rows: { status_key: string; label: string; tone: string; sort_order?: number }[]) {
+  if (!rows?.length) return;
+  const sorted = [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  STATUS_OPTIONS.length = 0;
+  for (const r of sorted) STATUS_OPTIONS.push({ value: r.status_key, label: r.label, tone: r.tone });
+  rebuildMaps();
+}
+
+export const AVAILABLE_TONES = [
+  "green", "lightgreen", "red", "lightred", "brightred", "amber", "yellow",
+  "teal", "orange", "sky", "indigo", "cyan", "violet", "fuchsia",
 ] as const;
-
-export type SystemStatus = (typeof STATUS_OPTIONS)[number]["value"];
-
-export const STATUS_LABEL: Record<SystemStatus, string> = STATUS_OPTIONS.reduce(
-  (acc, s) => ({ ...acc, [s.value]: s.label }),
-  {} as Record<SystemStatus, string>,
-);
-
-export const STATUS_TONE: Record<SystemStatus, string> = STATUS_OPTIONS.reduce(
-  (acc, s) => ({ ...acc, [s.value]: s.tone }),
-  {} as Record<SystemStatus, string>,
-);
 
 // Small badge/chip — keep contrast distinct
 export function toneClasses(tone: string): string {
@@ -69,7 +95,7 @@ export function cardToneClasses(tone: string): string {
 }
 
 export function statusCardClasses(status: string): string {
-  return cardToneClasses(STATUS_TONE[status as SystemStatus] ?? "default");
+  return cardToneClasses(STATUS_TONE[status] ?? "default");
 }
 
 export const PENDING_STATUSES: SystemStatus[] = ["pending_check_close", "pending_check_open"];

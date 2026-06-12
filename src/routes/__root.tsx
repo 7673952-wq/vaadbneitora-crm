@@ -8,10 +8,14 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
+import { applyStatusSettings } from "@/lib/status";
+import { listStatusSettings } from "@/lib/admin.functions";
+import { useServerFn } from "@tanstack/react-start";
 import { Toaster } from "sonner";
 
 function NotFoundComponent() {
@@ -104,8 +108,22 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <StatusSettingsHydrator />
       <Outlet />
       <Toaster position="top-center" richColors dir="rtl" />
     </QueryClientProvider>
   );
+}
+
+function StatusSettingsHydrator() {
+  const fn = useServerFn(listStatusSettings);
+  const { data } = useQuery({
+    queryKey: ["status_settings"],
+    queryFn: () => fn(),
+    staleTime: 60_000,
+    retry: false,
+    throwOnError: false,
+  });
+  useEffect(() => { if (data) applyStatusSettings(data as any); }, [data]);
+  return null;
 }

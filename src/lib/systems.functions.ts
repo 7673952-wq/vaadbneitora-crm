@@ -164,11 +164,13 @@ export const createSystem = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     if (!isAdmin) throw new Error("רק מנהל יכול להוסיף מערכות");
+    // Auto-assign the creator as the handling agent if none was selected.
+    const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: data.system_code,
       name: data.name,
       status: data.status,
-      assigned_agent_id: data.assigned_agent_id ?? null,
+      assigned_agent_id: assignedAgentId,
       notes: data.notes ?? null,
       phone: data.phone || null,
       source: data.source,
@@ -177,6 +179,7 @@ export const createSystem = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return row;
   });
+
 
 export const updateSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

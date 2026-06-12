@@ -3,16 +3,17 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
-  listDueReminders, dismissReminder,
+  listDueReminders, dismissReminder, findSystemByName, addSubSystem,
 } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
   statusCardClasses, isPendingStatus, type SystemStatus,
 } from "@/lib/status";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "דשבורד | CRM" }] }),
@@ -218,14 +219,20 @@ function Dashboard() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        {STATUS_OPTIONS.slice(0, 6).map((s) => (
-          <div key={s.value} className={`border-2 rounded-xl p-4 ${statusCardClasses(s.value)}`}>
-            <div className="text-xs opacity-80">{s.label}</div>
-            <div className="text-2xl font-bold mt-1">{stats[s.value] ?? 0}</div>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {STATUS_OPTIONS.map((s) => {
+          const active = status === s.value;
+          return (
+            <button key={s.value} type="button"
+              onClick={() => setStatus(active ? "" : s.value)}
+              className={`border-2 rounded-xl p-3 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
+              <div className="text-xs opacity-80 truncate">{s.label}</div>
+              <div className="text-2xl font-bold mt-1">{stats[s.value] ?? 0}</div>
+            </button>
+          );
+        })}
       </div>
+
 
       {/* Filters */}
       <div className="bg-card border border-border rounded-xl p-4 flex flex-wrap items-center gap-3">

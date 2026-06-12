@@ -127,8 +127,6 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
       arr.push(r.role);
       roleMap.set(r.user_id, arr);
     });
-    const userMap = new Map<string, any>();
-    (usersList?.users ?? []).forEach((u: any) => userMap.set(u.id, u));
     const profileMap = new Map<string, any>();
     (profiles ?? []).forEach((p: any) => profileMap.set(p.id, p));
     return (usersList?.users ?? []).map((u: any) => {

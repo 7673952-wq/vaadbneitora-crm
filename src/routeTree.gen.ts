@@ -14,6 +14,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
+import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 
 const AuthRoute = AuthRouteImport.update({
@@ -40,6 +41,12 @@ const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicWeeklyCrmReportRoute =
+  ApiPublicWeeklyCrmReportRouteImport.update({
+    id: '/api/public/weekly-crm-report',
+    path: '/api/public/weekly-crm-report',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
   id: '/systems/$id',
   path: '/systems/$id',
@@ -52,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
+  '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -59,6 +67,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
+  '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -68,12 +77,25 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
+  '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/admin' | '/dashboard' | '/systems/$id'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/admin'
+    | '/dashboard'
+    | '/systems/$id'
+    | '/api/public/weekly-crm-report'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/admin' | '/dashboard' | '/systems/$id'
+  to:
+    | '/'
+    | '/auth'
+    | '/admin'
+    | '/dashboard'
+    | '/systems/$id'
+    | '/api/public/weekly-crm-report'
   id:
     | '__root__'
     | '/'
@@ -82,12 +104,14 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/dashboard'
     | '/_authenticated/systems/$id'
+    | '/api/public/weekly-crm-report'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicWeeklyCrmReportRoute: typeof ApiPublicWeeklyCrmReportRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -127,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/weekly-crm-report': {
+      id: '/api/public/weekly-crm-report'
+      path: '/api/public/weekly-crm-report'
+      fullPath: '/api/public/weekly-crm-report'
+      preLoaderRoute: typeof ApiPublicWeeklyCrmReportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/systems/$id': {
       id: '/_authenticated/systems/$id'
       path: '/systems/$id'
@@ -156,7 +187,18 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicWeeklyCrmReportRoute: ApiPublicWeeklyCrmReportRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

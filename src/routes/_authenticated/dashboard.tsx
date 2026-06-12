@@ -302,17 +302,15 @@ function Dashboard() {
       </div>
 
       {showCreate && me?.isAdmin && (
-        <CreateModal onClose={() => setShowCreate(false)} agents={agents ?? []} onCreate={(d) => {
-          createFn({ data: d }).then(() => {
-            qc.invalidateQueries({ queryKey: ["systems"] });
-            toast.success("נוסף בהצלחה");
-            setShowCreate(false);
-          }).catch((e) => toast.error(e.message));
+        <CreateModal onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
+          qc.invalidateQueries({ queryKey: ["systems"] });
+          setShowCreate(false);
         }} />
       )}
     </div>
   );
 }
+
 
 function PendingGroup({ title, items, agents, onUpdate }: { title: string; items: any[]; agents: any[]; onUpdate: (d: any) => void }) {
   return (

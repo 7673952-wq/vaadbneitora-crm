@@ -85,6 +85,25 @@ function Dashboard() {
     .map((s, i) => ({ name: s.label, value: stats[s.value] ?? 0, color: PIE_COLORS[i % PIE_COLORS.length] }))
     .filter((item) => item.value > 0), [stats]);
 
+  const agentChartData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    (systems ?? []).forEach((s: any) => {
+      const n = s.agent?.display_name ?? "לא משויך";
+      counts[n] = (counts[n] || 0) + 1;
+    });
+    return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [systems]);
+
+  const trendData = useMemo(() => {
+    const buckets: Record<string, number> = {};
+    (systems ?? []).forEach((s: any) => {
+      const d = new Date(s.updated_at);
+      const key = `${d.getMonth() + 1}/${d.getDate()}`;
+      buckets[key] = (buckets[key] || 0) + 1;
+    });
+    return Object.entries(buckets).slice(-14).map(([name, value]) => ({ name, value }));
+  }, [systems]);
+
   // Pending sections
   const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
   const pendingOpen = filtered.filter((r: any) => r.status === "pending_check_open");

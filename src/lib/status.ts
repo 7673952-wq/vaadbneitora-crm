@@ -36,6 +36,7 @@ export function toneClasses(tone: string): string {
     case "brightred":  return "bg-red-700 text-white border border-red-900";
     case "amber":      return "bg-amber-200 text-amber-950 border border-amber-400";
     case "yellow":     return "bg-yellow-200 text-yellow-950 border border-yellow-400";
+    case "teal":       return "bg-teal-200 text-teal-950 border border-teal-500";
     case "orange":     return "bg-orange-200 text-orange-950 border border-orange-400";
     case "sky":        return "bg-sky-200 text-sky-950 border border-sky-400";
     case "indigo":     return "bg-indigo-200 text-indigo-50 border border-indigo-400";

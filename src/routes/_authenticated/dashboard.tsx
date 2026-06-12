@@ -9,7 +9,7 @@ import { getMyRole } from "@/lib/admin.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
   statusCardClasses, type SystemStatus,
-  CALLER_SOURCES, SOURCE_LABEL, buildDialNumber,
+  CALLER_SOURCES, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -536,7 +536,21 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
           <div>
             <label className="text-sm font-medium block mb-1">טלפון לחיוג (אופציונלי)</label>
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="נוצר אוטומטית לפי מזהה המערכת"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">טלפון פונה</label>
+            <input required value={form.caller_phone} onChange={(e) => setForm({ ...form, caller_phone: e.target.value })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">מקור</label>
+            <select required value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+              <option value="">— בחר מקור —</option>
+              {CALLER_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
           </div>
           {!matchedParent && (
             <>

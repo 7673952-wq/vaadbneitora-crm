@@ -148,6 +148,10 @@ export const createSystem = createServerFn({ method: "POST" })
   .inputValidator((d: {
     system_code: string; name: string; status: string;
     assigned_agent_id?: string | null; notes?: string; phone?: string;
+    source?: string; caller_phone?: string;
+  }) =>
+    system_code: string; name: string; status: string;
+    assigned_agent_id?: string | null; notes?: string; phone?: string;
     source: string; caller_phone: string;
   }) =>
     z.object({

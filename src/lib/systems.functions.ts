@@ -254,13 +254,14 @@ export const transferAgent = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("systems").update({ assigned_agent_id: data.to_agent_id }).eq("id", data.id);
     if (error) throw new Error(error.message);
     if (data.reason && data.reason.trim()) {
-      await context.supabase
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
         .from("system_activity_log")
         .update({ reason: data.reason.trim() })
         .eq("system_id", data.id)
         .gte("created_at", startedAt)
         .is("reason", null);
-      await context.supabase
+      await supabaseAdmin
         .from("system_transfers")
         .update({ reason: data.reason.trim() })
         .eq("system_id", data.id)

@@ -283,17 +283,71 @@ function Dashboard() {
         })}
       </div>
 
-      {chartData.length > 0 && (
+      {(chartData.length > 0 || agentChartData.length > 0) && (
+        <div className="grid lg:grid-cols-3 gap-4">
+          {chartData.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
+                      {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {chartData.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">כמות לפי סטטוס</h2>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} interval={0} angle={-25} textAnchor="end" height={60} />
+                    <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="value">
+                      {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {agentChartData.length > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4">
+              <h2 className="text-sm font-semibold text-muted-foreground mb-3">מערכות לפי נציג</h2>
+              <div className="h-56">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={agentChartData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                    <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={90} />
+                    <Tooltip />
+                    <Bar dataKey="value" fill="#4f46e5" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {trendData.length > 1 && (
         <div className="bg-card border border-border rounded-xl p-4">
-          <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
-          <div className="h-56">
+          <h2 className="text-sm font-semibold text-muted-foreground mb-3">פעילות לפי תאריך (עדכון אחרון)</h2>
+          <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
-                  {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                </Pie>
+              <BarChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
                 <Tooltip />
-              </PieChart>
+                <Bar dataKey="value" fill="#0891b2" />
+              </BarChart>
             </ResponsiveContainer>
           </div>
         </div>

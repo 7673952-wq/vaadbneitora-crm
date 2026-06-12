@@ -249,9 +249,23 @@ export const transferAgent = createServerFn({ method: "POST" })
     const { data: sys } = await context.supabase.from("systems").select("assigned_agent_id").eq("id", data.id).maybeSingle();
     if (!sys) throw new Error("מערכת לא נמצאה");
     if (!isAdmin && sys.assigned_agent_id !== context.userId) throw new Error("רק מנהל או הנציג הנוכחי יכולים להעביר");
-    await setReason(context.supabase, data.reason);
+    const startedAt = new Date().toISOString();
     const { error } = await context.supabase.from("systems").update({ assigned_agent_id: data.to_agent_id }).eq("id", data.id);
     if (error) throw new Error(error.message);
+    if (data.reason && data.reason.trim()) {
+      await context.supabase
+        .from("system_activity_log")
+        .update({ reason: data.reason.trim() })
+        .eq("system_id", data.id)
+        .gte("created_at", startedAt)
+        .is("reason", null);
+      await context.supabase
+        .from("system_transfers")
+        .update({ reason: data.reason.trim() })
+        .eq("system_id", data.id)
+        .gte("created_at", startedAt)
+        .is("reason", null);
+    }
     return { ok: true };
   });
 

@@ -7,6 +7,7 @@ import {
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
+import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState } from "react";
 import { toast } from "sonner";
 import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus } from "lucide-react";
@@ -27,10 +28,10 @@ function AdminPage() {
   const emailFn = useServerFn(updateUserEmail);
   const pwFn = useServerFn(updateUserPassword);
 
-  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: users, error: usersError, isLoading: usersLoading } = useQuery({
     queryKey: ["agents"],
-    queryFn: () => agentsFn(),
+    queryFn: async () => agentsFn({ headers: await getAuthHeaders() }),
     enabled: me?.isAdmin === true,
   });
 
@@ -39,10 +40,11 @@ function AdminPage() {
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["agents"] });
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
   const onErr = (e: any) => toast.error(e.message);
 
   const createMut = useMutation({
-    mutationFn: createFn,
+    mutationFn: (vars: any) => withAuth(createFn, vars),
     onSuccess: () => {
       toast.success("משתמש נוצר");
       invalidate();
@@ -51,11 +53,11 @@ function AdminPage() {
     },
     onError: onErr,
   });
-  const deleteMut = useMutation({ mutationFn: deleteFn, onSuccess: () => { toast.success("נמחק"); invalidate(); }, onError: onErr });
-  const roleMut = useMutation({ mutationFn: roleFn, onSuccess: () => { toast.success("הרשאה עודכנה"); invalidate(); }, onError: onErr });
-  const nameMut = useMutation({ mutationFn: nameFn, onSuccess: () => { toast.success("שם עודכן"); invalidate(); setEditing(null); }, onError: onErr });
-  const emailMut = useMutation({ mutationFn: emailFn, onSuccess: () => { toast.success('דוא"ל עודכן'); invalidate(); setEditing(null); }, onError: onErr });
-  const pwMut = useMutation({ mutationFn: pwFn, onSuccess: () => { toast.success("סיסמה עודכנה"); invalidate(); setEditing(null); }, onError: onErr });
+  const deleteMut = useMutation({ mutationFn: (vars: any) => withAuth(deleteFn, vars), onSuccess: () => { toast.success("נמחק"); invalidate(); }, onError: onErr });
+  const roleMut = useMutation({ mutationFn: (vars: any) => withAuth(roleFn, vars), onSuccess: () => { toast.success("הרשאה עודכנה"); invalidate(); }, onError: onErr });
+  const nameMut = useMutation({ mutationFn: (vars: any) => withAuth(nameFn, vars), onSuccess: () => { toast.success("שם עודכן"); invalidate(); setEditing(null); }, onError: onErr });
+  const emailMut = useMutation({ mutationFn: (vars: any) => withAuth(emailFn, vars), onSuccess: () => { toast.success('דוא"ל עודכן'); invalidate(); setEditing(null); }, onError: onErr });
+  const pwMut = useMutation({ mutationFn: (vars: any) => withAuth(pwFn, vars), onSuccess: () => { toast.success("סיסמה עודכנה"); invalidate(); setEditing(null); }, onError: onErr });
 
 
   if (meLoading) {
@@ -214,21 +216,23 @@ function StatusSettingsPanel() {
   const listFn = useServerFn(listStatusSettings);
   const upsertFn = useServerFn(upsertStatusSetting);
   const delFn = useServerFn(deleteStatusSetting);
-  const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: () => listFn() });
+  const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
 
   const refresh = async () => {
-    const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: () => listFn() });
+    const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
     applyStatusSettings(fresh as any);
     qc.invalidateQueries({ queryKey: ["systems"] });
   };
 
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+
   const upsertMut = useMutation({
-    mutationFn: upsertFn,
+    mutationFn: (vars: any) => withAuth(upsertFn, vars),
     onSuccess: async () => { await refresh(); toast.success("נשמר"); },
     onError: (e: any) => toast.error(e.message),
   });
   const delMut = useMutation({
-    mutationFn: delFn,
+    mutationFn: (vars: any) => withAuth(delFn, vars),
     onSuccess: async () => { await refresh(); toast.success("נמחק"); },
     onError: (e: any) => toast.error(e.message),
   });

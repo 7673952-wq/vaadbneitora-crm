@@ -15,6 +15,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { applyStatusSettings } from "@/lib/status";
 import { listStatusSettings } from "@/lib/admin.functions";
+import { getAuthHeaders } from "@/lib/auth-headers";
 import { useServerFn } from "@tanstack/react-start";
 import { Toaster } from "sonner";
 
@@ -127,7 +128,7 @@ function StatusSettingsHydrator() {
   }, []);
   const { data } = useQuery({
     queryKey: ["status_settings"],
-    queryFn: () => fn(),
+    queryFn: async () => fn({ headers: await getAuthHeaders() }),
     enabled: hasSession,
     staleTime: 60_000,
     retry: false,

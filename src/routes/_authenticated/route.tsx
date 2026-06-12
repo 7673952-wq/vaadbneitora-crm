@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
+import { getAuthHeaders } from "@/lib/auth-headers";
 import { LayoutDashboard, Users, LogOut } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated")({
@@ -23,7 +24,7 @@ function AuthedLayout() {
   const [sessionReady, setSessionReady] = useState(false);
   const { data: me } = useQuery({
     queryKey: ["me"],
-    queryFn: () => myRoleFn(),
+    queryFn: async () => myRoleFn({ headers: await getAuthHeaders() }),
     enabled: sessionReady,
     retry: false,
     throwOnError: false,

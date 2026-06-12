@@ -396,54 +396,130 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
   );
 }
 
-function CreateModal({ onClose, agents, onCreate }: { onClose: () => void; agents: any[]; onCreate: (d: any) => void }) {
+function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: "", name: "", status: "open", assigned_agent_id: "", notes: "", phone: "" });
+  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [matchedParent, setMatchedParent] = useState<any | null>(null);
+  const [busy, setBusy] = useState(false);
+  const findFn = useServerFn(findSystemByName);
+  const createFn = useServerFn(createSystem);
+  const subFn = useServerFn(addSubSystem);
+
+  useEffect(() => {
+    const v = form.name.trim();
+    if (v.length < 2) { setSuggestions([]); setMatchedParent(null); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const rows = await findFn({ data: { name: v } });
+        if (cancelled) return;
+        setSuggestions(rows ?? []);
+        const exact = (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+        setMatchedParent(exact ?? null);
+      } catch { /* ignore */ }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [form.name, findFn]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      if (matchedParent) {
+        await subFn({ data: {
+          parent_id: matchedParent.id,
+          system_code: form.system_code,
+          name: form.name.trim() || undefined,
+        } });
+        toast.success(`נוספה תת-מערכת למערכת "${matchedParent.name}"`);
+      } else {
+        await createFn({ data: {
+          system_code: form.system_code,
+          name: form.name,
+          status: form.status,
+          assigned_agent_id: form.assigned_agent_id || null,
+          notes: form.notes,
+          phone: form.phone || undefined,
+        } });
+        toast.success("נוסף בהצלחה");
+      }
+      onDone();
+    } catch (e: any) {
+      toast.error(e.message);
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-xl font-bold mb-4">הוספת מערכת חדשה</h2>
-        <form onSubmit={(e) => { e.preventDefault(); onCreate({ ...form, assigned_agent_id: form.assigned_agent_id || null, phone: form.phone || undefined }); }} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="text-sm font-medium block mb-1">מזהה מערכת</label>
+            <label className="text-sm font-medium block mb-1">מזהה מערכת (מספר לחיוג)</label>
             <input required value={form.system_code} onChange={(e) => setForm({ ...form, system_code: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
           </div>
-          <div>
+          <div className="relative">
             <label className="text-sm font-medium block mb-1">שם המערכת</label>
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              autoComplete="off"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            {suggestions.length > 0 && form.name.trim().length >= 2 && (
+              <div className="absolute z-10 left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                {suggestions.map((s: any) => (
+                  <button type="button" key={s.id}
+                    onClick={() => setForm({ ...form, name: s.name })}
+                    className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center justify-between gap-2">
+                    <span className="truncate"><span className="font-mono text-xs text-muted-foreground">{s.system_code}</span> · {s.name}</span>
+                    {s.parent_system_id && <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+            {matchedParent && (
+              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2">
+                שם זה כבר קיים — היצירה תתבצע כ-<strong>תת-מערכת</strong> תחת "{matchedParent.name}".
+              </div>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium block mb-1">טלפון לחיוג (אופציונלי)</label>
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
           </div>
-          <div>
-            <label className="text-sm font-medium block mb-1">סטטוס</label>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium block mb-1">נציג מטפל</label>
-            <select value={form.assigned_agent_id} onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-              <option value="">— לא משויך —</option>
-              {agents.map((a) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-sm font-medium block mb-1">הערות</label>
-            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-          </div>
+          {!matchedParent && (
+            <>
+              <div>
+                <label className="text-sm font-medium block mb-1">סטטוס</label>
+                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">נציג מטפל</label>
+                <select value={form.assigned_agent_id} onChange={(e) => setForm({ ...form, assigned_agent_id: e.target.value })}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                  <option value="">— לא משויך —</option>
+                  {agents.map((a) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">הערות</label>
+                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              </div>
+            </>
+          )}
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
-            <button type="submit" className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">הוסף</button>
+            <button type="submit" disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+              {busy ? "..." : matchedParent ? "הוסף תת-מערכת" : "הוסף"}
+            </button>
           </div>
         </form>
       </div>
     </div>
   );
 }
+

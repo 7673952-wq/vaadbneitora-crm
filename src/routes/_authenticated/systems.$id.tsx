@@ -618,24 +618,3 @@ function formatValue(field: string, value: string | null): string {
   return value;
 }
 
-function TabsNav({ tab, setTab }: { tab: TabKey; setTab: (t: TabKey) => void }) {
-  const tabs: { key: TabKey; label: string; icon: any }[] = [
-    { key: "details", label: "פרטים", icon: Info },
-    { key: "tracking", label: "מעקבים", icon: Bell },
-    { key: "history", label: "היסטוריה", icon: History },
-    { key: "subs", label: "תתי-מערכות", icon: Network },
-    { key: "files", label: "קבצים", icon: Paperclip },
-  ];
-  return (
-    <div className="flex flex-wrap gap-1 bg-card border border-border rounded-2xl p-1">
-      {tabs.map(({ key, label, icon: Icon }) => (
-        <button key={key} onClick={() => setTab(key)}
-          className={`flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-xl transition ${
-            tab === key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-          }`}>
-          <Icon className="h-4 w-4" />{label}
-        </button>
-      ))}
-    </div>
-  );
-}

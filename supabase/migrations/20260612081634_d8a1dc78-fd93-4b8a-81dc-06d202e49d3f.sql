@@ -1,0 +1,2 @@
+ALTER TABLE public.system_activity_log DROP CONSTRAINT IF EXISTS system_activity_log_system_id_fkey;
+ALTER TABLE public.system_activity_log ADD CONSTRAINT system_activity_log_system_id_fkey FOREIGN KEY (system_id) REFERENCES public.systems(id) ON DELETE SET NULL;

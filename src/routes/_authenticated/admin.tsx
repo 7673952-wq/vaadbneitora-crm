@@ -33,11 +33,7 @@ function AdminPage() {
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["agents"] });
-  const mkMut = (fn: any, msg: string) => useMutation({
-    mutationFn: fn,
-    onSuccess: () => { toast.success(msg); invalidate(); setEditing(null); },
-    onError: (e: any) => toast.error(e.message),
-  });
+  const onErr = (e: any) => toast.error(e.message);
 
   const createMut = useMutation({
     mutationFn: createFn,
@@ -47,13 +43,14 @@ function AdminPage() {
       setShowCreate(false);
       setForm({ email: "", password: "", display_name: "", role: "agent" });
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: onErr,
   });
-  const deleteMut = mkMut(deleteFn, "נמחק");
-  const roleMut = mkMut(roleFn, "הרשאה עודכנה");
-  const nameMut = mkMut(nameFn, "שם עודכן");
-  const emailMut = mkMut(emailFn, 'דוא"ל עודכן');
-  const pwMut = mkMut(pwFn, "סיסמה עודכנה");
+  const deleteMut = useMutation({ mutationFn: deleteFn, onSuccess: () => { toast.success("נמחק"); invalidate(); }, onError: onErr });
+  const roleMut = useMutation({ mutationFn: roleFn, onSuccess: () => { toast.success("הרשאה עודכנה"); invalidate(); }, onError: onErr });
+  const nameMut = useMutation({ mutationFn: nameFn, onSuccess: () => { toast.success("שם עודכן"); invalidate(); setEditing(null); }, onError: onErr });
+  const emailMut = useMutation({ mutationFn: emailFn, onSuccess: () => { toast.success('דוא"ל עודכן'); invalidate(); setEditing(null); }, onError: onErr });
+  const pwMut = useMutation({ mutationFn: pwFn, onSuccess: () => { toast.success("סיסמה עודכנה"); invalidate(); setEditing(null); }, onError: onErr });
+
 
   if (me && !me.isAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -105,8 +102,9 @@ function AdminPage() {
               return (
                 <tr key={u.id} className="border-b border-border last:border-0 align-top">
                   <td className="px-4 py-3">
-                    {editingThis && editing.field === "name" ? (
+                    {editingThis && editing?.field === "name" ? (
                       <EditRow value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
+
                     ) : (
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{u.display_name}</span>
@@ -115,7 +113,7 @@ function AdminPage() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    {editingThis && editing.field === "email" ? (
+                    {editingThis && editing?.field === "email" ? (
                       <EditRow type="email" value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
                     ) : (
                       <div className="flex items-center gap-2">
@@ -123,12 +121,13 @@ function AdminPage() {
                         <button onClick={() => startEdit(u, "email")} className="text-muted-foreground hover:text-foreground"><Mail className="h-3 w-3" /></button>
                       </div>
                     )}
-                    {editingThis && editing.field === "password" && (
+                    {editingThis && editing?.field === "password" && (
                       <div className="mt-2">
                         <EditRow type="text" placeholder="סיסמה חדשה (מינ׳ 6)" value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
                       </div>
                     )}
                   </td>
+
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <select value={isAdmin ? "admin" : "agent"} disabled={u.id === me?.userId}

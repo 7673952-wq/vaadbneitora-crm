@@ -108,6 +108,12 @@ function SystemDetail() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  useEffect(() => {
+    const ids: string[] = (data?.system as any)?.reminder_agent_ids ?? [];
+    setReminderAgentIds(ids);
+    setReminderScope(ids.length === 0 ? "all" : "specific");
+  }, [data?.system?.id]);
+
   if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
   const s = data.system;
   const isSub = !!s.parent_system_id;

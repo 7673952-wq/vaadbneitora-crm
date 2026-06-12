@@ -309,11 +309,17 @@ function SystemDetail() {
                     </>
                   )}
                 </div>
+                {a.reason && (
+                  <div className="text-xs mt-1 bg-amber-50 border border-amber-200 text-amber-900 rounded px-2 py-1 inline-block">
+                    סיבה: {a.reason}
+                  </div>
+                )}
                 <div className="text-xs text-muted-foreground mt-1">
                   {a.actor_name} · {new Date(a.created_at).toLocaleString("he-IL")}
                 </div>
               </div>
             ))}
+
           </div>
         </div>
       </div>

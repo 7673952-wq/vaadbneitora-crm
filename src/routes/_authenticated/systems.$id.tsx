@@ -8,14 +8,18 @@ import {
 } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import {
+  listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
+} from "@/lib/system-files.functions";
+import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
   type SystemStatus,
 } from "@/lib/status";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
+  Info, Paperclip, Upload, Download, FileText,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -23,6 +27,8 @@ export const Route = createFileRoute("/_authenticated/systems/$id")({
   head: () => ({ meta: [{ title: "מערכת | CRM" }] }),
   component: SystemDetail,
 });
+
+type TabKey = "details" | "tracking" | "history" | "subs" | "files";
 
 const FIELD_LABELS: Record<string, string> = {
   status: "סטטוס",

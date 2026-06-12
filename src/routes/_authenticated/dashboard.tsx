@@ -44,6 +44,7 @@ function Dashboard() {
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
+  const [showExport, setShowExport] = useState(false);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });

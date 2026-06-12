@@ -30,7 +30,7 @@ function AdminPage() {
 
   const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: users, error: usersError, isLoading: usersLoading } = useQuery({
-    queryKey: ["agents"],
+    queryKey: ["admin_users"],
     queryFn: async () => agentsFn({ headers: await getAuthHeaders() }),
     enabled: me?.isAdmin === true,
   });
@@ -39,7 +39,7 @@ function AdminPage() {
   const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" });
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["agents"] });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["admin_users"] });
   const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
   const onErr = (e: any) => toast.error(e.message);
 
@@ -117,7 +117,8 @@ function AdminPage() {
           </thead>
           <tbody>
             {(users ?? []).map((u: any) => {
-              const isAdmin = u.roles.includes("admin");
+              const roles = Array.isArray(u.roles) ? u.roles : [];
+              const isAdmin = roles.includes("admin");
               const editingThis = editing?.id === u.id;
               return (
                 <tr key={u.id} className="border-b border-border last:border-0 align-top">

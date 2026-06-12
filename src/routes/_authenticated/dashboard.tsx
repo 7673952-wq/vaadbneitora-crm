@@ -8,11 +8,14 @@ import {
 import { getMyRole } from "@/lib/admin.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
-  statusCardClasses, isPendingStatus, type SystemStatus,
+  statusCardClasses, type SystemStatus,
+  CALLER_SOURCES, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts";
+import * as XLSX from "xlsx";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -21,6 +24,8 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Period = "" | "day" | "week" | "month" | "year";
+
+const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab308", "#0284c7", "#4f46e5", "#0891b2", "#7c3aed", "#c026d3", "#ea580c", "#334155"];
 
 function Dashboard() {
   const navigate = useNavigate();
@@ -76,6 +81,9 @@ function Dashboard() {
     (systems ?? []).forEach((s: any) => { counts[s.status] = (counts[s.status] || 0) + 1; });
     return counts;
   }, [systems]);
+  const chartData = useMemo(() => STATUS_OPTIONS
+    .map((s, i) => ({ name: s.label, value: stats[s.value] ?? 0, color: PIE_COLORS[i % PIE_COLORS.length] }))
+    .filter((item) => item.value > 0), [stats]);
 
   // Pending sections
   const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
@@ -168,6 +176,29 @@ function Dashboard() {
     w.document.close();
   }
 
+  function exportCrmXlsx() {
+    const rows = filtered.filter((r: any) => r.status === "to_block" || r.status === "to_open");
+    if (!rows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח לייצוא"); return; }
+    const data = rows.map((r: any) => ({
+      phone_number: buildDialNumber(r.system_code),
+      caller_id: buildDialNumber(r.caller_phone || r.phone || r.system_code),
+      active: 1,
+      call_type: "ALL",
+      status: r.status === "to_block" ? "BLOCKED" : "OPEN",
+    }));
+    const ws = XLSX.utils.json_to_sheet(data, { header: ["phone_number", "caller_id", "active", "call_type", "status"] });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "CRM");
+    XLSX.writeFile(wb, `crm_block_open_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  function exportMenu() {
+    const choice = window.prompt("בחר ייצוא: 1=CSV, 2=PDF, 3=Excel CRM", "1");
+    if (choice === "1") exportCsv();
+    else if (choice === "2") exportPdf();
+    else if (choice === "3") exportCrmXlsx();
+  }
+
   return (
     <div className="space-y-6">
       {/* Due reminders banner */}
@@ -200,8 +231,8 @@ function Dashboard() {
           <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות · מציג {filtered.length}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Download className="h-4 w-4" />ייצוא CSV
+          <button onClick={exportMenu} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <Download className="h-4 w-4" />ייצוא
           </button>
           <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-1 text-sm">
             <input type="date" value={pdfDate} onChange={(e) => setPdfDate(e.target.value)}
@@ -232,6 +263,22 @@ function Dashboard() {
           );
         })}
       </div>
+
+      {chartData.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
+                  {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
 
       {/* Filters */}
@@ -385,10 +432,10 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 
       <div className="mt-2 flex items-center justify-between gap-2 text-[11px] opacity-80">
         <span className="truncate">{r.agent?.display_name ?? "לא משויך"}</span>
-        {r.phone && (
-          <a href={`tel:${r.phone}`} onClick={(e) => e.stopPropagation()}
+        {buildDialNumber(r.system_code) && (
+          <a href={`tel:${buildDialNumber(r.system_code)}`} onClick={(e) => e.stopPropagation()}
             className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700">
-            <Phone className="h-2.5 w-2.5" />חיוג
+            <Phone className="h-2.5 w-2.5" />ID
           </a>
         )}
       </div>
@@ -397,7 +444,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 }
 
 function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: "", name: "", status: "open", assigned_agent_id: "", notes: "", phone: "" });
+  const [form, setForm] = useState({ system_code: "", name: "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
@@ -430,6 +477,8 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
           parent_id: matchedParent.id,
           system_code: form.system_code,
           name: form.name.trim() || undefined,
+          source: form.source,
+          caller_phone: form.caller_phone,
         } });
         toast.success(`נוספה תת-מערכת למערכת "${matchedParent.name}"`);
       } else {
@@ -439,7 +488,9 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
           status: form.status,
           assigned_agent_id: form.assigned_agent_id || null,
           notes: form.notes,
-          phone: form.phone || undefined,
+          phone: buildDialNumber(form.system_code) || form.phone || undefined,
+          source: form.source,
+          caller_phone: form.caller_phone,
         } });
         toast.success("נוסף בהצלחה");
       }
@@ -485,7 +536,21 @@ function CreateModal({ onClose, agents, onDone }: { onClose: () => void; agents:
           <div>
             <label className="text-sm font-medium block mb-1">טלפון לחיוג (אופציונלי)</label>
             <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              placeholder="נוצר אוטומטית לפי מזהה המערכת"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">טלפון פונה</label>
+            <input required value={form.caller_phone} onChange={(e) => setForm({ ...form, caller_phone: e.target.value })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">מקור</label>
+            <select required value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+              <option value="">— בחר מקור —</option>
+              {CALLER_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
           </div>
           {!matchedParent && (
             <>

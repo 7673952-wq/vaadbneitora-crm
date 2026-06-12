@@ -248,6 +248,36 @@ export const deleteSystem = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+export const updateActivityLog = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; reason?: string | null; old_value?: string | null; new_value?: string | null }) =>
+    z.object({
+      id: z.string().uuid(),
+      reason: z.string().max(500).nullable().optional(),
+      old_value: z.string().max(500).nullable().optional(),
+      new_value: z.string().max(500).nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    if (!isAdmin) throw new Error("רק מנהל יכול לערוך יומן שינויים");
+    const { id, ...patch } = data;
+    const { error } = await context.supabase.from("system_activity_log").update(patch).eq("id", id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteActivityLog = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    if (!isAdmin) throw new Error("רק מנהל יכול למחוק שורת יומן");
+    const { error } = await context.supabase.from("system_activity_log").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 export const addNote = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { system_id: string; body: string }) =>
@@ -326,6 +356,17 @@ export const listDueReminders = createServerFn({ method: "GET" })
       const ids: string[] = r.reminder_agent_ids ?? [];
       return ids.length === 0 || ids.includes(context.userId);
     });
+  });
+
+export const listWeeklyCrmReportRecipients = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    if (!isAdmin) throw new Error("רק מנהל יכול לצפות ברשימת נמענים");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers();
+    if (error) throw new Error(error.message);
+    return (data.users ?? []).map((u: any) => ({ id: u.id, email: u.email })).filter((u: any) => !!u.email);
   });
 
 export const setParent = createServerFn({ method: "POST" })

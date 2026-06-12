@@ -27,9 +27,12 @@ export const createUser = createServerFn({ method: "POST" })
       user_metadata: { display_name: data.display_name },
     });
     if (error) throw new Error(error.message);
-    if (data.role === "admin") {
-      await supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: "admin" });
-    }
+    const [{ error: profileError }, { error: roleError }] = await Promise.all([
+      supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: data.display_name }),
+      supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: data.role }),
+    ]);
+    if (profileError) throw new Error(profileError.message);
+    if (roleError) throw new Error(roleError.message);
     return { id: created.user.id };
   });
 
@@ -124,17 +127,17 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
       arr.push(r.role);
       roleMap.set(r.user_id, arr);
     });
-    const userMap = new Map<string, any>();
-    (usersList?.users ?? []).forEach((u: any) => userMap.set(u.id, u));
-    return (profiles ?? []).map((p: any) => {
-      const u = userMap.get(p.id);
+    const profileMap = new Map<string, any>();
+    (profiles ?? []).forEach((p: any) => profileMap.set(p.id, p));
+    return (usersList?.users ?? []).map((u: any) => {
+      const p = profileMap.get(u.id);
       return {
-        id: p.id,
-        display_name: p.display_name,
-        email: u?.email ?? "",
-        last_sign_in_at: u?.last_sign_in_at ?? null,
-        created_at: p.created_at,
-        roles: roleMap.get(p.id) ?? [],
+        id: u.id,
+        display_name: p?.display_name ?? (u.user_metadata?.display_name as string | undefined) ?? u.email?.split("@")[0] ?? "משתמש",
+        email: u.email ?? "",
+        last_sign_in_at: u.last_sign_in_at ?? null,
+        created_at: p?.created_at ?? u.created_at,
+        roles: roleMap.get(u.id) ?? [],
       };
     });
   });

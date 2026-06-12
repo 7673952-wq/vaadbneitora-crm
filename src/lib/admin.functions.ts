@@ -126,7 +126,7 @@ export const getMyRole = createServerFn({ method: "GET" })
 export const listUsersForAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
       supabaseAdmin.from("profiles").select("id, display_name, created_at"),
@@ -177,7 +177,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("status_settings").upsert({
       status_key: data.status_key,
@@ -196,7 +196,7 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
     z.object({ status_key: z.string().min(1).max(60) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Only allow deleting custom statuses (not the built-in enum values).
     const { data: row } = await supabaseAdmin.from("status_settings").select("is_custom").eq("status_key", data.status_key).maybeSingle();

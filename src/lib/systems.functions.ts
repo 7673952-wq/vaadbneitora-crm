@@ -334,7 +334,7 @@ export const deleteActivityLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    const isAdmin = await isAdminUser(context);
     if (!isAdmin) throw new Error("רק מנהל יכול למחוק שורת יומן");
     const { error } = await context.supabase.from("system_activity_log").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -424,7 +424,7 @@ export const listDueReminders = createServerFn({ method: "GET" })
 export const listWeeklyCrmReportRecipients = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    const isAdmin = await isAdminUser(context);
     if (!isAdmin) throw new Error("רק מנהל יכול לצפות ברשימת נמענים");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin.auth.admin.listUsers();
@@ -438,7 +438,7 @@ export const setParent = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), parent_system_id: z.string().uuid().nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
+    const isAdmin = await isAdminUser(context);
     if (!isAdmin) throw new Error("רק מנהל יכול לשנות יחס מערכת/תת-מערכת");
     if (data.parent_system_id === data.id) throw new Error("מערכת לא יכולה להיות אב של עצמה");
     if (data.parent_system_id) {

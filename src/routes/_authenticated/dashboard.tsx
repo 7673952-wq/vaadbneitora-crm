@@ -26,6 +26,8 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 
 type Period = "" | "day" | "week" | "month" | "year";
 
+const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab308", "#0284c7", "#4f46e5", "#0891b2", "#7c3aed", "#c026d3", "#ea580c", "#334155"];
+
 function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -230,8 +232,8 @@ function Dashboard() {
           <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות · מציג {filtered.length}</p>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={exportCsv} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Download className="h-4 w-4" />ייצוא CSV
+          <button onClick={exportMenu} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <Download className="h-4 w-4" />ייצוא
           </button>
           <div className="flex items-center gap-1 border border-border rounded-lg px-2 py-1 text-sm">
             <input type="date" value={pdfDate} onChange={(e) => setPdfDate(e.target.value)}
@@ -262,6 +264,22 @@ function Dashboard() {
           );
         })}
       </div>
+
+      {chartData.length > 0 && (
+        <div className="bg-card border border-border rounded-xl p-4">
+          <h2 className="text-sm font-semibold text-muted-foreground mb-3">התפלגות סטטוסים</h2>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie data={chartData} dataKey="value" nameKey="name" innerRadius={46} outerRadius={86} paddingAngle={2}>
+                  {chartData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                </Pie>
+                <Tooltip />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
 
       {/* Filters */}

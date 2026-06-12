@@ -241,6 +241,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      set_change_reason: { Args: { p_reason: string }; Returns: undefined }
     }
     Enums: {
       app_role: "admin" | "agent"

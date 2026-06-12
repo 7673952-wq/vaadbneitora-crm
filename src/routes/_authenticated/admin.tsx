@@ -13,7 +13,7 @@ import { toast } from "sonner";
 import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
-  head: () => ({ meta: [{ title: "ניהול משתמשים | CRM" }] }),
+  head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
   component: AdminPage,
 });
 
@@ -96,8 +96,8 @@ function AdminPage() {
     <div className="space-y-6 max-w-5xl mx-auto">
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">ניהול משתמשים</h1>
-          <p className="text-muted-foreground text-sm mt-1">צור, ערוך והגדר הרשאות לנציגים ומנהלים</p>
+          <h1 className="text-3xl font-bold tracking-tight">ניהול</h1>
+          <p className="text-muted-foreground text-sm mt-1">ניהול משתמשים, הרשאות, סטטוסים וצבעי המערכת</p>
         </div>
         <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
           <UserPlus className="h-4 w-4" />משתמש חדש

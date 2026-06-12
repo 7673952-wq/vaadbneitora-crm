@@ -349,7 +349,11 @@ function SystemDetail() {
                       </>
                     )}
                   </div>
-                  {a.reason && (
+                  {isStatus ? (
+                    <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                      <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
+                    </div>
+                  ) : a.reason && (
                     <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
                       <span className="font-semibold">סיבה:</span> {a.reason}
                     </div>

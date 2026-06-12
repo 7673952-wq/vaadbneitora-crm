@@ -10,16 +10,6 @@ const STATUS_VALUES = [
 const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
-async function setReason(supabase: any, reason?: string | null) {
-  if (!reason) return;
-  try {
-    // PostgREST allows raw SQL via rpc only; use direct query via .rpc fallback to set_config
-    await supabase.rpc("set_change_reason", { p_reason: reason });
-  } catch {
-    // ignore — reason will simply be null in log
-  }
-}
-
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { status?: string | null; agentId?: string | null; period?: string | null }) => d)
@@ -208,7 +198,10 @@ export const updateSystem = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { data: sys } = await context.supabase
-      .from("systems").select("id, assigned_agent_id").eq("id", data.id).maybeSingle();
+      .from("systems")
+      .select("id, assigned_agent_id, status, parent_system_id")
+      .eq("id", data.id)
+      .maybeSingle();
     if (!sys) throw new Error("מערכת לא נמצאה");
     const { data: isAdmin } = await context.supabase.rpc("has_role", { _user_id: context.userId, _role: "admin" });
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
@@ -217,21 +210,46 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.system_code !== undefined && !isAdmin) {
       throw new Error("רק מנהל יכול לשנות את מזהה המערכת");
     }
-    const startedAt = new Date().toISOString();
+    const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
+    if (data.status && data.status !== sys.status) {
+      statusLogTargets.push({ id: data.id, oldStatus: sys.status, newStatus: data.status });
+      if (!sys.parent_system_id) {
+        const { data: children } = await context.supabase
+          .from("systems")
+          .select("id, status")
+          .eq("parent_system_id", data.id)
+          .neq("status", data.status);
+        statusLogTargets.push(...(children ?? []).map((child: any) => ({
+          id: child.id,
+          oldStatus: child.status,
+          newStatus: data.status!,
+        })));
+      }
+    }
     const { id, reason: _r, ...patch } = data;
     const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
     if (error) throw new Error(error.message);
-    // PostgREST sends each call in its own transaction, so `set_config(..., true)`
-    // does not survive into the UPDATE's trigger. Patch the freshly-inserted
-    // activity rows with the reason directly.
-    if (data.reason && data.reason.trim()) {
+    // Attach the supplied status-change reason directly to the exact status log
+    // rows created by the trigger, including child systems updated by propagation.
+    if (data.reason && data.reason.trim() && statusLogTargets.length) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await supabaseAdmin
+      const logs = await Promise.all(statusLogTargets.map((target) => supabaseAdmin
         .from("system_activity_log")
-        .update({ reason: data.reason.trim() })
-        .eq("system_id", id)
-        .gte("created_at", startedAt)
-        .is("reason", null);
+        .select("id")
+        .eq("system_id", target.id)
+        .eq("field", "status")
+        .eq("old_value", target.oldStatus)
+        .eq("new_value", target.newStatus)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()));
+      const logIds = logs.map((result) => result.data?.id).filter(Boolean) as string[];
+      if (logIds.length) {
+        await supabaseAdmin
+          .from("system_activity_log")
+          .update({ reason: data.reason.trim() })
+          .in("id", logIds);
+      }
     }
     return row;
   });

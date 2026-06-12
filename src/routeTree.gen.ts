@@ -13,6 +13,7 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedChartsRouteImport } from './routes/_authenticated/charts'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
@@ -38,6 +39,12 @@ const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedManagerDashboardRoute =
+  AuthenticatedManagerDashboardRouteImport.update({
+    id: '/manager-dashboard',
+    path: '/manager-dashboard',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -71,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AuthenticatedAdminRoute
   '/charts': typeof AuthenticatedChartsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -81,6 +89,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AuthenticatedAdminRoute
   '/charts': typeof AuthenticatedChartsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
+  '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -93,6 +102,7 @@ export interface FileRoutesById {
   '/_authenticated/admin': typeof AuthenticatedAdminRoute
   '/_authenticated/charts': typeof AuthenticatedChartsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
+  '/_authenticated/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -105,6 +115,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/charts'
     | '/dashboard'
+    | '/manager-dashboard'
     | '/reports'
     | '/systems/$id'
     | '/api/public/weekly-crm-report'
@@ -115,6 +126,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/charts'
     | '/dashboard'
+    | '/manager-dashboard'
     | '/reports'
     | '/systems/$id'
     | '/api/public/weekly-crm-report'
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
     | '/_authenticated/admin'
     | '/_authenticated/charts'
     | '/_authenticated/dashboard'
+    | '/_authenticated/manager-dashboard'
     | '/_authenticated/reports'
     | '/_authenticated/systems/$id'
     | '/api/public/weekly-crm-report'
@@ -166,6 +179,13 @@ declare module '@tanstack/react-router' {
       path: '/reports'
       fullPath: '/reports'
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/manager-dashboard': {
+      id: '/_authenticated/manager-dashboard'
+      path: '/manager-dashboard'
+      fullPath: '/manager-dashboard'
+      preLoaderRoute: typeof AuthenticatedManagerDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/dashboard': {
@@ -210,6 +230,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAdminRoute: typeof AuthenticatedAdminRoute
   AuthenticatedChartsRoute: typeof AuthenticatedChartsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
+  AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSystemsIdRoute: typeof AuthenticatedSystemsIdRoute
 }
@@ -218,6 +239,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAdminRoute: AuthenticatedAdminRoute,
   AuthenticatedChartsRoute: AuthenticatedChartsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
+  AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSystemsIdRoute: AuthenticatedSystemsIdRoute,
 }
@@ -234,3 +256,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

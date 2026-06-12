@@ -225,7 +225,8 @@ export const updateSystem = createServerFn({ method: "POST" })
     // does not survive into the UPDATE's trigger. Patch the freshly-inserted
     // activity rows with the reason directly.
     if (data.reason && data.reason.trim()) {
-      await context.supabase
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
         .from("system_activity_log")
         .update({ reason: data.reason.trim() })
         .eq("system_id", id)

@@ -70,7 +70,7 @@ function AuthedLayout() {
 
   const nav = [
     { to: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
-    ...(me?.isAdmin ? [{ to: "/admin", label: "ניהול משתמשים", icon: Users }] : []),
+    ...(me?.isAdmin ? [{ to: "/admin", label: "ניהול", icon: Users }] : []),
   ];
 
   if (!sessionReady) {

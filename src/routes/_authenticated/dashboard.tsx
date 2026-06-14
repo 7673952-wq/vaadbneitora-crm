@@ -274,6 +274,12 @@ function Dashboard() {
           <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות · מציג {filtered.length}</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowCharts(!showCharts)}
+            title="תרשימים וניתוח נתונים"
+            className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <BarChart3 className="h-4 w-4 text-indigo-600" />
+            {showCharts ? "סגור תרשימים" : "תרשימים"}
+          </button>
           <button onClick={() => setShowExport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
             <Download className="h-4 w-4" />ייצוא לפי תאריכים
           </button>
@@ -289,6 +295,9 @@ function Dashboard() {
           )}
         </div>
       </div>
+
+      {/* Quick lookup */}
+      <QuickLookup onOpenCreate={() => setShowCreate(true)} canCreate={!!me?.isAdmin} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">

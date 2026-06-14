@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
-  listDueReminders, dismissReminder, findSystemByName, addSubSystem,
+  listDueReminders, dismissReminder, findSystemByName, findSystemByCode, addSubSystem,
 } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import {
@@ -274,6 +274,12 @@ function Dashboard() {
           <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות · מציג {filtered.length}</p>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => setShowCharts(!showCharts)}
+            title="תרשימים וניתוח נתונים"
+            className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <BarChart3 className="h-4 w-4 text-indigo-600" />
+            {showCharts ? "סגור תרשימים" : "תרשימים"}
+          </button>
           <button onClick={() => setShowExport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
             <Download className="h-4 w-4" />ייצוא לפי תאריכים
           </button>
@@ -290,6 +296,9 @@ function Dashboard() {
         </div>
       </div>
 
+      {/* Quick lookup */}
+      <QuickLookup onOpenCreate={() => setShowCreate(true)} canCreate={!!me?.isAdmin} />
+
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {STATUS_OPTIONS.map((s) => {
@@ -305,31 +314,18 @@ function Dashboard() {
         })}
       </div>
 
-      {(chartData.length > 0 || agentChartData.length > 0) && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 border-b border-border">
-            <button onClick={() => setShowCharts(!showCharts)}
-              className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <BarChart3 className="h-4 w-4 text-indigo-600" />
-              תרשימים וניתוח נתונים
-              {showCharts ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            <div className="flex items-center gap-2">
-              <a href="/charts" target="_blank" rel="noreferrer"
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
-                <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
-              </a>
-              <button onClick={() => setShowCharts(!showCharts)}
-                className="text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
-                {showCharts ? "סגור" : "הצג"}
-              </button>
+      {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
             </div>
+            <a href="/charts" target="_blank" rel="noreferrer"
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
+              <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
+            </a>
           </div>
-          {showCharts && (
-            <div className="p-4">
-              <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
-            </div>
-          )}
+          <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
         </div>
       )}
 
@@ -786,4 +782,130 @@ function ExportModal({ allRows, onClose, onExport }: {
     </div>
   );
 }
+
+function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: () => void; canCreate: boolean }) {
+  const navigate = useNavigate();
+  const codeFn = useServerFn(findSystemByCode);
+  const nameFn = useServerFn(findSystemByName);
+  const [code, setCode] = useState("");
+  const [name, setName] = useState("");
+  const [codeResult, setCodeResult] = useState<any | null | undefined>(undefined);
+  const [nameResults, setNameResults] = useState<any[] | undefined>(undefined);
+
+  useEffect(() => {
+    const v = code.trim();
+    if (!v) { setCodeResult(undefined); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await codeFn({ data: { code: v } });
+        if (!cancelled) setCodeResult(r);
+      } catch { /* ignore */ }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [code, codeFn]);
+
+  useEffect(() => {
+    const v = name.trim();
+    if (v.length < 2) { setNameResults(undefined); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const r = await nameFn({ data: { name: v } });
+        if (!cancelled) setNameResults(r ?? []);
+      } catch { /* ignore */ }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [name, nameFn]);
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <Search className="h-4 w-4 text-indigo-600" />
+        <h2 className="text-sm font-semibold">בדיקה מהירה</h2>
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* By code */}
+        <div>
+          <label className="text-xs font-medium block mb-1 text-muted-foreground">מספר מערכת</label>
+          <input value={code} onChange={(e) => setCode(e.target.value)}
+            placeholder="הזן מספר מערכת..."
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          {code.trim() && codeResult === undefined && (
+            <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>
+          )}
+          {code.trim() && codeResult && (
+            <button onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
+              className={`mt-2 w-full text-right border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-mono opacity-80">{codeResult.system_code}</div>
+                  <div className="text-sm font-semibold truncate">{codeResult.name}</div>
+                </div>
+                <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(STATUS_TONE[codeResult.status as SystemStatus])}`}>
+                  {STATUS_LABEL[codeResult.status as SystemStatus]}
+                </span>
+              </div>
+              <div className="text-[11px] mt-1 opacity-75">לחץ למעבר למערכת</div>
+            </button>
+          )}
+          {code.trim() && codeResult === null && (
+            <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
+              <div className="text-sm text-emerald-900 font-medium">מספר זה לא קיים במערכת</div>
+              {canCreate ? (
+                <button onClick={onOpenCreate}
+                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
+                  <Plus className="h-3 w-3" />פתח מערכת חדשה
+                </button>
+              ) : (
+                <div className="text-xs text-emerald-800 mt-1">פנה למנהל לפתיחת מערכת חדשה</div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* By name */}
+        <div>
+          <label className="text-xs font-medium block mb-1 text-muted-foreground">שם מערכת</label>
+          <input value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="הזן שם מערכת..."
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          {name.trim().length >= 2 && nameResults === undefined && (
+            <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>
+          )}
+          {name.trim().length >= 2 && nameResults && nameResults.length > 0 && (
+            <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto">
+              {nameResults.map((r: any) => (
+                <button key={r.id} onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
+                  className="w-full text-right border border-border rounded-lg p-2 hover:bg-accent transition flex items-center justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
+                    <div className="text-sm font-medium truncate">{r.name}</div>
+                  </div>
+                  {r.parent_system_id && (
+                    <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+          {name.trim().length >= 2 && nameResults && nameResults.length === 0 && (
+            <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
+              <div className="text-sm text-emerald-900 font-medium">לא נמצאה מערכת בשם זה</div>
+              {canCreate ? (
+                <button onClick={onOpenCreate}
+                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
+                  <Plus className="h-3 w-3" />פתח מערכת חדשה
+                </button>
+              ) : (
+                <div className="text-xs text-emerald-800 mt-1">פנה למנהל לפתיחת מערכת חדשה</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 

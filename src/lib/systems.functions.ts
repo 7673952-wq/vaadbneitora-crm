@@ -159,6 +159,9 @@ export const createSystem = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const isAdmin = await isAdminUser(context);
     if (!isAdmin) throw new Error("רק מנהל יכול להוסיף מערכות");
+    const { data: existing } = await context.supabase
+      .from("systems").select("id").eq("system_code", data.system_code).maybeSingle();
+    if (existing) throw new Error("מספר המערכת כבר קיים — לא ניתן לפתוח מערכת חדשה על מספר קיים");
     // Auto-assign the creator as the handling agent if none was selected.
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({
@@ -482,3 +485,16 @@ export const findSystemByName = createServerFn({ method: "POST" })
       .limit(20);
     return rows ?? [];
   });
+
+export const findSystemByCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { code: string }) => z.object({ code: z.string().min(1).max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: row } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
+      .eq("system_code", data.code)
+      .maybeSingle();
+    return row ?? null;
+  });
+

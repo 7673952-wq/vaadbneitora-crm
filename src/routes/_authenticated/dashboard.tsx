@@ -314,31 +314,18 @@ function Dashboard() {
         })}
       </div>
 
-      {(chartData.length > 0 || agentChartData.length > 0) && (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-          <div className="flex items-center justify-between gap-3 px-4 py-3 bg-gradient-to-r from-indigo-50 via-sky-50 to-emerald-50 border-b border-border">
-            <button onClick={() => setShowCharts(!showCharts)}
-              className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <BarChart3 className="h-4 w-4 text-indigo-600" />
-              תרשימים וניתוח נתונים
-              {showCharts ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-            </button>
-            <div className="flex items-center gap-2">
-              <a href="/charts" target="_blank" rel="noreferrer"
-                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
-                <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
-              </a>
-              <button onClick={() => setShowCharts(!showCharts)}
-                className="text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
-                {showCharts ? "סגור" : "הצג"}
-              </button>
+      {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
             </div>
+            <a href="/charts" target="_blank" rel="noreferrer"
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
+              <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
+            </a>
           </div>
-          {showCharts && (
-            <div className="p-4">
-              <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
-            </div>
-          )}
+          <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
         </div>
       )}
 

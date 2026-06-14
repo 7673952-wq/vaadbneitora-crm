@@ -298,7 +298,7 @@ function Dashboard() {
       </div>
 
       {/* Quick lookup */}
-      <QuickLookup onOpenCreate={() => setShowCreate(true)} canCreate={!!me?.isAdmin} />
+      <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAdmin} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">

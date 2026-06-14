@@ -45,6 +45,7 @@ function Dashboard() {
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [showCreate, setShowCreate] = useState(false);
+  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
   const [showCharts, setShowCharts] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -297,7 +298,7 @@ function Dashboard() {
       </div>
 
       {/* Quick lookup */}
-      <QuickLookup onOpenCreate={() => setShowCreate(true)} canCreate={!!me?.isAdmin} />
+      <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAdmin} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -399,9 +400,10 @@ function Dashboard() {
       </div>
 
       {showCreate && me?.isAdmin && (
-        <CreateModal onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
+        <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
           qc.invalidateQueries({ queryKey: ["systems"] });
           setShowCreate(false);
+          setCreateInitial({});
         }} />
       )}
 
@@ -520,8 +522,8 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
   );
 }
 
-function CreateModal({ onClose, agents: _agents, onDone }: { onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: "", name: "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "" });
+function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
+  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
@@ -783,7 +785,7 @@ function ExportModal({ allRows, onClose, onExport }: {
   );
 }
 
-function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: () => void; canCreate: boolean }) {
+function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { system_code?: string; name?: string }) => void; canCreate: boolean }) {
   const navigate = useNavigate();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);
@@ -853,7 +855,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: () => void; ca
             <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
               <div className="text-sm text-emerald-900 font-medium">מספר זה לא קיים במערכת</div>
               {canCreate ? (
-                <button onClick={onOpenCreate}
+                <button onClick={() => onOpenCreate({ system_code: code })}
                   className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
                   <Plus className="h-3 w-3" />פתח מערכת חדשה
                 </button>
@@ -893,7 +895,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: () => void; ca
             <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
               <div className="text-sm text-emerald-900 font-medium">לא נמצאה מערכת בשם זה</div>
               {canCreate ? (
-                <button onClick={onOpenCreate}
+                <button onClick={() => onOpenCreate({ name: name })}
                   className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
                   <Plus className="h-3 w-3" />פתח מערכת חדשה
                 </button>

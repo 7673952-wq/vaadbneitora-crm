@@ -785,7 +785,7 @@ function ExportModal({ allRows, onClose, onExport }: {
   );
 }
 
-function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: () => void; canCreate: boolean }) {
+function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { system_code?: string; name?: string }) => void; canCreate: boolean }) {
   const navigate = useNavigate();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);

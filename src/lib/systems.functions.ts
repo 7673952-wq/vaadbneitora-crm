@@ -159,6 +159,9 @@ export const createSystem = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const isAdmin = await isAdminUser(context);
     if (!isAdmin) throw new Error("רק מנהל יכול להוסיף מערכות");
+    const { data: existing } = await context.supabase
+      .from("systems").select("id").eq("system_code", data.system_code).maybeSingle();
+    if (existing) throw new Error("מספר המערכת כבר קיים — לא ניתן לפתוח מערכת חדשה על מספר קיים");
     // Auto-assign the creator as the handling agent if none was selected.
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({

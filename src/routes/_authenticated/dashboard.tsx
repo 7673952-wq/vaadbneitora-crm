@@ -855,7 +855,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
             <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
               <div className="text-sm text-emerald-900 font-medium">מספר זה לא קיים במערכת</div>
               {canCreate ? (
-                <button onClick={onOpenCreate}
+                <button onClick={() => onOpenCreate({ system_code: code })}
                   className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
                   <Plus className="h-3 w-3" />פתח מערכת חדשה
                 </button>
@@ -895,7 +895,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
             <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
               <div className="text-sm text-emerald-900 font-medium">לא נמצאה מערכת בשם זה</div>
               {canCreate ? (
-                <button onClick={onOpenCreate}
+                <button onClick={() => onOpenCreate({ name: name })}
                   className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
                   <Plus className="h-3 w-3" />פתח מערכת חדשה
                 </button>

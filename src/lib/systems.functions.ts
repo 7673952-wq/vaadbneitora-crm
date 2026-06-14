@@ -485,3 +485,16 @@ export const findSystemByName = createServerFn({ method: "POST" })
       .limit(20);
     return rows ?? [];
   });
+
+export const findSystemByCode = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { code: string }) => z.object({ code: z.string().min(1).max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: row } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
+      .eq("system_code", data.code)
+      .maybeSingle();
+    return row ?? null;
+  });
+

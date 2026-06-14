@@ -306,9 +306,9 @@ function Dashboard() {
           return (
             <button key={s.value} type="button"
               onClick={() => setStatus(active ? "" : s.value)}
-              className={`border-2 rounded-xl p-3 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
-              <div className="text-xs opacity-80 truncate">{s.label}</div>
-              <div className="text-2xl font-bold mt-1">{stats[s.value] ?? 0}</div>
+              className={`border-2 rounded-lg p-2 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
+              <div className="text-[11px] opacity-80 truncate">{s.label}</div>
+              <div className="text-lg font-bold mt-0.5">{stats[s.value] ?? 0}</div>
             </button>
           );
         })}

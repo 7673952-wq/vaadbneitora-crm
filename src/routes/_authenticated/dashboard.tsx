@@ -131,6 +131,8 @@ function Dashboard() {
     r.status !== "pending_check_open" &&
     !handledRecently.some((h: any) => h.id === r.id),
   );
+  const restWaiting = useMemo(() => rest.filter((r: any) => !STATUS_HANDLED[r.status]), [rest, statusSettings]);
+  const restHandled = useMemo(() => rest.filter((r: any) => STATUS_HANDLED[r.status]), [rest, statusSettings]);
 
   const updateMutation = useMutation({
     mutationFn: updateFn,

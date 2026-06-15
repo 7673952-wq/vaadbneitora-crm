@@ -5,16 +5,16 @@ import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, findSystemByName, findSystemByCode, addSubSystem,
 } from "@/lib/systems.functions";
-import { getMyRole } from "@/lib/admin.functions";
+import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
-  statusCardClasses, type SystemStatus,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
+  statusCardClasses, applyStatusSettings, NO_REASON_STATUSES, type SystemStatus,
   CALLER_SOURCES, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
-import { ChevronDown, ChevronUp, ExternalLink, BarChart3 } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
 
@@ -38,6 +38,9 @@ function Dashboard() {
   const updateFn = useServerFn(updateSystem);
   const dueFn = useServerFn(listDueReminders);
   const dismissFn = useServerFn(dismissReminder);
+  const statusSettingsFn = useServerFn(listStatusSettings);
+  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
+  useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");
   const [agentId, setAgentId] = useState<string>("");
@@ -128,6 +131,8 @@ function Dashboard() {
     r.status !== "pending_check_open" &&
     !handledRecently.some((h: any) => h.id === r.id),
   );
+  const restWaiting = useMemo(() => rest.filter((r: any) => !STATUS_HANDLED[r.status]), [rest, statusSettings]);
+  const restHandled = useMemo(() => rest.filter((r: any) => STATUS_HANDLED[r.status]), [rest, statusSettings]);
 
   const updateMutation = useMutation({
     mutationFn: updateFn,
@@ -389,15 +394,37 @@ function Dashboard() {
 
       {/* Main cards grid */}
       <div>
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">כל המערכות ({rest.length})</h2>
+        
         {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
         {!isLoading && rest.length === 0 && <div className="text-center py-12 text-muted-foreground">לא נמצאו מערכות</div>}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {rest.map((r: any) => (
-            <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-          ))}
-        </div>
+
+        {restWaiting.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-600" />ממתין לטיפול ({restWaiting.length})
+            </h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {restWaiting.map((r: any) => (
+                <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {restHandled.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />טופל ({restHandled.length})
+            </h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {restHandled.map((r: any) => (
+                <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
 
       {showCreate && me?.isAdmin && (
         <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
@@ -481,9 +508,13 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
           <select value={r.status} onChange={(e) => {
             const newStatus = e.target.value;
             if (newStatus === r.status) return;
-            const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
-            if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
-            onUpdate?.({ id: r.id, status: newStatus, reason: reason.trim() });
+            let reason: string | undefined;
+            if (!NO_REASON_STATUSES.has(newStatus)) {
+              const r2 = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
+              if (!r2 || !r2.trim()) { toast.error("יש להזין סיבה"); return; }
+              reason = r2.trim();
+            }
+            onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -523,7 +554,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 }
 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "" });
+  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);
@@ -570,6 +601,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           phone: buildDialNumber(form.system_code) || form.phone || undefined,
           source: form.source,
           caller_phone: form.caller_phone,
+          email: form.email || undefined,
         } });
         toast.success("נוסף בהצלחה");
       }
@@ -630,6 +662,21 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               <option value="">— בחר מקור —</option>
               {CALLER_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">דוא"ל (אופציונלי)</label>
+            <div className="flex gap-1">
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="example@gmail.com"
+                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <button type="button" onClick={() => {
+                const v = form.email.trim();
+                if (!v || v.includes("@")) return;
+                setForm({ ...form, email: v + "@gmail.com" });
+              }} className="px-2 py-2 text-xs border border-input rounded-lg hover:bg-accent whitespace-nowrap">
+                @gmail.com
+              </button>
+            </div>
           </div>
           {!matchedParent && (
             <>

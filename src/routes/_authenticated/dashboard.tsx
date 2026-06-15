@@ -394,7 +394,7 @@ function Dashboard() {
 
       {/* Main cards grid */}
       <div>
-        <h2 className="text-sm font-semibold text-muted-foreground mb-3">כל המערכות ({rest.length})</h2>
+        
         {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
         {!isLoading && rest.length === 0 && <div className="text-center py-12 text-muted-foreground">לא נמצאו מערכות</div>}
 

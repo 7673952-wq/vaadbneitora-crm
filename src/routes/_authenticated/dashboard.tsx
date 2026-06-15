@@ -663,6 +663,21 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               {CALLER_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">דוא"ל (אופציונלי)</label>
+            <div className="flex gap-1">
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="example@gmail.com"
+                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <button type="button" onClick={() => {
+                const v = form.email.trim();
+                if (!v || v.includes("@")) return;
+                setForm({ ...form, email: v + "@gmail.com" });
+              }} className="px-2 py-2 text-xs border border-input rounded-lg hover:bg-accent whitespace-nowrap">
+                @gmail.com
+              </button>
+            </div>
+          </div>
           {!matchedParent && (
             <>
               <div>

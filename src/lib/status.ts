@@ -5,7 +5,11 @@
 // see the latest values on next render. Trigger a re-render by invalidating
 // affected queries after admin saves.
 
-export type StatusOption = { value: string; label: string; tone: string };
+export type StatusOption = { value: string; label: string; tone: string; is_handled?: boolean; assigned_agent_ids?: string[] };
+
+const DEFAULT_HANDLED = new Set(["open", "closed", "open_only_bimot"]);
+// Status changes that DON'T require a "reason" prompt.
+export const NO_REASON_STATUSES = new Set(["open", "closed", "open_only_bimot"]);
 
 const DEFAULT_STATUS_OPTIONS: StatusOption[] = [
   { value: "pending_check_close", label: "לבדיקה לחסימה", tone: "amber" },
@@ -21,29 +25,41 @@ const DEFAULT_STATUS_OPTIONS: StatusOption[] = [
   { value: "open_in_simahedrin", label: "לפתיחה בסימהדרין", tone: "cyan" },
   { value: "close_in_simahedrin", label: "לחסימה בסימהדרין", tone: "violet" },
   { value: "send_to_yosela", label: "לשלוח ליוסלה", tone: "fuchsia" },
-];
+].map((s) => ({ ...s, is_handled: DEFAULT_HANDLED.has(s.value), assigned_agent_ids: [] as string[] }));
 
 // Mutable runtime arrays/maps. Imported by reference everywhere.
 export const STATUS_OPTIONS: StatusOption[] = [...DEFAULT_STATUS_OPTIONS];
 export const STATUS_LABEL: Record<string, string> = {};
 export const STATUS_TONE: Record<string, string> = {};
+export const STATUS_HANDLED: Record<string, boolean> = {};
+export const STATUS_AGENTS: Record<string, string[]> = {};
 function rebuildMaps() {
   for (const k of Object.keys(STATUS_LABEL)) delete STATUS_LABEL[k];
   for (const k of Object.keys(STATUS_TONE)) delete STATUS_TONE[k];
+  for (const k of Object.keys(STATUS_HANDLED)) delete STATUS_HANDLED[k];
+  for (const k of Object.keys(STATUS_AGENTS)) delete STATUS_AGENTS[k];
   for (const s of STATUS_OPTIONS) {
     STATUS_LABEL[s.value] = s.label;
     STATUS_TONE[s.value] = s.tone;
+    STATUS_HANDLED[s.value] = !!s.is_handled;
+    STATUS_AGENTS[s.value] = s.assigned_agent_ids ?? [];
   }
 }
 rebuildMaps();
 
 export type SystemStatus = string;
 
-export function applyStatusSettings(rows: { status_key: string; label: string; tone: string; sort_order?: number }[]) {
+export function applyStatusSettings(rows: { status_key: string; label: string; tone: string; sort_order?: number; is_handled?: boolean; assigned_agent_ids?: string[] | null }[]) {
   if (!rows?.length) return;
   const sorted = [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   STATUS_OPTIONS.length = 0;
-  for (const r of sorted) STATUS_OPTIONS.push({ value: r.status_key, label: r.label, tone: r.tone });
+  for (const r of sorted) STATUS_OPTIONS.push({
+    value: r.status_key,
+    label: r.label,
+    tone: r.tone,
+    is_handled: r.is_handled ?? DEFAULT_HANDLED.has(r.status_key),
+    assigned_agent_ids: r.assigned_agent_ids ?? [],
+  });
   rebuildMaps();
 }
 

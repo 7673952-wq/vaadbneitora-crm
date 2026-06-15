@@ -38,6 +38,9 @@ function Dashboard() {
   const updateFn = useServerFn(updateSystem);
   const dueFn = useServerFn(listDueReminders);
   const dismissFn = useServerFn(dismissReminder);
+  const statusSettingsFn = useServerFn(listStatusSettings);
+  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
+  useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");
   const [agentId, setAgentId] = useState<string>("");

@@ -397,12 +397,34 @@ function Dashboard() {
         <h2 className="text-sm font-semibold text-muted-foreground mb-3">כל המערכות ({rest.length})</h2>
         {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
         {!isLoading && rest.length === 0 && <div className="text-center py-12 text-muted-foreground">לא נמצאו מערכות</div>}
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {rest.map((r: any) => (
-            <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-          ))}
-        </div>
+
+        {restWaiting.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
+              <Clock className="h-4 w-4 text-amber-600" />ממתין לטיפול ({restWaiting.length})
+            </h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {restWaiting.map((r: any) => (
+                <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {restHandled.length > 0 && (
+          <div>
+            <h2 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />טופל ({restHandled.length})
+            </h2>
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {restHandled.map((r: any) => (
+                <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
+
 
       {showCreate && me?.isAdmin && (
         <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {

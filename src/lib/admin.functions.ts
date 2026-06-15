@@ -159,7 +159,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("status_settings")
-      .select("status_key, label, tone, sort_order, is_custom")
+      .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
       .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
     return data ?? [];
@@ -167,25 +167,30 @@ export const listStatusSettings = createServerFn({ method: "GET" })
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean }) =>
+  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; assigned_agent_ids?: string[] }) =>
     z.object({
       status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
       label: z.string().min(1).max(100),
       tone: z.string().min(1).max(40),
       sort_order: z.number().int().min(0).max(10000).optional(),
       is_custom: z.boolean().optional(),
+      is_handled: z.boolean().optional(),
+      assigned_agent_ids: z.array(z.string().uuid()).max(50).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("status_settings").upsert({
+    const patch: any = {
       status_key: data.status_key,
       label: data.label,
       tone: data.tone,
       sort_order: data.sort_order ?? 0,
       is_custom: data.is_custom ?? false,
-    });
+    };
+    if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
+    if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
+    const { error } = await supabaseAdmin.from("status_settings").upsert(patch);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

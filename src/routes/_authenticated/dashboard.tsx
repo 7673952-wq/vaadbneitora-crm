@@ -508,9 +508,13 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
           <select value={r.status} onChange={(e) => {
             const newStatus = e.target.value;
             if (newStatus === r.status) return;
-            const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
-            if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
-            onUpdate?.({ id: r.id, status: newStatus, reason: reason.trim() });
+            let reason: string | undefined;
+            if (!NO_REASON_STATUSES.has(newStatus)) {
+              const r2 = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
+              if (!r2 || !r2.trim()) { toast.error("יש להזין סיבה"); return; }
+              reason = r2.trim();
+            }
+            onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
             {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}

@@ -143,7 +143,7 @@ export const createSystem = createServerFn({ method: "POST" })
   .inputValidator((d: {
     system_code: string; name: string; status: string;
     assigned_agent_id?: string | null; notes?: string; phone?: string;
-    source?: string; caller_phone?: string;
+    source?: string; caller_phone?: string; email?: string;
   }) =>
     z.object({
       system_code: z.string().min(1).max(60),
@@ -154,6 +154,7 @@ export const createSystem = createServerFn({ method: "POST" })
       phone: z.string().max(60).optional(),
       source: z.string().max(40).optional(),
       caller_phone: z.string().max(40).optional(),
+      email: z.string().email().max(200).optional().or(z.literal("")),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -173,7 +174,8 @@ export const createSystem = createServerFn({ method: "POST" })
       phone: data.phone || null,
       source: data.source,
       caller_phone: data.caller_phone,
-    }).select().single();
+      email: data.email || null,
+    } as any).select().single();
     if (error) throw new Error(error.message);
     return row;
   });

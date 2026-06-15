@@ -5,16 +5,16 @@ import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, findSystemByName, findSystemByCode, addSubSystem,
 } from "@/lib/systems.functions";
-import { getMyRole } from "@/lib/admin.functions";
+import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses,
-  statusCardClasses, type SystemStatus,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
+  statusCardClasses, applyStatusSettings, NO_REASON_STATUSES, type SystemStatus,
   CALLER_SOURCES, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2 } from "lucide-react";
-import { ChevronDown, ChevronUp, ExternalLink, BarChart3 } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock } from "lucide-react";
+import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
 

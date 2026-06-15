@@ -601,6 +601,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           phone: buildDialNumber(form.system_code) || form.phone || undefined,
           source: form.source,
           caller_phone: form.caller_phone,
+          email: form.email || undefined,
         } });
         toast.success("נוסף בהצלחה");
       }

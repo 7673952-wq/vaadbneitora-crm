@@ -188,6 +188,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     name?: string; system_code?: string; notes?: string; phone?: string | null;
     caller_phone?: string | null; source?: string | null; audio_url?: string | null;
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
+    email?: string | null;
     reason?: string;
   }) =>
     z.object({
@@ -203,6 +204,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       audio_url: z.string().url().max(500).nullable().optional(),
       reminder_at: z.string().datetime().nullable().optional(),
       reminder_agent_ids: z.array(z.string().uuid()).nullable().optional(),
+      email: z.string().email().max(200).nullable().optional().or(z.literal("")),
       reason: z.string().max(500).optional(),
     }).parse(d),
   )
@@ -236,7 +238,23 @@ export const updateSystem = createServerFn({ method: "POST" })
         })));
       }
     }
-    const { id, reason: _r, ...patch } = data;
+
+    // Auto-assign the configured agent for this status (if any and caller
+    // didn't already pick one in the same request).
+    if (data.status && data.status !== sys.status && data.assigned_agent_id === undefined) {
+      const { data: setting } = await context.supabase
+        .from("status_settings")
+        .select("assigned_agent_ids")
+        .eq("status_key", data.status)
+        .maybeSingle();
+      const ids: string[] = (setting as any)?.assigned_agent_ids ?? [];
+      if (ids.length > 0) {
+        (data as any).assigned_agent_id = ids[0];
+      }
+    }
+
+    const { id, reason: _r, email, ...patch } = data as any;
+    if (email !== undefined) (patch as any).email = email || null;
     const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
     if (error) throw new Error(error.message);
     // Attach the supplied status-change reason directly to the exact status log

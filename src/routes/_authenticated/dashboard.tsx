@@ -554,7 +554,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
 }
 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "" });
+  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
   const [busy, setBusy] = useState(false);

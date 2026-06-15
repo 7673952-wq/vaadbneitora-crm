@@ -34,7 +34,9 @@ export type Database = {
       }
       status_settings: {
         Row: {
+          assigned_agent_ids: string[]
           is_custom: boolean
+          is_handled: boolean
           label: string
           sort_order: number
           status_key: string
@@ -42,7 +44,9 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assigned_agent_ids?: string[]
           is_custom?: boolean
+          is_handled?: boolean
           label: string
           sort_order?: number
           status_key: string
@@ -50,7 +54,9 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assigned_agent_ids?: string[]
           is_custom?: boolean
+          is_handled?: boolean
           label?: string
           sort_order?: number
           status_key?: string
@@ -220,6 +226,7 @@ export type Database = {
           audio_url: string | null
           caller_phone: string | null
           created_at: string
+          email: string | null
           handled_pending_at: string | null
           id: string
           name: string
@@ -238,6 +245,7 @@ export type Database = {
           audio_url?: string | null
           caller_phone?: string | null
           created_at?: string
+          email?: string | null
           handled_pending_at?: string | null
           id?: string
           name: string
@@ -256,6 +264,7 @@ export type Database = {
           audio_url?: string | null
           caller_phone?: string | null
           created_at?: string
+          email?: string | null
           handled_pending_at?: string | null
           id?: string
           name?: string

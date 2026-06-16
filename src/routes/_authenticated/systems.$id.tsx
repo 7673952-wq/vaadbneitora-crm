@@ -56,6 +56,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: "שם",
   notes: "הערות",
   phone: "טלפון",
+  caller_phone: "מספר פונה",
   reminder_at: "תזכורת",
   parent_system_id: "מערכת אב",
 };
@@ -298,6 +299,14 @@ function SystemDetail() {
               defaultValue={s.phone || ""}
               onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.phone || "")) updateMut.mutate({ data: { id, phone: v || null } }); }}
               placeholder="מספר טלפון"
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-2">מספר פונה</label>
+            <input
+              defaultValue={s.caller_phone || ""}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.caller_phone || "")) updateMut.mutate({ data: { id, caller_phone: v || null } }); }}
+              placeholder="מספר טלפון של הפונה"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
           </div>
           <div>

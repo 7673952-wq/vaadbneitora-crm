@@ -411,9 +411,11 @@ export const dismissReminder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    // Clears both the manual reminder and marks the status-derived reminder as handled.
+    // Marking handled here removes it for ALL assigned agents (single shared flag).
     const { error } = await context.supabase
       .from("systems")
-      .update({ reminder_at: null, reminder_agent_ids: [] })
+      .update({ reminder_at: null, reminder_agent_ids: [], reminder_handled: true })
       .eq("id", data.system_id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -423,19 +425,50 @@ export const listDueReminders = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const nowIso = new Date().toISOString();
-    const { data, error } = await context.supabase
+    // 1) Manual reminders that came due.
+    const { data: manual, error: e1 } = await context.supabase
       .from("systems")
-      .select("id, system_code, name, reminder_at, reminder_agent_ids")
+      .select("id, system_code, name, status, reminder_at, reminder_agent_ids")
       .not("reminder_at", "is", null)
       .lte("reminder_at", nowIso)
       .order("reminder_at", { ascending: true })
-      .limit(100);
-    if (error) throw new Error(error.message);
-    // filter by agent targeting
-    return (data ?? []).filter((r: any) => {
+      .limit(200);
+    if (e1) throw new Error(e1.message);
+
+    // 2) Status-derived reminders: statuses marked is_handled=false and assigned to this agent.
+    const { data: statuses, error: e2 } = await context.supabase
+      .from("status_settings")
+      .select("status_key, is_handled, assigned_agent_ids");
+    if (e2) throw new Error(e2.message);
+    const myWaitingStatuses = (statuses ?? [])
+      .filter((s: any) => s.is_handled === false && Array.isArray(s.assigned_agent_ids) && s.assigned_agent_ids.includes(context.userId))
+      .map((s: any) => s.status_key);
+
+    let derived: any[] = [];
+    if (myWaitingStatuses.length) {
+      const { data: rows, error: e3 } = await context.supabase
+        .from("systems")
+        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, updated_at")
+        .in("status", myWaitingStatuses as any)
+        .eq("reminder_handled", false)
+        .order("updated_at", { ascending: false })
+        .limit(500);
+      if (e3) throw new Error(e3.message);
+      derived = rows ?? [];
+    }
+
+    const seen = new Set<string>();
+    const out: any[] = [];
+    for (const r of (manual ?? [])) {
       const ids: string[] = r.reminder_agent_ids ?? [];
-      return ids.length === 0 || ids.includes(context.userId);
-    });
+      if (ids.length === 0 || ids.includes(context.userId)) {
+        if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "manual" }); }
+      }
+    }
+    for (const r of derived) {
+      if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "status" }); }
+    }
+    return out;
   });
 
 export const listWeeklyCrmReportRecipients = createServerFn({ method: "GET" })

@@ -249,7 +249,7 @@ function Dashboard() {
       {dueReminders && dueReminders.length > 0 && (
         <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2">
           <div className="flex items-center gap-2 text-amber-900 font-semibold">
-            <Bell className="h-4 w-4" />תזכורות שהגיעו ({dueReminders.length})
+            <Bell className="h-4 w-4" />תזכורות לטיפול ({dueReminders.length})
           </div>
           <div className="space-y-1.5">
             {dueReminders.map((r: any) => (
@@ -257,11 +257,15 @@ function Dashboard() {
                 <Link to="/systems/$id" params={{ id: r.id }} className="flex-1 min-w-0 flex items-center gap-2 hover:underline">
                   <span className="text-xs font-mono text-muted-foreground">{r.system_code}</span>
                   <span className="font-medium truncate">{r.name}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">· {new Date(r.reminder_at).toLocaleString("he-IL")}</span>
+                  {r.source === "status" ? (
+                    <span className="text-xs text-amber-800 shrink-0">· {STATUS_LABEL[r.status] || r.status}</span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground shrink-0">· {new Date(r.reminder_at).toLocaleString("he-IL")}</span>
+                  )}
                 </Link>
                 <button onClick={() => dismissMut.mutate({ data: { system_id: r.id } })}
-                  className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-amber-300 hover:bg-amber-100 text-amber-900">
-                  <BellOff className="h-3 w-3" />סגור
+                  className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-green-400 hover:bg-green-100 text-green-800 bg-white">
+                  <CheckCircle2 className="h-3 w-3" />בוצע
                 </button>
               </div>
             ))}

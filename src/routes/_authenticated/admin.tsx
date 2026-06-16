@@ -402,13 +402,12 @@ function AutoSnoozePanel() {
   const [thresholdDays, setThresholdDays] = useState<number>(30);
 
   // hydrate from saved value
-  const hydratedRef = useState({ done: false })[0];
-  if (current && !hydratedRef.done) {
-    hydratedRef.done = true;
+  useEffect(() => {
+    if (!current) return;
     setUnit(current.unit);
     setThresholdDays(current.threshold_days);
     if (current.date) setDate(current.date.slice(0, 10));
-  }
+  }, [current]);
 
   const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
   const buildPayload = () => ({

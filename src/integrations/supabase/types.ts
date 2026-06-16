@@ -89,6 +89,7 @@ export type Database = {
       system_activity_log: {
         Row: {
           action: string
+          actor_display_name: string | null
           actor_id: string | null
           created_at: string
           field: string | null
@@ -100,6 +101,7 @@ export type Database = {
         }
         Insert: {
           action: string
+          actor_display_name?: string | null
           actor_id?: string | null
           created_at?: string
           field?: string | null
@@ -111,6 +113,7 @@ export type Database = {
         }
         Update: {
           action?: string
+          actor_display_name?: string | null
           actor_id?: string | null
           created_at?: string
           field?: string | null

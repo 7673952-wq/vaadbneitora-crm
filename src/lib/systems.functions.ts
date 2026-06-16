@@ -96,7 +96,7 @@ export const getSystem = createServerFn({ method: "POST" })
       })),
       activity: (activity ?? []).map((a: any) => ({
         ...a,
-        actor_name: a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת",
+        actor_name: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
         old_agent_name: a.field === "assigned_agent_id" && a.old_value ? pmap.get(a.old_value) ?? null : null,
         new_agent_name: a.field === "assigned_agent_id" && a.new_value ? pmap.get(a.new_value) ?? null : null,
       })),

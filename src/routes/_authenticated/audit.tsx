@@ -1,8 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listAuditLog, listAuditActors } from "@/lib/audit.functions";
+import { getMyRole } from "@/lib/admin.functions";
 import { Download, Search, ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/audit")({
@@ -53,6 +54,13 @@ function downloadCSV(rows: any[]) {
 }
 
 function AuditPage() {
+  const navigate = useNavigate();
+  const meFn = useServerFn(getMyRole);
+  const { data: me, isLoading: meLoading } = useQuery({ queryKey: ["my-role"], queryFn: () => meFn() });
+  useEffect(() => {
+    if (!meLoading && me && !me.isSuperAdmin) navigate({ to: "/dashboard", replace: true });
+  }, [me, meLoading, navigate]);
+
   const listFn = useServerFn(listAuditLog);
   const actorsFn = useServerFn(listAuditActors);
 
@@ -72,10 +80,11 @@ function AuditPage() {
     limit: 1000,
   }), [actorId, action, from, to, appliedSearch]);
 
-  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: () => actorsFn() });
+  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: () => actorsFn(), enabled: !!me?.isSuperAdmin });
   const { data: rows, isLoading } = useQuery({
     queryKey: ["audit-log", filters],
     queryFn: () => listFn({ data: filters }),
+    enabled: !!me?.isSuperAdmin,
   });
 
   const list = rows ?? [];

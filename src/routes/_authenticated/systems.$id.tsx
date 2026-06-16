@@ -218,17 +218,17 @@ function SystemDetail() {
       <div className={`border-2 rounded-2xl p-6 transition ${headerCard}`}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
-            {me?.isAdmin ? (
+            {me?.isSuperAdmin ? (
               <input
                 defaultValue={s.system_code || ""}
                 onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
                 className="text-base font-mono font-semibold opacity-90 bg-white/40 rounded px-2 py-1 border border-current/20 w-48"
-                title="מזהה מערכת (ניתן לעריכה ע״י מנהל)"
+                title="מזהה מערכת (ניתן לעריכה ע״י מנהל ראשי)"
               />
             ) : (
               <div className="text-base font-mono font-semibold opacity-90">{s.system_code}</div>
             )}
-            {me?.isAdmin ? (
+            {me?.isSuperAdmin ? (
               <input
                 defaultValue={s.name || ""}
                 onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
@@ -252,7 +252,7 @@ function SystemDetail() {
                 <Phone className="h-4 w-4" />חיוג {s.phone}
               </a>
             )}
-            {me?.isAdmin && (
+            {me?.isSuperAdmin && (
               <button onClick={() => { if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } }); }}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 bg-white/70">
                 <Trash2 className="h-4 w-4" />מחק

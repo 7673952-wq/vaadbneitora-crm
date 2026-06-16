@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem,
+  importSystems,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import {
@@ -13,7 +14,7 @@ import {
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
@@ -51,6 +52,8 @@ function Dashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const importFn = useServerFn(importSystems);
   const [showCharts, setShowCharts] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("dashboardChartsOpen") === "1";
@@ -293,6 +296,11 @@ function Dashboard() {
             <Download className="h-4 w-4" />ייצוא לפי תאריכים
           </button>
           {me?.isAdmin && (
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Upload className="h-4 w-4" />ייבוא
+            </button>
+          )}
+          {me?.isAdmin && (
             <>
               <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
                 ניהול
@@ -433,6 +441,24 @@ function Dashboard() {
             else if (format === "xlsx") exportFullXlsx(rows, label);
             else if (format === "crm") exportCrmXlsx(rows, label);
             setShowExport(false);
+          }}
+        />
+      )}
+
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onImport={async (rows) => {
+            const res: any = await importFn({ data: { rows } });
+            const parts: string[] = [];
+            if (res.createdCount) parts.push(`נוצרו ${res.createdCount} מערכות`);
+            if (res.incompleteRows?.length) parts.push(`${res.incompleteRows.length} עם פרטים חסרים`);
+            if (parts.length) toast.success(parts.join(" · "));
+            if (res.errors?.length) {
+              toast.error(`${res.errors.length} שורות לא יובאו`);
+            }
+            qc.invalidateQueries({ queryKey: ["systems"] });
+            return res;
           }}
         />
       )}
@@ -1063,3 +1089,96 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
 }
 
 
+
+function ImportModal({ onClose, onImport }: {
+  onClose: () => void;
+  onImport: (rows: Array<Record<string, any>>) => Promise<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] }>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] } | null>(null);
+
+  const HEADERS = ["מספר מערכת", "שם מערכת", "סטטוס", "טלפון", "טלפון פונה", "מקור", "דוא\"ל", "הערות", "נציג"];
+
+  function downloadTemplate() {
+    const ws = XLSX.utils.aoa_to_sheet([HEADERS, [
+      "12345", "מערכת לדוגמה", "פתוח", "", "", "", "", "", "",
+    ]]);
+    (ws as any)["!cols"] = HEADERS.map(() => ({ wch: 18 }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "מערכות");
+    XLSX.writeFile(wb, "תבנית_ייבוא_מערכות.xlsx");
+  }
+
+  async function handleFile(file: File) {
+    setBusy(true);
+    setResult(null);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows: Array<Record<string, any>> = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      if (!rows.length) { toast.error("הקובץ ריק"); setBusy(false); return; }
+      const res = await onImport(rows);
+      setResult(res);
+    } catch (e: any) {
+      toast.error(e?.message || "שגיאה בקריאת הקובץ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold">ייבוא מערכות מאקסל</h2>
+          <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="text-sm text-muted-foreground mb-3">
+          העמודות הנדרשות בכותרת הקובץ:
+          <div className="mt-2 flex flex-wrap gap-1">
+            {HEADERS.map((h) => (
+              <span key={h} className={`px-2 py-0.5 rounded text-xs border ${["מספר מערכת","שם מערכת","סטטוס"].includes(h) ? "bg-amber-50 border-amber-300 text-amber-900 font-medium" : "bg-muted/50 border-border"}`}>
+                {h}{["מספר מערכת","שם מערכת","סטטוס"].includes(h) ? " *" : ""}
+              </span>
+            ))}
+          </div>
+          <div className="mt-2 text-xs">* שדות חובה. בשורות עם חסרי שדות אופציונליים — תיפתח מערכת ויירשם בהערות שחסרים פרטים.</div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <button onClick={downloadTemplate} className="flex items-center justify-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+            <Download className="h-4 w-4" />הורד תבנית אקסל
+          </button>
+          <label className={`flex items-center justify-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium cursor-pointer hover:bg-primary/90 ${busy ? "opacity-50 pointer-events-none" : ""}`}>
+            <Upload className="h-4 w-4" />{busy ? "מייבא..." : "העלה קובץ אקסל"}
+            <input type="file" accept=".xlsx,.xls,.csv" className="hidden"
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.currentTarget.value = ""; }} />
+          </label>
+        </div>
+
+        {result && (
+          <div className="mt-4 space-y-2 text-sm">
+            {result.createdCount > 0 && (
+              <div className="rounded-md border border-green-300 bg-green-50 text-green-900 p-2">
+                נוצרו בהצלחה {result.createdCount} מערכות
+                {result.incompleteRows.length > 0 && <span> ({result.incompleteRows.length} עם פרטים חסרים — סומנו בהערות)</span>}
+              </div>
+            )}
+            {result.errors.length > 0 && (
+              <div className="rounded-md border border-red-300 bg-red-50 text-red-900 p-2">
+                <div className="font-medium mb-1">{result.errors.length} שורות לא יובאו:</div>
+                <ul className="text-xs space-y-1 max-h-48 overflow-y-auto">
+                  {result.errors.map((e, i) => (
+                    <li key={i}>שורה {e.row}: {e.reason}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

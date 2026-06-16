@@ -567,3 +567,123 @@ export const findSystemByCode = createServerFn({ method: "POST" })
     return row ?? null;
   });
 
+
+export const importSystems = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { rows: Array<Record<string, any>> }) =>
+    z.object({
+      rows: z.array(z.record(z.any())).min(1).max(2000),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const isAdmin = await isAdminUser(context);
+    if (!isAdmin) throw new Error("רק מנהל יכול לייבא מערכות");
+
+    const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);
+    // Load label -> key map from status_settings (fallback to defaults handled in client)
+    const { data: settings } = await context.supabase
+      .from("status_settings").select("status_key, label");
+    const labelToKey = new Map<string, string>();
+    for (const s of (settings ?? []) as any[]) {
+      if (s.label) labelToKey.set(String(s.label).trim(), s.status_key);
+    }
+    // Default labels fallback
+    const DEFAULTS: Record<string, string> = {
+      "לבדיקה לחסימה": "pending_check_close",
+      "לבדיקה לפתיחה": "pending_check_open",
+      "פתוח": "open", "לפתוח": "to_open", "חסום": "closed",
+      "לחסום": "to_block", "לחסום מהשורש": "block_from_root", "בעיה": "problem",
+      "לפתוח רק בימות": "open_only_bimot", "פתוח רק בימות": "close_only_bimot",
+      "לפתיחה בסימהדרין": "open_in_simahedrin", "לחסימה בסימהדרין": "close_in_simahedrin",
+      "לשלוח ליוסלה": "send_to_yosela",
+    };
+    for (const [k, v] of Object.entries(DEFAULTS)) if (!labelToKey.has(k)) labelToKey.set(k, v);
+
+    const resolveStatus = (v: any): string | null => {
+      if (v == null) return null;
+      const s = String(v).trim();
+      if (!s) return null;
+      if (statusSet.has(s)) return s;
+      return labelToKey.get(s) ?? null;
+    };
+
+    // Load agents (id + display_name) for optional mapping
+    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
+    const nameToAgent = new Map<string, string>();
+    for (const p of (profiles ?? []) as any[]) {
+      if (p.display_name) nameToAgent.set(String(p.display_name).trim(), p.id);
+    }
+
+    const created: any[] = [];
+    const errors: { row: number; reason: string }[] = [];
+    const incomplete: number[] = [];
+
+    // Existing codes set for duplicate detection
+    const { data: existingRows } = await context.supabase.from("systems").select("system_code");
+    const existingCodes = new Set<string>(((existingRows ?? []) as any[]).map((r) => String(r.system_code)));
+
+    const seenInBatch = new Set<string>();
+
+    const pick = (r: Record<string, any>, keys: string[]) => {
+      for (const k of keys) {
+        if (r[k] != null && String(r[k]).trim() !== "") return String(r[k]).trim();
+      }
+      return "";
+    };
+
+    for (let i = 0; i < data.rows.length; i++) {
+      const r = data.rows[i];
+      const rowNum = i + 2; // header is row 1
+      const system_code = pick(r, ["מספר מערכת", "system_code", "מספר", "מזהה מערכת"]);
+      const name = pick(r, ["שם מערכת", "שם המערכת", "name", "שם"]);
+      const statusRaw = pick(r, ["סטטוס", "status"]);
+      const status = resolveStatus(statusRaw);
+
+      if (!system_code || !name || !status) {
+        const missing: string[] = [];
+        if (!system_code) missing.push("מספר מערכת");
+        if (!name) missing.push("שם מערכת");
+        if (!status) missing.push(statusRaw ? `סטטוס ('${statusRaw}' לא מזוהה)` : "סטטוס");
+        errors.push({ row: rowNum, reason: `חסר/לא תקין: ${missing.join(", ")}` });
+        continue;
+      }
+      if (existingCodes.has(system_code) || seenInBatch.has(system_code)) {
+        errors.push({ row: rowNum, reason: `מספר מערכת '${system_code}' כבר קיים` });
+        continue;
+      }
+      seenInBatch.add(system_code);
+
+      const phone = pick(r, ["טלפון", "phone", "טלפון לחיוג"]) || null;
+      const caller_phone = pick(r, ["טלפון פונה", "caller_phone"]) || null;
+      const source = pick(r, ["מקור", "source"]) || null;
+      const email = pick(r, ["דוא\"ל", 'דוא"ל', "מייל", "email"]) || null;
+      const notes = pick(r, ["הערות", "notes"]) || null;
+      const agentName = pick(r, ["נציג", "נציג מטפל", "agent", "assigned_agent"]);
+      const assigned_agent_id = (agentName && nameToAgent.get(agentName)) || context.userId;
+
+      const missingOptional: string[] = [];
+      if (!phone) missingOptional.push("טלפון");
+      if (!caller_phone) missingOptional.push("טלפון פונה");
+      if (!source) missingOptional.push("מקור");
+
+      const finalNotes = missingOptional.length
+        ? `[ייבוא — חסרים פרטים: ${missingOptional.join(", ")}]${notes ? "\n" + notes : ""}`
+        : notes;
+
+      const { data: row, error } = await context.supabase.from("systems").insert({
+        system_code, name, status,
+        assigned_agent_id,
+        notes: finalNotes,
+        phone, source, caller_phone, email,
+      } as any).select("id, system_code").single();
+
+      if (error) {
+        errors.push({ row: rowNum, reason: error.message });
+        continue;
+      }
+      created.push(row);
+      if (missingOptional.length) incomplete.push(rowNum);
+    }
+
+    return { createdCount: created.length, errors, incompleteRows: incomplete };
+  });

@@ -12,7 +12,7 @@ import {
 } from "@/lib/system-files.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
-  type SystemStatus,
+  NO_REASON_STATUSES, type SystemStatus,
 } from "@/lib/status";
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";

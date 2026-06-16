@@ -15,6 +15,11 @@ async function isAdminUser(context: { supabase: any; userId: string }) {
   return isAdminUserId(context.userId);
 }
 
+async function isAgentOrAbove(context: { userId: string }) {
+  const { hasRole } = await import("@/lib/permissions.server");
+  return hasRole(context.userId, "agent");
+}
+
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { status?: string | null; agentId?: string | null; period?: string | null }) => d)
@@ -172,8 +177,8 @@ export const createSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const isAdmin = await isAdminUser(context);
-    if (!isAdmin) throw new Error("רק מנהל יכול להוסיף מערכות");
+    const allowed = await isAgentOrAbove(context);
+    if (!allowed) throw new Error("רק נציג ומעלה יכול לפתוח מערכת");
     const { data: existing } = await context.supabase
       .from("systems").select("id").eq("system_code", data.system_code).maybeSingle();
     if (existing) throw new Error("מספר המערכת כבר קיים — לא ניתן לפתוח מערכת חדשה על מספר קיים");

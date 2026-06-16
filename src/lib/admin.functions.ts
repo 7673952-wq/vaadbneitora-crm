@@ -120,7 +120,8 @@ export const getMyRole = createServerFn({ method: "GET" })
     const isAdmin = isSuperAdmin || roles.includes("admin") || await isAdminUserId(context.userId);
     if (isSuperAdmin && !roles.includes("super_admin")) roles.push("super_admin");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
-    return { userId: context.userId, roles, isAdmin, isSuperAdmin };
+    const isAgent = isAdmin || roles.includes("agent") || roles.includes("manager") || roles.includes("team_lead");
+    return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent };
   });
 
 export const listUsersForAdmin = createServerFn({ method: "GET" })

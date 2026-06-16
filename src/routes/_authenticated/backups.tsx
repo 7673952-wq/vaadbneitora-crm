@@ -34,6 +34,36 @@ function BackupsPage() {
   const nowFn = useServerFn(backupNow);
   const urlFn = useServerFn(getBackupFileUrl);
   const delFn = useServerFn(deleteBackup);
+  const restoreFn = useServerFn(restoreBackup);
+  const [restoring, setRestoring] = useState(false);
+
+  async function handleRestoreFiles(fileList: FileList | null) {
+    if (!fileList || !fileList.length) return;
+    const allowed = new Set(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]);
+    const files: { table: string; csv: string }[] = [];
+    for (const f of Array.from(fileList)) {
+      const base = f.name.replace(/\.csv$/i, "");
+      if (!allowed.has(base)) { toast.error(`קובץ לא נתמך: ${f.name}`); continue; }
+      const text = await f.text();
+      files.push({ table: base, csv: text });
+    }
+    if (!files.length) return;
+    const mode = confirm("'אישור' = החלף את כל הנתונים בטבלאות שיובאו (פעולה הרסנית).\n'ביטול' = מיזוג בטוח (עדכון/הוספה לפי id).") ? "replace" : "merge";
+    if (mode === "replace" && !confirm("בטוח? כל הנתונים הקיימים בטבלאות הללו יימחקו ויוחלפו.")) return;
+    setRestoring(true);
+    try {
+      const res: any = await restoreFn({ data: { files, mode }, headers: await getAuthHeaders() });
+      const ok = res.filter((r: any) => !r.error).reduce((s: number, r: any) => s + r.inserted, 0);
+      const errs = res.filter((r: any) => r.error);
+      toast.success(`שוחזרו ${ok} רשומות`);
+      if (errs.length) toast.error(`${errs.length} טבלאות נכשלו: ${errs.map((e: any) => e.table).join(", ")}`);
+      qc.invalidateQueries();
+    } catch (e: any) {
+      toast.error(e?.message ?? "שגיאה בשחזור");
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   const { data: me } = useQuery({
     queryKey: ["me"],

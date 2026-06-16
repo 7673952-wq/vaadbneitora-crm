@@ -422,10 +422,12 @@ function Dashboard() {
       {showExport && (
         <ExportModal
           allRows={systems ?? []}
+          agents={agents ?? []}
           onClose={() => setShowExport(false)}
-          onExport={(format, fromIso, toIso, label, statusFilter) => {
+          onExport={(format, fromIso, toIso, label, statusFilter, agentFilter) => {
             let rows = filterByRange(systems ?? [], fromIso, toIso);
             if (statusFilter.length > 0) rows = rows.filter((r: any) => statusFilter.includes(r.status));
+            if (agentFilter.length > 0) rows = rows.filter((r: any) => agentFilter.includes(r.assigned_agent_id || "__unassigned"));
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);
@@ -759,10 +761,11 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
 type ExportFormat = "csv" | "pdf" | "xlsx" | "crm";
 type RangePreset = "day" | "week" | "month" | "year" | "all" | "custom";
 
-function ExportModal({ allRows, onClose, onExport }: {
+function ExportModal({ allRows, agents, onClose, onExport }: {
   allRows: any[];
+  agents: any[];
   onClose: () => void;
-  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[]) => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[], agentFilter: string[]) => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [preset, setPreset] = useState<RangePreset>("month");
@@ -770,6 +773,7 @@ function ExportModal({ allRows, onClose, onExport }: {
   const [to, setTo] = useState<string>(today);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [agentFilter, setAgentFilter] = useState<string[]>([]);
 
   function computeRange(): { fromIso: string | null; toIso: string | null; label: string } {
     if (preset === "all") return { fromIso: null, toIso: null, label: "all" };
@@ -798,6 +802,7 @@ function ExportModal({ allRows, onClose, onExport }: {
       const u = new Date(r.updated_at).getTime();
       if (u < f || u > t) return false;
       if (statusFilter.length > 0 && !statusFilter.includes(r.status)) return false;
+      if (agentFilter.length > 0 && !agentFilter.includes(r.assigned_agent_id || "__unassigned")) return false;
       return true;
     }).length;
   })();
@@ -867,6 +872,34 @@ function ExportModal({ allRows, onClose, onExport }: {
           </div>
 
           <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium">סינון לפי נציג מטפל</label>
+              {agentFilter.length > 0 && (
+                <button type="button" onClick={() => setAgentFilter([])}
+                  className="text-xs text-muted-foreground hover:text-foreground">נקה ({agentFilter.length})</button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
+              <button type="button"
+                onClick={() => setAgentFilter((prev) => prev.includes("__unassigned") ? prev.filter((v) => v !== "__unassigned") : [...prev, "__unassigned"])}
+                className={`text-xs py-1.5 px-2 rounded border text-right truncate ${agentFilter.includes("__unassigned") ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                לא משויך
+              </button>
+              {(agents ?? []).map((a: any) => {
+                const active = agentFilter.includes(a.id);
+                return (
+                  <button key={a.id} type="button"
+                    onClick={() => setAgentFilter(active ? agentFilter.filter((v) => v !== a.id) : [...agentFilter, a.id])}
+                    className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                    {a.display_name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הנציגים</p>
+          </div>
+
+          <div>
             <label className="text-sm font-medium block mb-2">פורמט</label>
             <div className="grid grid-cols-2 gap-2">
               {([
@@ -892,7 +925,7 @@ function ExportModal({ allRows, onClose, onExport }: {
               className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="button" onClick={() => {
               const { fromIso, toIso, label } = computeRange();
-              onExport(format, fromIso, toIso, label, statusFilter);
+              onExport(format, fromIso, toIso, label, statusFilter, agentFilter);
             }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               ייצא

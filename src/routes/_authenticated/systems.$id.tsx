@@ -251,6 +251,10 @@ function SystemDetail() {
             <select value={s.status} onChange={(e) => {
               const newStatus = e.target.value;
               if (newStatus === s.status) return;
+              if (NO_REASON_STATUSES.has(newStatus)) {
+                updateMut.mutate({ data: { id, status: newStatus } });
+                return;
+              }
               const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
               if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
               updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim() } });

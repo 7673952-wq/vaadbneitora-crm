@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
-  listDueReminders, dismissReminder, findSystemByName, findSystemByCode, addSubSystem,
+  listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
@@ -38,6 +38,7 @@ function Dashboard() {
   const updateFn = useServerFn(updateSystem);
   const dueFn = useServerFn(listDueReminders);
   const dismissFn = useServerFn(dismissReminder);
+  const snoozeFn = useServerFn(snoozeReminder);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
@@ -75,6 +76,11 @@ function Dashboard() {
   const dismissMut = useMutation({
     mutationFn: dismissFn,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["systems"] }); },
+  });
+  const snoozeMut = useMutation({
+    mutationFn: snoozeFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); toast.success("נדחה"); },
+    onError: (e: any) => toast.error(e.message),
   });
 
   const filtered = useMemo(() => {
@@ -119,15 +125,10 @@ function Dashboard() {
     return Object.entries(buckets).slice(-14).map(([name, value]) => ({ name, value }));
   }, [systems]);
 
-  // Pending sections
-  const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
-  const pendingOpen = filtered.filter((r: any) => r.status === "pending_check_open");
-  const rest = filtered.filter((r: any) =>
-    r.status !== "pending_check_close" &&
-    r.status !== "pending_check_open",
-  );
-  const restWaiting = useMemo(() => rest.filter((r: any) => !STATUS_HANDLED[r.status]), [rest, statusSettings]);
-  const restHandled = useMemo(() => rest.filter((r: any) => STATUS_HANDLED[r.status]), [rest, statusSettings]);
+  // Two-bucket split only: handled vs waiting. Pending-check statuses fall into "waiting" via STATUS_HANDLED.
+  const restWaiting = useMemo(() => filtered.filter((r: any) => !STATUS_HANDLED[r.status]), [filtered, statusSettings]);
+  const restHandled = useMemo(() => filtered.filter((r: any) => STATUS_HANDLED[r.status]), [filtered, statusSettings]);
+  const rest = filtered;
 
   const updateMutation = useMutation({
     mutationFn: updateFn,
@@ -263,10 +264,13 @@ function Dashboard() {
                     <span className="text-xs text-muted-foreground shrink-0">· {new Date(r.reminder_at).toLocaleString("he-IL")}</span>
                   )}
                 </Link>
-                <button onClick={() => dismissMut.mutate({ data: { system_id: r.id } })}
-                  className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-green-400 hover:bg-green-100 text-green-800 bg-white">
-                  <CheckCircle2 className="h-3 w-3" />בוצע
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <SnoozeMenu onSnooze={(minutes) => snoozeMut.mutate({ data: { system_id: r.id, minutes } })} />
+                  <button onClick={() => dismissMut.mutate({ data: { system_id: r.id } })}
+                    className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-green-400 hover:bg-green-100 text-green-800 bg-white">
+                    <CheckCircle2 className="h-3 w-3" />בוצע
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -369,13 +373,8 @@ function Dashboard() {
         )}
       </div>
 
-      {/* Pending sections */}
-      {(pendingClose.length > 0 || pendingOpen.length > 0) && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <PendingGroup title="לבדיקה לחסימה" items={pendingClose} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-          <PendingGroup title="לבדיקה לפתיחה" items={pendingOpen} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-        </div>
-      )}
+      {/* Pending statuses now appear inside "ממתין לטיפול" below */}
+
 
 
       {/* Main cards grid */}
@@ -438,6 +437,67 @@ function Dashboard() {
   );
 }
 
+
+function SnoozeMenu({ onSnooze }: { onSnooze: (minutes: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const [customUnit, setCustomUnit] = useState<"min" | "hour" | "day">("hour");
+  const presets: { label: string; minutes: number }[] = [
+    { label: "15 דקות", minutes: 15 },
+    { label: "שעה", minutes: 60 },
+    { label: "3 שעות", minutes: 180 },
+    { label: "מחר בבוקר (24ש')", minutes: 60 * 24 },
+    { label: "3 ימים", minutes: 60 * 24 * 3 },
+    { label: "שבוע", minutes: 60 * 24 * 7 },
+  ];
+  function submitCustom() {
+    const n = parseInt(customVal, 10);
+    if (!n || n <= 0) { toast.error("יש להזין מספר חיובי"); return; }
+    const mult = customUnit === "min" ? 1 : customUnit === "hour" ? 60 : 60 * 24;
+    onSnooze(n * mult);
+    setOpen(false); setCustomOpen(false); setCustomVal("");
+  }
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)}
+        title="דחיית התזכורת"
+        className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-amber-400 hover:bg-amber-100 text-amber-800 bg-white">
+        <Moon className="h-3 w-3" />דחה
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setCustomOpen(false); }} />
+          <div className="absolute z-50 mt-1 left-0 bg-popover border border-border rounded-lg shadow-lg w-48 py-1 text-xs">
+            {presets.map((p) => (
+              <button key={p.minutes} onClick={() => { onSnooze(p.minutes); setOpen(false); }}
+                className="w-full text-right px-3 py-1.5 hover:bg-accent">{p.label}</button>
+            ))}
+            <div className="border-t my-1" />
+            {!customOpen ? (
+              <button onClick={() => setCustomOpen(true)} className="w-full text-right px-3 py-1.5 hover:bg-accent">זמן מותאם...</button>
+            ) : (
+              <div className="px-2 py-1.5 space-y-1.5">
+                <div className="flex gap-1">
+                  <input type="number" min={1} value={customVal} onChange={(e) => setCustomVal(e.target.value)}
+                    placeholder="כמות" className="flex-1 w-0 rounded border border-input px-2 py-1 text-xs" />
+                  <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as any)}
+                    className="rounded border border-input px-1 py-1 text-xs">
+                    <option value="min">דק'</option>
+                    <option value="hour">שעות</option>
+                    <option value="day">ימים</option>
+                  </select>
+                </div>
+                <button onClick={submitCustom}
+                  className="w-full bg-primary text-primary-foreground rounded py-1 text-xs">דחה</button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 function PendingGroup({ title, items, agents, onUpdate }: { title: string; items: any[]; agents: any[]; onUpdate: (d: any) => void }) {
   return (

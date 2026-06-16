@@ -236,6 +236,7 @@ export type Database = {
           reminder_agent_ids: string[] | null
           reminder_at: string | null
           reminder_handled: boolean
+          snoozed_until: string | null
           source: string | null
           status: Database["public"]["Enums"]["system_status"]
           system_code: string
@@ -256,6 +257,7 @@ export type Database = {
           reminder_agent_ids?: string[] | null
           reminder_at?: string | null
           reminder_handled?: boolean
+          snoozed_until?: string | null
           source?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code: string
@@ -276,6 +278,7 @@ export type Database = {
           reminder_agent_ids?: string[] | null
           reminder_at?: string | null
           reminder_handled?: boolean
+          snoozed_until?: string | null
           source?: string | null
           status?: Database["public"]["Enums"]["system_status"]
           system_code?: string

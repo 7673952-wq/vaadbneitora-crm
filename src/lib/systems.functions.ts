@@ -411,31 +411,42 @@ export const dismissReminder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    // Clears both the manual reminder and marks the status-derived reminder as handled.
-    // Marking handled here removes it for ALL assigned agents (single shared flag).
     const { error } = await context.supabase
       .from("systems")
-      .update({ reminder_at: null, reminder_agent_ids: [], reminder_handled: true })
+      .update({ reminder_at: null, reminder_agent_ids: [], reminder_handled: true, snoozed_until: null })
       .eq("id", data.system_id);
     if (error) throw new Error(error.message);
     return { ok: true };
+  });
+
+export const snoozeReminder = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { system_id: string; minutes: number }) =>
+    z.object({ system_id: z.string().uuid(), minutes: z.number().int().min(1).max(60 * 24 * 365) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const until = new Date(Date.now() + data.minutes * 60_000).toISOString();
+    const { error } = await context.supabase
+      .from("systems")
+      .update({ snoozed_until: until })
+      .eq("id", data.system_id);
+    if (error) throw new Error(error.message);
+    return { ok: true, snoozed_until: until };
   });
 
 export const listDueReminders = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const nowIso = new Date().toISOString();
-    // 1) Manual reminders that came due.
     const { data: manual, error: e1 } = await context.supabase
       .from("systems")
-      .select("id, system_code, name, status, reminder_at, reminder_agent_ids")
+      .select("id, system_code, name, status, reminder_at, reminder_agent_ids, snoozed_until")
       .not("reminder_at", "is", null)
       .lte("reminder_at", nowIso)
       .order("reminder_at", { ascending: true })
       .limit(200);
     if (e1) throw new Error(e1.message);
 
-    // 2) Status-derived reminders: statuses marked is_handled=false and assigned to this agent.
     const { data: statuses, error: e2 } = await context.supabase
       .from("status_settings")
       .select("status_key, is_handled, assigned_agent_ids");
@@ -448,7 +459,7 @@ export const listDueReminders = createServerFn({ method: "GET" })
     if (myWaitingStatuses.length) {
       const { data: rows, error: e3 } = await context.supabase
         .from("systems")
-        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, updated_at")
+        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at")
         .in("status", myWaitingStatuses as any)
         .eq("reminder_handled", false)
         .order("updated_at", { ascending: false })
@@ -457,15 +468,20 @@ export const listDueReminders = createServerFn({ method: "GET" })
       derived = rows ?? [];
     }
 
+    const now = Date.now();
+    const notSnoozed = (r: any) => !r.snoozed_until || new Date(r.snoozed_until).getTime() <= now;
+
     const seen = new Set<string>();
     const out: any[] = [];
     for (const r of (manual ?? [])) {
+      if (!notSnoozed(r)) continue;
       const ids: string[] = r.reminder_agent_ids ?? [];
       if (ids.length === 0 || ids.includes(context.userId)) {
         if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "manual" }); }
       }
     }
     for (const r of derived) {
+      if (!notSnoozed(r)) continue;
       if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "status" }); }
     }
     return out;

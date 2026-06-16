@@ -5,7 +5,7 @@ import {
   listUsersForAdmin, createUser, deleteUser, setUserRole, getMyRole,
   updateUserDisplayName, updateUserEmail, updateUserPassword,
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
-  getAutoSnoozeSetting, setAutoSnoozeSetting, applyAutoSnoozeNow,
+  getAutoSnoozeSetting, setAutoSnoozeSetting,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";

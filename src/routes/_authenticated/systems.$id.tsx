@@ -252,7 +252,7 @@ function SystemDetail() {
                 <Phone className="h-4 w-4" />חיוג {s.phone}
               </a>
             )}
-            {me?.isAdmin && (
+            {me?.isSuperAdmin && (
               <button onClick={() => { if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } }); }}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 bg-white/70">
                 <Trash2 className="h-4 w-4" />מחק

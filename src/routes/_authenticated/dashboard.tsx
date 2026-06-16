@@ -438,6 +438,67 @@ function Dashboard() {
 }
 
 
+function SnoozeMenu({ onSnooze }: { onSnooze: (minutes: number) => void }) {
+  const [open, setOpen] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [customVal, setCustomVal] = useState("");
+  const [customUnit, setCustomUnit] = useState<"min" | "hour" | "day">("hour");
+  const presets: { label: string; minutes: number }[] = [
+    { label: "15 דקות", minutes: 15 },
+    { label: "שעה", minutes: 60 },
+    { label: "3 שעות", minutes: 180 },
+    { label: "מחר בבוקר (24ש')", minutes: 60 * 24 },
+    { label: "3 ימים", minutes: 60 * 24 * 3 },
+    { label: "שבוע", minutes: 60 * 24 * 7 },
+  ];
+  function submitCustom() {
+    const n = parseInt(customVal, 10);
+    if (!n || n <= 0) { toast.error("יש להזין מספר חיובי"); return; }
+    const mult = customUnit === "min" ? 1 : customUnit === "hour" ? 60 : 60 * 24;
+    onSnooze(n * mult);
+    setOpen(false); setCustomOpen(false); setCustomVal("");
+  }
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((v) => !v)}
+        title="דחיית התזכורת"
+        className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-amber-400 hover:bg-amber-100 text-amber-800 bg-white">
+        <Moon className="h-3 w-3" />דחה
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => { setOpen(false); setCustomOpen(false); }} />
+          <div className="absolute z-50 mt-1 left-0 bg-popover border border-border rounded-lg shadow-lg w-48 py-1 text-xs">
+            {presets.map((p) => (
+              <button key={p.minutes} onClick={() => { onSnooze(p.minutes); setOpen(false); }}
+                className="w-full text-right px-3 py-1.5 hover:bg-accent">{p.label}</button>
+            ))}
+            <div className="border-t my-1" />
+            {!customOpen ? (
+              <button onClick={() => setCustomOpen(true)} className="w-full text-right px-3 py-1.5 hover:bg-accent">זמן מותאם...</button>
+            ) : (
+              <div className="px-2 py-1.5 space-y-1.5">
+                <div className="flex gap-1">
+                  <input type="number" min={1} value={customVal} onChange={(e) => setCustomVal(e.target.value)}
+                    placeholder="כמות" className="flex-1 w-0 rounded border border-input px-2 py-1 text-xs" />
+                  <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value as any)}
+                    className="rounded border border-input px-1 py-1 text-xs">
+                    <option value="min">דק'</option>
+                    <option value="hour">שעות</option>
+                    <option value="day">ימים</option>
+                  </select>
+                </div>
+                <button onClick={submitCustom}
+                  className="w-full bg-primary text-primary-foreground rounded py-1 text-xs">דחה</button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function PendingGroup({ title, items, agents, onUpdate }: { title: string; items: any[]; agents: any[]; onUpdate: (d: any) => void }) {
   return (
     <div className="bg-card border-2 border-amber-300 rounded-xl p-4">

@@ -618,9 +618,18 @@ export const importSystems = createServerFn({ method: "POST" })
     const errors: { row: number; reason: string }[] = [];
     const incomplete: number[] = [];
 
-    // Existing codes set for duplicate detection
-    const { data: existingRows } = await context.supabase.from("systems").select("system_code");
+    // Existing codes + names for duplicate/parent detection
+    const { data: existingRows } = await context.supabase.from("systems").select("id, system_code, name, parent_system_id");
     const existingCodes = new Set<string>(((existingRows ?? []) as any[]).map((r) => String(r.system_code)));
+    // Map name -> root system id (prefer parents over children)
+    const nameToRoot = new Map<string, string>();
+    for (const r of (existingRows ?? []) as any[]) {
+      if (!r.name) continue;
+      const key = String(r.name).trim();
+      if (!key) continue;
+      if (!r.parent_system_id) nameToRoot.set(key, r.id);
+      else if (!nameToRoot.has(key)) nameToRoot.set(key, r.id);
+    }
 
     const seenInBatch = new Set<string>();
 
@@ -648,7 +657,7 @@ export const importSystems = createServerFn({ method: "POST" })
         continue;
       }
       if (existingCodes.has(system_code) || seenInBatch.has(system_code)) {
-        errors.push({ row: rowNum, reason: `מספר מערכת '${system_code}' כבר קיים` });
+        errors.push({ row: rowNum, reason: `המערכת קיימת (מספר '${system_code}')` });
         continue;
       }
       seenInBatch.add(system_code);
@@ -661,6 +670,9 @@ export const importSystems = createServerFn({ method: "POST" })
       const agentName = pick(r, ["נציג", "נציג מטפל", "agent", "assigned_agent"]);
       const assigned_agent_id = (agentName && nameToAgent.get(agentName)) || context.userId;
 
+      // If name already exists -> create as sub-system under that parent
+      const parent_system_id = nameToRoot.get(name) ?? null;
+
       const missingOptional: string[] = [];
       if (!phone) missingOptional.push("טלפון");
       if (!caller_phone) missingOptional.push("טלפון פונה");
@@ -670,12 +682,16 @@ export const importSystems = createServerFn({ method: "POST" })
         ? `[ייבוא — חסרים פרטים: ${missingOptional.join(", ")}]${notes ? "\n" + notes : ""}`
         : notes;
 
-      const { data: row, error } = await context.supabase.from("systems").insert({
+      const insertPayload: any = {
         system_code, name, status,
         assigned_agent_id,
         notes: finalNotes,
         phone, source, caller_phone, email,
-      } as any).select("id, system_code").single();
+      };
+      if (parent_system_id) insertPayload.parent_system_id = parent_system_id;
+
+      const { data: row, error } = await context.supabase.from("systems").insert(insertPayload).select("id, system_code").single();
+
 
       if (error) {
         errors.push({ row: rowNum, reason: error.message });

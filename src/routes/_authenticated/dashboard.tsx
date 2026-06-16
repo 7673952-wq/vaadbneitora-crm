@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
-  listDueReminders, dismissReminder, findSystemByName, findSystemByCode, addSubSystem,
+  listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
@@ -38,6 +38,7 @@ function Dashboard() {
   const updateFn = useServerFn(updateSystem);
   const dueFn = useServerFn(listDueReminders);
   const dismissFn = useServerFn(dismissReminder);
+  const snoozeFn = useServerFn(snoozeReminder);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
@@ -75,6 +76,11 @@ function Dashboard() {
   const dismissMut = useMutation({
     mutationFn: dismissFn,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["systems"] }); },
+  });
+  const snoozeMut = useMutation({
+    mutationFn: snoozeFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); toast.success("נדחה"); },
+    onError: (e: any) => toast.error(e.message),
   });
 
   const filtered = useMemo(() => {
@@ -119,15 +125,10 @@ function Dashboard() {
     return Object.entries(buckets).slice(-14).map(([name, value]) => ({ name, value }));
   }, [systems]);
 
-  // Pending sections
-  const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
-  const pendingOpen = filtered.filter((r: any) => r.status === "pending_check_open");
-  const rest = filtered.filter((r: any) =>
-    r.status !== "pending_check_close" &&
-    r.status !== "pending_check_open",
-  );
-  const restWaiting = useMemo(() => rest.filter((r: any) => !STATUS_HANDLED[r.status]), [rest, statusSettings]);
-  const restHandled = useMemo(() => rest.filter((r: any) => STATUS_HANDLED[r.status]), [rest, statusSettings]);
+  // Two-bucket split only: handled vs waiting. Pending-check statuses fall into "waiting" via STATUS_HANDLED.
+  const restWaiting = useMemo(() => filtered.filter((r: any) => !STATUS_HANDLED[r.status]), [filtered, statusSettings]);
+  const restHandled = useMemo(() => filtered.filter((r: any) => STATUS_HANDLED[r.status]), [filtered, statusSettings]);
+  const rest = filtered;
 
   const updateMutation = useMutation({
     mutationFn: updateFn,

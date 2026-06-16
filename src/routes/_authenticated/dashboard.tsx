@@ -925,7 +925,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
               className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="button" onClick={() => {
               const { fromIso, toIso, label } = computeRange();
-              onExport(format, fromIso, toIso, label, statusFilter);
+              onExport(format, fromIso, toIso, label, statusFilter, agentFilter);
             }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               ייצא

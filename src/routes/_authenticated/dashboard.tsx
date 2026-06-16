@@ -1108,13 +1108,14 @@ function ImportModal({ onClose, onImport }: {
 
   async function downloadTemplate() {
     const statusLabels = STATUS_OPTIONS.map((s) => s.label);
+    const sourceLabels = CALLER_SOURCES.map((s) => s.label);
     const ExcelJS = (await import("exceljs")).default;
     const wb = new ExcelJS.Workbook();
     wb.views = [{ rightToLeft: true } as any];
 
     const ws = wb.addWorksheet("מערכות", { views: [{ rightToLeft: true }] });
     ws.addRow(HEADERS);
-    ws.addRow(["12345", "מערכת לדוגמה", statusLabels[0] ?? "פתוח", "", "", "", "", "", ""]);
+    ws.addRow(["12345", "מערכת לדוגמה", statusLabels[0] ?? "פתוח", "", "", sourceLabels[0] ?? "", "", "", ""]);
     ws.columns = HEADERS.map(() => ({ width: 18 }));
     ws.getRow(1).font = { bold: true };
 
@@ -1125,15 +1126,35 @@ function ImportModal({ onClose, onImport }: {
     wsStatuses.getColumn(1).width = 26;
     wsStatuses.getRow(1).font = { bold: true };
 
+    // Sources sheet (also used as dropdown source)
+    const wsSources = wb.addWorksheet("מקורות", { views: [{ rightToLeft: true }] });
+    wsSources.addRow(["מקורות"]);
+    sourceLabels.forEach((l) => wsSources.addRow([l]));
+    wsSources.getColumn(1).width = 26;
+    wsSources.getRow(1).font = { bold: true };
+
     // Data validation: dropdown on column C (status), rows 2..1000
-    const range = `'סטטוסים'!$A$2:$A$${statusLabels.length + 1}`;
+    const statusRange = `'סטטוסים'!$A$2:$A$${statusLabels.length + 1}`;
     for (let r = 2; r <= 1000; r++) {
       ws.getCell(`C${r}`).dataValidation = {
         type: "list",
         allowBlank: true,
-        formulae: [range],
+        formulae: [statusRange],
         showErrorMessage: true,
         errorTitle: "סטטוס לא תקין",
+        error: "יש לבחור מהרשימה",
+      } as any;
+    }
+
+    // Data validation: dropdown on column F (source), rows 2..1000
+    const sourceRange = `'מקורות'!$A$2:$A$${sourceLabels.length + 1}`;
+    for (let r = 2; r <= 1000; r++) {
+      ws.getCell(`F${r}`).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [sourceRange],
+        showErrorMessage: true,
+        errorTitle: "מקור לא תקין",
         error: "יש לבחור מהרשימה",
       } as any;
     }

@@ -156,33 +156,55 @@ function AuditPage() {
               <th className="text-right p-2 whitespace-nowrap">משתמש</th>
               <th className="text-right p-2 whitespace-nowrap">פעולה</th>
               <th className="text-right p-2 whitespace-nowrap">שדה</th>
-              <th className="text-right p-2">ערך קודם</th>
-              <th className="text-right p-2">ערך חדש</th>
+              <th className="text-right p-2">השוואה לפני / אחרי</th>
               <th className="text-right p-2">סיבה</th>
               <th className="text-right p-2 whitespace-nowrap">מערכת</th>
             </tr>
           </thead>
           <tbody>
-            {list.map((r: any) => (
-              <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
-                <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>
-                <td className="p-2 whitespace-nowrap">{r.actor_name}</td>
-                <td className="p-2 whitespace-nowrap">{ACTION_LABELS[r.action] ?? r.action}</td>
-                <td className="p-2 whitespace-nowrap text-muted-foreground">{FIELD_LABELS[r.field] ?? r.field ?? "—"}</td>
-                <td className="p-2 max-w-[220px] break-words text-muted-foreground">{r.old_display ?? "—"}</td>
-                <td className="p-2 max-w-[220px] break-words">{r.new_display ?? "—"}</td>
-                <td className="p-2 max-w-[180px] break-words text-muted-foreground">{r.reason ?? "—"}</td>
-                <td className="p-2 whitespace-nowrap">
-                  {r.system ? (
-                    <Link to="/systems/$id" params={{ id: r.system_id }} className="text-primary hover:underline">
-                      {r.system.system_code}
-                    </Link>
-                  ) : "—"}
-                </td>
-              </tr>
-            ))}
+            {list.map((r: any) => {
+              const hasOld = r.old_display !== null && r.old_display !== undefined && r.old_display !== "";
+              const hasNew = r.new_display !== null && r.new_display !== undefined && r.new_display !== "";
+              return (
+                <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
+                  <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>
+                  <td className="p-2 whitespace-nowrap">{r.actor_name}</td>
+                  <td className="p-2 whitespace-nowrap">{ACTION_LABELS[r.action] ?? r.action}</td>
+                  <td className="p-2 whitespace-nowrap text-muted-foreground">{FIELD_LABELS[r.field] ?? r.field ?? "—"}</td>
+                  <td className="p-2 min-w-[280px] max-w-[480px]">
+                    {!hasOld && !hasNew ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+                        <div className="rounded-md border border-red-200 bg-red-50 px-2 py-1.5 text-xs">
+                          <div className="text-[10px] font-semibold text-red-700 mb-0.5">לפני</div>
+                          <div className="text-red-900 line-through whitespace-pre-wrap break-words">
+                            {hasOld ? String(r.old_display) : <span className="opacity-50 no-underline">—</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center text-muted-foreground text-sm">→</div>
+                        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1.5 text-xs">
+                          <div className="text-[10px] font-semibold text-emerald-700 mb-0.5">אחרי</div>
+                          <div className="text-emerald-900 font-medium whitespace-pre-wrap break-words">
+                            {hasNew ? String(r.new_display) : <span className="opacity-50 font-normal">—</span>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-2 max-w-[180px] break-words text-muted-foreground">{r.reason ?? "—"}</td>
+                  <td className="p-2 whitespace-nowrap">
+                    {r.system ? (
+                      <Link to="/systems/$id" params={{ id: r.system_id }} className="text-primary hover:underline">
+                        {r.system.system_code}
+                      </Link>
+                    ) : "—"}
+                  </td>
+                </tr>
+              );
+            })}
             {!isLoading && list.length === 0 && (
-              <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
+              <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
             )}
           </tbody>
         </table>

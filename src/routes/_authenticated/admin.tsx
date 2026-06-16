@@ -11,7 +11,7 @@ import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status"
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState } from "react";
 import { toast } from "sonner";
-import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus } from "lucide-react";
+import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),

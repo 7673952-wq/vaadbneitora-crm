@@ -321,42 +321,40 @@ function SystemDetail() {
         </div>
 
         {/* ===== מעקב — תזכורות ===== */}
-        <div className="mt-8 pt-6 border-t border-border">
-          <h2 className="font-semibold flex items-center gap-2 mb-4"><Bell className="h-4 w-4" />מעקב — תזכורות</h2>
+        <ReminderSection
+          hasReminder={!!s.reminder_at}
+          headerSummary={
+            s.reminder_at ? (
+              <span>
+                תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
+                {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
+                  <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
+                )}
+              </span>
+            ) : (
+              <span className="opacity-70">אין תזכורת מוגדרת</span>
+            )
+          }
+        >
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <div className="flex items-center gap-2 text-sm">
-                <Bell className="h-4 w-4" />
-                {s.reminder_at ? (
-                  <span>
-                    תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
-                    {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
-                      <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="opacity-70">אין תזכורת מוגדרת</span>
-                )}
-              </div>
-              <div className="flex items-center gap-1 flex-wrap">
-                {(["day","week","month","2months","year"] as const).map((r) => (
-                  <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                    className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
-                    {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
-                  </button>
-                ))}
-                <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
-                <button disabled={!customDate}
-                  onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                  className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
-                {s.reminder_at && (
-                  <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
-                    className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
-                    <BellOff className="h-3 w-3" />בטל
-                  </button>
-                )}
-              </div>
+            <div className="flex items-center justify-end gap-1 flex-wrap">
+              {(["day","week","month","2months","year"] as const).map((r) => (
+                <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
+                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
+                  {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
+                </button>
+              ))}
+              <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
+                className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
+              <button disabled={!customDate}
+                onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
+                className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
+              {s.reminder_at && (
+                <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
+                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
+                  <BellOff className="h-3 w-3" />בטל
+                </button>
+              )}
             </div>
 
             <div className="text-xs space-y-2">
@@ -398,7 +396,8 @@ function SystemDetail() {
               )}
             </div>
           </div>
-        </div>
+        </ReminderSection>
+
 
         {/* ===== הערות + יומן שינויים זה לצד זה ===== */}
         <div className="mt-8 pt-6 border-t border-border grid grid-cols-1 lg:grid-cols-2 gap-6">

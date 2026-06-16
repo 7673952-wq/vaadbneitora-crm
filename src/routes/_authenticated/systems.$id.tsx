@@ -400,118 +400,122 @@ function SystemDetail() {
           </div>
         </div>
 
-        {/* ===== הערות ===== */}
-        <div className="mt-8 pt-6 border-t border-border">
-          <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
-          <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
-            className="flex gap-2 mb-4">
-            <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="הוסף הערה..."
-              className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-            <button type="submit" className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
-              <Send className="h-4 w-4" />
-            </button>
-          </form>
-          <div className="space-y-3 max-h-96 overflow-y-auto">
-            {data.notes.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין הערות עדיין</p>}
-            {data.notes.map((n: any) => (
-              <div key={n.id} className="border border-border rounded-lg p-3 bg-background">
-                <div className="text-sm whitespace-pre-wrap">{n.body}</div>
-                <div className="text-xs text-muted-foreground mt-2 flex justify-between">
-                  <span>{n.author_name}</span>
-                  <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
+        {/* ===== הערות + יומן שינויים זה לצד זה ===== */}
+        <div className="mt-8 pt-6 border-t border-border grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* הערות */}
+          <div>
+            <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
+            <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
+              className="flex gap-2 mb-4">
+              <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="הוסף הערה..."
+                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <button type="submit" className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
+                <Send className="h-4 w-4" />
+              </button>
+            </form>
+            <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
+              {data.notes.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין הערות עדיין</p>}
+              {data.notes.map((n: any) => (
+                <div key={n.id} className="border border-border rounded-lg p-3 bg-background">
+                  <div className="text-sm whitespace-pre-wrap">{n.body}</div>
+                  <div className="text-xs text-muted-foreground mt-2 flex justify-between">
+                    <span>{n.author_name}</span>
+                    <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
 
-        {/* ===== היסטוריה משולבת (יומן + העברות נציג) ===== */}
-        <div className="mt-8 pt-6 border-t border-border">
-          <h2 className="font-semibold flex items-center gap-2 mb-4">
-            <History className="h-4 w-4" />היסטוריה ({data.activity.length + data.transfers.length})
-          </h2>
-          <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
-            {(() => {
-              const merged = [
-                ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-                ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
-              ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+          {/* היסטוריה משולבת (יומן + העברות נציג) */}
+          <div>
+            <h2 className="font-semibold flex items-center gap-2 mb-4">
+              <History className="h-4 w-4" />היסטוריה ({data.activity.length + data.transfers.length})
+            </h2>
+            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+              {(() => {
+                const merged = [
+                  ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
+                  ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
+                ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
-              if (merged.length === 0) {
-                return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות</p>;
-              }
-              return merged.map((row) => {
-                if (row.kind === "transfer") {
-                  const t = row.item;
+                if (merged.length === 0) {
+                  return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות</p>;
+                }
+                return merged.map((row) => {
+                  if (row.kind === "transfer") {
+                    const t = row.item;
+                    return (
+                      <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-3">
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
+                          <span className="font-medium text-foreground">{t.by_name}</span>
+                          <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
+                        </div>
+                        <div className="text-sm flex items-center gap-2 flex-wrap">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
+                          <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
+                          <span className="text-muted-foreground">→</span>
+                          <span className="font-medium text-sm">{t.to_name || "—"}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+                  const a = row.item;
+                  const oldDisp = a.field === "assigned_agent_id" ? (a.old_agent_name || formatValue(a.field, a.old_value)) : formatValue(a.field, a.old_value);
+                  const newDisp = a.field === "assigned_agent_id" ? (a.new_agent_name || formatValue(a.field, a.new_value)) : formatValue(a.field, a.new_value);
+                  const isStatus = a.field === "status";
                   return (
-                    <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-3">
+                    <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
                       <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                        <span className="font-medium text-foreground">{t.by_name}</span>
-                        <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
+                        <span className="font-medium text-foreground">{a.actor_name}</span>
+                        <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
                       </div>
                       <div className="text-sm flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
-                        <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="font-medium text-sm">{t.to_name || "—"}</span>
+                        {a.action === "created" && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
+                        )}
+                        {a.action === "deleted" && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
+                        )}
+                        {a.action === "updated" && (
+                          <>
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
+                              {FIELD_LABELS[a.field] || a.field}
+                            </span>
+                            {isStatus ? (
+                              <>
+                                <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
+                                <span className="text-muted-foreground">→</span>
+                                <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
+                              </>
+                            ) : (
+                              <>
+                                <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
+                                <span className="text-muted-foreground">→</span>
+                                <span className="font-medium text-sm">{newDisp}</span>
+                              </>
+                            )}
+                          </>
+                        )}
                       </div>
+                      {isStatus ? (
+                        <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                          <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
+                        </div>
+                      ) : a.reason && (
+                        <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                          <span className="font-semibold">סיבה:</span> {a.reason}
+                        </div>
+                      )}
                     </div>
                   );
-                }
-                const a = row.item;
-                const oldDisp = a.field === "assigned_agent_id" ? (a.old_agent_name || formatValue(a.field, a.old_value)) : formatValue(a.field, a.old_value);
-                const newDisp = a.field === "assigned_agent_id" ? (a.new_agent_name || formatValue(a.field, a.new_value)) : formatValue(a.field, a.new_value);
-                const isStatus = a.field === "status";
-                return (
-                  <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                      <span className="font-medium text-foreground">{a.actor_name}</span>
-                      <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
-                    </div>
-                    <div className="text-sm flex items-center gap-2 flex-wrap">
-                      {a.action === "created" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
-                      )}
-                      {a.action === "deleted" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
-                      )}
-                      {a.action === "updated" && (
-                        <>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
-                            {FIELD_LABELS[a.field] || a.field}
-                          </span>
-                          {isStatus ? (
-                            <>
-                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
-                              <span className="text-muted-foreground">→</span>
-                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
-                              <span className="text-muted-foreground">→</span>
-                              <span className="font-medium text-sm">{newDisp}</span>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {isStatus ? (
-                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                        <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
-                      </div>
-                    ) : a.reason && (
-                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                        <span className="font-semibold">סיבה:</span> {a.reason}
-                      </div>
-                    )}
-                  </div>
-                );
-              });
-            })()}
+                });
+              })()}
+            </div>
           </div>
         </div>
       </div>
+
 
       {/* ===== תתי-מערכות ===== */}
       {!isSub && (

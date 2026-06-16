@@ -802,6 +802,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
       const u = new Date(r.updated_at).getTime();
       if (u < f || u > t) return false;
       if (statusFilter.length > 0 && !statusFilter.includes(r.status)) return false;
+      if (agentFilter.length > 0 && !agentFilter.includes(r.assigned_agent_id || "__unassigned")) return false;
       return true;
     }).length;
   })();
@@ -868,6 +869,34 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
               })}
             </div>
             <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הסטטוסים</p>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium">סינון לפי נציג מטפל</label>
+              {agentFilter.length > 0 && (
+                <button type="button" onClick={() => setAgentFilter([])}
+                  className="text-xs text-muted-foreground hover:text-foreground">נקה ({agentFilter.length})</button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
+              <button type="button"
+                onClick={() => setAgentFilter((prev) => prev.includes("__unassigned") ? prev.filter((v) => v !== "__unassigned") : [...prev, "__unassigned"])}
+                className={`text-xs py-1.5 px-2 rounded border text-right truncate ${agentFilter.includes("__unassigned") ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                לא משויך
+              </button>
+              {(agents ?? []).map((a: any) => {
+                const active = agentFilter.includes(a.id);
+                return (
+                  <button key={a.id} type="button"
+                    onClick={() => setAgentFilter(active ? agentFilter.filter((v) => v !== a.id) : [...agentFilter, a.id])}
+                    className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                    {a.display_name}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הנציגים</p>
           </div>
 
           <div>

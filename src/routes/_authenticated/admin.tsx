@@ -431,7 +431,7 @@ function AutoSnoozePanel() {
     <div className="mt-10">
       <div className="mb-3">
         <h2 className="text-2xl font-bold flex items-center gap-2"><Clock className="h-5 w-5" /> נודניק אוטומטי</h2>
-        <p className="text-sm text-muted-foreground mt-1">דחיית טיפול במערכות שלא טופלו זמן רב. הגדר את משך הדחייה והסף בימים, שמור, וניתן להחיל מיד על כלל המערכות הממתינות.</p>
+        <p className="text-sm text-muted-foreground mt-1">מערכת בסטטוס ממתין שלא טופלה במשך מספר הימים שתגדיר, תופיע אוטומטית כתזכורת לנציג המשוייך אליה. בנוסף ניתן להחיל דחייה ידנית עכשיו על כלל הממתינים.</p>
       </div>
       <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-4 gap-3 items-end">
         <Field label="סף ימים ללא טיפול">

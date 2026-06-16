@@ -98,7 +98,11 @@ function parseCSV(text: string): Record<string, any>[] {
       else if (v === "true") v = true;
       else if (v === "false") v = false;
       else if (/^-?\d+$/.test(v)) v = parseInt(v, 10);
-      else if (/^[\[{]/.test(v)) { try { v = JSON.parse(v); } catch {} }
+      else if (/^[\[{]/.test(v)) {
+        try { v = JSON.parse(v); } catch (err) {
+          console.error("[backups.restore] failed to parse JSON field; keeping raw string", { field: h, error: err });
+        }
+      }
       obj[h] = v;
     });
     out.push(obj);

@@ -296,6 +296,11 @@ function Dashboard() {
             <Download className="h-4 w-4" />ייצוא לפי תאריכים
           </button>
           {me?.isAdmin && (
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Upload className="h-4 w-4" />ייבוא
+            </button>
+          )}
+          {me?.isAdmin && (
             <>
               <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
                 ניהול

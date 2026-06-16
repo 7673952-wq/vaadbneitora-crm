@@ -422,10 +422,12 @@ function Dashboard() {
       {showExport && (
         <ExportModal
           allRows={systems ?? []}
+          agents={agents ?? []}
           onClose={() => setShowExport(false)}
-          onExport={(format, fromIso, toIso, label, statusFilter) => {
+          onExport={(format, fromIso, toIso, label, statusFilter, agentFilter) => {
             let rows = filterByRange(systems ?? [], fromIso, toIso);
             if (statusFilter.length > 0) rows = rows.filter((r: any) => statusFilter.includes(r.status));
+            if (agentFilter.length > 0) rows = rows.filter((r: any) => agentFilter.includes(r.assigned_agent_id || "__unassigned"));
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);

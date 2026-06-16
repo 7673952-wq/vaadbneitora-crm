@@ -15,6 +15,11 @@ async function isAdminUser(context: { supabase: any; userId: string }) {
   return isAdminUserId(context.userId);
 }
 
+async function isAgentOrAbove(context: { userId: string }) {
+  const { hasRole } = await import("@/lib/permissions.server");
+  return hasRole(context.userId, "agent");
+}
+
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { status?: string | null; agentId?: string | null; period?: string | null }) => d)

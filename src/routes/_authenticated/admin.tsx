@@ -212,6 +212,7 @@ function AdminPage() {
         </div>
       )}
 
+      <AutoSnoozePanel />
       <StatusSettingsPanel />
     </div>
   );

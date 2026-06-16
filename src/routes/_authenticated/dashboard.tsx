@@ -312,16 +312,18 @@ function Dashboard() {
                   ניהול
                 </Link>
               )}
-              <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
-                <Plus className="h-4 w-4" />הוסף מערכת
-              </button>
             </>
+          )}
+          {me?.isAgent && (
+            <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+              <Plus className="h-4 w-4" />הוסף מערכת
+            </button>
           )}
         </div>
       </div>
 
       {/* Quick lookup */}
-      <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAdmin} />
+      <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAgent} />
 
       {/* Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">

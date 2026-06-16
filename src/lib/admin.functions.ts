@@ -203,9 +203,6 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Only allow deleting custom statuses (not the built-in enum values).
-    const { data: row } = await supabaseAdmin.from("status_settings").select("is_custom").eq("status_key", data.status_key).maybeSingle();
-    if (!row?.is_custom) throw new Error("לא ניתן למחוק סטטוס מובנה");
     const { error } = await supabaseAdmin.from("status_settings").delete().eq("status_key", data.status_key);
     if (error) throw new Error(error.message);
     return { ok: true };

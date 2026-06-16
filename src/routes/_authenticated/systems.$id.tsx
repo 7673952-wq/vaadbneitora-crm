@@ -56,6 +56,7 @@ const FIELD_LABELS: Record<string, string> = {
   name: "שם",
   notes: "הערות",
   phone: "טלפון",
+  caller_phone: "מספר פונה",
   reminder_at: "תזכורת",
   parent_system_id: "מערכת אב",
 };

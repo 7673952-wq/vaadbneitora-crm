@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function assertAdmin(context: { userId: string }) {
-  const { assertAdminUserId } = await import("@/lib/admin-role.server");
+  const { assertAdminUserId } = await import("@/lib/permissions.server");
   await assertAdminUserId(context.userId);
 }
 

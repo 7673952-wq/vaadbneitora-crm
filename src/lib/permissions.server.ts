@@ -62,7 +62,7 @@ export async function assertRole(userId: string, required: Role): Promise<void> 
 }
 
 // ---------- Back-compat shims ----------
-// The codebase previously imported these from `@/lib/admin-role.server`.
+// The codebase previously imported these from `@/lib/permissions.server`.
 // Keeping the same names so server-fn handlers can switch imports with a
 // one-line change. Prefer `hasRole`/`assertRole` for new code.
 

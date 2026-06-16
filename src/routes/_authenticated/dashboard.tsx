@@ -373,19 +373,6 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Handled */}
-      {handledRecently.length > 0 && (
-        <details className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4" open>
-          <summary className="cursor-pointer text-sm font-semibold text-emerald-900 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />טופל לאחרונה ({handledRecently.length})
-          </summary>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
-            {handledRecently.map((r: any) => (
-              <SystemCard key={r.id} r={r} compact />
-            ))}
-          </div>
-        </details>
-      )}
 
       {/* Main cards grid */}
       <div>

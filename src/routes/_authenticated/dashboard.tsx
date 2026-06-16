@@ -264,10 +264,13 @@ function Dashboard() {
                     <span className="text-xs text-muted-foreground shrink-0">· {new Date(r.reminder_at).toLocaleString("he-IL")}</span>
                   )}
                 </Link>
-                <button onClick={() => dismissMut.mutate({ data: { system_id: r.id } })}
-                  className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-green-400 hover:bg-green-100 text-green-800 bg-white">
-                  <CheckCircle2 className="h-3 w-3" />בוצע
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <SnoozeMenu onSnooze={(minutes) => snoozeMut.mutate({ data: { system_id: r.id, minutes } })} />
+                  <button onClick={() => dismissMut.mutate({ data: { system_id: r.id } })}
+                    className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-green-400 hover:bg-green-100 text-green-800 bg-white">
+                    <CheckCircle2 className="h-3 w-3" />בוצע
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -370,13 +373,8 @@ function Dashboard() {
         )}
       </div>
 
-      {/* Pending sections */}
-      {(pendingClose.length > 0 || pendingOpen.length > 0) && (
-        <div className="grid md:grid-cols-2 gap-4">
-          <PendingGroup title="לבדיקה לחסימה" items={pendingClose} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-          <PendingGroup title="לבדיקה לפתיחה" items={pendingOpen} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-        </div>
-      )}
+      {/* Pending statuses now appear inside "ממתין לטיפול" below */}
+
 
 
       {/* Main cards grid */}

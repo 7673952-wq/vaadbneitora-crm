@@ -1100,12 +1100,32 @@ function ImportModal({ onClose, onImport }: {
   const HEADERS = ["מספר מערכת", "שם מערכת", "סטטוס", "טלפון", "טלפון פונה", "מקור", "דוא\"ל", "הערות", "נציג"];
 
   function downloadTemplate() {
+    const statusLabels = STATUS_OPTIONS.map((s) => s.label);
+    // Main sheet with sample row
     const ws = XLSX.utils.aoa_to_sheet([HEADERS, [
-      "12345", "מערכת לדוגמה", "פתוח", "", "", "", "", "", "",
+      "12345", "מערכת לדוגמה", statusLabels[0] ?? "פתוח", "", "", "", "", "", "",
     ]]);
     (ws as any)["!cols"] = HEADERS.map(() => ({ wch: 18 }));
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "מערכות");
+
+    // Reference sheet listing all statuses (also serves as dropdown source)
+    const wsStatuses = XLSX.utils.aoa_to_sheet([["סטטוסים"], ...statusLabels.map((l) => [l])]);
+    (wsStatuses as any)["!cols"] = [{ wch: 24 }];
+    XLSX.utils.book_append_sheet(wb, wsStatuses, "סטטוסים");
+
+    // Attach data-validation on column C (סטטוס) rows 2..1000 referencing the סטטוסים sheet
+    const colC = "C"; // 3rd column
+    const refRange = `סטטוסים!$A$2:$A$${statusLabels.length + 1}`;
+    (ws as any)["!dataValidation"] = [{
+      sqref: `${colC}2:${colC}1000`,
+      type: "list",
+      allowBlank: true,
+      showDropDown: false,
+      formula1: `=${refRange}`,
+    }];
+
     XLSX.writeFile(wb, "תבנית_ייבוא_מערכות.xlsx");
   }
 

@@ -122,14 +122,9 @@ function Dashboard() {
   // Pending sections
   const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
   const pendingOpen = filtered.filter((r: any) => r.status === "pending_check_open");
-  const handledRecently = useMemo(() => {
-    const dayAgo = Date.now() - 1000 * 60 * 60 * 24 * 7; // last week
-    return filtered.filter((r: any) => r.handled_pending_at && new Date(r.handled_pending_at).getTime() >= dayAgo);
-  }, [filtered]);
   const rest = filtered.filter((r: any) =>
     r.status !== "pending_check_close" &&
-    r.status !== "pending_check_open" &&
-    !handledRecently.some((h: any) => h.id === r.id),
+    r.status !== "pending_check_open",
   );
   const restWaiting = useMemo(() => rest.filter((r: any) => !STATUS_HANDLED[r.status]), [rest, statusSettings]);
   const restHandled = useMemo(() => rest.filter((r: any) => STATUS_HANDLED[r.status]), [rest, statusSettings]);

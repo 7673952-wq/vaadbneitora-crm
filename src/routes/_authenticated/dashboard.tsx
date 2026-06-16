@@ -122,14 +122,9 @@ function Dashboard() {
   // Pending sections
   const pendingClose = filtered.filter((r: any) => r.status === "pending_check_close");
   const pendingOpen = filtered.filter((r: any) => r.status === "pending_check_open");
-  const handledRecently = useMemo(() => {
-    const dayAgo = Date.now() - 1000 * 60 * 60 * 24 * 7; // last week
-    return filtered.filter((r: any) => r.handled_pending_at && new Date(r.handled_pending_at).getTime() >= dayAgo);
-  }, [filtered]);
   const rest = filtered.filter((r: any) =>
     r.status !== "pending_check_close" &&
-    r.status !== "pending_check_open" &&
-    !handledRecently.some((h: any) => h.id === r.id),
+    r.status !== "pending_check_open",
   );
   const restWaiting = useMemo(() => rest.filter((r: any) => !STATUS_HANDLED[r.status]), [rest, statusSettings]);
   const restHandled = useMemo(() => rest.filter((r: any) => STATUS_HANDLED[r.status]), [rest, statusSettings]);
@@ -378,19 +373,6 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Handled */}
-      {handledRecently.length > 0 && (
-        <details className="bg-emerald-50/60 border border-emerald-200 rounded-xl p-4" open>
-          <summary className="cursor-pointer text-sm font-semibold text-emerald-900 flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4" />טופל לאחרונה ({handledRecently.length})
-          </summary>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 mt-3">
-            {handledRecently.map((r: any) => (
-              <SystemCard key={r.id} r={r} compact />
-            ))}
-          </div>
-        </details>
-      )}
 
       {/* Main cards grid */}
       <div>

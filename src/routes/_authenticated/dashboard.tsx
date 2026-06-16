@@ -1099,35 +1099,50 @@ function ImportModal({ onClose, onImport }: {
 
   const HEADERS = ["מספר מערכת", "שם מערכת", "סטטוס", "טלפון", "טלפון פונה", "מקור", "דוא\"ל", "הערות", "נציג"];
 
-  function downloadTemplate() {
+  async function downloadTemplate() {
     const statusLabels = STATUS_OPTIONS.map((s) => s.label);
-    // Main sheet with sample row
-    const ws = XLSX.utils.aoa_to_sheet([HEADERS, [
-      "12345", "מערכת לדוגמה", statusLabels[0] ?? "פתוח", "", "", "", "", "", "",
-    ]]);
-    (ws as any)["!cols"] = HEADERS.map(() => ({ wch: 18 }));
+    const ExcelJS = (await import("exceljs")).default;
+    const wb = new ExcelJS.Workbook();
+    wb.views = [{ rightToLeft: true } as any];
 
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "מערכות");
+    const ws = wb.addWorksheet("מערכות", { views: [{ rightToLeft: true }] });
+    ws.addRow(HEADERS);
+    ws.addRow(["12345", "מערכת לדוגמה", statusLabels[0] ?? "פתוח", "", "", "", "", "", ""]);
+    ws.columns = HEADERS.map(() => ({ width: 18 }));
+    ws.getRow(1).font = { bold: true };
 
-    // Reference sheet listing all statuses (also serves as dropdown source)
-    const wsStatuses = XLSX.utils.aoa_to_sheet([["סטטוסים"], ...statusLabels.map((l) => [l])]);
-    (wsStatuses as any)["!cols"] = [{ wch: 24 }];
-    XLSX.utils.book_append_sheet(wb, wsStatuses, "סטטוסים");
+    // Statuses sheet (also used as dropdown source)
+    const wsStatuses = wb.addWorksheet("סטטוסים", { views: [{ rightToLeft: true }] });
+    wsStatuses.addRow(["סטטוסים"]);
+    statusLabels.forEach((l) => wsStatuses.addRow([l]));
+    wsStatuses.getColumn(1).width = 26;
+    wsStatuses.getRow(1).font = { bold: true };
 
-    // Attach data-validation on column C (סטטוס) rows 2..1000 referencing the סטטוסים sheet
-    const colC = "C"; // 3rd column
-    const refRange = `סטטוסים!$A$2:$A$${statusLabels.length + 1}`;
-    (ws as any)["!dataValidation"] = [{
-      sqref: `${colC}2:${colC}1000`,
-      type: "list",
-      allowBlank: true,
-      showDropDown: false,
-      formula1: `=${refRange}`,
-    }];
+    // Data validation: dropdown on column C (status), rows 2..1000
+    const range = `'סטטוסים'!$A$2:$A$${statusLabels.length + 1}`;
+    for (let r = 2; r <= 1000; r++) {
+      ws.getCell(`C${r}`).dataValidation = {
+        type: "list",
+        allowBlank: true,
+        formulae: [range],
+        showErrorMessage: true,
+        errorTitle: "סטטוס לא תקין",
+        error: "יש לבחור מהרשימה",
+      } as any;
+    }
 
-    XLSX.writeFile(wb, "תבנית_ייבוא_מערכות.xlsx");
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "תבנית_ייבוא_מערכות.xlsx";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
+
 
   async function handleFile(file: File) {
     setBusy(true);

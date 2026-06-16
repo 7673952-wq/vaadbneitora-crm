@@ -4,10 +4,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import JSZip from "jszip";
-import { backupNow, listBackups, getBackupFileUrl, deleteBackup } from "@/lib/backups.functions";
+import { backupNow, listBackups, getBackupFileUrl, deleteBackup, restoreBackup } from "@/lib/backups.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive } from "lucide-react";
+import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/backups")({
   component: BackupsPage,
@@ -34,6 +34,36 @@ function BackupsPage() {
   const nowFn = useServerFn(backupNow);
   const urlFn = useServerFn(getBackupFileUrl);
   const delFn = useServerFn(deleteBackup);
+  const restoreFn = useServerFn(restoreBackup);
+  const [restoring, setRestoring] = useState(false);
+
+  async function handleRestoreFiles(fileList: FileList | null) {
+    if (!fileList || !fileList.length) return;
+    const allowed = new Set(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]);
+    const files: { table: string; csv: string }[] = [];
+    for (const f of Array.from(fileList)) {
+      const base = f.name.replace(/\.csv$/i, "");
+      if (!allowed.has(base)) { toast.error(`קובץ לא נתמך: ${f.name}`); continue; }
+      const text = await f.text();
+      files.push({ table: base, csv: text });
+    }
+    if (!files.length) return;
+    const mode = confirm("'אישור' = החלף את כל הנתונים בטבלאות שיובאו (פעולה הרסנית).\n'ביטול' = מיזוג בטוח (עדכון/הוספה לפי id).") ? "replace" : "merge";
+    if (mode === "replace" && !confirm("בטוח? כל הנתונים הקיימים בטבלאות הללו יימחקו ויוחלפו.")) return;
+    setRestoring(true);
+    try {
+      const res: any = await restoreFn({ data: { files, mode }, headers: await getAuthHeaders() });
+      const ok = res.filter((r: any) => !r.error).reduce((s: number, r: any) => s + r.inserted, 0);
+      const errs = res.filter((r: any) => r.error);
+      toast.success(`שוחזרו ${ok} רשומות`);
+      if (errs.length) toast.error(`${errs.length} טבלאות נכשלו: ${errs.map((e: any) => e.table).join(", ")}`);
+      qc.invalidateQueries();
+    } catch (e: any) {
+      toast.error(e?.message ?? "שגיאה בשחזור");
+    } finally {
+      setRestoring(false);
+    }
+  }
 
   const { data: me } = useQuery({
     queryKey: ["me"],
@@ -125,17 +155,25 @@ function BackupsPage() {
             <Database className="h-6 w-6" /> גיבויים
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            גיבוי יומי אוטומטי ב-03:00. אפשר גם להפעיל גיבוי ידני בכל רגע.
+            גיבוי יומי אוטומטי ב-03:00 + גיבוי שבועי בימי חמישי ב-03:00 (נשלח גם למייל). אפשר גם להפעיל גיבוי ידני בכל רגע.
           </p>
         </div>
-        <button
-          onClick={() => runMut.mutate()}
-          disabled={runMut.isPending}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${runMut.isPending ? "animate-spin" : ""}`} />
-          {runMut.isPending ? "מגבה..." : "גבה עכשיו"}
-        </button>
+        <div className="flex items-center gap-2">
+          <label className={`flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium cursor-pointer hover:bg-accent ${restoring ? "opacity-50 pointer-events-none" : ""}`}>
+            <Upload className="h-4 w-4" />
+            {restoring ? "משחזר..." : "ייבוא גיבוי"}
+            <input type="file" accept=".csv" multiple className="hidden"
+              onChange={(e) => { handleRestoreFiles(e.target.files); e.currentTarget.value = ""; }} />
+          </label>
+          <button
+            onClick={() => runMut.mutate()}
+            disabled={runMut.isPending}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${runMut.isPending ? "animate-spin" : ""}`} />
+            {runMut.isPending ? "מגבה..." : "גבה עכשיו"}
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card overflow-hidden">

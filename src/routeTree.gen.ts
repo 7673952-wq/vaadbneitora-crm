@@ -20,6 +20,7 @@ import { Route as AuthenticatedBackupsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
+import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
 
 const AuthRoute = AuthRouteImport.update({
@@ -78,6 +79,12 @@ const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
   path: '/systems/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const ApiPublicHooksWeeklyBackupRoute =
+  ApiPublicHooksWeeklyBackupRouteImport.update({
+    id: '/api/public/hooks/weekly-backup',
+    path: '/api/public/hooks/weekly-backup',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksDailyBackupRoute =
   ApiPublicHooksDailyBackupRouteImport.update({
     id: '/api/public/hooks/daily-backup',
@@ -97,6 +104,7 @@ export interface FileRoutesByFullPath {
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
+  '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -110,6 +118,7 @@ export interface FileRoutesByTo {
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
+  '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -125,6 +134,7 @@ export interface FileRoutesById {
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
+  '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/systems/$id'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
+    | '/api/public/hooks/weekly-backup'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/systems/$id'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
+    | '/api/public/hooks/weekly-backup'
   id:
     | '__root__'
     | '/'
@@ -167,6 +179,7 @@ export interface FileRouteTypes {
     | '/_authenticated/systems/$id'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
+    | '/api/public/hooks/weekly-backup'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -175,6 +188,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   ApiPublicWeeklyCrmReportRoute: typeof ApiPublicWeeklyCrmReportRoute
   ApiPublicHooksDailyBackupRoute: typeof ApiPublicHooksDailyBackupRoute
+  ApiPublicHooksWeeklyBackupRoute: typeof ApiPublicHooksWeeklyBackupRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -256,6 +270,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/api/public/hooks/weekly-backup': {
+      id: '/api/public/hooks/weekly-backup'
+      path: '/api/public/hooks/weekly-backup'
+      fullPath: '/api/public/hooks/weekly-backup'
+      preLoaderRoute: typeof ApiPublicHooksWeeklyBackupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/daily-backup': {
       id: '/api/public/hooks/daily-backup'
       path: '/api/public/hooks/daily-backup'
@@ -295,6 +316,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   ApiPublicWeeklyCrmReportRoute: ApiPublicWeeklyCrmReportRoute,
   ApiPublicHooksDailyBackupRoute: ApiPublicHooksDailyBackupRoute,
+  ApiPublicHooksWeeklyBackupRoute: ApiPublicHooksWeeklyBackupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

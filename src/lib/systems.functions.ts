@@ -670,9 +670,23 @@ export const importSystems = createServerFn({ method: "POST" })
     const errors: { row: number; reason: string }[] = [];
     const incomplete: number[] = [];
 
+    // Normalize phone-like codes: strip non-digits, then strip leading 0 / 972 / +972
+    const normalizeCode = (v: string): string => {
+      const digits = String(v).replace(/\D/g, "");
+      if (!digits) return "";
+      if (digits.startsWith("972")) return digits.slice(3).replace(/^0+/, "");
+      if (digits.startsWith("0")) return digits.replace(/^0+/, "");
+      return digits;
+    };
+
     // Existing codes + names for duplicate/parent detection
     const { data: existingRows } = await context.supabase.from("systems").select("id, system_code, name, parent_system_id");
     const existingCodes = new Set<string>(((existingRows ?? []) as any[]).map((r) => String(r.system_code)));
+    const existingNormalized = new Set<string>(
+      ((existingRows ?? []) as any[])
+        .map((r) => normalizeCode(String(r.system_code ?? "")))
+        .filter(Boolean),
+    );
     // Map name -> root system id (prefer parents over children)
     const nameToRoot = new Map<string, string>();
     for (const r of (existingRows ?? []) as any[]) {
@@ -684,6 +698,7 @@ export const importSystems = createServerFn({ method: "POST" })
     }
 
     const seenInBatch = new Set<string>();
+    const seenNormalizedInBatch = new Set<string>();
 
     const pick = (r: Record<string, any>, keys: string[]) => {
       for (const k of keys) {
@@ -708,11 +723,17 @@ export const importSystems = createServerFn({ method: "POST" })
         errors.push({ row: rowNum, reason: `חסר/לא תקין: ${missing.join(", ")}` });
         continue;
       }
-      if (existingCodes.has(system_code) || seenInBatch.has(system_code)) {
+      const normalizedCode = normalizeCode(system_code);
+      if (
+        existingCodes.has(system_code) ||
+        seenInBatch.has(system_code) ||
+        (normalizedCode && (existingNormalized.has(normalizedCode) || seenNormalizedInBatch.has(normalizedCode)))
+      ) {
         errors.push({ row: rowNum, reason: `המערכת קיימת (מספר '${system_code}')` });
         continue;
       }
       seenInBatch.add(system_code);
+      if (normalizedCode) seenNormalizedInBatch.add(normalizedCode);
 
       const phone = pick(r, ["טלפון", "phone", "טלפון לחיוג"]) || null;
       const caller_phone = pick(r, ["טלפון פונה", "caller_phone"]) || null;

@@ -67,3 +67,20 @@ export const deleteBackup = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+export const restoreBackup = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { files: { table: string; csv: string }[]; mode?: "merge" | "replace" }) =>
+    z.object({
+      files: z.array(z.object({
+        table: z.enum(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]),
+        csv: z.string().min(1).max(20_000_000),
+      })).min(1).max(20),
+      mode: z.enum(["merge","replace"]).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { runRestore } = await import("@/lib/backups.server");
+    return await runRestore(data.files, data.mode ?? "merge");
+  });

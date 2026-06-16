@@ -82,5 +82,23 @@ export const restoreBackup = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
     const { runRestore } = await import("@/lib/backups.server");
-    return await runRestore(data.files, data.mode ?? "merge");
+    const result = await runRestore(data.files, data.mode ?? "merge");
+    try {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { data: prof } = await supabaseAdmin
+        .from("profiles").select("display_name").eq("id", context.userId).maybeSingle();
+      const summary = data.files.map((f) => f.table).join(", ");
+      await supabaseAdmin.from("system_activity_log").insert({
+        system_id: null,
+        actor_id: context.userId,
+        actor_display_name: (prof as any)?.display_name ?? null,
+        action: "restored",
+        field: `mode:${data.mode ?? "merge"}`,
+        old_value: null,
+        new_value: summary,
+      });
+    } catch {
+      // best-effort audit; do not fail the restore
+    }
+    return result;
   });

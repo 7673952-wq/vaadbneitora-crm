@@ -52,34 +52,63 @@ export const listAuditLog = createServerFn({ method: "POST" })
     const systemIds = Array.from(new Set((rows ?? []).map((r: any) => r.system_id).filter(Boolean) as string[]));
     const actorIds = Array.from(new Set((rows ?? []).map((r: any) => r.actor_id).filter(Boolean) as string[]));
     const valueIds: string[] = [];
+    const parentSystemIds: string[] = [];
     for (const r of rows ?? []) {
       if (r.field === "assigned_agent_id") {
         if (r.old_value) valueIds.push(r.old_value);
         if (r.new_value) valueIds.push(r.new_value);
       }
+      if (r.field === "parent_system_id") {
+        if (r.old_value) parentSystemIds.push(r.old_value);
+        if (r.new_value) parentSystemIds.push(r.new_value);
+      }
     }
     const allProfileIds = Array.from(new Set([...actorIds, ...valueIds]));
+    const allSystemIds = Array.from(new Set([...systemIds, ...parentSystemIds]));
 
-    const [systemsRes, profilesRes] = await Promise.all([
-      systemIds.length
-        ? context.supabase.from("systems").select("id, system_code, name").in("id", systemIds)
+    const [systemsRes, profilesRes, statusRes] = await Promise.all([
+      allSystemIds.length
+        ? context.supabase.from("systems").select("id, system_code, name").in("id", allSystemIds)
         : Promise.resolve({ data: [] as any[] }),
       allProfileIds.length
         ? context.supabase.from("profiles").select("id, display_name").in("id", allProfileIds)
         : Promise.resolve({ data: [] as any[] }),
+      context.supabase.from("status_settings").select("status_key, label"),
     ]);
 
     const sysMap = new Map((systemsRes.data ?? []).map((s: any) => [s.id, s]));
     const profMap = new Map((profilesRes.data ?? []).map((p: any) => [p.id, p.display_name]));
+    const statusMap = new Map((statusRes.data ?? []).map((s: any) => [s.status_key, s.label]));
+    // Built-in fallback labels (in case status_settings was customized away)
+    const DEFAULT_STATUS_LABELS: Record<string, string> = {
+      pending_check_close: "לבדיקה לחסימה", pending_check_open: "לבדיקה לפתיחה",
+      open: "פתוח", to_open: "לפתוח", closed: "חסום", to_block: "לחסום",
+      block_from_root: "לחסום מהשורש", problem: "בעיה",
+      open_only_bimot: "לפתוח רק בימות", close_only_bimot: "פתוח רק בימות",
+      open_in_simahedrin: "לפתיחה בסימהדרין", close_in_simahedrin: "לחסימה בסימהדרין",
+      send_to_yosela: "לשלוח ליוסלה",
+    };
+    const labelOf = (key: string) => statusMap.get(key) ?? DEFAULT_STATUS_LABELS[key] ?? key;
+    const sysLabel = (id: string) => {
+      const s: any = sysMap.get(id);
+      if (!s) return id;
+      return `${s.system_code}${s.name ? " / " + s.name : ""}`;
+    };
+    const displayValue = (field: string | null, value: string | null) => {
+      if (value === null || value === undefined || value === "") return value;
+      if (field === "assigned_agent_id") return profMap.get(value) ?? value;
+      if (field === "parent_system_id") return sysLabel(value);
+      if (field === "status") return labelOf(value);
+      if (field === "reminder_at") { try { return new Date(value).toLocaleString("he-IL"); } catch { return value; } }
+      return value;
+    };
 
     return (rows ?? []).map((r: any) => ({
       ...r,
       actor_name: r.actor_display_name ?? (r.actor_id ? profMap.get(r.actor_id) ?? "לא ידוע" : "מערכת"),
       system: r.system_id ? sysMap.get(r.system_id) ?? null : null,
-      old_display:
-        r.field === "assigned_agent_id" && r.old_value ? profMap.get(r.old_value) ?? r.old_value : r.old_value,
-      new_display:
-        r.field === "assigned_agent_id" && r.new_value ? profMap.get(r.new_value) ?? r.new_value : r.new_value,
+      old_display: displayValue(r.field, r.old_value),
+      new_display: displayValue(r.field, r.new_value),
     }));
   });
 

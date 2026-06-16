@@ -480,8 +480,16 @@ function SystemDetail() {
                     );
                   }
                   const a = row.item;
-                  const oldDisp = a.field === "assigned_agent_id" ? (a.old_agent_name || formatValue(a.field, a.old_value)) : formatValue(a.field, a.old_value);
-                  const newDisp = a.field === "assigned_agent_id" ? (a.new_agent_name || formatValue(a.field, a.new_value)) : formatValue(a.field, a.new_value);
+                  const oldDisp = a.field === "assigned_agent_id"
+                    ? (a.old_agent_name || formatValue(a.field, a.old_value))
+                    : a.field === "parent_system_id"
+                      ? (a.old_value ? (a.old_parent_name || formatValue(a.field, a.old_value)) : "ללא מערכת אב")
+                      : formatValue(a.field, a.old_value);
+                  const newDisp = a.field === "assigned_agent_id"
+                    ? (a.new_agent_name || formatValue(a.field, a.new_value))
+                    : a.field === "parent_system_id"
+                      ? (a.new_value ? (a.new_parent_name || formatValue(a.field, a.new_value)) : "ללא מערכת אב")
+                      : formatValue(a.field, a.new_value);
                   const isStatus = a.field === "status";
                   return (
                     <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">

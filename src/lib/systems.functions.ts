@@ -94,12 +94,26 @@ export const getSystem = createServerFn({ method: "POST" })
         to_name: t.to_agent_id ? pmap.get(t.to_agent_id) ?? "לא ידוע" : "לא משויך",
         by_name: t.transferred_by ? pmap.get(t.transferred_by) ?? "לא ידוע" : "מערכת",
       })),
-      activity: (activity ?? []).map((a: any) => ({
-        ...a,
-        actor_name: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
-        old_agent_name: a.field === "assigned_agent_id" && a.old_value ? pmap.get(a.old_value) ?? null : null,
-        new_agent_name: a.field === "assigned_agent_id" && a.new_value ? pmap.get(a.new_value) ?? null : null,
-      })),
+      activity: await (async () => {
+        const parentIds = Array.from(new Set((activity ?? [])
+          .filter((a: any) => a.field === "parent_system_id")
+          .flatMap((a: any) => [a.old_value, a.new_value])
+          .filter(Boolean) as string[]));
+        let parentNameMap = new Map<string, string>();
+        if (parentIds.length) {
+          const { data: ps } = await context.supabase.from("systems")
+            .select("id, system_code, name").in("id", parentIds);
+          parentNameMap = new Map((ps ?? []).map((p: any) => [p.id, `${p.system_code} / ${p.name ?? ""}`.trim().replace(/\/\s*$/, "")]));
+        }
+        return (activity ?? []).map((a: any) => ({
+          ...a,
+          actor_name: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
+          old_agent_name: a.field === "assigned_agent_id" && a.old_value ? pmap.get(a.old_value) ?? null : null,
+          new_agent_name: a.field === "assigned_agent_id" && a.new_value ? pmap.get(a.new_value) ?? null : null,
+          old_parent_name: a.field === "parent_system_id" && a.old_value ? parentNameMap.get(a.old_value) ?? null : null,
+          new_parent_name: a.field === "parent_system_id" && a.new_value ? parentNameMap.get(a.new_value) ?? null : null,
+        }));
+      })(),
       profiles: profiles ?? [],
     };
   });

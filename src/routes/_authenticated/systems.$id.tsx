@@ -280,6 +280,10 @@ function SystemDetail() {
               placeholder="מספר טלפון"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
           </div>
+          <div>
+            <label className="text-sm font-medium block mb-2">דוא"ל</label>
+            <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
+          </div>
           {me?.isAdmin && (
             <div>
               <label className="text-sm font-medium block mb-2">מבנה</label>
@@ -620,5 +624,32 @@ function formatValue(field: string, value: string | null): string {
     return value.slice(0, 8) + "…";
   }
   return value;
+}
+
+function EmailField({ initial, onSave }: { initial: string; onSave: (v: string | null) => void }) {
+  const [val, setVal] = useState(initial);
+  const commit = () => {
+    const v = val.trim();
+    if (v === (initial || "")) return;
+    onSave(v || null);
+  };
+  return (
+    <div className="flex gap-1">
+      <input
+        type="email"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={commit}
+        placeholder="name@example.com"
+        className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+      <button
+        type="button"
+        onClick={() => { if (val && !val.includes("@")) setVal(val + "@gmail.com"); }}
+        className="text-xs px-2 py-2 border border-input rounded-lg bg-background hover:bg-accent whitespace-nowrap"
+        title="הוסף @gmail.com">
+        @gmail.com
+      </button>
+    </div>
+  );
 }
 

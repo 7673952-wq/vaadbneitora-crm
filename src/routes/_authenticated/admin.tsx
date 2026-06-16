@@ -221,7 +221,9 @@ function StatusSettingsPanel() {
   const listFn = useServerFn(listStatusSettings);
   const upsertFn = useServerFn(upsertStatusSetting);
   const delFn = useServerFn(deleteStatusSetting);
+  const agentsFn = useServerFn(listUsersForAdmin);
   const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
+  const { data: agents } = useQuery({ queryKey: ["admin_users"], queryFn: async () => agentsFn({ headers: await getAuthHeaders() }) });
 
   const refresh = async () => {
     const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
@@ -243,14 +245,14 @@ function StatusSettingsPanel() {
   });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000 });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false });
 
   return (
     <div className="mt-10">
       <div className="flex items-end justify-between flex-wrap gap-3 mb-3">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><Palette className="h-5 w-5" /> ניהול סטטוסים וצבעים</h2>
-          <p className="text-sm text-muted-foreground mt-1">ערוך שמות סטטוסים, שנה צבעים והסדר. שינויים חלים מיד על כל הצוות.</p>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><Palette className="h-5 w-5" /> ניהול סטטוסים</h2>
+          <p className="text-sm text-muted-foreground mt-1">ערוך תוויות, צבעים, מצב (טופל/ממתין) ושיוך אוטומטי לנציגים. שינויים חלים מיד.</p>
         </div>
         <button onClick={() => setShowAdd((v) => !v)} className="flex items-center gap-2 px-3 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm hover:bg-secondary/80">
           <Plus className="h-4 w-4" /> סטטוס חדש
@@ -258,7 +260,7 @@ function StatusSettingsPanel() {
       </div>
 
       {showAdd && (
-        <div className="bg-card border border-border rounded-xl p-4 mb-4 grid sm:grid-cols-5 gap-2 items-end">
+        <div className="bg-card border border-border rounded-xl p-4 mb-4 grid sm:grid-cols-6 gap-2 items-end">
           <Field label="מפתח (אנגלית)"><input value={newRow.status_key} onChange={(e) => setNewRow({ ...newRow, status_key: e.target.value })} placeholder="my_custom_status" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="תווית"><input value={newRow.label} onChange={(e) => setNewRow({ ...newRow, label: e.target.value })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="צבע">
@@ -267,6 +269,12 @@ function StatusSettingsPanel() {
             </select>
           </Field>
           <Field label="מיקום"><input type="number" value={newRow.sort_order} onChange={(e) => setNewRow({ ...newRow, sort_order: Number(e.target.value) })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
+          <Field label="מצב">
+            <select value={newRow.is_handled ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, is_handled: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="0">ממתין לטיפול</option>
+              <option value="1">טופל</option>
+            </select>
+          </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>
         </div>
       )}
@@ -279,12 +287,14 @@ function StatusSettingsPanel() {
               <th className="px-3 py-2 font-medium text-muted-foreground">תווית</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">סדר</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {(rows ?? []).map((r: any) => (
-              <StatusEditRow key={r.status_key} row={r}
+              <StatusEditRow key={r.status_key} row={r} agents={(agents ?? []) as any[]}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={r.is_custom ? () => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); } : undefined}
               />
@@ -296,13 +306,19 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, onSave, onDelete }: { row: any; onSave: (p: { label: string; tone: string; sort_order: number }) => void; onDelete?: () => void }) {
+
+function StatusEditRow({ row, agents, onSave, onDelete }: { row: any; agents: any[]; onSave: (p: { label: string; tone: string; sort_order: number; is_handled: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [order, setOrder] = useState<number>(row.sort_order ?? 0);
-  const dirty = label !== row.label || tone !== row.tone || order !== row.sort_order;
+  const [handled, setHandled] = useState<boolean>(!!row.is_handled);
+  const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
+  const initialIds = (row.assigned_agent_ids ?? []) as string[];
+  const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
+  const dirty = label !== row.label || tone !== row.tone || order !== row.sort_order || handled !== !!row.is_handled || idsDirty;
+  const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
-    <tr className="border-b border-border last:border-0">
+    <tr className="border-b border-border last:border-0 align-top">
       <td className="px-3 py-2">
         <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(tone)}`}>{label || row.status_key}</span>
         <div className="text-[10px] font-mono text-muted-foreground mt-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
@@ -314,8 +330,28 @@ function StatusEditRow({ row, onSave, onDelete }: { row: any; onSave: (p: { labe
         </select>
       </td>
       <td className="px-3 py-2"><input type="number" value={order} onChange={(e) => setOrder(Number(e.target.value))} className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm" /></td>
+      <td className="px-3 py-2">
+        <select value={handled ? "1" : "0"} onChange={(e) => setHandled(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
+          <option value="0">ממתין</option>
+          <option value="1">טופל</option>
+        </select>
+      </td>
+      <td className="px-3 py-2">
+        <div className="flex flex-wrap gap-1 max-w-[260px]">
+          {agents.map((a) => {
+            const active = agentIds.includes(a.id);
+            return (
+              <button key={a.id} type="button" onClick={() => toggleAgent(a.id)}
+                className={`text-[11px] px-2 py-0.5 rounded-full border ${active ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input text-muted-foreground hover:bg-accent"}`}>
+                {a.display_name}
+              </button>
+            );
+          })}
+          {agents.length === 0 && <span className="text-xs text-muted-foreground">אין נציגים</span>}
+        </div>
+      </td>
       <td className="px-3 py-2 text-left whitespace-nowrap">
-        <button disabled={!dirty} onClick={() => onSave({ label, tone, sort_order: order })}
+        <button disabled={!dirty} onClick={() => onSave({ label, tone, sort_order: order, is_handled: handled, assigned_agent_ids: agentIds })}
           className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30">שמור</button>
         {onDelete && (
           <button onClick={onDelete} className="text-destructive hover:bg-destructive/10 rounded p-1.5 mr-1"><Trash2 className="h-4 w-4 inline" /></button>
@@ -324,6 +360,7 @@ function StatusEditRow({ row, onSave, onDelete }: { row: any; onSave: (p: { labe
     </tr>
   );
 }
+
 
 function AdminError({ message }: { message: string }) {
   return (

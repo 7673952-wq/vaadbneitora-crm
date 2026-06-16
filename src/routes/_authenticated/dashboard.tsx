@@ -444,6 +444,24 @@ function Dashboard() {
           }}
         />
       )}
+
+      {showImport && (
+        <ImportModal
+          onClose={() => setShowImport(false)}
+          onImport={async (rows) => {
+            const res: any = await importFn({ data: { rows } });
+            const parts: string[] = [];
+            if (res.createdCount) parts.push(`נוצרו ${res.createdCount} מערכות`);
+            if (res.incompleteRows?.length) parts.push(`${res.incompleteRows.length} עם פרטים חסרים`);
+            if (parts.length) toast.success(parts.join(" · "));
+            if (res.errors?.length) {
+              toast.error(`${res.errors.length} שורות לא יובאו`);
+            }
+            qc.invalidateQueries({ queryKey: ["systems"] });
+            return res;
+          }}
+        />
+      )}
     </div>
   );
 }

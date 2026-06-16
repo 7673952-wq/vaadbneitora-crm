@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 
@@ -27,6 +27,26 @@ export const Route = createFileRoute("/_authenticated/systems/$id")({
   head: () => ({ meta: [{ title: "מערכת | CRM" }] }),
   component: SystemDetail,
 });
+
+function ReminderSection({ hasReminder, headerSummary, children }: { hasReminder: boolean; headerSummary: React.ReactNode; children: React.ReactNode }) {
+  const [open, setOpen] = useState<boolean>(hasReminder);
+  useEffect(() => { setOpen(hasReminder); }, [hasReminder]);
+  return (
+    <div className="mt-8 pt-6 border-t border-border">
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className={`w-full flex items-center justify-between gap-3 p-3 rounded-lg border transition ${hasReminder ? "border-amber-300 bg-amber-50 hover:bg-amber-100" : "border-border bg-background hover:bg-accent"}`}>
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Bell className={`h-4 w-4 ${hasReminder ? "text-amber-700" : ""}`} />
+          מעקב — תזכורות
+          <span className="font-normal text-muted-foreground">· {headerSummary}</span>
+        </div>
+        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+      {open && <div className="mt-4">{children}</div>}
+    </div>
+  );
+}
+
 
 
 

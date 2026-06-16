@@ -257,32 +257,3 @@ function computeSnoozeUntil(unit: string, date?: string|null): string {
   return now.toISOString();
 }
 
-export const applyAutoSnoozeNow = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((d: { unit: "day"|"week"|"month"|"date"; date?: string|null; threshold_days: number }) =>
-    z.object({
-      unit: z.enum(["day","week","month","date"]),
-      date: z.string().datetime().nullable().optional(),
-      threshold_days: z.number().int().min(0).max(3650),
-    }).parse(d),
-  )
-  .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const until = computeSnoozeUntil(data.unit, data.date);
-    const thresholdDate = new Date(Date.now() - data.threshold_days * 86400_000).toISOString();
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // pending statuses (is_handled = false)
-    const { data: pendingStatuses } = await supabaseAdmin
-      .from("status_settings").select("status_key").eq("is_handled", false);
-    const keys = (pendingStatuses ?? []).map((r: any) => r.status_key);
-    if (keys.length === 0) return { ok: true, updated: 0, snoozed_until: until };
-    const { data: updated, error } = await supabaseAdmin
-      .from("systems")
-      .update({ snoozed_until: until })
-      .in("status", keys as any)
-      .lt("updated_at", thresholdDate)
-      .or(`snoozed_until.is.null,snoozed_until.lt.${new Date().toISOString()}`)
-      .select("id");
-    if (error) throw new Error(error.message);
-    return { ok: true, updated: updated?.length ?? 0, snoozed_until: until };
-  });

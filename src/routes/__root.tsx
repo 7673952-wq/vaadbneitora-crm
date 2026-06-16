@@ -99,7 +99,20 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
+    // Force re-login on every browser/tab close: sessionStorage clears on close,
+    // localStorage (where Supabase persists) does not. If we have no marker but
+    // a session exists, it's a stale session from a previous tab — sign out.
+    const SESSION_MARKER = "crm_active_session";
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data.session && !sessionStorage.getItem(SESSION_MARKER)) {
+        await supabase.auth.signOut();
+      }
+    })();
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") sessionStorage.setItem(SESSION_MARKER, "1");
+      if (event === "SIGNED_OUT") sessionStorage.removeItem(SESSION_MARKER);
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();

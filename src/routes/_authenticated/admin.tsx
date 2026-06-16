@@ -298,7 +298,7 @@ function StatusSettingsPanel() {
             {(rows ?? []).map((r: any) => (
               <StatusEditRow key={r.status_key} row={r} agents={(agents ?? []) as any[]}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
-                onDelete={r.is_custom ? () => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); } : undefined}
+                onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
               />
             ))}
           </tbody>

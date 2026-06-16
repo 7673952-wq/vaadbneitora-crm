@@ -3,12 +3,12 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 async function assertAdmin(context: { userId: string }) {
-  const { assertAdminUserId } = await import("@/lib/admin-role.server");
+  const { assertAdminUserId } = await import("@/lib/permissions.server");
   await assertAdminUserId(context.userId);
 }
 
 async function assertSuperAdmin(context: { userId: string }) {
-  const { assertSuperAdminUserId } = await import("@/lib/admin-role.server");
+  const { assertSuperAdminUserId } = await import("@/lib/permissions.server");
   await assertSuperAdminUserId(context.userId);
 }
 
@@ -112,7 +112,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdminUserId, isSuperAdminUserId } = await import("@/lib/admin-role.server");
+    const { isAdminUserId, isSuperAdminUserId } = await import("@/lib/permissions.server");
     const { data } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId);
     const roles = (data ?? []).map((r: any) => r.role);

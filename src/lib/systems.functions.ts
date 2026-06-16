@@ -11,7 +11,7 @@ const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
 async function isAdminUser(context: { supabase: any; userId: string }) {
-  const { isAdminUserId } = await import("@/lib/admin-role.server");
+  const { isAdminUserId } = await import("@/lib/permissions.server");
   return isAdminUserId(context.userId);
 }
 
@@ -236,7 +236,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     let isSuper: boolean | null = null;
     const checkSuper = async () => {
       if (isSuper === null) {
-        const { isSuperAdminUserId } = await import("@/lib/admin-role.server");
+        const { isSuperAdminUserId } = await import("@/lib/permissions.server");
         isSuper = await isSuperAdminUserId(context.userId);
       }
       return isSuper;
@@ -346,7 +346,7 @@ export const deleteSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertSuperAdminUserId } = await import("@/lib/admin-role.server");
+    const { assertSuperAdminUserId } = await import("@/lib/permissions.server");
     await assertSuperAdminUserId(context.userId);
     const { error } = await context.supabase.from("systems").delete().eq("id", data.id);
     if (error) throw new Error(error.message);

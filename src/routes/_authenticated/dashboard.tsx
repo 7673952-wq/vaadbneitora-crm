@@ -52,6 +52,8 @@ function Dashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const importFn = useServerFn(importSystems);
   const [showCharts, setShowCharts] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.localStorage.getItem("dashboardChartsOpen") === "1";

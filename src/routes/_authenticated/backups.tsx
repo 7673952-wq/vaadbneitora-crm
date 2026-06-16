@@ -155,17 +155,25 @@ function BackupsPage() {
             <Database className="h-6 w-6" /> גיבויים
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            גיבוי יומי אוטומטי ב-03:00. אפשר גם להפעיל גיבוי ידני בכל רגע.
+            גיבוי יומי אוטומטי ב-03:00 + גיבוי שבועי בימי חמישי ב-03:00 (נשלח גם למייל). אפשר גם להפעיל גיבוי ידני בכל רגע.
           </p>
         </div>
-        <button
-          onClick={() => runMut.mutate()}
-          disabled={runMut.isPending}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
-          <RefreshCw className={`h-4 w-4 ${runMut.isPending ? "animate-spin" : ""}`} />
-          {runMut.isPending ? "מגבה..." : "גבה עכשיו"}
-        </button>
+        <div className="flex items-center gap-2">
+          <label className={`flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium cursor-pointer hover:bg-accent ${restoring ? "opacity-50 pointer-events-none" : ""}`}>
+            <Upload className="h-4 w-4" />
+            {restoring ? "משחזר..." : "ייבוא גיבוי"}
+            <input type="file" accept=".csv" multiple className="hidden"
+              onChange={(e) => { handleRestoreFiles(e.target.files); e.currentTarget.value = ""; }} />
+          </label>
+          <button
+            onClick={() => runMut.mutate()}
+            disabled={runMut.isPending}
+            className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+          >
+            <RefreshCw className={`h-4 w-4 ${runMut.isPending ? "animate-spin" : ""}`} />
+            {runMut.isPending ? "מגבה..." : "גבה עכשיו"}
+          </button>
+        </div>
       </div>
 
       <div className="rounded-2xl border border-border bg-card overflow-hidden">

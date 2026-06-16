@@ -221,7 +221,9 @@ function StatusSettingsPanel() {
   const listFn = useServerFn(listStatusSettings);
   const upsertFn = useServerFn(upsertStatusSetting);
   const delFn = useServerFn(deleteStatusSetting);
+  const agentsFn = useServerFn(listUsersForAdmin);
   const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
+  const { data: agents } = useQuery({ queryKey: ["admin_users"], queryFn: async () => agentsFn({ headers: await getAuthHeaders() }) });
 
   const refresh = async () => {
     const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
@@ -243,14 +245,14 @@ function StatusSettingsPanel() {
   });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000 });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false });
 
   return (
     <div className="mt-10">
       <div className="flex items-end justify-between flex-wrap gap-3 mb-3">
         <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><Palette className="h-5 w-5" /> ניהול סטטוסים וצבעים</h2>
-          <p className="text-sm text-muted-foreground mt-1">ערוך שמות סטטוסים, שנה צבעים והסדר. שינויים חלים מיד על כל הצוות.</p>
+          <h2 className="text-2xl font-bold flex items-center gap-2"><Palette className="h-5 w-5" /> ניהול סטטוסים</h2>
+          <p className="text-sm text-muted-foreground mt-1">ערוך תוויות, צבעים, מצב (טופל/ממתין) ושיוך אוטומטי לנציגים. שינויים חלים מיד.</p>
         </div>
         <button onClick={() => setShowAdd((v) => !v)} className="flex items-center gap-2 px-3 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm hover:bg-secondary/80">
           <Plus className="h-4 w-4" /> סטטוס חדש
@@ -258,7 +260,7 @@ function StatusSettingsPanel() {
       </div>
 
       {showAdd && (
-        <div className="bg-card border border-border rounded-xl p-4 mb-4 grid sm:grid-cols-5 gap-2 items-end">
+        <div className="bg-card border border-border rounded-xl p-4 mb-4 grid sm:grid-cols-6 gap-2 items-end">
           <Field label="מפתח (אנגלית)"><input value={newRow.status_key} onChange={(e) => setNewRow({ ...newRow, status_key: e.target.value })} placeholder="my_custom_status" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="תווית"><input value={newRow.label} onChange={(e) => setNewRow({ ...newRow, label: e.target.value })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="צבע">
@@ -267,6 +269,12 @@ function StatusSettingsPanel() {
             </select>
           </Field>
           <Field label="מיקום"><input type="number" value={newRow.sort_order} onChange={(e) => setNewRow({ ...newRow, sort_order: Number(e.target.value) })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
+          <Field label="מצב">
+            <select value={newRow.is_handled ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, is_handled: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="0">ממתין לטיפול</option>
+              <option value="1">טופל</option>
+            </select>
+          </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>
         </div>
       )}
@@ -279,12 +287,14 @@ function StatusSettingsPanel() {
               <th className="px-3 py-2 font-medium text-muted-foreground">תווית</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">סדר</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {(rows ?? []).map((r: any) => (
-              <StatusEditRow key={r.status_key} row={r}
+              <StatusEditRow key={r.status_key} row={r} agents={(agents ?? []) as any[]}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={r.is_custom ? () => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); } : undefined}
               />
@@ -295,6 +305,7 @@ function StatusSettingsPanel() {
     </div>
   );
 }
+
 
 function StatusEditRow({ row, onSave, onDelete }: { row: any; onSave: (p: { label: string; tone: string; sort_order: number }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);

@@ -1,0 +1,192 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
+import { listAuditLog, listAuditActors } from "@/lib/audit.functions";
+import { Download, Search, ArrowRight } from "lucide-react";
+
+export const Route = createFileRoute("/_authenticated/audit")({
+  head: () => ({ meta: [{ title: "יומן בקרה | CRM" }] }),
+  component: AuditPage,
+});
+
+const ACTION_LABELS: Record<string, string> = {
+  created: "יצירה",
+  updated: "עדכון",
+  deleted: "מחיקה",
+  restored: "שחזור",
+  role_granted: "הענקת הרשאה",
+  role_revoked: "הסרת הרשאה",
+};
+
+const FIELD_LABELS: Record<string, string> = {
+  status: "סטטוס",
+  assigned_agent_id: "נציג מטפל",
+  name: "שם מערכת",
+  notes: "הערות",
+  phone: "טלפון",
+  caller_phone: "טלפון מתקשר",
+  source: "מקור",
+  reminder_at: "תזכורת",
+  parent_system_id: "מערכת אב",
+  user_roles: "הרשאות משתמש",
+};
+
+function fmtDate(iso: string) {
+  try { return new Date(iso).toLocaleString("he-IL"); } catch { return iso; }
+}
+
+function downloadCSV(rows: any[]) {
+  const headers = ["תאריך", "משתמש", "פעולה", "שדה", "ערך קודם", "ערך חדש", "סיבה", "מערכת"];
+  const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const data = rows.map((r) => [
+    fmtDate(r.created_at), r.actor_name, ACTION_LABELS[r.action] ?? r.action,
+    FIELD_LABELS[r.field] ?? r.field ?? "", r.old_display ?? "", r.new_display ?? "",
+    r.reason ?? "", r.system ? `${r.system.system_code} / ${r.system.name}` : "",
+  ]);
+  const csv = "\uFEFF" + [headers, ...data].map((r) => r.map(escape).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `audit-${new Date().toISOString().slice(0, 10)}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function AuditPage() {
+  const listFn = useServerFn(listAuditLog);
+  const actorsFn = useServerFn(listAuditActors);
+
+  const [actorId, setActorId] = useState<string>("");
+  const [action, setAction] = useState<string>("");
+  const [from, setFrom] = useState<string>("");
+  const [to, setTo] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  const [appliedSearch, setAppliedSearch] = useState<string>("");
+
+  const filters = useMemo(() => ({
+    actor_id: actorId || null,
+    action: action || null,
+    from: from ? new Date(from).toISOString() : null,
+    to: to ? new Date(to).toISOString() : null,
+    search: appliedSearch || null,
+    limit: 1000,
+  }), [actorId, action, from, to, appliedSearch]);
+
+  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: () => actorsFn() });
+  const { data: rows, isLoading } = useQuery({
+    queryKey: ["audit-log", filters],
+    queryFn: () => listFn({ data: filters }),
+  });
+
+  const list = rows ?? [];
+
+  return (
+    <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4" dir="rtl">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3">
+          <Link to="/dashboard" className="p-2 rounded-lg hover:bg-accent" title="חזרה">
+            <ArrowRight className="h-5 w-5" />
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold">יומן בקרה</h1>
+            <p className="text-sm text-muted-foreground">תיעוד מלא של כל הפעולות במערכת</p>
+          </div>
+        </div>
+        <button
+          onClick={() => downloadCSV(list)}
+          className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent"
+        >
+          <Download className="h-4 w-4" /> ייצוא CSV
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-3 border border-border rounded-lg p-3 bg-card">
+        <div>
+          <label className="text-xs text-muted-foreground">משתמש</label>
+          <select value={actorId} onChange={(e) => setActorId(e.target.value)}
+            className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background">
+            <option value="">כל המשתמשים</option>
+            {(actors ?? []).map((a: any) => (
+              <option key={a.id} value={a.id}>{a.display_name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">פעולה</label>
+          <select value={action} onChange={(e) => setAction(e.target.value)}
+            className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background">
+            <option value="">כל הפעולות</option>
+            {Object.entries(ACTION_LABELS).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">מתאריך</label>
+          <input type="datetime-local" value={from} onChange={(e) => setFrom(e.target.value)}
+            className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">עד תאריך</label>
+          <input type="datetime-local" value={to} onChange={(e) => setTo(e.target.value)}
+            className="w-full border border-border rounded-md px-2 py-1.5 text-sm bg-background" />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground">חיפוש חופשי</label>
+          <form onSubmit={(e) => { e.preventDefault(); setAppliedSearch(search); }} className="flex gap-1">
+            <input value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="שם, ערך, סיבה..."
+              className="flex-1 border border-border rounded-md px-2 py-1.5 text-sm bg-background" />
+            <button type="submit" className="px-2 py-1.5 border border-border rounded-md hover:bg-accent">
+              <Search className="h-4 w-4" />
+            </button>
+          </form>
+        </div>
+      </div>
+
+      <div className="text-xs text-muted-foreground">
+        {isLoading ? "טוען..." : `מציג ${list.length} רשומות${list.length >= 1000 ? " (הצגה מוגבלת ל-1000, צמצם פילטרים)" : ""}`}
+      </div>
+
+      <div className="border border-border rounded-lg overflow-x-auto bg-card">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs">
+            <tr>
+              <th className="text-right p-2 whitespace-nowrap">תאריך ושעה</th>
+              <th className="text-right p-2 whitespace-nowrap">משתמש</th>
+              <th className="text-right p-2 whitespace-nowrap">פעולה</th>
+              <th className="text-right p-2 whitespace-nowrap">שדה</th>
+              <th className="text-right p-2">ערך קודם</th>
+              <th className="text-right p-2">ערך חדש</th>
+              <th className="text-right p-2">סיבה</th>
+              <th className="text-right p-2 whitespace-nowrap">מערכת</th>
+            </tr>
+          </thead>
+          <tbody>
+            {list.map((r: any) => (
+              <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
+                <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>
+                <td className="p-2 whitespace-nowrap">{r.actor_name}</td>
+                <td className="p-2 whitespace-nowrap">{ACTION_LABELS[r.action] ?? r.action}</td>
+                <td className="p-2 whitespace-nowrap text-muted-foreground">{FIELD_LABELS[r.field] ?? r.field ?? "—"}</td>
+                <td className="p-2 max-w-[220px] break-words text-muted-foreground">{r.old_display ?? "—"}</td>
+                <td className="p-2 max-w-[220px] break-words">{r.new_display ?? "—"}</td>
+                <td className="p-2 max-w-[180px] break-words text-muted-foreground">{r.reason ?? "—"}</td>
+                <td className="p-2 whitespace-nowrap">
+                  {r.system ? (
+                    <Link to="/systems/$id" params={{ id: r.system_id }} className="text-primary hover:underline">
+                      {r.system.system_code}
+                    </Link>
+                  ) : "—"}
+                </td>
+              </tr>
+            ))}
+            {!isLoading && list.length === 0 && (
+              <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

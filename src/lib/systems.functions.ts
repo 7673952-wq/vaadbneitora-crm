@@ -451,6 +451,9 @@ export const listDueReminders = createServerFn({ method: "GET" })
       .from("status_settings")
       .select("status_key, is_handled, assigned_agent_ids");
     if (e2) throw new Error(e2.message);
+    const pendingStatusKeys = (statuses ?? [])
+      .filter((s: any) => s.is_handled === false)
+      .map((s: any) => s.status_key);
     const myWaitingStatuses = (statuses ?? [])
       .filter((s: any) => s.is_handled === false && Array.isArray(s.assigned_agent_ids) && s.assigned_agent_ids.includes(context.userId))
       .map((s: any) => s.status_key);
@@ -468,6 +471,26 @@ export const listDueReminders = createServerFn({ method: "GET" })
       derived = rows ?? [];
     }
 
+    // Stale: systems assigned to me, pending, untreated for >= threshold days
+    let stale: any[] = [];
+    const { data: settingRow } = await context.supabase
+      .from("app_settings").select("value").eq("key", "auto_snooze").maybeSingle();
+    const thresholdDays = Number((settingRow?.value as any)?.threshold_days ?? 0);
+    if (thresholdDays > 0 && pendingStatusKeys.length) {
+      const cutoff = new Date(Date.now() - thresholdDays * 86400_000).toISOString();
+      const { data: rows, error: e4 } = await context.supabase
+        .from("systems")
+        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at, assigned_agent_id")
+        .eq("assigned_agent_id", context.userId)
+        .in("status", pendingStatusKeys as any)
+        .lt("updated_at", cutoff)
+        .eq("reminder_handled", false)
+        .order("updated_at", { ascending: true })
+        .limit(500);
+      if (e4) throw new Error(e4.message);
+      stale = rows ?? [];
+    }
+
     const now = Date.now();
     const notSnoozed = (r: any) => !r.snoozed_until || new Date(r.snoozed_until).getTime() <= now;
 
@@ -483,6 +506,10 @@ export const listDueReminders = createServerFn({ method: "GET" })
     for (const r of derived) {
       if (!notSnoozed(r)) continue;
       if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "status" }); }
+    }
+    for (const r of stale) {
+      if (!notSnoozed(r)) continue;
+      if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "stale" }); }
     }
     return out;
   });

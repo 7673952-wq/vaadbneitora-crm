@@ -439,6 +439,3 @@ function AutoSnoozePanel() {
   );
 }
 
-function unitLabel(u: string) {
-  return u === "day" ? "יום" : u === "week" ? "שבוע" : u === "month" ? "חודש" : "תאריך";
-}

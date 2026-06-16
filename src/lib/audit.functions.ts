@@ -117,6 +117,8 @@ export const listAuditLog = createServerFn({ method: "POST" })
 export const listAuditActors = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { assertSuperAdminUserId } = await import("@/lib/admin-role.server");
+    await assertSuperAdminUserId(context.userId);
     const { data, error } = await context.supabase
       .from("profiles").select("id, display_name").order("display_name", { ascending: true });
     if (error) throw new Error(error.message);

@@ -28,7 +28,7 @@ export const Route = createFileRoute("/_authenticated/systems/$id")({
   component: SystemDetail,
 });
 
-function ReminderSection({ hasReminder, headerSummary, children }: { hasReminder: boolean; headerSummary: React.ReactNode; children: React.ReactNode }) {
+function ReminderSection({ hasReminder, headerSummary, children }: { hasReminder: boolean; headerSummary: ReactNode; children: ReactNode }) {
   const [open, setOpen] = useState<boolean>(hasReminder);
   useEffect(() => { setOpen(hasReminder); }, [hasReminder]);
   return (

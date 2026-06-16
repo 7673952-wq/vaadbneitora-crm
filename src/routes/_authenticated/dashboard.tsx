@@ -423,8 +423,9 @@ function Dashboard() {
         <ExportModal
           allRows={systems ?? []}
           onClose={() => setShowExport(false)}
-          onExport={(format, fromIso, toIso, label) => {
-            const rows = filterByRange(systems ?? [], fromIso, toIso);
+          onExport={(format, fromIso, toIso, label, statusFilter) => {
+            let rows = filterByRange(systems ?? [], fromIso, toIso);
+            if (statusFilter.length > 0) rows = rows.filter((r: any) => statusFilter.includes(r.status));
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);
@@ -761,13 +762,14 @@ type RangePreset = "day" | "week" | "month" | "year" | "all" | "custom";
 function ExportModal({ allRows, onClose, onExport }: {
   allRows: any[];
   onClose: () => void;
-  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string) => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[]) => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState<string>(today);
   const [to, setTo] = useState<string>(today);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
 
   function computeRange(): { fromIso: string | null; toIso: string | null; label: string } {
     if (preset === "all") return { fromIso: null, toIso: null, label: "all" };
@@ -790,12 +792,13 @@ function ExportModal({ allRows, onClose, onExport }: {
 
   const countInRange = (() => {
     const { fromIso, toIso } = computeRange();
-    if (!fromIso && !toIso) return allRows.length;
     const f = fromIso ? new Date(fromIso).getTime() : -Infinity;
     const t = toIso ? new Date(toIso).getTime() : Infinity;
     return allRows.filter((r) => {
       const u = new Date(r.updated_at).getTime();
-      return u >= f && u <= t;
+      if (u < f || u > t) return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(r.status)) return false;
+      return true;
     }).length;
   })();
 
@@ -841,6 +844,29 @@ function ExportModal({ allRows, onClose, onExport }: {
           )}
 
           <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="text-sm font-medium">סינון לפי סטטוס</label>
+              {statusFilter.length > 0 && (
+                <button type="button" onClick={() => setStatusFilter([])}
+                  className="text-xs text-muted-foreground hover:text-foreground">נקה ({statusFilter.length})</button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
+              {STATUS_OPTIONS.map((s) => {
+                const active = statusFilter.includes(s.value);
+                return (
+                  <button key={s.value} type="button"
+                    onClick={() => setStatusFilter(active ? statusFilter.filter((v) => v !== s.value) : [...statusFilter, s.value])}
+                    className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הסטטוסים</p>
+          </div>
+
+          <div>
             <label className="text-sm font-medium block mb-2">פורמט</label>
             <div className="grid grid-cols-2 gap-2">
               {([
@@ -866,7 +892,7 @@ function ExportModal({ allRows, onClose, onExport }: {
               className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="button" onClick={() => {
               const { fromIso, toIso, label } = computeRange();
-              onExport(format, fromIso, toIso, label);
+              onExport(format, fromIso, toIso, label, statusFilter);
             }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               ייצא

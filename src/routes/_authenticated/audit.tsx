@@ -80,10 +80,11 @@ function AuditPage() {
     limit: 1000,
   }), [actorId, action, from, to, appliedSearch]);
 
-  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: () => actorsFn() });
+  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: () => actorsFn(), enabled: !!me?.isSuperAdmin });
   const { data: rows, isLoading } = useQuery({
     queryKey: ["audit-log", filters],
     queryFn: () => listFn({ data: filters }),
+    enabled: !!me?.isSuperAdmin,
   });
 
   const list = rows ?? [];

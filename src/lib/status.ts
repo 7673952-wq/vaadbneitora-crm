@@ -63,6 +63,46 @@ export function applyStatusSettings(rows: { status_key: string; label: string; t
   rebuildMaps();
 }
 
+// Pure variant of `applyStatusSettings`: takes status rows and returns fresh
+// objects without touching any module-level state. Prefer this in new code
+// (e.g. inside React Query selectors) so consumers can cache derived maps
+// without relying on the legacy mutable exports above.
+export type StatusMaps = {
+  options: StatusOption[];
+  label: Record<string, string>;
+  tone: Record<string, string>;
+  handled: Record<string, boolean>;
+  agents: Record<string, string[]>;
+};
+
+export function buildStatusMaps(
+  rows?: { status_key: string; label: string; tone: string; sort_order?: number; is_handled?: boolean; assigned_agent_ids?: string[] | null }[] | null,
+): StatusMaps {
+  const source: StatusOption[] = rows && rows.length
+    ? [...rows]
+        .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+        .map((r) => ({
+          value: r.status_key,
+          label: r.label,
+          tone: r.tone,
+          is_handled: r.is_handled ?? DEFAULT_HANDLED.has(r.status_key),
+          assigned_agent_ids: r.assigned_agent_ids ?? [],
+        }))
+    : DEFAULT_STATUS_OPTIONS.map((s) => ({ ...s }));
+
+  const label: Record<string, string> = {};
+  const tone: Record<string, string> = {};
+  const handled: Record<string, boolean> = {};
+  const agents: Record<string, string[]> = {};
+  for (const s of source) {
+    label[s.value] = s.label;
+    tone[s.value] = s.tone;
+    handled[s.value] = !!s.is_handled;
+    agents[s.value] = s.assigned_agent_ids ?? [];
+  }
+  return { options: source, label, tone, handled, agents };
+}
+
 export const AVAILABLE_TONES = [
   // greens
   "green", "lightgreen", "emerald", "darkgreen", "mint",

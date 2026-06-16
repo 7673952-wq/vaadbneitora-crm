@@ -759,10 +759,11 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
 type ExportFormat = "csv" | "pdf" | "xlsx" | "crm";
 type RangePreset = "day" | "week" | "month" | "year" | "all" | "custom";
 
-function ExportModal({ allRows, onClose, onExport }: {
+function ExportModal({ allRows, agents, onClose, onExport }: {
   allRows: any[];
+  agents: any[];
   onClose: () => void;
-  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[]) => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[], agentFilter: string[]) => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [preset, setPreset] = useState<RangePreset>("month");
@@ -770,6 +771,7 @@ function ExportModal({ allRows, onClose, onExport }: {
   const [to, setTo] = useState<string>(today);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const [agentFilter, setAgentFilter] = useState<string[]>([]);
 
   function computeRange(): { fromIso: string | null; toIso: string | null; label: string } {
     if (preset === "all") return { fromIso: null, toIso: null, label: "all" };

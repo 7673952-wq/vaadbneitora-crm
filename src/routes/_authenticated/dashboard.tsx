@@ -428,7 +428,7 @@ function Dashboard() {
       </div>
 
 
-      {showCreate && me?.isAdmin && (
+      {showCreate && me?.isAgent && (
         <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
           qc.invalidateQueries({ queryKey: ["systems"] });
           setShowCreate(false);

@@ -5,12 +5,13 @@ import {
   listUsersForAdmin, createUser, deleteUser, setUserRole, getMyRole,
   updateUserDisplayName, updateUserEmail, updateUserPassword,
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
+  getAutoSnoozeSetting, setAutoSnoozeSetting, applyAutoSnoozeNow,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus } from "lucide-react";
+import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus, Clock } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
@@ -211,6 +212,7 @@ function AdminPage() {
         </div>
       )}
 
+      <AutoSnoozePanel />
       <StatusSettingsPanel />
     </div>
   );
@@ -386,4 +388,91 @@ function EditRow({ value, onChange, onSave, onCancel, type = "text", placeholder
       <button onClick={onCancel} className="p-1 rounded hover:bg-accent text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
     </div>
   );
+}
+
+function AutoSnoozePanel() {
+  const getFn = useServerFn(getAutoSnoozeSetting);
+  const setFn = useServerFn(setAutoSnoozeSetting);
+  const applyFn = useServerFn(applyAutoSnoozeNow);
+  const qc = useQueryClient();
+  const { data: current } = useQuery({ queryKey: ["auto_snooze"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+
+  const [unit, setUnit] = useState<"day"|"week"|"month"|"date">("week");
+  const [date, setDate] = useState<string>("");
+  const [thresholdDays, setThresholdDays] = useState<number>(30);
+
+  // hydrate from saved value
+  useEffect(() => {
+    if (!current) return;
+    setUnit(current.unit);
+    setThresholdDays(current.threshold_days);
+    if (current.date) setDate(current.date.slice(0, 10));
+  }, [current]);
+
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+  const buildPayload = () => ({
+    unit,
+    date: unit === "date" && date ? new Date(date).toISOString() : null,
+    threshold_days: thresholdDays,
+  });
+
+  const saveMut = useMutation({
+    mutationFn: () => withAuth(setFn, { data: buildPayload() }),
+    onSuccess: () => { toast.success("הגדרה נשמרה"); qc.invalidateQueries({ queryKey: ["auto_snooze"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const applyMut = useMutation({
+    mutationFn: () => withAuth(applyFn, { data: buildPayload() }),
+    onSuccess: (r: any) => { toast.success(`הוחל על ${r.updated} מערכות`); qc.invalidateQueries({ queryKey: ["systems"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <div className="mt-10">
+      <div className="mb-3">
+        <h2 className="text-2xl font-bold flex items-center gap-2"><Clock className="h-5 w-5" /> נודניק אוטומטי</h2>
+        <p className="text-sm text-muted-foreground mt-1">דחיית טיפול במערכות שלא טופלו זמן רב. הגדר את משך הדחייה והסף בימים, שמור, וניתן להחיל מיד על כלל המערכות הממתינות.</p>
+      </div>
+      <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-4 gap-3 items-end">
+        <Field label="סף ימים ללא טיפול">
+          <input type="number" min={0} value={thresholdDays} onChange={(e) => setThresholdDays(Number(e.target.value))}
+            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+        </Field>
+        <Field label="דחה ל">
+          <select value={unit} onChange={(e) => setUnit(e.target.value as any)}
+            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            <option value="day">יום</option>
+            <option value="week">שבוע</option>
+            <option value="month">חודש</option>
+            <option value="date">תאריך מותאם</option>
+          </select>
+        </Field>
+        {unit === "date" && (
+          <Field label="תאריך">
+            <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+          </Field>
+        )}
+        <div className="flex gap-2">
+          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+            className="px-3 py-2 bg-secondary text-secondary-foreground rounded-md text-sm hover:bg-secondary/80 disabled:opacity-50">
+            {saveMut.isPending ? "שומר..." : "שמור הגדרה"}
+          </button>
+          <button onClick={() => applyMut.mutate()} disabled={applyMut.isPending || (unit === "date" && !date)}
+            className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50">
+            {applyMut.isPending ? "מחיל..." : "החל עכשיו"}
+          </button>
+        </div>
+      </div>
+      {current && (
+        <p className="text-xs text-muted-foreground mt-2">
+          הגדרה שמורה: סף {current.threshold_days} ימים, דחייה ל{unitLabel(current.unit)}{current.unit === "date" && current.date ? ` (${new Date(current.date).toLocaleDateString("he-IL")})` : ""}.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function unitLabel(u: string) {
+  return u === "day" ? "יום" : u === "week" ? "שבוע" : u === "month" ? "חודש" : "תאריך";
 }

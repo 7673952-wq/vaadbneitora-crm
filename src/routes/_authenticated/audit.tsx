@@ -1,8 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { listAuditLog, listAuditActors } from "@/lib/audit.functions";
+import { getMyRole } from "@/lib/admin.functions";
 import { Download, Search, ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/audit")({

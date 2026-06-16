@@ -54,6 +54,13 @@ function downloadCSV(rows: any[]) {
 }
 
 function AuditPage() {
+  const navigate = useNavigate();
+  const meFn = useServerFn(getMyRole);
+  const { data: me, isLoading: meLoading } = useQuery({ queryKey: ["my-role"], queryFn: () => meFn() });
+  useEffect(() => {
+    if (!meLoading && me && !me.isSuperAdmin) navigate({ to: "/dashboard", replace: true });
+  }, [me, meLoading, navigate]);
+
   const listFn = useServerFn(listAuditLog);
   const actorsFn = useServerFn(listAuditActors);
 

@@ -28,14 +28,15 @@ export const createUser = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
+    const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email, password: data.password, email_confirm: true,
-      user_metadata: { display_name: data.display_name },
+      user_metadata: { display_name: displayName },
     });
     if (error) throw fromSupabase(error);
     const [{ error: profileError }, { error: roleError }] = await Promise.all([
-      supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: data.display_name }),
+      supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: displayName }),
       supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: data.role }),
     ]);
     if (profileError) throw fromSupabase(profileError);

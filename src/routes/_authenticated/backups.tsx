@@ -3,8 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import JSZip from "jszip";
-import { backupNow, listBackups, getBackupFileUrl, deleteBackup, restoreBackup } from "@/lib/backups.functions";
+import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup } from "@/lib/backups.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload } from "lucide-react";
@@ -125,29 +124,14 @@ function BackupsPage() {
     }
   }
 
+  const zipUrlFn = useServerFn(getBackupZipUrl);
   const [zipping, setZipping] = useState<string | null>(null);
-  async function downloadFolderZip(folder: string, files: { name: string }[]) {
+  async function downloadFolderZip(folder: string) {
     try {
       setZipping(folder);
-      const zip = new JSZip();
-      for (const f of files) {
-        const path = `${folder}/${f.name}`;
-        const { url } = await urlFn({ data: { path }, headers: await getAuthHeaders() });
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`הורדה נכשלה: ${f.name}`);
-        const blob = await resp.blob();
-        zip.file(f.name, blob);
-      }
-      const out = await zip.generateAsync({ type: "blob" });
-      const a = document.createElement("a");
-      const objUrl = URL.createObjectURL(out);
-      a.href = objUrl;
-      a.download = `backup-${folder}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objUrl);
-      toast.success("הזיפ הורד");
+      const { url } = await zipUrlFn({ data: { folder }, headers: await getAuthHeaders() });
+      window.open(url, "_blank");
+      toast.success("הזיפ מוכן להורדה");
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בהורדת הזיפ");
     } finally {
@@ -212,7 +196,7 @@ function BackupsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => downloadFolderZip(b.folder, b.files)}
+                      onClick={() => downloadFolderZip(b.folder)}
                       disabled={zipping === b.folder}
                       className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                       title="הורד הכל כ-ZIP"

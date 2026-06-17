@@ -76,6 +76,48 @@ export const deleteBackup = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Build a ZIP of an entire backup folder server-side and return a signed URL.
+// Done server-side because fetching individual signed URLs from the browser to
+// stitch a ZIP triggers CORS preflight that Supabase Storage doesn't allow.
+export const getBackupZipUrl = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { folder: string }) =>
+    z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const JSZip = (await import("jszip")).default;
+
+    const { data: files, error: listErr } = await supabaseAdmin.storage
+      .from("backups")
+      .list(data.folder, { limit: 100 });
+    if (listErr) throw new Error(listErr.message);
+    if (!files || files.length === 0) throw new Error("אין קבצים בגיבוי");
+
+    const zip = new JSZip();
+    for (const f of files) {
+      if (!f.name || f.name.endsWith(".zip")) continue;
+      const { data: blob, error } = await supabaseAdmin.storage
+        .from("backups")
+        .download(`${data.folder}/${f.name}`);
+      if (error) throw new Error(`${f.name}: ${error.message}`);
+      zip.file(f.name, await blob.arrayBuffer());
+    }
+    const zipBuf = await zip.generateAsync({ type: "uint8array" });
+    const zipPath = `${data.folder}/backup-${data.folder}.zip`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from("backups")
+      .upload(zipPath, zipBuf, { contentType: "application/zip", upsert: true });
+    if (upErr) throw new Error(upErr.message);
+
+    const { data: signed, error: signErr } = await supabaseAdmin.storage
+      .from("backups")
+      .createSignedUrl(zipPath, 60 * 10);
+    if (signErr) throw new Error(signErr.message);
+    return { url: signed.signedUrl };
+  });
+
 // Restore is destructive — requires super_admin and a confirmation token
 // minted by the UI's double-confirm dialog. The audit log is written both
 // before the restore (intent) and after (result) for full traceability.

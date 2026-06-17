@@ -257,6 +257,92 @@ function BackupsPage() {
       <div className="text-xs text-muted-foreground">
         <Link to="/manager-dashboard" className="underline hover:text-foreground">← חזרה לדשבורד מנהלים</Link>
       </div>
+
+      {restorePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" dir="rtl">
+          <div className="w-full max-w-lg rounded-2xl border border-destructive/40 bg-card shadow-2xl">
+            <div className="p-5 border-b border-border flex items-center gap-2">
+              <ShieldAlert className="h-5 w-5 text-destructive" />
+              <h2 className="font-semibold text-lg">אישור שחזור גיבוי — פעולה הרסנית</h2>
+            </div>
+            <div className="p-5 space-y-4 text-sm">
+              <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-destructive">
+                <div className="font-semibold mb-1">אזהרה</div>
+                <div className="text-foreground/90">
+                  שחזור גיבוי משנה נתונים במסד הנתונים ולא ניתן לבטלו. הפעולה תתועד ב-Audit Log עם פרטי המשתמש שביצע אותה.
+                </div>
+              </div>
+
+              <div>
+                <div className="text-muted-foreground mb-1">קבצים שייובאו ({restorePrompt.files.length}):</div>
+                <ul className="list-disc pr-5 text-foreground/90">
+                  {restorePrompt.files.map((f) => (
+                    <li key={f.table}>{f.table}.csv</li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                <div className="text-muted-foreground mb-2">אופן השחזור:</div>
+                <div className="flex gap-2">
+                  <label className={`flex-1 cursor-pointer rounded-lg border p-3 ${restorePrompt.mode === "merge" ? "border-primary bg-primary/5" : "border-border"}`}>
+                    <input type="radio" name="restore-mode" className="ml-2"
+                      checked={restorePrompt.mode === "merge"}
+                      onChange={() => setRestorePrompt({ ...restorePrompt, mode: "merge" })}
+                    />
+                    <span className="font-medium">מיזוג (בטוח)</span>
+                    <div className="text-xs text-muted-foreground mt-1">עדכון/הוספה לפי id; לא מוחק רשומות קיימות.</div>
+                  </label>
+                  <label className={`flex-1 cursor-pointer rounded-lg border p-3 ${restorePrompt.mode === "replace" ? "border-destructive bg-destructive/5" : "border-border"}`}>
+                    <input type="radio" name="restore-mode" className="ml-2"
+                      checked={restorePrompt.mode === "replace"}
+                      onChange={() => setRestorePrompt({ ...restorePrompt, mode: "replace" })}
+                    />
+                    <span className="font-medium text-destructive">החלפה (הרסנית)</span>
+                    <div className="text-xs text-muted-foreground mt-1">מוחק את כל הנתונים בטבלאות שייובאו לפני ההכנסה מחדש.</div>
+                  </label>
+                </div>
+              </div>
+
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input type="checkbox"
+                  className="mt-1"
+                  checked={restorePrompt.acknowledged}
+                  onChange={(e) => setRestorePrompt({ ...restorePrompt, acknowledged: e.target.checked })}
+                />
+                <span>אני מבין שזו פעולה הרסנית שתשפיע על כל המשתמשים, ושהשחזור יתועד ב-Audit Log.</span>
+              </label>
+
+              <div>
+                <label className="block text-muted-foreground mb-1">להפעלה, הקלד את המילה <code className="px-1 py-0.5 rounded bg-muted">שחזר</code>:</label>
+                <input type="text"
+                  value={restorePrompt.typed}
+                  onChange={(e) => setRestorePrompt({ ...restorePrompt, typed: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-destructive/40"
+                  placeholder="שחזר"
+                  dir="rtl"
+                />
+              </div>
+            </div>
+            <div className="p-4 border-t border-border flex justify-end gap-2 bg-muted/30">
+              <button
+                onClick={() => setRestorePrompt(null)}
+                disabled={restoring}
+                className="px-4 py-2 rounded-lg border border-border hover:bg-accent text-sm disabled:opacity-50"
+              >
+                ביטול
+              </button>
+              <button
+                onClick={executeRestore}
+                disabled={restoring || !restorePrompt.acknowledged || restorePrompt.typed.trim() !== "שחזר"}
+                className="px-4 py-2 rounded-lg bg-destructive text-destructive-foreground hover:opacity-90 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {restoring ? "משחזר..." : "אישור שחזור"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

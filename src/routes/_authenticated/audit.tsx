@@ -18,6 +18,9 @@ const ACTION_LABELS: Record<string, string> = {
   restored: "שחזור",
   role_granted: "הענקת הרשאה",
   role_revoked: "הסרת הרשאה",
+  backup_restore_started: "התחלת שחזור גיבוי",
+  backup_restore_completed: "שחזור גיבוי הושלם",
+  backup_restore_failed: "שחזור גיבוי נכשל",
 };
 
 const FIELD_LABELS: Record<string, string> = {
@@ -31,6 +34,8 @@ const FIELD_LABELS: Record<string, string> = {
   reminder_at: "תזכורת",
   parent_system_id: "מערכת אב",
   user_roles: "הרשאות משתמש",
+  "mode:replace": "מצב: החלפה",
+  "mode:merge": "מצב: מיזוג",
 };
 
 function fmtDate(iso: string) {

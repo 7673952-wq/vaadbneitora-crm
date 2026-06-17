@@ -1,70 +1,84 @@
+# שיפורי Code Review
 
-## סדר עבודה לפי העדיפויות שבחרת
+מצאתי שב-DB enum `app_role` קיימים רק שלושה תפקידים: `admin`, `agent`, `super_admin`. התפקידים `manager`, `team_lead`, `viewer` מופיעים רק ב-`permissions.server.ts` ובדיקה ב-`getMyRole` — אינם ניתנים להקצאה דרך ה-UI ולא קיימים ב-DB.
 
-הקבצים הם גדולים, אבנה בשלבים ואחרי כל שלב נבדוק שעובד לפני שממשיכים. הנה התכולה של כל שלב:
-
----
-
-### שלב 1 — דוחות (`/reports`)
-מסך חדש עם פילטרים: **תקופה** (היום / השבוע / החודש / השנה / טווח מותאם), **סטטוס**, **נציג**.
-4 לשוניות:
-1. **לפי סטטוס** — טבלה: סטטוס → כמות מערכות, עם גרף עמודות.
-2. **לפי נציג** — טבלה: נציג → כמה מערכות, כמה פתוחות, כמה חסומות, כמה ממתינות.
-3. **לפי תקופה** — סיכום: כמה נפתחו, נסגרו, עודכנו בטווח הנבחר.
-4. **תתי-מערכות** — לכל מערכת-אב: כמה תתי, פתוחות, חסומות, ממתינות.
-
-כל דוח יקבל כפתור **"ייצוא ל-CSV"**.
-
-קבצים: `src/lib/reports.functions.ts`, `src/routes/_authenticated/reports.tsx`, קישור בהדר.
+הערה חשובה: "manager-dashboard" הוא **שם מסלול** (דשבורד למנהלים) ולא תפקיד — נשאר.
 
 ---
 
-### שלב 2 — דשבורד מנהלים (`/admin-dashboard` או טאב חדש בתוך `/admin`)
-כרטיסיות KPI עליונות:
-- נפתחו השבוע / נסגרו השבוע / ממתינות / מעקבים באיחור (`reminder_at < now`).
-- גרף ביצועים לפי נציג (כמה טיפל השבוע).
-- רשימת מעקבים באיחור עם קישור מהיר למערכת.
+## 1. ניקוי תפקידים לא קיימים
+
+**`src/lib/permissions.server.ts`**
+- `ROLE_HIERARCHY` יצומצם ל-`["super_admin", "admin", "agent"]`.
+- מפת התרגום לעברית — רק שלושת התפקידים.
+- ה-type `Role` יגזר מהאיחוד החדש (תואם ל-`app_role` ב-`types.ts`).
+
+**`src/lib/admin.functions.ts`**
+- `getMyRole`: הסרת ההפניות ל-`manager`/`team_lead` ב-חישוב `isAgent`.
+
+## 2. סטנדרט הרשאות אחיד
+
+כל server-fn יקרא ל-`assertRole(context.userId, <role>)` ממקור אחד (`@/lib/permissions.server`). לא יהיו עוד וריאציות `isAdmin/RPC has_role/בדיקות inline`.
+
+קבצים שייסרקו ויותאמו: `admin.functions.ts`, `audit.functions.ts`, `backups.functions.ts`, `system-files.functions.ts`, `systems.functions.ts`, `manager-dashboard.functions.ts`, `reports.functions.ts`.
+
+מחיקת השכבה הכפולה: `src/lib/admin-role.server.ts` (re-export shim שכבר לא נחוץ — אעדכן את הקבצים הבודדים שעדיין מייבאים ממנו).
+
+## 3. גיבויים ושחזורים
+
+**`src/lib/backups.functions.ts`**
+- `backupNow`, `listBackups`, `getBackupFileUrl`, `deleteBackup` → `assertRole(..., "admin")`.
+- `restoreBackup` → `assertRole(..., "super_admin")` + רישום audit log לפני ואחרי (`action: "backup_restore"`, מספר טבלאות, מצב merge/replace, תוצאה).
+
+**`src/routes/_authenticated/backups.tsx`** (UI דק בלבד, ללא שינוי לוגיקה):
+- כפתור "ייבוא גיבוי" יוצג רק ל-`me.isSuperAdmin`.
+- לפני שחזור: דיאלוג אזהרה עם **אישור כפול** (Checkbox "אני מבין שזו פעולה הרסנית" + הקלדת המילה `שחזר`).
+
+## 4. אימות קלט Zod מלא
+
+סקירה ב-כל `createServerFn`:
+- כל פונקציה תקבל `.inputValidator(d => z.object({...}).parse(d))` עם schema מדויק.
+- פונקציות בלי פרמטרים יקבלו `inputValidator` ריק (`z.void().parse`) או יישארו ללא — מה שעקבי.
+- מטרה עיקרית: `listSystems`, וכל פונקציה שכרגע מקבלת `any`/אובייקט לא מאומת.
+
+## 5. חיפוש Audit Log בטוח
+
+**`src/lib/audit.functions.ts`** — `q.or(...ilike...)` בנייה ידנית של מחרוזות עם `%` ו-`,` היא שביר ופגיע ל-PostgREST injection אם המשתמש יזין `,` או `)` בטקסט.
+
+תיקון:
+- escape מלא של תווי הבקרה של PostgREST (`,`, `(`, `)`, `*`, `%`).
+- שימוש ב-`textSearch` של Supabase במקום `or` ידני, או לפחות מעבר ל-`.ilike()` נפרד פר שדה עם UNION בצד JS.
+- הוצאת לוגיקת ה-escape ל-helper `safeIlikePattern(s)` שניתן לבדוק.
+
+## 6. ניקוי קוד
+
+- מחיקה: `src/lib/api/example.functions.ts` (boilerplate, לא בשימוש).
+- מחיקה: `src/lib/admin-role.server.ts` לאחר עדכון הצרכנים האחרונים.
+- חיפוש imports יתומים והסרתם.
+- איתור פונקציות כפולות (אם יש כאלו ב-`systems.functions.ts`/`backups.functions.ts`).
+
+## 7. דוח Production Readiness
+
+קובץ חדש: `.lovable/production-readiness.md` עם הסעיפים:
+1. בעיות שנותרו (אם נמצאו במהלך הסריקה).
+2. המלצות לשיפור (אינדקסים ב-DB, pagination ב-UI, rate limiting, monitoring).
+3. סיכוני אבטחה (RLS coverage, secrets handling, public endpoints).
+4. הערכת מוכנות לעלייה לאוויר.
 
 ---
 
-### שלב 3 — גיבויים
-- **CSV יומי אוטומטי** של טבלת `systems` (ושל `system_notes`, `system_activity_log`) — pg_cron שמריץ אנדפוינט שמכניס שורה ל-`backups` בטבלת היסטוריה, ושומר קובץ ב-storage bucket חדש `backups` (פרטי).
-- **כפתור "גבה עכשיו"** במסך ניהול → מוריד CSV מאוחד מיידית.
-- **מסך גיבויים** ב-`/admin` → רשימת גיבויים אחרונים עם הורדה.
-- שחזור per-record מהיסטוריית `system_activity_log` שכבר קיימת (אין שינוי גדול — רק UI שמציג ומאפשר לשחזר ערך ישן). שחזור bulk = הורדת הגיבוי + העלאה ידנית.
+## דברים שלא ייגעו בהם
+- רכיבי UI/עמודים מלבד התוספת הקטנה ב-`backups.tsx` (כפתור Restore + דיאלוג).
+- DB schema — ה-enum כבר נכון.
+- קבצי auto-gen של supabase ו-router.
 
----
+## סדר עבודה
+1. ניקוי תפקידים (`permissions.server.ts`, `admin.functions.ts`).
+2. אחידות הרשאות + מחיקת `admin-role.server.ts`.
+3. גיבויים — backend ואז UI.
+4. Zod ל-listSystems וכל החסרים.
+5. Audit search hardening.
+6. ניקוי קוד + מחיקת example.
+7. דוח Production Readiness.
 
-### שלב 4 — הרשאות מתקדמות (4 רמות)
-הרחבת `app_role` enum: `manager`, `team_lead`, `agent`, `viewer`.
-- `manager` — הכל (במקום admin).
-- `team_lead` — כמו manager חוץ מניהול משתמשים והגדרות מערכת.
-- `agent` — עורך מערכות שמשויכות אליו.
-- `viewer` — צפייה בלבד.
-
-מיגרציה: הוספת ערכים ל-enum + שמירה על תאימות (`admin` ימופה ל-`manager`). עדכון `has_role` / `isAdminUserId` ועדכון `assertAdmin` בכל ה-server functions לבדוק לפי רמת הרשאה נדרשת. UI לבחירת תפקיד בניהול משתמשים.
-
----
-
-### שלב 5 — מסך מערכת עם טאבים
-שינוי `systems.$id.tsx` ל-Tabs:
-1. **פרטים** — מה שיש היום למעלה.
-2. **היסטוריה** — `system_activity_log` (כבר קיים — להוציא לטאב נפרד).
-3. **תתי-מערכות** — רשימת ילדים.
-4. **קבצים** — דחוי לשלב הבא (פלייסהולדר).
-5. **מעקבים** — תזכורות שיוצרו למערכת.
-
----
-
-### פרטים טכניים
-
-- **דוחות**: `createServerFn` שמקבל `{ from, to, status?, agent_id? }` ומחזיר aggregations מ-`systems`. ייצוא CSV ייעשה ב-frontend עם blob download (אין צורך ב-server route).
-- **גיבוי אוטומטי**: server route `/api/public/hooks/daily-backup` (מאומת ב-`apikey` header), שמושך את כל ה-systems, בונה CSV, ומעלה ל-bucket `backups` עם שם `systems-YYYY-MM-DD.csv`. pg_cron מריץ ב-03:00 כל יום.
-- **bucket `backups`** — פרטי, RLS שמאפשרת רק ל-manager לקרוא/למחוק.
-- **הרחבת enum**: `ALTER TYPE app_role ADD VALUE 'manager'` וכו'. עדכון `handle_new_user` להעניק `manager` למשתמש הראשון במקום `admin`. השארת `admin` ב-enum לתאימות אחורה ומיפוי בקוד.
-
----
-
-### מה אני מציע
-
-נתחיל **שלב 1 בלבד (דוחות)** — אבנה, נראה שעובד טוב, ואז ממשיכים לדשבורד. אחרת אם נבנה הכל בבת אחת והמסך הניהול שוב נשבר, יהיה קשה לדעת מה גרם לזה. **אישור?**
+אפעל קובץ-קובץ ואוודא שה-build עובר אחרי כל שלב.

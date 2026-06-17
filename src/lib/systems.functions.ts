@@ -352,8 +352,8 @@ export const deleteSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertSuperAdminUserId } = await import("@/lib/permissions.server");
-    await assertSuperAdminUserId(context.userId);
+    const { assertRole } = await import("@/lib/permissions.server");
+    await assertRole(context.userId, "super_admin");
     const { error } = await context.supabase.from("systems").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };

@@ -36,8 +36,17 @@ function BackupsPage() {
   const delFn = useServerFn(deleteBackup);
   const restoreFn = useServerFn(restoreBackup);
   const [restoring, setRestoring] = useState(false);
+  const [restorePrompt, setRestorePrompt] = useState<
+    | null
+    | {
+        files: { table: string; csv: string }[];
+        mode: "merge" | "replace";
+        acknowledged: boolean;
+        typed: string;
+      }
+  >(null);
 
-  async function handleRestoreFiles(fileList: FileList | null) {
+  async function handleRestoreFilesSelected(fileList: FileList | null) {
     if (!fileList || !fileList.length) return;
     const allowed = new Set(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]);
     const files: { table: string; csv: string }[] = [];
@@ -48,16 +57,25 @@ function BackupsPage() {
       files.push({ table: base, csv: text });
     }
     if (!files.length) return;
-    const mode = confirm("'אישור' = החלף את כל הנתונים בטבלאות שיובאו (פעולה הרסנית).\n'ביטול' = מיזוג בטוח (עדכון/הוספה לפי id).") ? "replace" : "merge";
-    if (mode === "replace" && !confirm("בטוח? כל הנתונים הקיימים בטבלאות הללו יימחקו ויוחלפו.")) return;
+    // Open the double-confirm dialog; default to safe "merge" mode.
+    setRestorePrompt({ files, mode: "merge", acknowledged: false, typed: "" });
+  }
+
+  async function executeRestore() {
+    if (!restorePrompt) return;
+    if (!restorePrompt.acknowledged || restorePrompt.typed.trim() !== "שחזר") return;
     setRestoring(true);
     try {
-      const res: any = await restoreFn({ data: { files, mode }, headers: await getAuthHeaders() });
+      const res: any = await restoreFn({
+        data: { files: restorePrompt.files, mode: restorePrompt.mode, confirm_token: "שחזר" },
+        headers: await getAuthHeaders(),
+      });
       const ok = res.filter((r: any) => !r.error).reduce((s: number, r: any) => s + r.inserted, 0);
       const errs = res.filter((r: any) => r.error);
       toast.success(`שוחזרו ${ok} רשומות`);
       if (errs.length) toast.error(`${errs.length} טבלאות נכשלו: ${errs.map((e: any) => e.table).join(", ")}`);
       qc.invalidateQueries();
+      setRestorePrompt(null);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשחזור");
     } finally {
@@ -159,12 +177,14 @@ function BackupsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <label className={`flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium cursor-pointer hover:bg-accent ${restoring ? "opacity-50 pointer-events-none" : ""}`}>
-            <Upload className="h-4 w-4" />
-            {restoring ? "משחזר..." : "ייבוא גיבוי"}
-            <input type="file" accept=".csv" multiple className="hidden"
-              onChange={(e) => { handleRestoreFiles(e.target.files); e.currentTarget.value = ""; }} />
-          </label>
+          {me?.isSuperAdmin && (
+            <label className={`flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium cursor-pointer hover:bg-accent ${restoring ? "opacity-50 pointer-events-none" : ""}`}>
+              <Upload className="h-4 w-4" />
+              {restoring ? "משחזר..." : "ייבוא גיבוי"}
+              <input type="file" accept=".csv" multiple className="hidden"
+                onChange={(e) => { handleRestoreFilesSelected(e.target.files); e.currentTarget.value = ""; }} />
+            </label>
+          )}
           <button
             onClick={() => runMut.mutate()}
             disabled={runMut.isPending}

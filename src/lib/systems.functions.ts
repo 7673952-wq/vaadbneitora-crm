@@ -10,19 +10,23 @@ const STATUS_VALUES = [
 const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
-async function isAdminUser(context: { supabase: any; userId: string }) {
-  const { isAdminUserId } = await import("@/lib/permissions.server");
-  return isAdminUserId(context.userId);
+// All authorization in this file goes through `assertRole` / `hasRole`
+// from @/lib/permissions.server — single source of truth.
+async function userHasRole(userId: string, role: "agent" | "admin" | "super_admin") {
+  const { hasRole } = await import("@/lib/permissions.server");
+  return hasRole(userId, role);
 }
 
-async function isAgentOrAbove(context: { userId: string }) {
-  const { hasRole } = await import("@/lib/permissions.server");
-  return hasRole(context.userId, "agent");
-}
+const periodSchema = z.enum(["day", "week", "month", "year"]);
+const listSystemsInputSchema = z.object({
+  status: statusSchema.nullable().optional(),
+  agentId: z.string().uuid().nullable().optional(),
+  period: periodSchema.nullable().optional(),
+}).strict();
 
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status?: string | null; agentId?: string | null; period?: string | null }) => d)
+  .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
     let q = context.supabase
       .from("systems")

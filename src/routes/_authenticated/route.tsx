@@ -32,6 +32,21 @@ function AuthedLayout() {
   });
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [displayName, setDisplayName] = useState<string>("");
+  const [pwOpen, setPwOpen] = useState(false);
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+
+  async function changePassword() {
+    if (pw1.length < 6) { toast.error("הסיסמה חייבת לכלול לפחות 6 תווים"); return; }
+    if (pw1 !== pw2) { toast.error("הסיסמאות אינן תואמות"); return; }
+    setPwBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: pw1 });
+    setPwBusy(false);
+    if (error) { toast.error(error.message || "שינוי הסיסמה נכשל"); return; }
+    toast.success("הסיסמה עודכנה בהצלחה");
+    setPw1(""); setPw2(""); setPwOpen(false);
+  }
 
   useEffect(() => {
     let active = true;

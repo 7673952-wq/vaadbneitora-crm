@@ -20,10 +20,15 @@ function formatBytes(n: number) {
 }
 
 function formatFolder(name: string) {
-  // 2026-06-12T11-30-00-000Z → 12/06/2026 11:30
-  const m = name.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})/);
+  // Folder name is UTC (e.g. 2026-06-12T11-30-00-000Z). Display in Israel time.
+  const m = name.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
   if (!m) return name;
-  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}`;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  return new Intl.DateTimeFormat("he-IL", {
+    timeZone: "Asia/Jerusalem",
+    day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  }).format(d);
 }
 
 function BackupsPage() {

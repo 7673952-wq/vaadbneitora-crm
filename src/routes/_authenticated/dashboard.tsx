@@ -449,7 +449,22 @@ function Dashboard() {
       </div>
 
       {total > 0 && (
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-center gap-4 flex-wrap">
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}
+          >
+            <SelectTrigger className="w-[110px] h-9 text-sm" aria-label="מספר פריטים בעמוד">
+              <SelectValue placeholder="50" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+              <SelectItem value="200">200</SelectItem>
+              <SelectItem value="1000">1000</SelectItem>
+              <SelectItem value="0">הכל</SelectItem>
+            </SelectContent>
+          </Select>
           <Pagination>
             <PaginationContent>
               <PaginationItem>

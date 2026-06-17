@@ -5,7 +5,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database } from "lucide-react";
+import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRound, X } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

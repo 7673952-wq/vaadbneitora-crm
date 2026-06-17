@@ -123,6 +123,10 @@ function AuthedLayout() {
               <div className="font-medium">{displayName}</div>
               <div className="text-xs text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : "נציג"}</div>
             </div>
+            <button onClick={() => setPwOpen(true)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-accent" title="שנה סיסמה">
+              <KeyRound className="h-4 w-4" />
+              שנה סיסמה
+            </button>
             <button onClick={signOut} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-accent">
               <LogOut className="h-4 w-4" />
               יציאה
@@ -133,6 +137,40 @@ function AuthedLayout() {
       <main className="max-w-[1600px] mx-auto px-6 py-8">
         <Outlet />
       </main>
+
+      {pwOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !pwBusy && setPwOpen(false)}>
+          <div className="w-full max-w-sm rounded-xl bg-background border border-border shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">שינוי סיסמה</h2>
+              <button onClick={() => !pwBusy && setPwOpen(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm font-medium block mb-1">סיסמה חדשה</label>
+                <input type="password" autoFocus value={pw1} onChange={(e) => setPw1(e.target.value)}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="מינ׳ 6 תווים" />
+              </div>
+              <div>
+                <label className="text-sm font-medium block mb-1">אישור סיסמה</label>
+                <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") changePassword(); }}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="הקלד שוב" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button onClick={changePassword} disabled={pwBusy}
+                  className="flex-1 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+                  {pwBusy ? "מעדכן..." : "עדכן סיסמה"}
+                </button>
+                <button onClick={() => setPwOpen(false)} disabled={pwBusy}
+                  className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

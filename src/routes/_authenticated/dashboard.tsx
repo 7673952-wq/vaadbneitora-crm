@@ -83,10 +83,10 @@ function Dashboard() {
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
-  const effectivePageSize = pageSize === 0 ? (total > 0 ? total : 100000) : pageSize;
+  const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({
     queryKey: ["systems", status, agentId, period, page, pageSize],
-    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize: effectivePageSize } }),
+    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize: serverPageSize } }),
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;

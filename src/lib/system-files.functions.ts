@@ -60,7 +60,7 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
     const { error: dbErr } = await supabaseAdmin.from("system_files").insert({
       system_id: data.system_id,
       storage_path: path,
-      file_name: data.file_name,
+      file_name: sanitizeText(data.file_name),
       mime_type: data.mime_type || null,
       size_bytes: buffer.byteLength,
       uploaded_by: context.userId,

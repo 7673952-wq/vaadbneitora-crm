@@ -254,7 +254,25 @@ function SystemDetail() {
               </a>
             )}
             {me?.isSuperAdmin && (
-              <button onClick={() => { if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } }); }}
+              <button onClick={() => {
+                const childCount = data.children?.length ?? 0;
+                if (childCount === 0) {
+                  if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } });
+                  return;
+                }
+                const choice = window.prompt(
+                  `למערכת זו יש ${childCount} תתי-מערכות.\n\n` +
+                  `הקלד "הכל" כדי למחוק את המערכת ואת כל תתי-המערכות.\n` +
+                  `הקלד "קדם" כדי למחוק רק את המערכת הראשית — תת-מערכת אחת תהפוך לראשית ותכלול את השאר.\n` +
+                  `השאר ריק כדי לבטל.`,
+                  "",
+                )?.trim();
+                if (choice === "הכל") {
+                  deleteMut.mutate({ data: { id, mode: "cascade" } });
+                } else if (choice === "קדם") {
+                  deleteMut.mutate({ data: { id, mode: "promote" } });
+                }
+              }}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 bg-white/70">
                 <Trash2 className="h-4 w-4" />מחק
               </button>

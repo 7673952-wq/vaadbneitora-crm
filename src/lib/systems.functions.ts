@@ -207,13 +207,13 @@ export const createSystem = createServerFn({ method: "POST" })
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: data.system_code,
-      name: data.name,
+      name: sanitizeText(data.name),
       status: data.status,
       assigned_agent_id: assignedAgentId,
-      notes: data.notes ?? null,
-      phone: data.phone || null,
-      source: data.source,
-      caller_phone: data.caller_phone,
+      notes: sanitizeOptional(data.notes ?? null),
+      phone: sanitizeOptional(data.phone || null),
+      source: sanitizeOptional(data.source ?? null),
+      caller_phone: sanitizeOptional(data.caller_phone ?? null),
       email: data.email || null,
     } as any).select().single();
     if (error) throw new Error(error.message);

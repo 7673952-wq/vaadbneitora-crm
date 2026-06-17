@@ -111,10 +111,36 @@ function parseCSV(text: string): Record<string, any>[] {
 }
 
 export type RestoreInput = { table: string; csv: string }[];
-export type RestoreResult = { table: string; inserted: number; skipped: number; error?: string }[];
+export type RestoreResult = { table: string; inserted: number; skipped: number; error?: string; details?: string[] }[];
+
+// Upsert rows in batches; if the batch fails, fall back to row-by-row so a
+// single bad row doesn't block the rest. Collects per-row error messages.
+async function upsertResilient(table: string, rows: any[]): Promise<{ inserted: number; skipped: number; details: string[] }> {
+  let inserted = 0;
+  let skipped = 0;
+  const details: string[] = [];
+  const batch = 200;
+  for (let i = 0; i < rows.length; i += batch) {
+    const slice = rows.slice(i, i + batch);
+    const { error, count } = await (supabaseAdmin as any).from(table)
+      .upsert(slice, { onConflict: "id", ignoreDuplicates: false, count: "exact" });
+    if (!error) { inserted += count ?? slice.length; continue; }
+    // Fall back to per-row to identify and skip only the bad ones.
+    for (const row of slice) {
+      const { error: rowErr } = await (supabaseAdmin as any).from(table)
+        .upsert([row], { onConflict: "id", ignoreDuplicates: false });
+      if (rowErr) {
+        skipped++;
+        if (details.length < 10) details.push(`${row.id ?? "?"}: ${rowErr.message}`);
+      } else {
+        inserted++;
+      }
+    }
+  }
+  return { inserted, skipped, details };
+}
 
 export async function runRestore(files: RestoreInput, mode: "merge" | "replace" = "merge"): Promise<RestoreResult> {
-  // Process in dependency-safe order
   const order = ["profiles", "user_roles", "status_settings", "systems", "system_notes", "system_transfers", "system_activity_log"];
   const sorted = [...files].sort((a, b) => order.indexOf(a.table) - order.indexOf(b.table));
   const results: RestoreResult = [];
@@ -125,19 +151,47 @@ export async function runRestore(files: RestoreInput, mode: "merge" | "replace" 
       if (mode === "replace") {
         await (supabaseAdmin as any).from(f.table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
       }
-      let inserted = 0; let skipped = 0;
-      const batch = 500;
-      for (let i = 0; i < rows.length; i += batch) {
-        const slice = rows.slice(i, i + batch);
-        const { error, count } = await (supabaseAdmin as any).from(f.table)
-          .upsert(slice, { onConflict: "id", ignoreDuplicates: false, count: "exact" });
-        if (error) { skipped += slice.length; results.push({ table: f.table, inserted, skipped, error: error.message }); throw new Error(error.message); }
-        else inserted += count ?? slice.length;
+
+      // `systems` has a self-FK on parent_system_id. Insert all rows with the
+      // parent reference nulled out, then patch parent_system_id in a second
+      // pass so order between parent/child rows doesn't matter.
+      if (f.table === "systems") {
+        const parentMap = new Map<string, string | null>();
+        const flat = rows.map((r) => {
+          if (r.parent_system_id) parentMap.set(r.id, r.parent_system_id);
+          return { ...r, parent_system_id: null };
+        });
+        const pass1 = await upsertResilient("systems", flat);
+        // Second pass — restore parent_system_id values.
+        let patched = 0;
+        const patchDetails: string[] = [];
+        for (const [id, parentId] of parentMap.entries()) {
+          const { error } = await (supabaseAdmin as any).from("systems")
+            .update({ parent_system_id: parentId }).eq("id", id);
+          if (error) {
+            if (patchDetails.length < 5) patchDetails.push(`${id} parent: ${error.message}`);
+          } else patched++;
+        }
+        results.push({
+          table: "systems",
+          inserted: pass1.inserted,
+          skipped: pass1.skipped,
+          details: [...pass1.details, ...patchDetails],
+          ...(pass1.details.length || patchDetails.length ? { error: `דילג על ${pass1.skipped} שורות` } : {}),
+        });
+        continue;
       }
-      results.push({ table: f.table, inserted, skipped });
+
+      const res = await upsertResilient(f.table, rows);
+      results.push({
+        table: f.table,
+        inserted: res.inserted,
+        skipped: res.skipped,
+        details: res.details,
+        ...(res.skipped ? { error: `דילג על ${res.skipped} שורות: ${res.details.slice(0, 3).join(" | ")}` } : {}),
+      });
     } catch (e: any) {
-      const existing = results.find((r) => r.table === f.table);
-      if (!existing) results.push({ table: f.table, inserted: 0, skipped: 0, error: e?.message ?? String(e) });
+      results.push({ table: f.table, inserted: 0, skipped: 0, error: e?.message ?? String(e) });
     }
   }
   return results;

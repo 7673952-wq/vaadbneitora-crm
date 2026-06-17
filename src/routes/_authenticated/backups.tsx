@@ -196,7 +196,7 @@ function BackupsPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => downloadFolderZip(b.folder, b.files)}
+                      onClick={() => downloadFolderZip(b.folder)}
                       disabled={zipping === b.folder}
                       className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-50"
                       title="הורד הכל כ-ZIP"

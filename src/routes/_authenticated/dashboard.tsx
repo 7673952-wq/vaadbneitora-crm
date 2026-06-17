@@ -68,7 +68,7 @@ function Dashboard() {
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const { data: systems, isLoading } = useQuery({
     queryKey: ["systems", status, agentId, period],
-    queryFn: () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null } }),
+    queryFn: async () => (await listFn({ data: { status: status || null, agentId: agentId || null, period: period || null } })).items,
   });
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],

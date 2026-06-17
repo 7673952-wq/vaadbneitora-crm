@@ -47,7 +47,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
-    if (data.user_id === context.userId) throw new Error("לא ניתן למחוק את עצמך");
+    if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
     if (error) throw fromSupabase(error);
@@ -255,7 +255,7 @@ function computeSnoozeUntil(unit: string, date?: string|null): string {
   else if (unit === "week") now.setDate(now.getDate() + 7);
   else if (unit === "month") now.setMonth(now.getMonth() + 1);
   else if (unit === "date") {
-    if (!date) throw new Error("יש לבחור תאריך");
+    if (!date) throw new AppError("יש לבחור תאריך", { code: "validation" });
     return new Date(date).toISOString();
   }
   return now.toISOString();

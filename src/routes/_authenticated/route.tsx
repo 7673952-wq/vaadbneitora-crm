@@ -7,6 +7,7 @@ import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRound, X } from "lucide-react";
 import { toast } from "sonner";
+import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

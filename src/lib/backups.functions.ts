@@ -20,9 +20,14 @@ export const backupNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({}).optional().parse(d))
   .handler(async ({ context }) => {
+    checkRateLimit(`${context.userId}:backupNow`, 3, 60_000);
     await assertAdmin(context);
-    const { runBackup } = await import("@/lib/backups.server");
-    return await runBackup();
+    try {
+      const { runBackup } = await import("@/lib/backups.server");
+      return await runBackup();
+    } catch (e) {
+      await logAndThrow(e, { fn: "backupNow", userId: context.userId });
+    }
   });
 
 export const listBackups = createServerFn({ method: "GET" })

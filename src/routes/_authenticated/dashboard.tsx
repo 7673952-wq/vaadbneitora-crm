@@ -18,6 +18,14 @@ import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight,
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+} from "@/components/ui/pagination";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({

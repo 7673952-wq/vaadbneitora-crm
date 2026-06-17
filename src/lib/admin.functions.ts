@@ -80,10 +80,11 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
+    const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("profiles").update({ display_name: data.display_name }).eq("id", data.user_id);
+    const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
     if (error) throw fromSupabase(error);
-    await supabaseAdmin.auth.admin.updateUserById(data.user_id, { user_metadata: { display_name: data.display_name } });
+    await supabaseAdmin.auth.admin.updateUserById(data.user_id, { user_metadata: { display_name: displayName } });
     return { ok: true };
   });
 

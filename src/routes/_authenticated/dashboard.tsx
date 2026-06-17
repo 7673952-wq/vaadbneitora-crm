@@ -57,6 +57,8 @@ function Dashboard() {
   const [period, setPeriod] = useState<Period>("");
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [showCreate, setShowCreate] = useState(false);
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
@@ -74,10 +76,13 @@ function Dashboard() {
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
-  const { data: systems, isLoading } = useQuery({
-    queryKey: ["systems", status, agentId, period],
-    queryFn: async () => (await listFn({ data: { status: status || null, agentId: agentId || null, period: period || null } })).items,
+  const { data: systemsData, isLoading } = useQuery({
+    queryKey: ["systems", status, agentId, period, page],
+    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize } }),
   });
+  const systems = systemsData?.items ?? [];
+  const total = systemsData?.total ?? 0;
+  const totalPages = Math.ceil(total / pageSize);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),

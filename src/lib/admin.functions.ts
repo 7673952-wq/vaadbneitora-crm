@@ -193,7 +193,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: any = {
       status_key: data.status_key,
-      label: data.label,
+      label: sanitizeText(data.label),
       tone: data.tone,
       sort_order: data.sort_order ?? 0,
       is_custom: data.is_custom ?? false,

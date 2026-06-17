@@ -18,6 +18,14 @@ import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight,
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationPrevious,
+  PaginationNext,
+} from "@/components/ui/pagination";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -49,6 +57,8 @@ function Dashboard() {
   const [period, setPeriod] = useState<Period>("");
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [showCreate, setShowCreate] = useState(false);
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
@@ -66,10 +76,13 @@ function Dashboard() {
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
-  const { data: systems, isLoading } = useQuery({
-    queryKey: ["systems", status, agentId, period],
-    queryFn: async () => (await listFn({ data: { status: status || null, agentId: agentId || null, period: period || null } })).items,
+  const { data: systemsData, isLoading } = useQuery({
+    queryKey: ["systems", status, agentId, period, page],
+    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize } }),
   });
+  const systems = systemsData?.items ?? [];
+  const total = systemsData?.total ?? 0;
+  const totalPages = Math.ceil(total / pageSize);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -283,7 +296,7 @@ function Dashboard() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">דשבורד מערכות</h1>
-          <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות · מציג {filtered.length}</p>
+          <p className="text-muted-foreground text-sm mt-1">סה"כ {total} מערכות · מציג {filtered.length}</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowCharts(!showCharts)}
@@ -367,15 +380,15 @@ function Dashboard() {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש לפי מערכת, שם, נציג, טלפון או סטטוס..."
             className="pr-9 pl-3 py-2 text-sm rounded-lg border border-input bg-background w-72 focus:outline-none focus:ring-2 focus:ring-ring" />
         </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
+        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הסטטוסים</option>
           {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
-        <select value={agentId} onChange={(e) => setAgentId(e.target.value)} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
+        <select value={agentId} onChange={(e) => { setAgentId(e.target.value); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הנציגים</option>
           {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
         </select>
-        <select value={period} onChange={(e) => setPeriod(e.target.value as Period)} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
+        <select value={period} onChange={(e) => { setPeriod(e.target.value as Period); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הזמנים</option>
           <option value="day">יומי</option>
           <option value="week">שבועי</option>
@@ -383,7 +396,7 @@ function Dashboard() {
           <option value="year">שנתי</option>
         </select>
         {(status || agentId || period || search) && (
-          <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); }}
+          <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <X className="h-3 w-3" />נקה סינון
           </button>
@@ -426,6 +439,32 @@ function Dashboard() {
           </div>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center">
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }}
+                  className={page === 1 ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+              <PaginationItem>
+                <span className="px-3 py-2 text-sm tabular-nums">
+                  עמוד {page} מתוך {totalPages}
+                </span>
+              </PaginationItem>
+              <PaginationItem>
+                <PaginationNext
+                  onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }}
+                  className={page === totalPages ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
+        </div>
+      )}
 
 
       {showCreate && me?.isAgent && (

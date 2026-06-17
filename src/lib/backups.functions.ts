@@ -27,6 +27,7 @@ export const backupNow = createServerFn({ method: "POST" })
       return await runBackup();
     } catch (e) {
       await logAndThrow(e, { fn: "backupNow", userId: context.userId });
+      throw e;
     }
   });
 

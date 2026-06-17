@@ -5,7 +5,8 @@ export const Route = createFileRoute("/api/public/hooks/daily-backup")({
     handlers: {
       POST: async ({ request }) => {
         const apikey = request.headers.get("apikey");
-        if (!apikey || apikey !== process.env.SUPABASE_PUBLISHABLE_KEY) {
+        const expected = process.env.BACKUP_WEBHOOK_SECRET;
+        if (!expected || !apikey || apikey !== expected) {
           return new Response(JSON.stringify({ error: "Unauthorized" }), {
             status: 401,
             headers: { "Content-Type": "application/json" },

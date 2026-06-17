@@ -249,6 +249,13 @@ export const updateSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    checkRateLimit(`${context.userId}:updateSystem`, 60, 60_000);
+    // Sanitize free-text fields prior to any DB write.
+    if (data.name !== undefined) data.name = sanitizeText(data.name);
+    if (data.notes !== undefined) data.notes = sanitizeText(data.notes);
+    if (data.phone !== undefined && data.phone !== null) data.phone = sanitizeText(data.phone);
+    if (data.caller_phone !== undefined && data.caller_phone !== null) data.caller_phone = sanitizeText(data.caller_phone);
+    if (data.source !== undefined && data.source !== null) data.source = sanitizeText(data.source);
     const { data: sys } = await context.supabase
       .from("systems")
       .select("id, assigned_agent_id, status, parent_system_id")

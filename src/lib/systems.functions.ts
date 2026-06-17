@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { checkRateLimit } from "@/lib/rate-limit.server";
+import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 
 const STATUS_VALUES = [
   "pending_check_close", "pending_check_open", "open", "to_open", "closed",

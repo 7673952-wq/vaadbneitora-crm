@@ -32,6 +32,7 @@ export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
+    checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const page = data.page ?? 1;
     // Default 1000 preserves prior behavior for callers (charts/dashboard)
     // that aggregate over all systems — explicit small pages opt into real pagination.

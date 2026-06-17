@@ -22,16 +22,29 @@ const listSystemsInputSchema = z.object({
   status: statusSchema.nullable().optional(),
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
+  page: z.number().int().min(1).max(10000).optional(),
+  pageSize: z.number().int().min(1).max(2000).optional(),
 }).strict();
 
 export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
+    const page = data.page ?? 1;
+    // Default 1000 preserves prior behavior for callers (charts/dashboard)
+    // that aggregate over all systems — explicit small pages opt into real pagination.
+    const pageSize = data.pageSize ?? 1000;
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+
     let q = context.supabase
       .from("systems")
-      .select("id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at")
-      .order("created_at", { ascending: false });
+      .select(
+        "id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at",
+        { count: "exact" },
+      )
+      .order("created_at", { ascending: false })
+      .range(from, to);
 
     if (data.status) q = q.eq("status", data.status as any);
     if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
@@ -44,7 +57,7 @@ export const listSystems = createServerFn({ method: "POST" })
       else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
       q = q.gte("updated_at", start.toISOString());
     }
-    const { data: rows, error } = await q;
+    const { data: rows, error, count } = await q;
     if (error) throw new Error(error.message);
 
     const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
@@ -57,11 +70,12 @@ export const listSystems = createServerFn({ method: "POST" })
         .from("systems").select("id, system_code, name").in("id", parentIds);
       parentMap = new Map((parents ?? []).map((p) => [p.id, p]));
     }
-    return (rows ?? []).map((r) => ({
+    const items = (rows ?? []).map((r) => ({
       ...r,
       agent: r.assigned_agent_id ? profileMap.get(r.assigned_agent_id) ?? null : null,
       parent: r.parent_system_id ? parentMap.get(r.parent_system_id) ?? null : null,
     }));
+    return { items, total: count ?? items.length, page, pageSize };
   });
 
 export const getSystem = createServerFn({ method: "POST" })

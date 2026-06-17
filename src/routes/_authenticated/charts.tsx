@@ -18,7 +18,7 @@ function ChartsPage() {
   const listFn = useServerFn(listSystems);
   const { data: systems } = useQuery({
     queryKey: ["systems", "", "", ""],
-    queryFn: () => listFn({ data: { status: null, agentId: null, period: null } }),
+    queryFn: async () => (await listFn({ data: { status: null, agentId: null, period: null } })).items,
   });
 
   const stats = useMemo(() => {

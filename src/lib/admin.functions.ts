@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { AppError, fromSupabase } from "@/lib/errors";
 
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.
@@ -31,13 +32,13 @@ export const createUser = createServerFn({ method: "POST" })
       email: data.email, password: data.password, email_confirm: true,
       user_metadata: { display_name: data.display_name },
     });
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     const [{ error: profileError }, { error: roleError }] = await Promise.all([
       supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: data.display_name }),
       supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: data.role }),
     ]);
-    if (profileError) throw new Error(profileError.message);
-    if (roleError) throw new Error(roleError.message);
+    if (profileError) throw fromSupabase(profileError);
+    if (roleError) throw fromSupabase(roleError);
     return { id: created.user.id };
   });
 
@@ -46,10 +47,10 @@ export const deleteUser = createServerFn({ method: "POST" })
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
-    if (data.user_id === context.userId) throw new Error("לא ניתן למחוק את עצמך");
+    if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -67,7 +68,7 @@ export const setUserRole = createServerFn({ method: "POST" })
         ? [{ user_id: data.user_id, role: "admin" }, { user_id: data.user_id, role: "super_admin" }]
         : [{ user_id: data.user_id, role: data.role }];
     const { error } = await supabaseAdmin.from("user_roles").insert(rows);
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -80,7 +81,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: data.display_name }).eq("id", data.user_id);
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     await supabaseAdmin.auth.admin.updateUserById(data.user_id, { user_metadata: { display_name: data.display_name } });
     return { ok: true };
   });
@@ -94,7 +95,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -107,7 +108,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -167,7 +168,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
       .order("sort_order", { ascending: true });
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return data ?? [];
   });
 
@@ -197,7 +198,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
     const { error } = await supabaseAdmin.from("status_settings").upsert(patch);
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -210,7 +211,7 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("status_settings").delete().eq("status_key", data.status_key);
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -244,7 +245,7 @@ export const setAutoSnoozeSetting = createServerFn({ method: "POST" })
       updated_at: new Date().toISOString(),
       updated_by: context.userId,
     });
-    if (error) throw new Error(error.message);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
@@ -254,7 +255,7 @@ function computeSnoozeUntil(unit: string, date?: string|null): string {
   else if (unit === "week") now.setDate(now.getDate() + 7);
   else if (unit === "month") now.setMonth(now.getMonth() + 1);
   else if (unit === "date") {
-    if (!date) throw new Error("יש לבחור תאריך");
+    if (!date) throw new AppError("יש לבחור תאריך", { code: "validation" });
     return new Date(date).toISOString();
   }
   return now.toISOString();

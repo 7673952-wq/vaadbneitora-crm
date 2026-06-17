@@ -33,17 +33,21 @@ export const listBackups = createServerFn({ method: "GET" })
       sortBy: { column: "name", order: "desc" },
     });
     if (error) throw new Error(error.message);
-    const result: { folder: string; created_at: string; files: { name: string; size: number }[] }[] = [];
-    for (const f of folders ?? []) {
-      if (!f.name) continue;
-      const { data: files } = await supabaseAdmin.storage.from("backups").list(f.name, { limit: 100 });
-      result.push({
-        folder: f.name,
-        created_at: (f as any).created_at ?? "",
-        files: (files ?? []).map((x) => ({ name: x.name, size: (x.metadata as any)?.size ?? 0 })),
-      });
-    }
-    return result;
+    // Fetch all folder contents in parallel — avoids N+1 sequential listing.
+    const folderResults = await Promise.all(
+      (folders ?? [])
+        .filter((f) => f.name)
+        .map(async (f) => {
+          const { data: files } = await supabaseAdmin.storage
+            .from("backups").list(f.name, { limit: 100 });
+          return {
+            folder: f.name,
+            created_at: (f as any).created_at ?? "",
+            files: (files ?? []).map((x) => ({ name: x.name, size: (x.metadata as any)?.size ?? 0 })),
+          };
+        }),
+    );
+    return folderResults;
   });
 
 export const getBackupFileUrl = createServerFn({ method: "POST" })

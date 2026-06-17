@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { AppError, fromSupabase } from "@/lib/errors";
 
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.

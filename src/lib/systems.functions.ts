@@ -168,11 +168,11 @@ export const addSubSystem = createServerFn({ method: "POST" })
     }
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: data.system_code,
-      name: data.name?.trim() || parent.name,
+      name: sanitizeText(data.name?.trim() || parent.name || ""),
       parent_system_id: data.parent_id,
       status: "open",
-      source: data.source ?? null,
-      caller_phone: data.caller_phone ?? null,
+      source: sanitizeOptional(data.source ?? null),
+      caller_phone: sanitizeOptional(data.caller_phone ?? null),
     }).select().single();
     if (error) throw new Error(error.message);
     return row;

@@ -2,13 +2,21 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+// All authorization in this file goes through `assertRole` from
+// @/lib/permissions.server — single source of truth.
 async function assertAdmin(context: { userId: string }) {
-  const { assertAdminUserId } = await import("@/lib/permissions.server");
-  await assertAdminUserId(context.userId);
+  const { assertRole } = await import("@/lib/permissions.server");
+  await assertRole(context.userId, "admin");
+}
+
+async function assertSuperAdmin(context: { userId: string }) {
+  const { assertRole } = await import("@/lib/permissions.server");
+  await assertRole(context.userId, "super_admin");
 }
 
 export const backupNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({}).optional().parse(d))
   .handler(async ({ context }) => {
     await assertAdmin(context);
     const { runBackup } = await import("@/lib/backups.server");
@@ -68,37 +76,85 @@ export const deleteBackup = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// Restore is destructive — requires super_admin and a confirmation token
+// minted by the UI's double-confirm dialog. The audit log is written both
+// before the restore (intent) and after (result) for full traceability.
 export const restoreBackup = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { files: { table: string; csv: string }[]; mode?: "merge" | "replace" }) =>
+  .inputValidator((d: { files: { table: string; csv: string }[]; mode?: "merge" | "replace"; confirm_token?: string }) =>
     z.object({
       files: z.array(z.object({
         table: z.enum(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]),
         csv: z.string().min(1).max(20_000_000),
       })).min(1).max(20),
       mode: z.enum(["merge","replace"]).optional(),
+      // Must be the literal word "שחזר" — typed by the user in the
+      // confirmation dialog. Prevents accidental restores via stale tabs
+      // or replayed requests.
+      confirm_token: z.literal("שחזר"),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
-    const { runRestore } = await import("@/lib/backups.server");
-    const result = await runRestore(data.files, data.mode ?? "merge");
+    await assertSuperAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // Pre-restore audit entry — captures intent even if the restore crashes.
+    const { data: prof } = await supabaseAdmin
+      .from("profiles").select("display_name").eq("id", context.userId).maybeSingle();
+    const actorName = (prof as any)?.display_name ?? null;
+    const summary = data.files.map((f) => `${f.table} (${f.csv.length}B)`).join(", ");
+    const mode = data.mode ?? "merge";
+
     try {
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      const { data: prof } = await supabaseAdmin
-        .from("profiles").select("display_name").eq("id", context.userId).maybeSingle();
-      const summary = data.files.map((f) => f.table).join(", ");
       await supabaseAdmin.from("system_activity_log").insert({
         system_id: null,
         actor_id: context.userId,
-        actor_display_name: (prof as any)?.display_name ?? null,
-        action: "restored",
-        field: `mode:${data.mode ?? "merge"}`,
+        actor_display_name: actorName,
+        action: "backup_restore_started",
+        field: `mode:${mode}`,
         old_value: null,
         new_value: summary,
       });
-    } catch {
-      // best-effort audit; do not fail the restore
+    } catch (e) {
+      console.error("[backups.restore] failed to write pre-restore audit entry", e);
     }
+
+    const { runRestore } = await import("@/lib/backups.server");
+    let result: Awaited<ReturnType<typeof runRestore>>;
+    try {
+      result = await runRestore(data.files, mode);
+    } catch (e: any) {
+      try {
+        await supabaseAdmin.from("system_activity_log").insert({
+          system_id: null,
+          actor_id: context.userId,
+          actor_display_name: actorName,
+          action: "backup_restore_failed",
+          field: `mode:${mode}`,
+          old_value: summary,
+          new_value: e?.message ?? String(e),
+        });
+      } catch (logErr) {
+        console.error("[backups.restore] failed to write failure audit entry", logErr);
+      }
+      throw e;
+    }
+
+    // Post-restore audit entry — full result summary.
+    try {
+      const resultSummary = result.map((r) => `${r.table}:${r.inserted}${r.error ? `(err:${r.error})` : ""}`).join(", ");
+      await supabaseAdmin.from("system_activity_log").insert({
+        system_id: null,
+        actor_id: context.userId,
+        actor_display_name: actorName,
+        action: "backup_restore_completed",
+        field: `mode:${mode}`,
+        old_value: summary,
+        new_value: resultSummary,
+      });
+    } catch (e) {
+      console.error("[backups.restore] failed to write completion audit entry", e);
+    }
+
     return result;
   });

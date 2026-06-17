@@ -458,7 +458,7 @@ export const addNote = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.from("system_notes").insert({
-      system_id: data.system_id, body: data.body, author_id: context.userId,
+      system_id: data.system_id, body: sanitizeText(data.body), author_id: context.userId,
     });
     if (error) throw new Error(error.message);
     return { ok: true };

@@ -99,12 +99,34 @@ export const listAuditLog = createServerFn({ method: "POST" })
       if (!s) return id;
       return `${s.system_code}${s.name ? " / " + s.name : ""}`;
     };
+
+    // Translate raw table names inside backup-restore summary strings.
+    const TABLE_LABELS: Record<string, string> = {
+      profiles: "פרופילים",
+      user_roles: "תפקידים",
+      status_settings: "הגדרות סטטוס",
+      systems: "מערכות",
+      system_notes: "הערות מערכת",
+      system_transfers: "העברות מערכת",
+      system_activity_log: "יומן פעילות",
+    };
+    function translateBackupSummary(value: string): string {
+      let result = value;
+      for (const [en, he] of Object.entries(TABLE_LABELS)) {
+        result = result.replace(new RegExp(`\\b${en}\\b`, 'g'), he);
+      }
+      // Convert byte sizes like (1705B) to Hebrew
+      result = result.replace(/\((\d+)B\)/g, '($1 בתים)');
+      return result;
+    }
+
     const displayValue = (field: string | null, value: string | null) => {
       if (value === null || value === undefined || value === "") return value;
       if (field === "assigned_agent_id") return profMap.get(value) ?? value;
       if (field === "parent_system_id") return sysLabel(value);
       if (field === "status") return labelOf(value);
       if (field === "reminder_at") { try { return new Date(value).toLocaleString("he-IL"); } catch { return value; } }
+      if (field?.startsWith("mode:")) return translateBackupSummary(value);
       return value;
     };
 

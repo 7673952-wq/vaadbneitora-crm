@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { checkRateLimit } from "@/lib/rate-limit.server";
+import { logAndThrow } from "@/lib/errors";
 
 // All authorization in this file goes through `assertRole` from
 // @/lib/permissions.server — single source of truth.

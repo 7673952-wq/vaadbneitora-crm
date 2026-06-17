@@ -2,14 +2,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
+// All authorization goes through `assertRole` / `hasRole` from
+// @/lib/permissions.server — no other mechanism is used in this file.
 async function assertAdmin(context: { userId: string }) {
-  const { assertAdminUserId } = await import("@/lib/permissions.server");
-  await assertAdminUserId(context.userId);
+  const { assertRole } = await import("@/lib/permissions.server");
+  await assertRole(context.userId, "admin");
 }
 
 async function assertSuperAdmin(context: { userId: string }) {
-  const { assertSuperAdminUserId } = await import("@/lib/permissions.server");
-  await assertSuperAdminUserId(context.userId);
+  const { assertRole } = await import("@/lib/permissions.server");
+  await assertRole(context.userId, "super_admin");
 }
 
 export const createUser = createServerFn({ method: "POST" })
@@ -112,15 +114,18 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { isAdminUserId, isSuperAdminUserId } = await import("@/lib/permissions.server");
+    const { hasRole } = await import("@/lib/permissions.server");
     const { data } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId);
-    const roles = (data ?? []).map((r: any) => r.role);
-    const isSuperAdmin = roles.includes("super_admin") || await isSuperAdminUserId(context.userId);
-    const isAdmin = isSuperAdmin || roles.includes("admin") || await isAdminUserId(context.userId);
+    const roles = (data ?? []).map((r: any) => r.role).filter((r: any) =>
+      r === "super_admin" || r === "admin" || r === "agent",
+    );
+    const isSuperAdmin = await hasRole(context.userId, "super_admin");
+    const isAdmin = isSuperAdmin || await hasRole(context.userId, "admin");
+    const isAgent = isAdmin || await hasRole(context.userId, "agent");
     if (isSuperAdmin && !roles.includes("super_admin")) roles.push("super_admin");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
-    const isAgent = isAdmin || roles.includes("agent") || roles.includes("manager") || roles.includes("team_lead");
+    if (isAgent && !roles.includes("agent")) roles.push("agent");
     return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent };
   });
 

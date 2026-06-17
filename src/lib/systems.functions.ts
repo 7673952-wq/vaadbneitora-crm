@@ -145,7 +145,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
     if (!parent) throw new Error("מערכת אב לא נמצאה");
     if (parent.parent_system_id) throw new Error("לא ניתן להוסיף תת-מערכת בתוך תת-מערכת");
 
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin && parent.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
     }
@@ -181,7 +181,7 @@ export const createSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const allowed = await isAgentOrAbove(context);
+    const allowed = await userHasRole(context.userId, "agent");
     if (!allowed) throw new Error("רק נציג ומעלה יכול לפתוח מערכת");
     const { data: existing } = await context.supabase
       .from("systems").select("id").eq("system_code", data.system_code).maybeSingle();
@@ -238,7 +238,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       .eq("id", data.id)
       .maybeSingle();
     if (!sys) throw new Error("מערכת לא נמצאה");
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים לעדכן");
     }
@@ -326,7 +326,7 @@ export const transferAgent = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     const { data: sys } = await context.supabase.from("systems").select("assigned_agent_id").eq("id", data.id).maybeSingle();
     if (!sys) throw new Error("מערכת לא נמצאה");
     if (!isAdmin && sys.assigned_agent_id !== context.userId) throw new Error("רק מנהל או הנציג הנוכחי יכולים להעביר");
@@ -373,7 +373,7 @@ export const updateActivityLog = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לערוך יומן שינויים");
     const { id, ...patch } = data;
     const { error } = await context.supabase.from("system_activity_log").update(patch).eq("id", id);
@@ -385,7 +385,7 @@ export const deleteActivityLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול למחוק שורת יומן");
     const { error } = await context.supabase.from("system_activity_log").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -551,7 +551,7 @@ export const listDueReminders = createServerFn({ method: "GET" })
 export const listWeeklyCrmReportRecipients = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לצפות ברשימת נמענים");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin.auth.admin.listUsers();
@@ -565,7 +565,7 @@ export const setParent = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), parent_system_id: z.string().uuid().nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לשנות יחס מערכת/תת-מערכת");
     if (data.parent_system_id === data.id) throw new Error("מערכת לא יכולה להיות אב של עצמה");
     if (data.parent_system_id) {
@@ -637,7 +637,7 @@ export const importSystems = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const isAdmin = await isAdminUser(context);
+    const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לייבא מערכות");
 
     const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);

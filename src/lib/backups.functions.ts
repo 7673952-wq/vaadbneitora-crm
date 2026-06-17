@@ -149,6 +149,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    checkRateLimit(`${context.userId}:restoreBackup`, 2, 300_000);
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 

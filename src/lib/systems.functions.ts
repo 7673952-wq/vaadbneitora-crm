@@ -350,10 +350,48 @@ export const transferAgent = createServerFn({ method: "POST" })
 
 export const deleteSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { id: string; mode?: "cascade" | "promote"; promote_to_id?: string }) =>
+    z.object({
+      id: z.string().uuid(),
+      mode: z.enum(["cascade", "promote"]).optional(),
+      promote_to_id: z.string().uuid().optional(),
+    }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     const { assertRole } = await import("@/lib/permissions.server");
     await assertRole(context.userId, "super_admin");
+
+    const mode = data.mode ?? "cascade";
+    // "promote" — keep children alive: pick one as the new parent and
+    // reparent its siblings to it, then delete the original parent
+    // (CASCADE no longer reaches anyone because the children are detached).
+    if (mode === "promote") {
+      const { data: kids, error: kidsErr } = await context.supabase
+        .from("systems")
+        .select("id")
+        .eq("parent_system_id", data.id);
+      if (kidsErr) throw new Error(kidsErr.message);
+      const childIds = (kids ?? []).map((k: any) => k.id);
+      if (childIds.length === 0) throw new Error("אין תתי-מערכות לקידום — השתמש במחיקה רגילה");
+
+      const newParent = data.promote_to_id && childIds.includes(data.promote_to_id)
+        ? data.promote_to_id
+        : childIds[0];
+
+      // 1. Promote the chosen child to a main system.
+      const { error: e1 } = await context.supabase
+        .from("systems").update({ parent_system_id: null }).eq("id", newParent);
+      if (e1) throw new Error(e1.message);
+
+      // 2. Re-attach all remaining siblings under the new parent.
+      const siblings = childIds.filter((cid) => cid !== newParent);
+      if (siblings.length > 0) {
+        const { error: e2 } = await context.supabase
+          .from("systems").update({ parent_system_id: newParent }).in("id", siblings);
+        if (e2) throw new Error(e2.message);
+      }
+    }
+
     const { error } = await context.supabase.from("systems").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };

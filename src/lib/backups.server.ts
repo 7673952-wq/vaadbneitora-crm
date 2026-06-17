@@ -113,25 +113,34 @@ function parseCSV(text: string): Record<string, any>[] {
 export type RestoreInput = { table: string; csv: string }[];
 export type RestoreResult = { table: string; inserted: number; skipped: number; error?: string; details?: string[] }[];
 
+// Primary-key column per backup table — most are `id`, but status_settings
+// uses `status_key`. Used as the upsert conflict target.
+const PK_COLUMN: Record<string, string> = {
+  status_settings: "status_key",
+};
+const pkOf = (t: string) => PK_COLUMN[t] ?? "id";
+
 // Upsert rows in batches; if the batch fails, fall back to row-by-row so a
 // single bad row doesn't block the rest. Collects per-row error messages.
 async function upsertResilient(table: string, rows: any[]): Promise<{ inserted: number; skipped: number; details: string[] }> {
   let inserted = 0;
   let skipped = 0;
   const details: string[] = [];
+  const onConflict = pkOf(table);
   const batch = 200;
   for (let i = 0; i < rows.length; i += batch) {
     const slice = rows.slice(i, i + batch);
     const { error, count } = await (supabaseAdmin as any).from(table)
-      .upsert(slice, { onConflict: "id", ignoreDuplicates: false, count: "exact" });
+      .upsert(slice, { onConflict, ignoreDuplicates: false, count: "exact" });
     if (!error) { inserted += count ?? slice.length; continue; }
     // Fall back to per-row to identify and skip only the bad ones.
     for (const row of slice) {
       const { error: rowErr } = await (supabaseAdmin as any).from(table)
-        .upsert([row], { onConflict: "id", ignoreDuplicates: false });
+        .upsert([row], { onConflict, ignoreDuplicates: false });
       if (rowErr) {
         skipped++;
-        if (details.length < 10) details.push(`${row.id ?? "?"}: ${rowErr.message}`);
+        const key = row[onConflict] ?? "?";
+        if (details.length < 10) details.push(`${key}: ${rowErr.message}`);
       } else {
         inserted++;
       }

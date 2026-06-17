@@ -58,10 +58,3 @@ export async function assertRole(userId: string, required: Role): Promise<void> 
   }
 }
 
-// ---------- Back-compat shims (deprecated) ----------
-// Existing callers use these names. New code should import `assertRole`
-// or `hasRole` directly.
-export const isAdminUserId = (userId: string) => hasRole(userId, "admin");
-export const isSuperAdminUserId = (userId: string) => hasRole(userId, "super_admin");
-export const assertAdminUserId = (userId: string) => assertRole(userId, "admin");
-export const assertSuperAdminUserId = (userId: string) => assertRole(userId, "super_admin");

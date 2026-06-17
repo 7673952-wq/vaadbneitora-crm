@@ -124,29 +124,14 @@ function BackupsPage() {
     }
   }
 
+  const zipUrlFn = useServerFn(getBackupZipUrl);
   const [zipping, setZipping] = useState<string | null>(null);
-  async function downloadFolderZip(folder: string, files: { name: string }[]) {
+  async function downloadFolderZip(folder: string) {
     try {
       setZipping(folder);
-      const zip = new JSZip();
-      for (const f of files) {
-        const path = `${folder}/${f.name}`;
-        const { url } = await urlFn({ data: { path }, headers: await getAuthHeaders() });
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`הורדה נכשלה: ${f.name}`);
-        const blob = await resp.blob();
-        zip.file(f.name, blob);
-      }
-      const out = await zip.generateAsync({ type: "blob" });
-      const a = document.createElement("a");
-      const objUrl = URL.createObjectURL(out);
-      a.href = objUrl;
-      a.download = `backup-${folder}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(objUrl);
-      toast.success("הזיפ הורד");
+      const { url } = await zipUrlFn({ data: { folder }, headers: await getAuthHeaders() });
+      window.open(url, "_blank");
+      toast.success("הזיפ מוכן להורדה");
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בהורדת הזיפ");
     } finally {

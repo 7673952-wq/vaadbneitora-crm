@@ -244,10 +244,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     }
     let isSuper: boolean | null = null;
     const checkSuper = async () => {
-      if (isSuper === null) {
-        const { isSuperAdminUserId } = await import("@/lib/permissions.server");
-        isSuper = await isSuperAdminUserId(context.userId);
-      }
+      if (isSuper === null) isSuper = await userHasRole(context.userId, "super_admin");
       return isSuper;
     };
     if (data.system_code !== undefined && !(await checkSuper())) {

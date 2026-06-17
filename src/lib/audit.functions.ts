@@ -22,8 +22,8 @@ export const listAuditLog = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertSuperAdminUserId } = await import("@/lib/permissions.server");
-    await assertSuperAdminUserId(context.userId);
+    const { assertRole } = await import("@/lib/permissions.server");
+    await assertRole(context.userId, "super_admin");
     let q = context.supabase
       .from("system_activity_log")
       .select("id, system_id, actor_id, actor_display_name, action, field, old_value, new_value, reason, created_at")
@@ -35,17 +35,20 @@ export const listAuditLog = createServerFn({ method: "POST" })
     if (data.from) q = q.gte("created_at", data.from);
     if (data.to) q = q.lte("created_at", data.to);
     if (data.search && data.search.trim()) {
-      const s = data.search.trim().replace(/[%,]/g, " ");
-      q = q.or(
-        [
-          `actor_display_name.ilike.%${s}%`,
-          `field.ilike.%${s}%`,
-          `old_value.ilike.%${s}%`,
-          `new_value.ilike.%${s}%`,
-          `reason.ilike.%${s}%`,
-          `action.ilike.%${s}%`,
-        ].join(","),
-      );
+      // PostgREST `.or()` parses a filter DSL where `,` separates filters,
+      // `()` group, `.` separates column/operator/value, and `*` is the
+      // wildcard inside `ilike`. Strip ALL of those so a user-supplied
+      // search term can never break out of the value position. Also strip
+      // `%` because we wrap with our own wildcards.
+      const safe = data.search.trim().replace(/[%,()*."\\]/g, " ").slice(0, 100);
+      if (safe.trim()) {
+        const pattern = `*${safe}*`;
+        q = q.or(
+          [
+            "actor_display_name", "field", "old_value", "new_value", "reason", "action",
+          ].map((col) => `${col}.ilike.${pattern}`).join(","),
+        );
+      }
     }
 
     const { data: rows, error } = await q;
@@ -117,8 +120,8 @@ export const listAuditLog = createServerFn({ method: "POST" })
 export const listAuditActors = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { assertSuperAdminUserId } = await import("@/lib/permissions.server");
-    await assertSuperAdminUserId(context.userId);
+    const { assertRole } = await import("@/lib/permissions.server");
+    await assertRole(context.userId, "super_admin");
     const { data, error } = await context.supabase
       .from("profiles").select("id, display_name").order("display_name", { ascending: true });
     if (error) throw new Error(error.message);

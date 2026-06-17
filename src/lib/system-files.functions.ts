@@ -42,8 +42,8 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
     const { data: sys, error: sysErr } = await context.supabase
       .from("systems").select("id, assigned_agent_id").eq("id", data.system_id).maybeSingle();
     if (sysErr || !sys) throw new Error("מערכת לא נמצאה");
-    const { isAdminUserId } = await import("@/lib/permissions.server");
-    const isAdmin = await isAdminUserId(context.userId);
+    const { hasRole } = await import("@/lib/permissions.server");
+    const isAdmin = await hasRole(context.userId, "admin");
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המשויך יכולים להעלות קבצים");
     }
@@ -96,8 +96,8 @@ export const deleteSystemFile = createServerFn({ method: "POST" })
     const { data: row, error } = await context.supabase
       .from("system_files").select("storage_path, uploaded_by").eq("id", data.file_id).maybeSingle();
     if (error || !row) throw new Error("הקובץ לא נמצא");
-    const { isAdminUserId } = await import("@/lib/permissions.server");
-    const isAdmin = await isAdminUserId(context.userId);
+    const { hasRole } = await import("@/lib/permissions.server");
+    const isAdmin = await hasRole(context.userId, "admin");
     if (!isAdmin && row.uploaded_by !== context.userId) {
       throw new Error("רק מנהל או המעלה יכול למחוק את הקובץ");
     }

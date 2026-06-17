@@ -182,7 +182,7 @@ function BackupsPage() {
             <label className={`flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium cursor-pointer hover:bg-accent ${restoring ? "opacity-50 pointer-events-none" : ""}`}>
               <Upload className="h-4 w-4" />
               {restoring ? "משחזר..." : "ייבוא גיבוי"}
-              <input type="file" accept=".csv" multiple className="hidden"
+              <input type="file" accept=".csv,.zip" multiple className="hidden"
                 onChange={(e) => { handleRestoreFilesSelected(e.target.files); e.currentTarget.value = ""; }} />
             </label>
           )}

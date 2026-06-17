@@ -23,7 +23,7 @@ const listSystemsInputSchema = z.object({
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
   page: z.number().int().min(1).max(10000).optional(),
-  pageSize: z.number().int().min(1).max(2000).optional(),
+  pageSize: z.number().int().min(1).max(100000).optional(),
 }).strict();
 
 export const listSystems = createServerFn({ method: "POST" })

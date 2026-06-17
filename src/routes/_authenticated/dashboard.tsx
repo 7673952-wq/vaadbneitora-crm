@@ -26,6 +26,13 @@ import {
   PaginationPrevious,
   PaginationNext,
 } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select";
 
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -58,7 +65,7 @@ function Dashboard() {
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const [pageSize, setPageSize] = useState(50);
   const [showCreate, setShowCreate] = useState(false);
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
@@ -76,9 +83,10 @@ function Dashboard() {
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
+  const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({
-    queryKey: ["systems", status, agentId, period, page],
-    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize } }),
+    queryKey: ["systems", status, agentId, period, page, pageSize],
+    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize: serverPageSize } }),
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
@@ -441,7 +449,22 @@ function Dashboard() {
       </div>
 
       {total > 0 && (
-        <div className="flex items-center justify-center">
+        <div className="flex items-center justify-center gap-4 flex-wrap">
+          <Select
+            value={String(pageSize)}
+            onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}
+          >
+            <SelectTrigger className="w-[110px] h-9 text-sm" aria-label="מספר פריטים בעמוד">
+              <SelectValue placeholder="50" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="50">50</SelectItem>
+              <SelectItem value="100">100</SelectItem>
+              <SelectItem value="200">200</SelectItem>
+              <SelectItem value="1000">1000</SelectItem>
+              <SelectItem value="0">הכל</SelectItem>
+            </SelectContent>
+          </Select>
           <Pagination>
             <PaginationContent>
               <PaginationItem>

@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { AppError, fromSupabase } from "@/lib/errors";
+import { sanitizeText } from "@/lib/sanitize";
 
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.
@@ -27,14 +28,15 @@ export const createUser = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
+    const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
       email: data.email, password: data.password, email_confirm: true,
-      user_metadata: { display_name: data.display_name },
+      user_metadata: { display_name: displayName },
     });
     if (error) throw fromSupabase(error);
     const [{ error: profileError }, { error: roleError }] = await Promise.all([
-      supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: data.display_name }),
+      supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: displayName }),
       supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: data.role }),
     ]);
     if (profileError) throw fromSupabase(profileError);
@@ -79,10 +81,11 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
+    const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("profiles").update({ display_name: data.display_name }).eq("id", data.user_id);
+    const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
     if (error) throw fromSupabase(error);
-    await supabaseAdmin.auth.admin.updateUserById(data.user_id, { user_metadata: { display_name: data.display_name } });
+    await supabaseAdmin.auth.admin.updateUserById(data.user_id, { user_metadata: { display_name: displayName } });
     return { ok: true };
   });
 
@@ -190,7 +193,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: any = {
       status_key: data.status_key,
-      label: data.label,
+      label: sanitizeText(data.label),
       tone: data.tone,
       sort_order: data.sort_order ?? 0,
       is_custom: data.is_custom ?? false,

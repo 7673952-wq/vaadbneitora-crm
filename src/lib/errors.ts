@@ -56,3 +56,18 @@ export function fromSupabase(
 ): AppError {
   return new AppError(err?.message || fallbackMessage, { code, cause: err, meta: err?.code ? { db_code: err.code } : undefined });
 }
+
+// Server-only helper: log unexpected errors and re-throw as AppError.
+// Uses dynamic import so this file stays client-safe.
+export async function logAndThrow(err: unknown, context: Record<string, unknown> = {}): Promise<never> {
+  const appErr = isAppError(err)
+    ? err
+    : new AppError(err instanceof Error ? err.message : String(err), { cause: err });
+  try {
+    const { logger } = await import("@/lib/logger.server");
+    logger.error(appErr.message, { code: appErr.code, stack: appErr.stack, ...context });
+  } catch {
+    // best-effort logging
+  }
+  throw appErr;
+}

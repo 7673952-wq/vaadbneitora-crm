@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { checkRateLimit } from "@/lib/rate-limit.server";
+import { logAndThrow } from "@/lib/errors";
 
 // All authorization in this file goes through `assertRole` from
 // @/lib/permissions.server — single source of truth.
@@ -18,9 +20,15 @@ export const backupNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({}).optional().parse(d))
   .handler(async ({ context }) => {
+    checkRateLimit(`${context.userId}:backupNow`, 3, 60_000);
     await assertAdmin(context);
-    const { runBackup } = await import("@/lib/backups.server");
-    return await runBackup();
+    try {
+      const { runBackup } = await import("@/lib/backups.server");
+      return await runBackup();
+    } catch (e) {
+      await logAndThrow(e, { fn: "backupNow", userId: context.userId });
+      throw e;
+    }
   });
 
 export const listBackups = createServerFn({ method: "GET" })
@@ -141,6 +149,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    checkRateLimit(`${context.userId}:restoreBackup`, 2, 300_000);
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 

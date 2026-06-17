@@ -1,6 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { checkRateLimit } from "@/lib/rate-limit.server";
+import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 
 const STATUS_VALUES = [
   "pending_check_close", "pending_check_open", "open", "to_open", "closed",
@@ -30,6 +32,7 @@ export const listSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
+    checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const page = data.page ?? 1;
     // Default 1000 preserves prior behavior for callers (charts/dashboard)
     // that aggregate over all systems — explicit small pages opt into real pagination.
@@ -165,11 +168,11 @@ export const addSubSystem = createServerFn({ method: "POST" })
     }
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: data.system_code,
-      name: data.name?.trim() || parent.name,
+      name: sanitizeText(data.name?.trim() || parent.name || ""),
       parent_system_id: data.parent_id,
       status: "open",
-      source: data.source ?? null,
-      caller_phone: data.caller_phone ?? null,
+      source: sanitizeOptional(data.source ?? null),
+      caller_phone: sanitizeOptional(data.caller_phone ?? null),
     }).select().single();
     if (error) throw new Error(error.message);
     return row;
@@ -204,13 +207,13 @@ export const createSystem = createServerFn({ method: "POST" })
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: data.system_code,
-      name: data.name,
+      name: sanitizeText(data.name),
       status: data.status,
       assigned_agent_id: assignedAgentId,
-      notes: data.notes ?? null,
-      phone: data.phone || null,
-      source: data.source,
-      caller_phone: data.caller_phone,
+      notes: sanitizeOptional(data.notes ?? null),
+      phone: sanitizeOptional(data.phone || null),
+      source: sanitizeOptional(data.source ?? null),
+      caller_phone: sanitizeOptional(data.caller_phone ?? null),
       email: data.email || null,
     } as any).select().single();
     if (error) throw new Error(error.message);
@@ -246,6 +249,13 @@ export const updateSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    checkRateLimit(`${context.userId}:updateSystem`, 60, 60_000);
+    // Sanitize free-text fields prior to any DB write.
+    if (data.name !== undefined) data.name = sanitizeText(data.name);
+    if (data.notes !== undefined) data.notes = sanitizeText(data.notes);
+    if (data.phone !== undefined && data.phone !== null) data.phone = sanitizeText(data.phone);
+    if (data.caller_phone !== undefined && data.caller_phone !== null) data.caller_phone = sanitizeText(data.caller_phone);
+    if (data.source !== undefined && data.source !== null) data.source = sanitizeText(data.source);
     const { data: sys } = await context.supabase
       .from("systems")
       .select("id, assigned_agent_id, status, parent_system_id")
@@ -448,7 +458,7 @@ export const addNote = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase.from("system_notes").insert({
-      system_id: data.system_id, body: data.body, author_id: context.userId,
+      system_id: data.system_id, body: sanitizeText(data.body), author_id: context.userId,
     });
     if (error) throw new Error(error.message);
     return { ok: true };

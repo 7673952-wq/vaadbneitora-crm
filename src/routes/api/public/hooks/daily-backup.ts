@@ -20,7 +20,8 @@ export const Route = createFileRoute("/api/public/hooks/daily-backup")({
             headers: { "Content-Type": "application/json" },
           });
         } catch (e: any) {
-          console.error("daily-backup failed", e);
+          const { logger } = await import("@/lib/logger.server");
+          logger.error("daily-backup failed", { message: e?.message, stack: e?.stack });
           return new Response(JSON.stringify({ ok: false, error: e?.message ?? "failed" }), {
             status: 500,
             headers: { "Content-Type": "application/json" },

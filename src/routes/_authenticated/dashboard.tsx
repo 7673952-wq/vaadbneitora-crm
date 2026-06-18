@@ -156,8 +156,32 @@ function Dashboard() {
 
   const updateMutation = useMutation({
     mutationFn: updateFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["systems"] }); qc.invalidateQueries({ queryKey: ["dueReminders"] }); toast.success("עודכן"); },
-    onError: (e: any) => toast.error(e.message),
+    // Optimistic update: patch every cached "systems" list immediately so the UI
+    // reflects the change before the server responds. Roll back on error.
+    onMutate: async (vars: any) => {
+      await qc.cancelQueries({ queryKey: ["systems"] });
+      const patch = vars?.data ?? {};
+      const snapshots = qc.getQueriesData({ queryKey: ["systems"] });
+      qc.setQueriesData({ queryKey: ["systems"] }, (old: any) => {
+        if (!old?.items) return old;
+        return {
+          ...old,
+          items: old.items.map((r: any) => (r.id === patch.id ? { ...r, ...patch } : r)),
+        };
+      });
+      return { snapshots };
+    },
+    onError: (e: any, _vars, ctx: any) => {
+      if (ctx?.snapshots) {
+        for (const [key, data] of ctx.snapshots) qc.setQueryData(key, data);
+      }
+      toast.error(e.message);
+    },
+    onSuccess: () => { toast.success("עודכן"); },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["systems"] });
+      qc.invalidateQueries({ queryKey: ["dueReminders"] });
+    },
   });
 
   function filterByRange(rows: any[], fromIso: string | null, toIso: string | null) {

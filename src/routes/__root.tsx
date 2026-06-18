@@ -71,6 +71,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { name: "twitter:card", content: "summary" },
       { name: "twitter:title", content: "CRM ניהול מערכות" },
       { name: "twitter:description", content: "מערכת ניהול לקוחות ומערכות עם מעקב, היסטוריית העברות והרשאות." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/3310efe0-49bc-42e5-b183-3f0973a16b9b/id-preview-3455b488--bee711c7-69fe-4131-9859-c15e001815c1.lovable.app-1781804335816.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/3310efe0-49bc-42e5-b183-3f0973a16b9b/id-preview-3455b488--bee711c7-69fe-4131-9859-c15e001815c1.lovable.app-1781804335816.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

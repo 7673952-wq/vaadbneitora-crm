@@ -20,6 +20,7 @@ import { Route as AuthenticatedBackupsRouteImport } from './routes/_authenticate
 import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
 import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
+import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
@@ -80,6 +81,11 @@ const ApiPublicWeeklyCrmReportRoute =
     path: '/api/public/weekly-crm-report',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
+  id: '/api/public/health',
+  path: '/api/public/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
   id: '/systems/$id',
   path: '/systems/$id',
@@ -109,6 +115,7 @@ export interface FileRoutesByFullPath {
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/_authenticated/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
+  '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
     | '/manager-dashboard'
     | '/reports'
     | '/systems/$id'
+    | '/api/public/health'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/weekly-backup'
@@ -173,6 +183,7 @@ export interface FileRouteTypes {
     | '/manager-dashboard'
     | '/reports'
     | '/systems/$id'
+    | '/api/public/health'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/weekly-backup'
@@ -189,6 +200,7 @@ export interface FileRouteTypes {
     | '/_authenticated/manager-dashboard'
     | '/_authenticated/reports'
     | '/_authenticated/systems/$id'
+    | '/api/public/health'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/weekly-backup'
@@ -198,6 +210,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicWeeklyCrmReportRoute: typeof ApiPublicWeeklyCrmReportRoute
   ApiPublicHooksDailyBackupRoute: typeof ApiPublicHooksDailyBackupRoute
   ApiPublicHooksWeeklyBackupRoute: typeof ApiPublicHooksWeeklyBackupRoute
@@ -282,6 +295,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWeeklyCrmReportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/health': {
+      id: '/api/public/health'
+      path: '/api/public/health'
+      fullPath: '/api/public/health'
+      preLoaderRoute: typeof ApiPublicHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_authenticated/systems/$id': {
       id: '/_authenticated/systems/$id'
       path: '/systems/$id'
@@ -335,6 +355,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicWeeklyCrmReportRoute: ApiPublicWeeklyCrmReportRoute,
   ApiPublicHooksDailyBackupRoute: ApiPublicHooksDailyBackupRoute,
   ApiPublicHooksWeeklyBackupRoute: ApiPublicHooksWeeklyBackupRoute,

@@ -6,6 +6,7 @@ import {
   updateUserDisplayName, updateUserEmail, updateUserPassword,
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
   getAutoSnoozeSetting, setAutoSnoozeSetting,
+  getBackupEmail, setBackupEmail,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";

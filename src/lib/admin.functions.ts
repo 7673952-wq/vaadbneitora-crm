@@ -18,12 +18,12 @@ async function assertSuperAdmin(context: { userId: string }) {
 
 export const createUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" }) =>
+  .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
     z.object({
       email: z.string().email(),
       password: z.string().min(6).max(72),
       display_name: z.string().min(1).max(100),
-      role: z.enum(["admin", "agent", "super_admin"]),
+      role: z.enum(["admin", "agent", "super_admin", "viewer"]),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {

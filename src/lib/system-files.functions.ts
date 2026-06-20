@@ -39,6 +39,8 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    const { assertCanWrite } = await import("@/lib/permissions.server");
+    await assertCanWrite(context.userId);
     // Verify caller can upload to this system
     const { data: sys, error: sysErr } = await context.supabase
       .from("systems").select("id, assigned_agent_id").eq("id", data.system_id).maybeSingle();

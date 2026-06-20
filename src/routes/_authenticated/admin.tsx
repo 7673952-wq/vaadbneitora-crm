@@ -6,6 +6,7 @@ import {
   updateUserDisplayName, updateUserEmail, updateUserPassword,
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
   getAutoSnoozeSetting, setAutoSnoozeSetting,
+  getBackupEmail, setBackupEmail,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -37,7 +38,7 @@ function AdminPage() {
   });
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" | "super_admin" });
+  const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" | "super_admin" | "viewer" });
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin_users"] });
@@ -121,7 +122,9 @@ function AdminPage() {
               const roles = Array.isArray(u.roles) ? u.roles : [];
               const isSuper = roles.includes("super_admin");
               const isAdmin = roles.includes("admin");
-              const currentRole = isSuper ? "super_admin" : isAdmin ? "admin" : "agent";
+              const isAgentRole = roles.includes("agent");
+              const isViewerOnly = !isAdmin && !isAgentRole && roles.includes("viewer");
+              const currentRole = isSuper ? "super_admin" : isAdmin ? "admin" : isViewerOnly ? "viewer" : "agent";
               const editingThis = editing?.id === u.id;
               return (
                 <tr key={u.id} className="border-b border-border last:border-0 align-top">
@@ -155,8 +158,9 @@ function AdminPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <select value={currentRole} disabled={u.id === me?.userId}
-                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" | "super_admin" } })}
+                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" | "super_admin" | "viewer" } })}
                         className="text-xs rounded-md border border-input bg-background px-2 py-1">
+                        <option value="viewer">צופה</option>
                         <option value="agent">נציג</option>
                         <option value="admin">מנהל</option>
                         <option value="super_admin">מנהל ראשי</option>
@@ -196,6 +200,7 @@ function AdminPage() {
               <Field label="סיסמה (מינ׳ 6)"><input type="text" required minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></Field>
               <Field label="תפקיד">
                 <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as any })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                  <option value="viewer">צופה (קריאה בלבד)</option>
                   <option value="agent">נציג</option>
                   <option value="admin">מנהל</option>
                   <option value="super_admin">מנהל ראשי</option>
@@ -213,7 +218,50 @@ function AdminPage() {
       )}
 
       <AutoSnoozePanel />
+      <BackupEmailPanel />
       <StatusSettingsPanel />
+    </div>
+  );
+}
+
+function BackupEmailPanel() {
+  const getFn = useServerFn(getBackupEmail);
+  const setFn = useServerFn(setBackupEmail);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["backup_email"],
+    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
+  });
+  const [email, setEmail] = useState("");
+  useEffect(() => { if (data) setEmail(data.email); }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { email: string } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    onSuccess: () => { toast.success("המייל נשמר"); qc.invalidateQueries({ queryKey: ["backup_email"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Mail className="h-4 w-4" />מייל לגיבויים</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        כתובת המייל שאליה יישלח קישור הגיבוי בלחיצה על "שלח למייל" במסך הגיבויים.
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        <input
+          type="email"
+          dir="ltr"
+          placeholder="name@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="flex-1 min-w-[240px] rounded-lg border border-input bg-background px-3 py-2 text-sm"
+        />
+        <button
+          onClick={() => mut.mutate({ data: { email: email.trim() } })}
+          disabled={mut.isPending || email === (data?.email ?? "")}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {mut.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
     </div>
   );
 }

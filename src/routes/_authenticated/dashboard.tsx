@@ -342,9 +342,11 @@ function Dashboard() {
               <Download className="h-4 w-4" />ייצוא לפי תאריכים
             </button>
           )}
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Upload className="h-4 w-4" />ייבוא
-          </button>
+          {me?.isAgent && (
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Upload className="h-4 w-4" />ייבוא
+            </button>
+          )}
           {me?.isSuperAdmin && (
             <Link to="/audit" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
               יומן בקרה
@@ -452,7 +454,7 @@ function Dashboard() {
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {restWaiting.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} onUpdate={(d) => updateMutation.mutate({ data: d })} />
               ))}
             </div>
           </div>
@@ -465,7 +467,7 @@ function Dashboard() {
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {restHandled.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} onUpdate={(d) => updateMutation.mutate({ data: d })} />
               ))}
             </div>
           </div>
@@ -642,9 +644,12 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean }) {
+function SystemCard({ r, agents, onUpdate, compact, canWrite = true }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean }) {
   const navigate = useNavigate();
   const cardCls = statusCardClasses(r.status);
+  const openedAt = r.created_at
+    ? new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(r.created_at))
+    : null;
   return (
     <div onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
       className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls}`}>
@@ -673,7 +678,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
         </span>
       </div>
 
-      {!compact && (
+      {!compact && canWrite && (
         <div className="grid grid-cols-2 gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
           <select value={r.status} onChange={(e) => {
             const newStatus = e.target.value;
@@ -717,11 +722,17 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
             </a>
           </div>
         )}
+        {openedAt && (
+          <div className="flex items-center gap-1 text-[10px] opacity-70 pt-1 border-t border-current/10">
+            <Clock className="h-2.5 w-2.5" />נפתחה: {openedAt}
+          </div>
+        )}
       </div>
 
     </div>
   );
 }
+
 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });

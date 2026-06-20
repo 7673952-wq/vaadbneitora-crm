@@ -3,10 +3,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup } from "@/lib/backups.functions";
+import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, prepareBackupEmail } from "@/lib/backups.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload } from "lucide-react";
+import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/backups")({
   component: BackupsPage,
@@ -161,6 +161,25 @@ function BackupsPage() {
     }
   }
 
+  const emailFn = useServerFn(prepareBackupEmail);
+  const [emailing, setEmailing] = useState<string | null>(null);
+  async function emailFolder(folder: string) {
+    try {
+      setEmailing(folder);
+      const { email, url, folder: f } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      const subject = encodeURIComponent(`גיבוי CRM — ${f}`);
+      const body = encodeURIComponent(
+        `שלום,\n\nמצורף קישור להורדת הגיבוי מתאריך ${formatFolder(f)}.\nהקישור בתוקף ל-7 ימים:\n\n${url}\n\nתיקייה: ${f}\n`,
+      );
+      window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
+      toast.success(`קישור הגיבוי מוכן ונשלח אל ${email}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "שגיאה בשליחת מייל");
+    } finally {
+      setEmailing(null);
+    }
+  }
+
   if (me && !me.isAdmin) {
     return (
       <div dir="rtl" className="max-w-2xl mx-auto mt-12 rounded-2xl border border-border bg-card p-8 text-center">
@@ -225,6 +244,15 @@ function BackupsPage() {
                     >
                       <Archive className="h-3.5 w-3.5" />
                       {zipping === b.folder ? "מכין ZIP..." : "הורד הכל (ZIP)"}
+                    </button>
+                    <button
+                      onClick={() => emailFolder(b.folder)}
+                      disabled={emailing === b.folder}
+                      className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+                      title="שלח קישור לגיבוי למייל שהוגדר ב'ניהול ראשי'"
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                      {emailing === b.folder ? "מכין מייל..." : "שלח למייל"}
                     </button>
                     <button
                       onClick={() => {

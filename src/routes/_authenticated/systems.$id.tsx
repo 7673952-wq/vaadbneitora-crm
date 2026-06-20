@@ -244,6 +244,11 @@ function SystemDetail() {
               </span>
               <span className="text-sm opacity-80">נציג: <span className="font-medium">{s.agent_name || "לא משויך"}</span></span>
               {isSub && <span className="text-xs bg-white/60 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
+              {s.created_at && (
+                <span className="text-xs opacity-75">
+                  נפתחה: <span className="font-medium">{new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
+                </span>
+              )}
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">

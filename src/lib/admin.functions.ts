@@ -18,12 +18,12 @@ async function assertSuperAdmin(context: { userId: string }) {
 
 export const createUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" }) =>
+  .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
     z.object({
       email: z.string().email(),
       password: z.string().min(6).max(72),
       display_name: z.string().min(1).max(100),
-      role: z.enum(["admin", "agent", "super_admin"]),
+      role: z.enum(["admin", "agent", "super_admin", "viewer"]),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -58,14 +58,14 @@ export const deleteUser = createServerFn({ method: "POST" })
 
 export const setUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { user_id: string; role: "admin" | "agent" | "super_admin" }) =>
-    z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin"]) }).parse(d),
+  .inputValidator((d: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
+    z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
-    const rows: { user_id: string; role: "admin" | "agent" | "super_admin" }[] =
+    const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
       data.role === "super_admin"
         ? [{ user_id: data.user_id, role: "admin" }, { user_id: data.user_id, role: "super_admin" }]
         : [{ user_id: data.user_id, role: data.role }];
@@ -122,15 +122,17 @@ export const getMyRole = createServerFn({ method: "GET" })
     const { data } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId);
     const roles = (data ?? []).map((r: any) => r.role).filter((r: any) =>
-      r === "super_admin" || r === "admin" || r === "agent",
+      r === "super_admin" || r === "admin" || r === "agent" || r === "viewer",
     );
     const isSuperAdmin = await hasRole(context.userId, "super_admin");
     const isAdmin = isSuperAdmin || await hasRole(context.userId, "admin");
     const isAgent = isAdmin || await hasRole(context.userId, "agent");
+    // A user is "viewer" only when they have ONLY the viewer role (no agent/admin).
+    const isViewer = !isAgent && roles.includes("viewer");
     if (isSuperAdmin && !roles.includes("super_admin")) roles.push("super_admin");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
     if (isAgent && !roles.includes("agent")) roles.push("agent");
-    return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent };
+    return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent, isViewer };
   });
 
 export const listUsersForAdmin = createServerFn({ method: "GET" })
@@ -263,4 +265,37 @@ function computeSnoozeUntil(unit: string, date?: string|null): string {
   }
   return now.toISOString();
 }
+
+// ============= Backup email setting =============
+
+const BACKUP_EMAIL_KEY = "backup_email";
+
+export const getBackupEmail = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", BACKUP_EMAIL_KEY).maybeSingle();
+    const v = (data?.value as { email?: string } | null) ?? null;
+    return { email: v?.email ?? "" };
+  });
+
+export const setBackupEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email: string }) =>
+    z.object({ email: z.string().email().max(200).or(z.literal("")) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: BACKUP_EMAIL_KEY,
+      value: { email: data.email },
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
 

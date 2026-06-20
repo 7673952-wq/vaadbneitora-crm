@@ -37,7 +37,7 @@ function AdminPage() {
   });
 
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" | "super_admin" });
+  const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" | "super_admin" | "viewer" });
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin_users"] });

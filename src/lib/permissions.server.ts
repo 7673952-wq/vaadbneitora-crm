@@ -1,25 +1,22 @@
 // Unified permission model — single source of truth for role checks.
 //
 // Role hierarchy (highest → lowest):
-//   super_admin > admin > agent
+//   super_admin > admin > agent > viewer
 //
-// These are the only roles backed by the `app_role` enum in the database.
-// A higher role implicitly satisfies a lower-role check (super_admin passes
-// any admin check, admin passes any agent check). Membership is resolved
-// against `public.user_roles`, the only place roles are stored.
-//
-// Server-only: imports the service-role client. Never import from client code.
+// `viewer` is read-only — CANNOT write anything. Membership is resolved
+// against `public.user_roles`. Server-only file.
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { AppError } from "@/lib/errors";
 
-export const ROLE_HIERARCHY = ["super_admin", "admin", "agent"] as const;
+export const ROLE_HIERARCHY = ["super_admin", "admin", "agent", "viewer"] as const;
 export type Role = (typeof ROLE_HIERARCHY)[number];
 
 const HEBREW_LABEL: Record<Role, string> = {
   super_admin: "מנהל ראשי",
   admin: "מנהל",
   agent: "נציג",
+  viewer: "צופה",
 };
 
 function rank(role: string): number {
@@ -36,10 +33,6 @@ export async function getUserRoles(userId: string): Promise<Role[]> {
   return (data ?? []).map((r: any) => r.role as Role).filter((r) => ROLE_HIERARCHY.includes(r));
 }
 
-/**
- * True when the user holds `required` or any role above it in the hierarchy.
- * This is the ONLY function any server fn should use to check authorization.
- */
 export async function hasRole(userId: string, required: Role): Promise<boolean> {
   const roles = await getUserRoles(userId);
   if (!roles.length) return false;
@@ -47,10 +40,6 @@ export async function hasRole(userId: string, required: Role): Promise<boolean> 
   return roles.some((r) => rank(r) <= need);
 }
 
-/**
- * Throws AppError("forbidden") when the user lacks the required role.
- * This is the ONLY function any server fn should use to enforce authorization.
- */
 export async function assertRole(userId: string, required: Role): Promise<void> {
   const ok = await hasRole(userId, required);
   if (!ok) {
@@ -58,3 +47,13 @@ export async function assertRole(userId: string, required: Role): Promise<void> 
   }
 }
 
+/**
+ * Throws when the caller is read-only (viewer or no role). Use at the top of
+ * EVERY write server fn so viewers can never mutate data even if RLS permits it.
+ */
+export async function assertCanWrite(userId: string): Promise<void> {
+  const ok = await hasRole(userId, "agent");
+  if (!ok) {
+    throw new AppError("למשתמשי צפייה אין הרשאת עריכה", { code: "forbidden" });
+  }
+}

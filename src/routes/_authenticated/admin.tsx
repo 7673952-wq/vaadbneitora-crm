@@ -218,7 +218,50 @@ function AdminPage() {
       )}
 
       <AutoSnoozePanel />
+      <BackupEmailPanel />
       <StatusSettingsPanel />
+    </div>
+  );
+}
+
+function BackupEmailPanel() {
+  const getFn = useServerFn(getBackupEmail);
+  const setFn = useServerFn(setBackupEmail);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["backup_email"],
+    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
+  });
+  const [email, setEmail] = useState("");
+  useEffect(() => { if (data) setEmail(data.email); }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { email: string } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    onSuccess: () => { toast.success("המייל נשמר"); qc.invalidateQueries({ queryKey: ["backup_email"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Mail className="h-4 w-4" />מייל לגיבויים</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        כתובת המייל שאליה יישלח קישור הגיבוי בלחיצה על "שלח למייל" במסך הגיבויים.
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        <input
+          type="email"
+          dir="ltr"
+          placeholder="name@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="flex-1 min-w-[240px] rounded-lg border border-input bg-background px-3 py-2 text-sm"
+        />
+        <button
+          onClick={() => mut.mutate({ data: { email: email.trim() } })}
+          disabled={mut.isPending || email === (data?.email ?? "")}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {mut.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
     </div>
   );
 }

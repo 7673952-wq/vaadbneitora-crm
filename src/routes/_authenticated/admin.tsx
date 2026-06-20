@@ -157,8 +157,9 @@ function AdminPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <select value={currentRole} disabled={u.id === me?.userId}
-                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" | "super_admin" } })}
+                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" | "super_admin" | "viewer" } })}
                         className="text-xs rounded-md border border-input bg-background px-2 py-1">
+                        <option value="viewer">צופה</option>
                         <option value="agent">נציג</option>
                         <option value="admin">מנהל</option>
                         <option value="super_admin">מנהל ראשי</option>

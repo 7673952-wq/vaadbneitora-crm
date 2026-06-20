@@ -253,6 +253,7 @@ function BackupsPage() {
                     >
                       <Mail className="h-3.5 w-3.5" />
                       {emailing === b.folder ? "מכין מייל..." : "שלח למייל"}
+                    </button>
                     <button
                       onClick={() => {
                         if (confirm("למחוק את הגיבוי הזה?")) delMut.mutate(b.folder);

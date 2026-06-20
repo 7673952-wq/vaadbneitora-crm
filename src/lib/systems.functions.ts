@@ -18,6 +18,12 @@ async function userHasRole(userId: string, role: "agent" | "admin" | "super_admi
   const { hasRole } = await import("@/lib/permissions.server");
   return hasRole(userId, role);
 }
+// Read-only viewers cannot mutate anything — call at the top of every write handler.
+async function ensureCanWrite(userId: string) {
+  const { assertCanWrite } = await import("@/lib/permissions.server");
+  await assertCanWrite(userId);
+}
+
 
 const periodSchema = z.enum(["day", "week", "month", "year"]);
 const listSystemsInputSchema = z.object({
@@ -156,6 +162,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const { data: parent, error: pe } = await context.supabase
       .from("systems").select("id, name, assigned_agent_id, parent_system_id").eq("id", data.parent_id).maybeSingle();
     if (pe) throw new Error(pe.message);
@@ -198,6 +205,7 @@ export const createSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const allowed = await userHasRole(context.userId, "agent");
     if (!allowed) throw new Error("רק נציג ומעלה יכול לפתוח מערכת");
     const { data: existing } = await context.supabase
@@ -249,6 +257,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     checkRateLimit(`${context.userId}:updateSystem`, 60, 60_000);
     // Sanitize free-text fields prior to any DB write.
     if (data.name !== undefined) data.name = sanitizeText(data.name);
@@ -347,6 +356,7 @@ export const transferAgent = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const isAdmin = await userHasRole(context.userId, "admin");
     const { data: sys } = await context.supabase.from("systems").select("assigned_agent_id").eq("id", data.id).maybeSingle();
     if (!sys) throw new Error("מערכת לא נמצאה");
@@ -382,6 +392,7 @@ export const deleteSystem = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const { assertRole } = await import("@/lib/permissions.server");
     await assertRole(context.userId, "super_admin");
 
@@ -432,6 +443,7 @@ export const updateActivityLog = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לערוך יומן שינויים");
     const { id, ...patch } = data;
@@ -444,6 +456,7 @@ export const deleteActivityLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול למחוק שורת יומן");
     const { error } = await context.supabase.from("system_activity_log").delete().eq("id", data.id);
@@ -457,6 +470,7 @@ export const addNote = createServerFn({ method: "POST" })
     z.object({ system_id: z.string().uuid(), body: z.string().min(1).max(2000) }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const { error } = await context.supabase.from("system_notes").insert({
       system_id: data.system_id, body: sanitizeText(data.body), author_id: context.userId,
     });
@@ -475,6 +489,7 @@ export const setReminder = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     let when: Date | null = null;
     if (data.repeat === "custom") {
       if (!data.custom_date) throw new Error("יש לבחור תאריך");
@@ -504,6 +519,7 @@ export const dismissReminder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const { error } = await context.supabase
       .from("systems")
       .update({ reminder_at: null, reminder_agent_ids: [], reminder_handled: true, snoozed_until: null })
@@ -518,6 +534,7 @@ export const snoozeReminder = createServerFn({ method: "POST" })
     z.object({ system_id: z.string().uuid(), minutes: z.number().int().min(1).max(60 * 24 * 365) }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const until = new Date(Date.now() + data.minutes * 60_000).toISOString();
     const { error } = await context.supabase
       .from("systems")
@@ -624,6 +641,7 @@ export const setParent = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), parent_system_id: z.string().uuid().nullable() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לשנות יחס מערכת/תת-מערכת");
     if (data.parent_system_id === data.id) throw new Error("מערכת לא יכולה להיות אב של עצמה");
@@ -696,6 +714,7 @@ export const importSystems = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לייבא מערכות");
 

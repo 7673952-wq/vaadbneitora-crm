@@ -266,3 +266,36 @@ function computeSnoozeUntil(unit: string, date?: string|null): string {
   return now.toISOString();
 }
 
+// ============= Backup email setting =============
+
+const BACKUP_EMAIL_KEY = "backup_email";
+
+export const getBackupEmail = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context);
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", BACKUP_EMAIL_KEY).maybeSingle();
+    const v = (data?.value as { email?: string } | null) ?? null;
+    return { email: v?.email ?? "" };
+  });
+
+export const setBackupEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email: string }) =>
+    z.object({ email: z.string().email().max(200).or(z.literal("")) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: BACKUP_EMAIL_KEY,
+      value: { email: data.email },
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+

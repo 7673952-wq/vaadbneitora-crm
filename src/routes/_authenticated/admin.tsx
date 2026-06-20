@@ -121,7 +121,9 @@ function AdminPage() {
               const roles = Array.isArray(u.roles) ? u.roles : [];
               const isSuper = roles.includes("super_admin");
               const isAdmin = roles.includes("admin");
-              const currentRole = isSuper ? "super_admin" : isAdmin ? "admin" : "agent";
+              const isAgentRole = roles.includes("agent");
+              const isViewerOnly = !isAdmin && !isAgentRole && roles.includes("viewer");
+              const currentRole = isSuper ? "super_admin" : isAdmin ? "admin" : isViewerOnly ? "viewer" : "agent";
               const editingThis = editing?.id === u.id;
               return (
                 <tr key={u.id} className="border-b border-border last:border-0 align-top">

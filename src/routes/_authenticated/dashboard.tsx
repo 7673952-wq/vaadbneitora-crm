@@ -644,9 +644,12 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean }) {
+function SystemCard({ r, agents, onUpdate, compact, canWrite = true }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean }) {
   const navigate = useNavigate();
   const cardCls = statusCardClasses(r.status);
+  const openedAt = r.created_at
+    ? new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(r.created_at))
+    : null;
   return (
     <div onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
       className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls}`}>
@@ -675,7 +678,7 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
         </span>
       </div>
 
-      {!compact && (
+      {!compact && canWrite && (
         <div className="grid grid-cols-2 gap-2 mt-3" onClick={(e) => e.stopPropagation()}>
           <select value={r.status} onChange={(e) => {
             const newStatus = e.target.value;
@@ -719,11 +722,17 @@ function SystemCard({ r, agents, onUpdate, compact }: { r: any; agents?: any[]; 
             </a>
           </div>
         )}
+        {openedAt && (
+          <div className="flex items-center gap-1 text-[10px] opacity-70 pt-1 border-t border-current/10">
+            <Clock className="h-2.5 w-2.5" />נפתחה: {openedAt}
+          </div>
+        )}
       </div>
 
     </div>
   );
 }
+
 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });

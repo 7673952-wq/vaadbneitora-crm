@@ -199,6 +199,7 @@ function AdminPage() {
               <Field label="סיסמה (מינ׳ 6)"><input type="text" required minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></Field>
               <Field label="תפקיד">
                 <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as any })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                  <option value="viewer">צופה (קריאה בלבד)</option>
                   <option value="agent">נציג</option>
                   <option value="admin">מנהל</option>
                   <option value="super_admin">מנהל ראשי</option>

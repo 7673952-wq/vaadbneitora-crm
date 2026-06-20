@@ -246,6 +246,14 @@ function BackupsPage() {
                       {zipping === b.folder ? "מכין ZIP..." : "הורד הכל (ZIP)"}
                     </button>
                     <button
+                      onClick={() => emailFolder(b.folder)}
+                      disabled={emailing === b.folder}
+                      className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border border-border hover:bg-accent disabled:opacity-50"
+                      title="שלח קישור לגיבוי למייל שהוגדר ב'ניהול ראשי'"
+                    >
+                      <Mail className="h-3.5 w-3.5" />
+                      {emailing === b.folder ? "מכין מייל..." : "שלח למייל"}
+                    <button
                       onClick={() => {
                         if (confirm("למחוק את הגיבוי הזה?")) delMut.mutate(b.folder);
                       }}

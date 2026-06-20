@@ -96,6 +96,8 @@ export const deleteSystemFile = createServerFn({ method: "POST" })
     z.object({ file_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
+    const { assertCanWrite } = await import("@/lib/permissions.server");
+    await assertCanWrite(context.userId);
     const { data: row, error } = await context.supabase
       .from("system_files").select("storage_path, uploaded_by").eq("id", data.file_id).maybeSingle();
     if (error || !row) throw new Error("הקובץ לא נמצא");

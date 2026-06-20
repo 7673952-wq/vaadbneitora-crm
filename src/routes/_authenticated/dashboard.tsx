@@ -342,9 +342,11 @@ function Dashboard() {
               <Download className="h-4 w-4" />ייצוא לפי תאריכים
             </button>
           )}
-          <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-            <Upload className="h-4 w-4" />ייבוא
-          </button>
+          {me?.isAgent && (
+            <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Upload className="h-4 w-4" />ייבוא
+            </button>
+          )}
           {me?.isSuperAdmin && (
             <Link to="/audit" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
               יומן בקרה

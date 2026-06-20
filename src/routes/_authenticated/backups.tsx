@@ -161,6 +161,25 @@ function BackupsPage() {
     }
   }
 
+  const emailFn = useServerFn(prepareBackupEmail);
+  const [emailing, setEmailing] = useState<string | null>(null);
+  async function emailFolder(folder: string) {
+    try {
+      setEmailing(folder);
+      const { email, url, folder: f } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      const subject = encodeURIComponent(`גיבוי CRM — ${f}`);
+      const body = encodeURIComponent(
+        `שלום,\n\nמצורף קישור להורדת הגיבוי מתאריך ${formatFolder(f)}.\nהקישור בתוקף ל-7 ימים:\n\n${url}\n\nתיקייה: ${f}\n`,
+      );
+      window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
+      toast.success(`קישור הגיבוי מוכן ונשלח אל ${email}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "שגיאה בשליחת מייל");
+    } finally {
+      setEmailing(null);
+    }
+  }
+
   if (me && !me.isAdmin) {
     return (
       <div dir="rtl" className="max-w-2xl mx-auto mt-12 rounded-2xl border border-border bg-card p-8 text-center">

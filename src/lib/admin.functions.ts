@@ -58,14 +58,14 @@ export const deleteUser = createServerFn({ method: "POST" })
 
 export const setUserRole = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { user_id: string; role: "admin" | "agent" | "super_admin" }) =>
-    z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin"]) }).parse(d),
+  .inputValidator((d: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
+    z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
-    const rows: { user_id: string; role: "admin" | "agent" | "super_admin" }[] =
+    const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
       data.role === "super_admin"
         ? [{ user_id: data.user_id, role: "admin" }, { user_id: data.user_id, role: "super_admin" }]
         : [{ user_id: data.user_id, role: data.role }];

@@ -7,6 +7,7 @@ import {
   importSystems,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
+import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, applyStatusSettings, NO_REASON_STATUSES, type SystemStatus,
@@ -81,7 +82,7 @@ function Dashboard() {
     }
   }, [showCharts]);
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({

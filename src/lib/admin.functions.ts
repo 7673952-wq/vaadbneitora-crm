@@ -129,7 +129,6 @@ export const getMyRole = createServerFn({ method: "GET" })
     const isAgent = isAdmin || roles.includes("agent");
     // A user is "viewer" only when they have ONLY the viewer role (no agent/admin).
     const isViewer = !isAgent && roles.includes("viewer");
-    if (isSuperAdmin && !roles.includes("admin")) roles.push("admin");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
     if (isAgent && !roles.includes("agent")) roles.push("agent");
     return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent, isViewer };

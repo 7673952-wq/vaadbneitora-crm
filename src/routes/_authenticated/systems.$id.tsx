@@ -7,6 +7,7 @@ import {
   setReminder, dismissReminder, setParent,
 } from "@/lib/systems.functions";
 import { getMyRole } from "@/lib/admin.functions";
+import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
 } from "@/lib/system-files.functions";
@@ -79,7 +80,7 @@ function SystemDetail() {
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: () => meFn() });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn() });
   const [noteText, setNoteText] = useState("");
   const [subCode, setSubCode] = useState("");

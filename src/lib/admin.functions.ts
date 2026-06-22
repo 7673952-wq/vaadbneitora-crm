@@ -118,18 +118,17 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { hasRole } = await import("@/lib/permissions.server");
-    const { data } = await context.supabase
+    const { data, error } = await context.supabase
       .from("user_roles").select("role").eq("user_id", context.userId);
+    if (error) throw fromSupabase(error);
     const roles = (data ?? []).map((r: any) => r.role).filter((r: any) =>
       r === "super_admin" || r === "admin" || r === "agent" || r === "viewer",
     );
-    const isSuperAdmin = await hasRole(context.userId, "super_admin");
-    const isAdmin = isSuperAdmin || await hasRole(context.userId, "admin");
-    const isAgent = isAdmin || await hasRole(context.userId, "agent");
+    const isSuperAdmin = roles.includes("super_admin");
+    const isAdmin = isSuperAdmin || roles.includes("admin");
+    const isAgent = isAdmin || roles.includes("agent");
     // A user is "viewer" only when they have ONLY the viewer role (no agent/admin).
     const isViewer = !isAgent && roles.includes("viewer");
-    if (isSuperAdmin && !roles.includes("super_admin")) roles.push("super_admin");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
     if (isAgent && !roles.includes("agent")) roles.push("agent");
     return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent, isViewer };

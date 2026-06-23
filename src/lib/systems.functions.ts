@@ -816,11 +816,12 @@ export const importSystems = createServerFn({ method: "POST" })
         seenInBatch.has(system_code) ||
         (normalizedCode && (existingNormalized.has(normalizedCode) || seenNormalizedInBatch.has(normalizedCode)))
       ) {
-        errors.push({ row: rowNum, reason: `המערכת קיימת (מספר '${system_code}')` });
+        errors.push({ row: rowNum, reason: `המספר קיים ('${system_code}')` });
         continue;
       }
       seenInBatch.add(system_code);
       if (normalizedCode) seenNormalizedInBatch.add(normalizedCode);
+
 
       const phone = pick(r, ["טלפון", "phone", "טלפון לחיוג"]) || null;
       const caller_phone = pick(r, ["טלפון פונה", "caller_phone"]) || null;

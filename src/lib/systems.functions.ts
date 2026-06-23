@@ -816,11 +816,12 @@ export const importSystems = createServerFn({ method: "POST" })
         seenInBatch.has(system_code) ||
         (normalizedCode && (existingNormalized.has(normalizedCode) || seenNormalizedInBatch.has(normalizedCode)))
       ) {
-        errors.push({ row: rowNum, reason: `המערכת קיימת (מספר '${system_code}')` });
+        errors.push({ row: rowNum, reason: `המספר קיים ('${system_code}')` });
         continue;
       }
       seenInBatch.add(system_code);
       if (normalizedCode) seenNormalizedInBatch.add(normalizedCode);
+
 
       const phone = pick(r, ["טלפון", "phone", "טלפון לחיוג"]) || null;
       const caller_phone = pick(r, ["טלפון פונה", "caller_phone"]) || null;
@@ -850,7 +851,7 @@ export const importSystems = createServerFn({ method: "POST" })
       };
       if (parent_system_id) insertPayload.parent_system_id = parent_system_id;
 
-      const { data: row, error } = await context.supabase.from("systems").insert(insertPayload).select("id, system_code").single();
+      const { data: row, error } = await context.supabase.from("systems").insert(insertPayload).select("id, system_code, name").single();
 
 
       if (error) {
@@ -858,7 +859,14 @@ export const importSystems = createServerFn({ method: "POST" })
         continue;
       }
       created.push(row);
+      // If this is a new root-level system, register its name so any later
+      // rows in the same import that share the name become sub-systems of it.
+      if (!parent_system_id && row?.id && row?.name) {
+        const key = String(row.name).trim();
+        if (key && !nameToRoot.has(key)) nameToRoot.set(key, row.id);
+      }
       if (missingOptional.length) incomplete.push(rowNum);
+
     }
 
     return { createdCount: created.length, errors, incompleteRows: incomplete };

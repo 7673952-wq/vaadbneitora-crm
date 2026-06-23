@@ -91,7 +91,7 @@ function Dashboard() {
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -492,27 +492,30 @@ function Dashboard() {
               <SelectItem value="0">הכל</SelectItem>
             </SelectContent>
           </Select>
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }}
-                  className={page === 1 ? "pointer-events-none opacity-50" : ""}
-                />
-              </PaginationItem>
-              <PaginationItem>
-                <span className="px-3 py-2 text-sm tabular-nums">
-                  עמוד {page} מתוך {totalPages}
-                </span>
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationNext
-                  onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }}
-                  className={page === totalPages ? "pointer-events-none opacity-50" : ""}
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
+          {pageSize !== 0 && (
+            <Pagination>
+              <PaginationContent>
+                <PaginationItem>
+                  <PaginationPrevious
+                    onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }}
+                    className={page === 1 ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+                <PaginationItem>
+                  <span className="px-3 py-2 text-sm tabular-nums">
+                    עמוד {page} מתוך {totalPages}
+                  </span>
+                </PaginationItem>
+                <PaginationItem>
+                  <PaginationNext
+                    onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }}
+                    className={page >= totalPages ? "pointer-events-none opacity-50" : ""}
+                  />
+                </PaginationItem>
+              </PaginationContent>
+            </Pagination>
+          )}
+
         </div>
       )}
 
@@ -545,6 +548,7 @@ function Dashboard() {
 
       {showImport && (
         <ImportModal
+          agentNames={(agents ?? []).map((a: any) => a.display_name).filter(Boolean)}
           onClose={() => setShowImport(false)}
           onImport={async (rows) => {
             const res: any = await importFn({ data: { rows } });
@@ -560,6 +564,7 @@ function Dashboard() {
           }}
         />
       )}
+
     </div>
   );
 }
@@ -1197,14 +1202,16 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
 
 
 
-function ImportModal({ onClose, onImport }: {
+function ImportModal({ onClose, onImport, agentNames = [] }: {
   onClose: () => void;
   onImport: (rows: Array<Record<string, any>>) => Promise<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] }>;
+  agentNames?: string[];
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] } | null>(null);
 
   const HEADERS = ["מספר מערכת", "שם מערכת", "סטטוס", "טלפון", "טלפון פונה", "מקור", "דוא\"ל", "הערות", "נציג"];
+
 
   async function downloadTemplate() {
     const statusLabels = STATUS_OPTIONS.map((s) => s.label);
@@ -1233,6 +1240,13 @@ function ImportModal({ onClose, onImport }: {
     wsSources.getColumn(1).width = 26;
     wsSources.getRow(1).font = { bold: true };
 
+    // Agents sheet (also used as dropdown source)
+    const wsAgents = wb.addWorksheet("נציגים", { views: [{ rightToLeft: true }] });
+    wsAgents.addRow(["נציגים"]);
+    agentNames.forEach((l) => wsAgents.addRow([l]));
+    wsAgents.getColumn(1).width = 26;
+    wsAgents.getRow(1).font = { bold: true };
+
     // Data validation: dropdown on column C (status), rows 2..1000
     const statusRange = `'סטטוסים'!$A$2:$A$${statusLabels.length + 1}`;
     for (let r = 2; r <= 1000; r++) {
@@ -1259,7 +1273,23 @@ function ImportModal({ onClose, onImport }: {
       } as any;
     }
 
+    // Data validation: dropdown on column I (agent), rows 2..1000
+    if (agentNames.length > 0) {
+      const agentRange = `'נציגים'!$A$2:$A$${agentNames.length + 1}`;
+      for (let r = 2; r <= 1000; r++) {
+        ws.getCell(`I${r}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [agentRange],
+          showErrorMessage: true,
+          errorTitle: "נציג לא תקין",
+          error: "יש לבחור מהרשימה",
+        } as any;
+      }
+    }
+
     const buf = await wb.xlsx.writeBuffer();
+
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

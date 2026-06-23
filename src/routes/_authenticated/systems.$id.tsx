@@ -201,6 +201,15 @@ function SystemDetail() {
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
 
+      {me?.userId && (
+        <SystemPresence
+          systemId={id}
+          userId={me.userId}
+          displayName={(me as any).displayName ?? "נציג"}
+        />
+      )}
+
+
       {isSub && data.parent && (
         <div className="bg-amber-50 border border-amber-300 text-amber-900 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2 text-sm">

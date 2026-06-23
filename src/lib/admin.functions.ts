@@ -118,8 +118,10 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("user_roles").select("role").eq("user_id", context.userId);
+    const [{ data, error }, { data: prof }] = await Promise.all([
+      context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
+      context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
+    ]);
     if (error) throw fromSupabase(error);
     const roles = (data ?? []).map((r: any) => r.role).filter((r: any) =>
       r === "super_admin" || r === "admin" || r === "agent" || r === "viewer",
@@ -131,8 +133,17 @@ export const getMyRole = createServerFn({ method: "GET" })
     const isViewer = !isAgent && roles.includes("viewer");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
     if (isAgent && !roles.includes("agent")) roles.push("agent");
-    return { userId: context.userId, roles, isAdmin, isSuperAdmin, isAgent, isViewer };
+    return {
+      userId: context.userId,
+      roles,
+      isAdmin,
+      isSuperAdmin,
+      isAgent,
+      isViewer,
+      displayName: (prof as any)?.display_name ?? null,
+    };
   });
+
 
 export const listUsersForAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

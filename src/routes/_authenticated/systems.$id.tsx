@@ -23,6 +23,8 @@ import {
   Info, Paperclip, Upload, Download, FileText, ChevronDown,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
+import { SystemPresence } from "@/components/SystemPresence";
+
 
 export const Route = createFileRoute("/_authenticated/systems/$id")({
   head: () => ({ meta: [{ title: "מערכת | CRM" }] }),

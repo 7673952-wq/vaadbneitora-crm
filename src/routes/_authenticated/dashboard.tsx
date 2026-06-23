@@ -1240,6 +1240,13 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
     wsSources.getColumn(1).width = 26;
     wsSources.getRow(1).font = { bold: true };
 
+    // Agents sheet (also used as dropdown source)
+    const wsAgents = wb.addWorksheet("נציגים", { views: [{ rightToLeft: true }] });
+    wsAgents.addRow(["נציגים"]);
+    agentNames.forEach((l) => wsAgents.addRow([l]));
+    wsAgents.getColumn(1).width = 26;
+    wsAgents.getRow(1).font = { bold: true };
+
     // Data validation: dropdown on column C (status), rows 2..1000
     const statusRange = `'סטטוסים'!$A$2:$A$${statusLabels.length + 1}`;
     for (let r = 2; r <= 1000; r++) {
@@ -1266,7 +1273,23 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
       } as any;
     }
 
+    // Data validation: dropdown on column I (agent), rows 2..1000
+    if (agentNames.length > 0) {
+      const agentRange = `'נציגים'!$A$2:$A$${agentNames.length + 1}`;
+      for (let r = 2; r <= 1000; r++) {
+        ws.getCell(`I${r}`).dataValidation = {
+          type: "list",
+          allowBlank: true,
+          formulae: [agentRange],
+          showErrorMessage: true,
+          errorTitle: "נציג לא תקין",
+          error: "יש לבחור מהרשימה",
+        } as any;
+      }
+    }
+
     const buf = await wb.xlsx.writeBuffer();
+
     const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

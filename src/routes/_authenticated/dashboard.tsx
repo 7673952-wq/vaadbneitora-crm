@@ -1202,14 +1202,16 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
 
 
 
-function ImportModal({ onClose, onImport }: {
+function ImportModal({ onClose, onImport, agentNames = [] }: {
   onClose: () => void;
   onImport: (rows: Array<Record<string, any>>) => Promise<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] }>;
+  agentNames?: string[];
 }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] } | null>(null);
 
   const HEADERS = ["מספר מערכת", "שם מערכת", "סטטוס", "טלפון", "טלפון פונה", "מקור", "דוא\"ל", "הערות", "נציג"];
+
 
   async function downloadTemplate() {
     const statusLabels = STATUS_OPTIONS.map((s) => s.label);

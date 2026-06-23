@@ -91,7 +91,7 @@ function Dashboard() {
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
-  const totalPages = Math.ceil(total / pageSize);
+  const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),

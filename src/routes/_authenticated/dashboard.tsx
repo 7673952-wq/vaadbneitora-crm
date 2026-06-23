@@ -548,6 +548,7 @@ function Dashboard() {
 
       {showImport && (
         <ImportModal
+          agentNames={(agents ?? []).map((a: any) => a.display_name).filter(Boolean)}
           onClose={() => setShowImport(false)}
           onImport={async (rows) => {
             const res: any = await importFn({ data: { rows } });
@@ -563,6 +564,7 @@ function Dashboard() {
           }}
         />
       )}
+
     </div>
   );
 }

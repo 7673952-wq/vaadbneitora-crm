@@ -342,6 +342,8 @@ export type Database = {
     }
     Functions: {
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
     }
     Enums: {
       app_role: "admin" | "agent" | "super_admin" | "viewer"

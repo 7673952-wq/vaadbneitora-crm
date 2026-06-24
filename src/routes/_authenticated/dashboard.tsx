@@ -66,7 +66,7 @@ function Dashboard() {
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(200);
   const [showCreate, setShowCreate] = useState(false);
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
@@ -338,20 +338,12 @@ function Dashboard() {
             <BarChart3 className="h-4 w-4 text-indigo-600" />
             {showCharts ? "סגור תרשימים" : "תרשימים"}
           </button>
-          {me?.isAdmin && (
-            <button onClick={() => setShowExport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              <Download className="h-4 w-4" />ייצוא לפי תאריכים
-            </button>
-          )}
           {me?.isAgent && (
-            <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              <Upload className="h-4 w-4" />ייבוא
-            </button>
-          )}
-          {me?.isSuperAdmin && (
-            <Link to="/audit" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              יומן בקרה
-            </Link>
+            <ImportExportMenu
+              canExport={!!me?.isAdmin}
+              onExport={() => setShowExport(true)}
+              onImport={() => setShowImport(true)}
+            />
           )}
           {me?.isAdmin && (
             <>
@@ -1372,6 +1364,40 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function ImportExportMenu({ canExport, onExport, onImport }: { canExport: boolean; onExport: () => void; onImport: () => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent"
+      >
+        <Upload className="h-4 w-4" />ייבוא / ייצוא
+        <ChevronDown className="h-3 w-3" />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 right-0 min-w-[180px] bg-card border border-border rounded-lg shadow-lg overflow-hidden">
+          <button
+            onMouseDown={(e) => { e.preventDefault(); setOpen(false); onImport(); }}
+            className="flex items-center gap-2 w-full text-right px-3 py-2 text-sm hover:bg-accent"
+          >
+            <Upload className="h-4 w-4" />ייבוא מאקסל
+          </button>
+          {canExport && (
+            <button
+              onMouseDown={(e) => { e.preventDefault(); setOpen(false); onExport(); }}
+              className="flex items-center gap-2 w-full text-right px-3 py-2 text-sm hover:bg-accent border-t border-border"
+            >
+              <Download className="h-4 w-4" />ייצוא לפי תאריכים
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,7 +12,7 @@ import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status"
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus, Clock } from "lucide-react";
+import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus, Clock, FileText, Database } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
@@ -101,9 +101,21 @@ function AdminPage() {
           <h1 className="text-3xl font-bold tracking-tight">ניהול</h1>
           <p className="text-muted-foreground text-sm mt-1">ניהול משתמשים, הרשאות, סטטוסים וצבעי המערכת</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
-          <UserPlus className="h-4 w-4" />משתמש חדש
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {me?.isSuperAdmin && (
+            <>
+              <Link to="/audit" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+                <FileText className="h-4 w-4" />יומן בקרה
+              </Link>
+              <Link to="/backups" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+                <Database className="h-4 w-4" />גיבויים
+              </Link>
+            </>
+          )}
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+            <UserPlus className="h-4 w-4" />משתמש חדש
+          </button>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">

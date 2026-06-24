@@ -859,6 +859,18 @@ export const importSystems = createServerFn({ method: "POST" })
         continue;
       }
       created.push(row);
+      // If the Excel had a note in column H, also create a visible system note
+      // (the systems.notes column is not surfaced on the system card; the
+      // "הערות" panel reads from system_notes).
+      if (notes && row?.id) {
+        try {
+          await context.supabase.from("system_notes").insert({
+            system_id: row.id, body: notes, author_id: context.userId,
+          });
+        } catch (e) {
+          // Non-fatal — the system was created; just skip the note.
+        }
+      }
       // If this is a new root-level system, register its name so any later
       // rows in the same import that share the name become sub-systems of it.
       if (!parent_system_id && row?.id && row?.name) {

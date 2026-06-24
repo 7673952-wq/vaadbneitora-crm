@@ -112,7 +112,7 @@ function BackupsPage() {
   const { data: backups, isLoading } = useQuery({
     queryKey: ["backups"],
     queryFn: async () => listFn({ headers: await getAuthHeaders() }),
-    enabled: me?.isAdmin === true,
+    enabled: me?.isSuperAdmin === true,
   });
 
   const runMut = useMutation({
@@ -166,13 +166,8 @@ function BackupsPage() {
   async function emailFolder(folder: string) {
     try {
       setEmailing(folder);
-      const { email, url, folder: f } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
-      const subject = encodeURIComponent(`גיבוי CRM — ${f}`);
-      const body = encodeURIComponent(
-        `שלום,\n\nמצורף קישור להורדת הגיבוי מתאריך ${formatFolder(f)}.\nהקישור בתוקף ל-7 ימים:\n\n${url}\n\nתיקייה: ${f}\n`,
-      );
-      window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
-      toast.success(`קישור הגיבוי מוכן ונשלח אל ${email}`);
+      const { email } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      toast.success(`קובץ הגיבוי נשלח אל ${email}`);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשליחת מייל");
     } finally {
@@ -180,12 +175,12 @@ function BackupsPage() {
     }
   }
 
-  if (me && !me.isAdmin) {
+  if (me && !me.isSuperAdmin) {
     return (
       <div dir="rtl" className="max-w-2xl mx-auto mt-12 rounded-2xl border border-border bg-card p-8 text-center">
         <ShieldAlert className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-        <h2 className="text-lg font-semibold">נדרשות הרשאות מנהל</h2>
-        <p className="text-sm text-muted-foreground mt-1">רק מנהלי מערכת יכולים לגשת לגיבויים.</p>
+        <h2 className="text-lg font-semibold">נדרשות הרשאות מנהל ראשי</h2>
+        <p className="text-sm text-muted-foreground mt-1">רק מנהל ראשי יכול לגשת לגיבויים.</p>
       </div>
     );
   }

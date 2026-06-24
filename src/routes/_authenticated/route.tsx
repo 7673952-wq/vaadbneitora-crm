@@ -38,9 +38,18 @@ function AuthedLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [displayName, setDisplayName] = useState<string>("");
   const [pwOpen, setPwOpen] = useState(false);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
+
+  function getInitials(name: string): string {
+    if (!name) return "?";
+    const parts = name.trim().split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return "?";
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  }
 
   async function changePassword() {
     if (pw1.length < 6) { toast.error("הסיסמה חייבת לכלול לפחות 6 תווים"); return; }
@@ -123,19 +132,41 @@ function AuthedLayout() {
               );
             })}
           </nav>
-          <div className="mr-auto flex items-center gap-3">
-            <div className="text-sm">
-              <div className="font-medium">{displayName}</div>
-              <div className="text-xs text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
-            </div>
-            <button onClick={() => setPwOpen(true)} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-accent" title="שנה סיסמה">
-              <KeyRound className="h-4 w-4" />
-              שנה סיסמה
+          <div className="mr-auto flex items-center gap-3 relative">
+            <button
+              onClick={() => setUserMenuOpen((v) => !v)}
+              className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent transition"
+              title={displayName}
+            >
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+                {getInitials(displayName)}
+              </span>
+              <span className="text-sm text-right hidden sm:block">
+                <div className="font-medium">{displayName}</div>
+                <div className="text-xs text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
+              </span>
             </button>
-            <button onClick={signOut} className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground border border-border rounded-lg px-3 py-1.5 hover:bg-accent">
-              <LogOut className="h-4 w-4" />
-              יציאה
-            </button>
+            {userMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
+                <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover shadow-lg py-1">
+                  <button
+                    onClick={() => { setUserMenuOpen(false); setPwOpen(true); }}
+                    className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"
+                  >
+                    <KeyRound className="h-4 w-4" />
+                    שנה סיסמה
+                  </button>
+                  <button
+                    onClick={() => { setUserMenuOpen(false); signOut(); }}
+                    className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    יציאה
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>

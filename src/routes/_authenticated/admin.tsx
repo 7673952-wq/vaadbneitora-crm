@@ -101,9 +101,21 @@ function AdminPage() {
           <h1 className="text-3xl font-bold tracking-tight">ניהול</h1>
           <p className="text-muted-foreground text-sm mt-1">ניהול משתמשים, הרשאות, סטטוסים וצבעי המערכת</p>
         </div>
-        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
-          <UserPlus className="h-4 w-4" />משתמש חדש
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {me?.isSuperAdmin && (
+            <>
+              <Link to="/audit" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+                <FileText className="h-4 w-4" />יומן בקרה
+              </Link>
+              <Link to="/backups" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+                <Database className="h-4 w-4" />גיבויים
+              </Link>
+            </>
+          )}
+          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+            <UserPlus className="h-4 w-4" />משתמש חדש
+          </button>
+        </div>
       </div>
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">

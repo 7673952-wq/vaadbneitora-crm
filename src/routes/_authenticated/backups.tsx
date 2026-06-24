@@ -112,7 +112,7 @@ function BackupsPage() {
   const { data: backups, isLoading } = useQuery({
     queryKey: ["backups"],
     queryFn: async () => listFn({ headers: await getAuthHeaders() }),
-    enabled: me?.isAdmin === true,
+    enabled: me?.isSuperAdmin === true,
   });
 
   const runMut = useMutation({

@@ -266,4 +266,3 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
 
     return { email, url: signed.signedUrl, folder: data.folder };
   });
-

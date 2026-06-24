@@ -166,13 +166,8 @@ function BackupsPage() {
   async function emailFolder(folder: string) {
     try {
       setEmailing(folder);
-      const { email, url, folder: f } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
-      const subject = encodeURIComponent(`גיבוי CRM — ${f}`);
-      const body = encodeURIComponent(
-        `שלום,\n\nמצורף קישור להורדת הגיבוי מתאריך ${formatFolder(f)}.\nהקישור בתוקף ל-7 ימים:\n\n${url}\n\nתיקייה: ${f}\n`,
-      );
-      window.location.href = `mailto:${encodeURIComponent(email)}?subject=${subject}&body=${body}`;
-      toast.success(`קישור הגיבוי מוכן ונשלח אל ${email}`);
+      const { email } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      toast.success(`קובץ הגיבוי נשלח אל ${email}`);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשליחת מייל");
     } finally {

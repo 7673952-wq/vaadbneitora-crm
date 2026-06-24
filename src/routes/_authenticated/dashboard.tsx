@@ -338,20 +338,12 @@ function Dashboard() {
             <BarChart3 className="h-4 w-4 text-indigo-600" />
             {showCharts ? "סגור תרשימים" : "תרשימים"}
           </button>
-          {me?.isAdmin && (
-            <button onClick={() => setShowExport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              <Download className="h-4 w-4" />ייצוא לפי תאריכים
-            </button>
-          )}
           {me?.isAgent && (
-            <button onClick={() => setShowImport(true)} className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              <Upload className="h-4 w-4" />ייבוא
-            </button>
-          )}
-          {me?.isSuperAdmin && (
-            <Link to="/audit" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              יומן בקרה
-            </Link>
+            <ImportExportMenu
+              canExport={!!me?.isAdmin}
+              onExport={() => setShowExport(true)}
+              onImport={() => setShowImport(true)}
+            />
           )}
           {me?.isAdmin && (
             <>

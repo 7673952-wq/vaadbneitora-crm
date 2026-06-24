@@ -214,10 +214,9 @@ export const restoreBackup = createServerFn({ method: "POST" })
     return result;
   });
 
-// Prepare a backup-by-email payload: build (or reuse) the folder's ZIP, generate
-// a 7-day signed URL, and return it together with the configured recipient.
-// The client opens a `mailto:` link with this content. Set the recipient under
-// "ניהול ראשי → מייל לגיבויים".
+// Build the folder's ZIP, then send it as a Resend email attachment to the
+// recipient configured under "ניהול → מייל לגיבויים". Returns { email } on
+// success.
 export const prepareBackupEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder: string }) =>
@@ -232,10 +231,13 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
       .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
     const email = ((setting?.value as { email?: string } | null)?.email ?? "").trim();
     if (!email) {
-      throw new Error("לא הוגדר מייל לגיבויים. הגדר תחת 'ניהול ראשי → מייל לגיבויים'.");
+      throw new Error("לא הוגדר מייל לגיבויים. הגדר תחת 'ניהול → מייל לגיבויים'.");
     }
 
-    // Build the ZIP if it doesn't already exist (reuse logic from getBackupZipUrl).
+    const resendKey = process.env.RESEND_API_KEY;
+    if (!resendKey) throw new Error("חסר RESEND_API_KEY");
+
+    // Build (or reuse) the ZIP.
     const JSZip = (await import("jszip")).default;
     const { data: files, error: listErr } = await supabaseAdmin.storage
       .from("backups").list(data.folder, { limit: 100 });
@@ -243,8 +245,14 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
     if (!files || files.length === 0) throw new Error("אין קבצים בגיבוי");
 
     const zipPath = `${data.folder}/backup-${data.folder}.zip`;
+    let zipBuf: Uint8Array | null = null;
     const hasZip = files.some((f) => f.name === `backup-${data.folder}.zip`);
-    if (!hasZip) {
+    if (hasZip) {
+      const { data: blob, error } = await supabaseAdmin.storage
+        .from("backups").download(zipPath);
+      if (error) throw new Error(error.message);
+      zipBuf = new Uint8Array(await blob.arrayBuffer());
+    } else {
       const zip = new JSZip();
       for (const f of files) {
         if (!f.name || f.name.endsWith(".zip")) continue;
@@ -253,17 +261,44 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
         if (error) throw new Error(`${f.name}: ${error.message}`);
         zip.file(f.name, await blob.arrayBuffer());
       }
-      const zipBuf = await zip.generateAsync({ type: "uint8array" });
+      zipBuf = await zip.generateAsync({ type: "uint8array" });
       const { error: upErr } = await supabaseAdmin.storage
         .from("backups").upload(zipPath, zipBuf, { contentType: "application/zip", upsert: true });
       if (upErr) throw new Error(upErr.message);
     }
 
-    // 7-day signed download URL.
-    const { data: signed, error: signErr } = await supabaseAdmin.storage
-      .from("backups").createSignedUrl(zipPath, 60 * 60 * 24 * 7);
-    if (signErr) throw new Error(signErr.message);
+    // Resend attachment expects base64 content.
+    let binary = "";
+    for (let i = 0; i < zipBuf.length; i++) binary += String.fromCharCode(zipBuf[i]);
+    const base64 = btoa(binary);
+    const filename = `backup-${data.folder}.zip`;
+    const sizeMb = (zipBuf.length / 1024 / 1024).toFixed(2);
 
-    return { email, url: signed.signedUrl, folder: data.folder };
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${resendKey}`,
+      },
+      body: JSON.stringify({
+        from: "CRM Backups <onboarding@resend.dev>",
+        to: [email],
+        subject: `גיבוי CRM — ${data.folder}`,
+        html: `<div dir="rtl" style="font-family:Arial,sans-serif;font-size:14px;line-height:1.6">
+          <p>שלום,</p>
+          <p>מצורף קובץ הגיבוי <b>${filename}</b> (${sizeMb} MB).</p>
+          <p>תיקייה: ${data.folder}</p>
+        </div>`,
+        attachments: [{ filename, content: base64 }],
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text();
+      throw new Error(`Resend ${resp.status}: ${errText}`);
+    }
+
+    return { email, folder: data.folder };
   });
+
+
 

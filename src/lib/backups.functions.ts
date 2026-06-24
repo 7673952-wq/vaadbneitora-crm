@@ -21,7 +21,7 @@ export const backupNow = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({}).optional().parse(d))
   .handler(async ({ context }) => {
     checkRateLimit(`${context.userId}:backupNow`, 3, 60_000);
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     try {
       const { runBackup } = await import("@/lib/backups.server");
       return await runBackup();
@@ -34,7 +34,7 @@ export const backupNow = createServerFn({ method: "POST" })
 export const listBackups = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: folders, error } = await supabaseAdmin.storage.from("backups").list("", {
       limit: 200,
@@ -64,7 +64,7 @@ export const getBackupFileUrl = createServerFn({ method: "POST" })
     z.object({ path: z.string().min(1).max(500).regex(/^[A-Za-z0-9._\-/:]+$/) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: signed, error } = await supabaseAdmin.storage.from("backups").createSignedUrl(data.path, 60 * 10);
     if (error) throw new Error(error.message);
@@ -77,7 +77,7 @@ export const deleteBackup = createServerFn({ method: "POST" })
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: files } = await supabaseAdmin.storage.from("backups").list(data.folder, { limit: 100 });
     const paths = (files ?? []).map((f) => `${data.folder}/${f.name}`);
@@ -97,7 +97,7 @@ export const getBackupZipUrl = createServerFn({ method: "POST" })
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const JSZip = (await import("jszip")).default;
 
@@ -224,7 +224,7 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     // Look up the configured backup email.

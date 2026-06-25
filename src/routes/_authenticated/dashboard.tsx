@@ -645,15 +645,25 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact, canWrite = true }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean }) {
+function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0 }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number }) {
   const navigate = useNavigate();
   const cardCls = statusCardClasses(r.status);
   const openedAt = r.created_at
     ? new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(r.created_at))
     : null;
+  const isStale = staleHours > 0
+    && !STATUS_HANDLED[r.status]
+    && r.updated_at
+    && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
   return (
     <div onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
-      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls}`}>
+      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-2 ring-red-500 animate-pulse-stale" : ""}`}
+      title={isStale ? `מערכת ללא טיפול מעל ${staleHours} שעות` : undefined}>
+      {isStale && (
+        <div className="text-[10px] font-bold text-red-700 bg-red-100 border border-red-300 rounded px-1.5 py-0.5 inline-block mb-1">
+          ⚠ ללא טיפול מעל {staleHours}ש'
+        </div>
+      )}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">

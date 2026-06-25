@@ -7,6 +7,7 @@ import {
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
   getAutoSnoozeSetting, setAutoSnoozeSetting,
   getBackupEmail, setBackupEmail,
+  getStaleWarningHours, setStaleWarningHours,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";

@@ -450,7 +450,7 @@ function Dashboard() {
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {restWaiting.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })} />
               ))}
             </div>
           </div>
@@ -463,7 +463,7 @@ function Dashboard() {
             </h2>
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {restHandled.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} onUpdate={(d) => updateMutation.mutate({ data: d })} />
+                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })} />
               ))}
             </div>
           </div>

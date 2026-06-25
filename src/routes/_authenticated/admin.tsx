@@ -232,6 +232,7 @@ function AdminPage() {
 
       <AutoSnoozePanel />
       <BackupEmailPanel />
+      <StaleHoursPanel />
       <StatusSettingsPanel />
     </div>
   );

@@ -57,7 +57,10 @@ function Dashboard() {
   const dismissFn = useServerFn(dismissReminder);
   const snoozeFn = useServerFn(snoozeReminder);
   const statusSettingsFn = useServerFn(listStatusSettings);
+  const staleHoursFn = useServerFn(getStaleWarningHours);
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
+  const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn() });
+  const staleHours = staleSetting?.hours ?? 0;
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");

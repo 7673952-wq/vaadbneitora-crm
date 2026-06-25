@@ -8,6 +8,7 @@ import { getAuthHeaders } from "@/lib/auth-headers";
 import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
+import { NotificationBell } from "@/components/NotificationBell";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

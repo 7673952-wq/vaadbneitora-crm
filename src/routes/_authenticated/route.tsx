@@ -133,7 +133,8 @@ function AuthedLayout() {
               );
             })}
           </nav>
-          <div className="mr-auto flex items-center gap-3 relative">
+          <div className="mr-auto flex items-center gap-2 relative">
+            {sessionReady && <NotificationBell />}
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent transition"

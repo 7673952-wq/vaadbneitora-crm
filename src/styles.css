@@ -97,3 +97,9 @@
   html { font-family: var(--font-sans); }
   body { background-color: var(--color-background); color: var(--color-foreground); }
 }
+
+@keyframes pulse-stale {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.85); }
+  50% { box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.35); }
+}
+.animate-pulse-stale { animation: pulse-stale 1.6s ease-in-out infinite; }

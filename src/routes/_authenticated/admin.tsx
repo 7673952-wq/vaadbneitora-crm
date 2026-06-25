@@ -7,6 +7,7 @@ import {
   listStatusSettings, upsertStatusSetting, deleteStatusSetting,
   getAutoSnoozeSetting, setAutoSnoozeSetting,
   getBackupEmail, setBackupEmail,
+  getStaleWarningHours, setStaleWarningHours,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -231,6 +232,7 @@ function AdminPage() {
 
       <AutoSnoozePanel />
       <BackupEmailPanel />
+      <StaleHoursPanel />
       <StatusSettingsPanel />
     </div>
   );
@@ -269,6 +271,47 @@ function BackupEmailPanel() {
         <button
           onClick={() => mut.mutate({ data: { email: email.trim() } })}
           disabled={mut.isPending || email === (data?.email ?? "")}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
+        >
+          {mut.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StaleHoursPanel() {
+  const getFn = useServerFn(getStaleWarningHours);
+  const setFn = useServerFn(setStaleWarningHours);
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["stale_warning_hours"],
+    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
+  });
+  const [hours, setHours] = useState<number>(24);
+  useEffect(() => { if (data) setHours(data.hours); }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { hours: number } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["stale_warning_hours"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />צביעת אזהרה — זמן ללא טיפול</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        מערכת שלא נגעו בה X שעות ועדיין לא טופלה תוצג עם מסגרת אדומה מהבהבת. 0 = מבוטל.
+      </p>
+      <div className="flex gap-2 items-center flex-wrap">
+        <input
+          type="number" min={0} max={8760}
+          value={hours}
+          onChange={(e) => setHours(Math.max(0, Math.min(8760, Number(e.target.value) || 0)))}
+          className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm"
+        />
+        <span className="text-sm text-muted-foreground">שעות</span>
+        <button
+          onClick={() => mut.mutate({ data: { hours } })}
+          disabled={mut.isPending || hours === (data?.hours ?? 24)}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
         >
           {mut.isPending ? "שומר..." : "שמור"}

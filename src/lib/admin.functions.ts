@@ -308,4 +308,131 @@ export const setBackupEmail = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ============= Stale-warning hours (for conditional card coloring) =============
+
+const STALE_HOURS_KEY = "stale_warning_hours";
+
+export const getStaleWarningHours = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", STALE_HOURS_KEY).maybeSingle();
+    const v = (data?.value as { hours?: number } | null) ?? null;
+    return { hours: typeof v?.hours === "number" ? v.hours : 24 };
+  });
+
+export const setStaleWarningHours = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { hours: number }) =>
+    z.object({ hours: z.number().int().min(0).max(8760) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: STALE_HOURS_KEY,
+      value: { hours: data.hours },
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+// ============= Notification center =============
+// Returns recent events relevant to the current user:
+//  - transfers to/from me
+//  - notes written by others on systems I'm assigned to
+//  - status / agent changes by others on my systems
+// "Unread" state is tracked client-side via localStorage (last-read timestamp).
+
+export const listMyNotifications = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const me = context.userId;
+    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const { data: mySystems } = await context.supabase
+      .from("systems").select("id, system_code, name").eq("assigned_agent_id", me);
+    const myIds = (mySystems ?? []).map((s: any) => s.id);
+    const sysMap = new Map<string, { code: string; name: string }>(
+      (mySystems ?? []).map((s: any) => [s.id, { code: s.system_code, name: s.name }]),
+    );
+
+    const { data: transfers } = await context.supabase
+      .from("system_transfers")
+      .select("id, system_id, from_agent_id, to_agent_id, transferred_by, reason, created_at")
+      .or(`to_agent_id.eq.${me},from_agent_id.eq.${me}`)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    let notes: any[] = [];
+    let activity: any[] = [];
+    if (myIds.length > 0) {
+      const [notesRes, actRes] = await Promise.all([
+        context.supabase.from("system_notes")
+          .select("id, system_id, body, author_id, created_at")
+          .in("system_id", myIds).neq("author_id", me).gte("created_at", since)
+          .order("created_at", { ascending: false }).limit(50),
+        context.supabase.from("system_activity_log")
+          .select("id, system_id, actor_id, actor_display_name, action, field, old_value, new_value, created_at")
+          .in("system_id", myIds).neq("actor_id", me)
+          .in("field", ["status", "assigned_agent_id"])
+          .gte("created_at", since)
+          .order("created_at", { ascending: false }).limit(50),
+      ]);
+      notes = notesRes.data ?? [];
+      activity = actRes.data ?? [];
+    }
+
+    const extraIds = Array.from(new Set(
+      (transfers ?? []).map((t: any) => t.system_id).filter((id: string) => id && !sysMap.has(id)),
+    ));
+    if (extraIds.length) {
+      const { data: extra } = await context.supabase
+        .from("systems").select("id, system_code, name").in("id", extraIds);
+      for (const s of (extra ?? []) as any[]) sysMap.set(s.id, { code: s.system_code, name: s.name });
+    }
+    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
+    const pmap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
+
+    const items: any[] = [];
+    for (const t of (transfers ?? []) as any[]) {
+      const sys = sysMap.get(t.system_id);
+      const toMe = t.to_agent_id === me;
+      const other = toMe ? t.from_agent_id : t.to_agent_id;
+      items.push({
+        id: `t:${t.id}`, kind: "transfer", system_id: t.system_id,
+        system_code: sys?.code, system_name: sys?.name, created_at: t.created_at,
+        title: toMe ? "הועברה אליך מערכת" : "הועברה ממך מערכת",
+        detail: other ? (pmap.get(other) ?? "לא ידוע") : "לא משויך",
+        reason: t.reason ?? null,
+      });
+    }
+    for (const n of notes) {
+      const sys = sysMap.get(n.system_id);
+      items.push({
+        id: `n:${n.id}`, kind: "note", system_id: n.system_id,
+        system_code: sys?.code, system_name: sys?.name, created_at: n.created_at,
+        title: "הערה חדשה",
+        detail: pmap.get(n.author_id) ?? "לא ידוע",
+        reason: (n.body ?? "").slice(0, 120),
+      });
+    }
+    for (const a of activity) {
+      const sys = sysMap.get(a.system_id);
+      items.push({
+        id: `a:${a.id}`, kind: "activity", system_id: a.system_id,
+        system_code: sys?.code, system_name: sys?.name, created_at: a.created_at,
+        title: a.field === "status" ? "שינוי סטטוס" : "שינוי נציג",
+        detail: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
+        reason: `${a.old_value ?? "—"} ← ${a.new_value ?? "—"}`,
+      });
+    }
+    items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    return items.slice(0, 50);
+  });
+
+
 

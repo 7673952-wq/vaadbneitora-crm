@@ -1,0 +1,109 @@
+import { useEffect, useMemo, useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { useQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
+import { Bell, ArrowRightLeft, MessageSquare, Activity } from "lucide-react";
+import { listMyNotifications } from "@/lib/admin.functions";
+
+const LS_KEY = "notif_last_read_at";
+
+function timeAgo(iso: string): string {
+  const ms = Date.now() - new Date(iso).getTime();
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return "עכשיו";
+  if (m < 60) return `לפני ${m} ד'`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `לפני ${h} ש'`;
+  const d = Math.floor(h / 24);
+  return `לפני ${d} ימים`;
+}
+
+export function NotificationBell() {
+  const fn = useServerFn(listMyNotifications);
+  const { data } = useQuery({
+    queryKey: ["my_notifications"],
+    queryFn: () => fn(),
+    refetchInterval: 60_000,
+  });
+  const items = (data ?? []) as any[];
+  const [open, setOpen] = useState(false);
+  const [lastRead, setLastRead] = useState<number>(() => {
+    if (typeof window === "undefined") return 0;
+    return Number(window.localStorage.getItem(LS_KEY) || 0);
+  });
+  const unread = useMemo(
+    () => items.filter((n) => new Date(n.created_at).getTime() > lastRead).length,
+    [items, lastRead],
+  );
+  useEffect(() => {
+    if (open && items.length) {
+      const newest = new Date(items[0].created_at).getTime();
+      if (newest > lastRead) {
+        window.localStorage.setItem(LS_KEY, String(newest));
+        setLastRead(newest);
+      }
+    }
+  }, [open, items, lastRead]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="התראות"
+        className="relative flex h-9 w-9 items-center justify-center rounded-lg hover:bg-accent"
+      >
+        <Bell className="h-5 w-5" />
+        {unread > 0 && (
+          <span className="absolute top-0.5 right-0.5 bg-red-600 text-white text-[10px] font-bold rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+            {unread > 9 ? "9+" : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute left-0 top-full mt-1 z-50 w-[360px] max-h-[480px] overflow-auto rounded-xl border border-border bg-popover shadow-xl">
+            <div className="sticky top-0 bg-popover/95 backdrop-blur px-3 py-2 border-b text-sm font-semibold">
+              התראות {unread > 0 && <span className="text-xs text-red-600">({unread} חדשות)</span>}
+            </div>
+            {items.length === 0 ? (
+              <div className="p-4 text-sm text-muted-foreground text-center">אין התראות חדשות</div>
+            ) : (
+              <ul className="divide-y">
+                {items.map((n) => {
+                  const isUnread = new Date(n.created_at).getTime() > lastRead;
+                  const Icon = n.kind === "transfer" ? ArrowRightLeft : n.kind === "note" ? MessageSquare : Activity;
+                  return (
+                    <li key={n.id} className={isUnread ? "bg-amber-50/60" : ""}>
+                      <Link
+                        to="/systems/$id"
+                        params={{ id: n.system_id }}
+                        onClick={() => setOpen(false)}
+                        className="flex gap-2 p-3 text-sm hover:bg-accent"
+                      >
+                        <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-medium truncate">{n.title}</span>
+                            <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(n.created_at)}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {n.system_code} · {n.system_name}
+                          </div>
+                          <div className="text-xs mt-0.5 truncate">
+                            <span className="text-muted-foreground">{n.detail}</span>
+                            {n.reason && <span className="text-foreground/80"> · {n.reason}</span>}
+                          </div>
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

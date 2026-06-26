@@ -494,44 +494,109 @@ function Dashboard() {
             <X className="h-3 w-3" />נקה סינון
           </button>
         )}
+        <div className="ms-auto flex items-center gap-2">
+          {!me?.isViewer && (
+            <button
+              onClick={() => { setSelectMode((v) => !v); if (selectMode) clearSelection(); }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-md border ${selectMode ? "bg-primary text-primary-foreground border-primary" : "border-input bg-white hover:bg-accent"}`}
+              title="בחירה מרובה">
+              {selectMode ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+              בחירה מרובה
+            </button>
+          )}
+          <div className="flex rounded-md border border-input bg-white overflow-hidden">
+            <button onClick={() => setViewMode("list")}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs ${viewMode === "list" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+              title="תצוגת רשימה">
+              <LayoutGrid className="h-3.5 w-3.5" />רשימה
+            </button>
+            <button onClick={() => setViewMode("kanban")}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border-r border-input ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+              title="תצוגת קנבן">
+              <Columns3 className="h-3.5 w-3.5" />קנבן
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Pending statuses now appear inside "ממתין לטיפול" below */}
-
-
+      {selectMode && (
+        <div className="bg-indigo-50 border-2 border-indigo-300 rounded-xl p-3 flex flex-wrap items-center gap-3 sticky top-2 z-30 shadow-sm">
+          <div className="text-sm font-semibold text-indigo-900">
+            נבחרו {selectedIds.size} מתוך {filtered.length}
+          </div>
+          <button onClick={selectAllVisible} className="text-xs px-2 py-1 rounded border border-indigo-400 bg-white hover:bg-indigo-100">בחר הכל</button>
+          <button onClick={clearSelection} className="text-xs px-2 py-1 rounded border border-indigo-400 bg-white hover:bg-indigo-100">נקה</button>
+          <div className="h-5 w-px bg-indigo-300" />
+          <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} className="px-2 py-1 text-xs rounded border border-input bg-white">
+            <option value="">— שנה סטטוס —</option>
+            {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <select value={bulkAgent} onChange={(e) => setBulkAgent(e.target.value)} className="px-2 py-1 text-xs rounded border border-input bg-white">
+            <option value="">— שנה נציג —</option>
+            <option value="__unassigned">ללא שיוך</option>
+            {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+          </select>
+          <button
+            onClick={applyBulk}
+            disabled={bulkBusy || selectedIds.size === 0 || (!bulkStatus && !bulkAgent)}
+            className="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+            {bulkBusy ? "מעדכן..." : "החל על הנבחרים"}
+          </button>
+        </div>
+      )}
 
       {/* Main cards grid */}
       <div>
-        
         {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
         {!isLoading && rest.length === 0 && <div className="text-center py-12 text-muted-foreground">לא נמצאו מערכות</div>}
 
-        {restWaiting.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-600" />ממתין לטיפול ({restWaiting.length})
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {restWaiting.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-              ))}
-            </div>
-          </div>
-        )}
+        {viewMode === "kanban" ? (
+          rest.length > 0 && (
+            <KanbanBoard
+              rows={filtered}
+              agents={agents ?? []}
+              canWrite={!me?.isViewer}
+              staleHours={staleHours}
+              onUpdate={(d) => updateMutation.mutate({ data: d })}
+              onDropStatus={handleKanbanDrop}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+            />
+          )
+        ) : (
+          <>
+            {restWaiting.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-amber-600" />ממתין לטיפול ({restWaiting.length})
+                </h2>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {restWaiting.map((r: any) => (
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                      selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
+                  ))}
+                </div>
+              </div>
+            )}
 
-        {restHandled.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />טופל ({restHandled.length})
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {restHandled.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-              ))}
-            </div>
-          </div>
+            {restHandled.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />טופל ({restHandled.length})
+                </h2>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {restHandled.map((r: any) => (
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                      selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
+
 
       {total > 0 && (
         <div className="flex items-center justify-center gap-4 flex-wrap">

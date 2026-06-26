@@ -15,7 +15,7 @@ import {
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";

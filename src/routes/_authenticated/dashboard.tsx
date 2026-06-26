@@ -773,7 +773,7 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0 }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number }) {
+function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
   const cardCls = statusCardClasses(r.status);
   const openedAt = r.created_at
@@ -783,10 +783,21 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
     && !STATUS_HANDLED[r.status]
     && r.updated_at
     && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
+  const handleCardClick = () => {
+    if (selectMode && onToggleSelect) { onToggleSelect(r.id); return; }
+    navigate({ to: "/systems/$id", params: { id: r.id } });
+  };
   return (
-    <div onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
-      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-2 ring-red-500 animate-pulse-stale" : ""}`}
+    <div onClick={handleCardClick}
+      draggable={draggable}
+      onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
+      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-2 ring-red-500 animate-pulse-stale" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}
       title={isStale ? `מערכת ללא טיפול מעל ${staleHours} שעות` : undefined}>
+      {selectMode && (
+        <div className="flex items-center justify-end mb-1" onClick={(e) => { e.stopPropagation(); onToggleSelect?.(r.id); }}>
+          {selected ? <CheckSquare className="h-4 w-4 text-indigo-600" /> : <Square className="h-4 w-4 text-muted-foreground" />}
+        </div>
+      )}
       {isStale && (
         <div className="text-[10px] font-bold text-red-700 bg-red-100 border border-red-300 rounded px-1.5 py-0.5 inline-block mb-1">
           ⚠ ללא טיפול מעל {staleHours}ש'

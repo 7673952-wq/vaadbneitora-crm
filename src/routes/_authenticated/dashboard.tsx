@@ -74,6 +74,16 @@ function Dashboard() {
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
+    if (typeof window === "undefined") return "list";
+    return (window.localStorage.getItem("dashboardViewMode") as any) || "list";
+  });
+  useEffect(() => { if (typeof window !== "undefined") window.localStorage.setItem("dashboardViewMode", viewMode); }, [viewMode]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkAgent, setBulkAgent] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const importFn = useServerFn(importSystems);
   const [showCharts, setShowCharts] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;

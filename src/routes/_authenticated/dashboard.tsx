@@ -1553,3 +1553,74 @@ function ImportExportMenu({ canExport, onExport, onImport }: { canExport: boolea
     </div>
   );
 }
+
+function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatus, selectMode, selectedIds, onToggleSelect }: {
+  rows: any[];
+  agents: any[];
+  canWrite: boolean;
+  staleHours: number;
+  onUpdate: (d: any) => void;
+  onDropStatus: (id: string, newStatus: string) => void;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+}) {
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const grouped = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const opt of STATUS_OPTIONS) map[opt.value] = [];
+    for (const r of rows) {
+      if (!map[r.status]) map[r.status] = [];
+      map[r.status].push(r);
+    }
+    return map;
+  }, [rows]);
+
+  function onDragStart(e: React.DragEvent, id: string) {
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDrop(e: React.DragEvent, statusKey: string) {
+    e.preventDefault();
+    setDragOver(null);
+    const id = e.dataTransfer.getData("text/plain");
+    if (id) onDropStatus(id, statusKey);
+  }
+
+  return (
+    <div className="overflow-x-auto pb-2">
+      <div className="flex gap-3 min-w-max">
+        {STATUS_OPTIONS.map((opt) => {
+          const items = grouped[opt.value] ?? [];
+          const isOver = dragOver === opt.value;
+          return (
+            <div key={opt.value}
+              onDragOver={(e) => { if (canWrite) { e.preventDefault(); setDragOver(opt.value); } }}
+              onDragLeave={() => setDragOver((v) => (v === opt.value ? null : v))}
+              onDrop={(e) => canWrite && onDrop(e, opt.value)}
+              className={`w-72 shrink-0 rounded-xl border-2 p-2 transition ${statusCardClasses(opt.value)} ${isOver ? "ring-2 ring-indigo-500 ring-offset-2" : ""}`}>
+              <div className="flex items-center justify-between mb-2 px-1">
+                <div className="text-sm font-semibold truncate">{opt.label}</div>
+                <span className="text-[11px] bg-white/70 border border-border rounded-full px-2 py-0.5">{items.length}</span>
+              </div>
+              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+                {items.length === 0 && (
+                  <div className="text-[11px] text-center text-muted-foreground py-6 border-2 border-dashed border-border/60 rounded-lg">
+                    גרור לכאן
+                  </div>
+                )}
+                {items.map((r: any) => (
+                  <SystemCard key={r.id} r={r} agents={agents} canWrite={canWrite} staleHours={staleHours}
+                    onUpdate={onUpdate} compact
+                    selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={onToggleSelect}
+                    draggable={canWrite && !selectMode} onDragStart={onDragStart} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+

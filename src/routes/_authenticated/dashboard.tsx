@@ -188,7 +188,47 @@ function Dashboard() {
     onError: (e: any, _vars, ctx: any) => {
       if (ctx?.snapshots) {
         for (const [key, data] of ctx.snapshots) qc.setQueryData(key, data);
-      }
+  }
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function selectAllVisible() {
+    setSelectedIds(new Set(filtered.map((r: any) => r.id)));
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  async function applyBulk() {
+    if (selectedIds.size === 0) return;
+    if (!bulkStatus && !bulkAgent) { toast.info("בחר סטטוס או נציג לעדכון"); return; }
+    let reason = "";
+    if (bulkStatus && !NO_REASON_STATUSES.has(bulkStatus)) {
+      const r = window.prompt("סיבת שינוי סטטוס (חובה):", "");
+      if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
+      reason = r.trim();
+    }
+    setBulkBusy(true);
+    let ok = 0, fail = 0;
+    for (const id of selectedIds) {
+      try {
+        const patch: any = { id };
+        if (bulkStatus) patch.status = bulkStatus;
+        if (bulkAgent) patch.assigned_agent_id = bulkAgent === "__unassigned" ? null : bulkAgent;
+        if (reason) patch.reason = reason;
+        await updateMutation.mutateAsync({ data: patch });
+        ok++;
+      } catch { fail++; }
+    }
+    setBulkBusy(false);
+    if (ok) toast.success(`עודכנו ${ok} מערכות`);
+    if (fail) toast.error(`${fail} נכשלו`);
+    clearSelection();
+    setBulkStatus(""); setBulkAgent("");
+  }
       toast.error(e.message);
     },
     onSuccess: () => { toast.success("עודכן"); },

@@ -15,7 +15,7 @@ import {
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
@@ -74,6 +74,16 @@ function Dashboard() {
   const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
+    if (typeof window === "undefined") return "list";
+    return (window.localStorage.getItem("dashboardViewMode") as any) || "list";
+  });
+  useEffect(() => { if (typeof window !== "undefined") window.localStorage.setItem("dashboardViewMode", viewMode); }, [viewMode]);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState("");
+  const [bulkAgent, setBulkAgent] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const importFn = useServerFn(importSystems);
   const [showCharts, setShowCharts] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
@@ -187,6 +197,59 @@ function Dashboard() {
       qc.invalidateQueries({ queryKey: ["dueReminders"] });
     },
   });
+
+  function toggleSelect(id: string) {
+    setSelectedIds((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }
+  function selectAllVisible() {
+    setSelectedIds(new Set(filtered.map((r: any) => r.id)));
+  }
+  function clearSelection() { setSelectedIds(new Set()); }
+
+  async function applyBulk() {
+    if (selectedIds.size === 0) return;
+    if (!bulkStatus && !bulkAgent) { toast.info("בחר סטטוס או נציג לעדכון"); return; }
+    let reason = "";
+    if (bulkStatus && !NO_REASON_STATUSES.has(bulkStatus)) {
+      const r = window.prompt("סיבת שינוי סטטוס (חובה):", "");
+      if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
+      reason = r.trim();
+    }
+    setBulkBusy(true);
+    let ok = 0, fail = 0;
+    for (const id of selectedIds) {
+      try {
+        const patch: any = { id };
+        if (bulkStatus) patch.status = bulkStatus;
+        if (bulkAgent) patch.assigned_agent_id = bulkAgent === "__unassigned" ? null : bulkAgent;
+        if (reason) patch.reason = reason;
+        await updateMutation.mutateAsync({ data: patch });
+        ok++;
+      } catch { fail++; }
+    }
+    setBulkBusy(false);
+    if (ok) toast.success(`עודכנו ${ok} מערכות`);
+    if (fail) toast.error(`${fail} נכשלו`);
+    clearSelection();
+    setBulkStatus(""); setBulkAgent("");
+  }
+
+  async function handleKanbanDrop(id: string, newStatus: string) {
+    const sys = (systems ?? []).find((s: any) => s.id === id);
+    if (!sys || sys.status === newStatus) return;
+    let reason = "";
+    if (!NO_REASON_STATUSES.has(newStatus)) {
+      const r = window.prompt(`סיבת שינוי סטטוס ל"${STATUS_LABEL[newStatus] || newStatus}":`, "");
+      if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
+      reason = r.trim();
+    }
+    updateMutation.mutate({ data: { id, status: newStatus, ...(reason ? { reason } : {}) } });
+  }
+
 
   function filterByRange(rows: any[], fromIso: string | null, toIso: string | null) {
     if (!fromIso && !toIso) return rows;
@@ -431,44 +494,109 @@ function Dashboard() {
             <X className="h-3 w-3" />נקה סינון
           </button>
         )}
+        <div className="ms-auto flex items-center gap-2">
+          {!me?.isViewer && (
+            <button
+              onClick={() => { setSelectMode((v) => !v); if (selectMode) clearSelection(); }}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs rounded-md border ${selectMode ? "bg-primary text-primary-foreground border-primary" : "border-input bg-white hover:bg-accent"}`}
+              title="בחירה מרובה">
+              {selectMode ? <CheckSquare className="h-3.5 w-3.5" /> : <Square className="h-3.5 w-3.5" />}
+              בחירה מרובה
+            </button>
+          )}
+          <div className="flex rounded-md border border-input bg-white overflow-hidden">
+            <button onClick={() => setViewMode("list")}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs ${viewMode === "list" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+              title="תצוגת רשימה">
+              <LayoutGrid className="h-3.5 w-3.5" />רשימה
+            </button>
+            <button onClick={() => setViewMode("kanban")}
+              className={`flex items-center gap-1 px-2.5 py-1.5 text-xs border-r border-input ${viewMode === "kanban" ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
+              title="תצוגת קנבן">
+              <Columns3 className="h-3.5 w-3.5" />קנבן
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Pending statuses now appear inside "ממתין לטיפול" below */}
-
-
+      {selectMode && (
+        <div className="bg-indigo-50 border-2 border-indigo-300 rounded-xl p-3 flex flex-wrap items-center gap-3 sticky top-2 z-30 shadow-sm">
+          <div className="text-sm font-semibold text-indigo-900">
+            נבחרו {selectedIds.size} מתוך {filtered.length}
+          </div>
+          <button onClick={selectAllVisible} className="text-xs px-2 py-1 rounded border border-indigo-400 bg-white hover:bg-indigo-100">בחר הכל</button>
+          <button onClick={clearSelection} className="text-xs px-2 py-1 rounded border border-indigo-400 bg-white hover:bg-indigo-100">נקה</button>
+          <div className="h-5 w-px bg-indigo-300" />
+          <select value={bulkStatus} onChange={(e) => setBulkStatus(e.target.value)} className="px-2 py-1 text-xs rounded border border-input bg-white">
+            <option value="">— שנה סטטוס —</option>
+            {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          </select>
+          <select value={bulkAgent} onChange={(e) => setBulkAgent(e.target.value)} className="px-2 py-1 text-xs rounded border border-input bg-white">
+            <option value="">— שנה נציג —</option>
+            <option value="__unassigned">ללא שיוך</option>
+            {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+          </select>
+          <button
+            onClick={applyBulk}
+            disabled={bulkBusy || selectedIds.size === 0 || (!bulkStatus && !bulkAgent)}
+            className="text-xs px-3 py-1.5 rounded bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+            {bulkBusy ? "מעדכן..." : "החל על הנבחרים"}
+          </button>
+        </div>
+      )}
 
       {/* Main cards grid */}
       <div>
-        
         {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
         {!isLoading && rest.length === 0 && <div className="text-center py-12 text-muted-foreground">לא נמצאו מערכות</div>}
 
-        {restWaiting.length > 0 && (
-          <div className="mb-6">
-            <h2 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
-              <Clock className="h-4 w-4 text-amber-600" />ממתין לטיפול ({restWaiting.length})
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {restWaiting.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-              ))}
-            </div>
-          </div>
-        )}
+        {viewMode === "kanban" ? (
+          rest.length > 0 && (
+            <KanbanBoard
+              rows={filtered}
+              agents={agents ?? []}
+              canWrite={!me?.isViewer}
+              staleHours={staleHours}
+              onUpdate={(d) => updateMutation.mutate({ data: d })}
+              onDropStatus={handleKanbanDrop}
+              selectMode={selectMode}
+              selectedIds={selectedIds}
+              onToggleSelect={toggleSelect}
+            />
+          )
+        ) : (
+          <>
+            {restWaiting.length > 0 && (
+              <div className="mb-6">
+                <h2 className="text-sm font-semibold text-amber-900 mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-amber-600" />ממתין לטיפול ({restWaiting.length})
+                </h2>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {restWaiting.map((r: any) => (
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                      selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
+                  ))}
+                </div>
+              </div>
+            )}
 
-        {restHandled.length > 0 && (
-          <div>
-            <h2 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />טופל ({restHandled.length})
-            </h2>
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {restHandled.map((r: any) => (
-                <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })} />
-              ))}
-            </div>
-          </div>
+            {restHandled.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-emerald-900 mb-3 flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />טופל ({restHandled.length})
+                </h2>
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {restHandled.map((r: any) => (
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                      selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
+
 
       {total > 0 && (
         <div className="flex items-center justify-center gap-4 flex-wrap">
@@ -645,7 +773,7 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0 }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number }) {
+function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
   const cardCls = statusCardClasses(r.status);
   const openedAt = r.created_at
@@ -655,10 +783,21 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
     && !STATUS_HANDLED[r.status]
     && r.updated_at
     && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
+  const handleCardClick = () => {
+    if (selectMode && onToggleSelect) { onToggleSelect(r.id); return; }
+    navigate({ to: "/systems/$id", params: { id: r.id } });
+  };
   return (
-    <div onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
-      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-2 ring-red-500 animate-pulse-stale" : ""}`}
+    <div onClick={handleCardClick}
+      draggable={draggable}
+      onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
+      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-2 ring-red-500 animate-pulse-stale" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}
       title={isStale ? `מערכת ללא טיפול מעל ${staleHours} שעות` : undefined}>
+      {selectMode && (
+        <div className="flex items-center justify-end mb-1" onClick={(e) => { e.stopPropagation(); onToggleSelect?.(r.id); }}>
+          {selected ? <CheckSquare className="h-4 w-4 text-indigo-600" /> : <Square className="h-4 w-4 text-muted-foreground" />}
+        </div>
+      )}
       {isStale && (
         <div className="text-[10px] font-bold text-red-700 bg-red-100 border border-red-300 rounded px-1.5 py-0.5 inline-block mb-1">
           ⚠ ללא טיפול מעל {staleHours}ש'
@@ -1414,3 +1553,74 @@ function ImportExportMenu({ canExport, onExport, onImport }: { canExport: boolea
     </div>
   );
 }
+
+function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatus, selectMode, selectedIds, onToggleSelect }: {
+  rows: any[];
+  agents: any[];
+  canWrite: boolean;
+  staleHours: number;
+  onUpdate: (d: any) => void;
+  onDropStatus: (id: string, newStatus: string) => void;
+  selectMode: boolean;
+  selectedIds: Set<string>;
+  onToggleSelect: (id: string) => void;
+}) {
+  const [dragOver, setDragOver] = useState<string | null>(null);
+  const grouped = useMemo(() => {
+    const map: Record<string, any[]> = {};
+    for (const opt of STATUS_OPTIONS) map[opt.value] = [];
+    for (const r of rows) {
+      if (!map[r.status]) map[r.status] = [];
+      map[r.status].push(r);
+    }
+    return map;
+  }, [rows]);
+
+  function onDragStart(e: React.DragEvent, id: string) {
+    e.dataTransfer.setData("text/plain", id);
+    e.dataTransfer.effectAllowed = "move";
+  }
+  function onDrop(e: React.DragEvent, statusKey: string) {
+    e.preventDefault();
+    setDragOver(null);
+    const id = e.dataTransfer.getData("text/plain");
+    if (id) onDropStatus(id, statusKey);
+  }
+
+  return (
+    <div className="overflow-x-auto pb-2">
+      <div className="flex gap-3 min-w-max">
+        {STATUS_OPTIONS.map((opt) => {
+          const items = grouped[opt.value] ?? [];
+          const isOver = dragOver === opt.value;
+          return (
+            <div key={opt.value}
+              onDragOver={(e) => { if (canWrite) { e.preventDefault(); setDragOver(opt.value); } }}
+              onDragLeave={() => setDragOver((v) => (v === opt.value ? null : v))}
+              onDrop={(e) => canWrite && onDrop(e, opt.value)}
+              className={`w-72 shrink-0 rounded-xl border-2 p-2 transition ${statusCardClasses(opt.value)} ${isOver ? "ring-2 ring-indigo-500 ring-offset-2" : ""}`}>
+              <div className="flex items-center justify-between mb-2 px-1">
+                <div className="text-sm font-semibold truncate">{opt.label}</div>
+                <span className="text-[11px] bg-white/70 border border-border rounded-full px-2 py-0.5">{items.length}</span>
+              </div>
+              <div className="space-y-2 max-h-[70vh] overflow-y-auto pr-1">
+                {items.length === 0 && (
+                  <div className="text-[11px] text-center text-muted-foreground py-6 border-2 border-dashed border-border/60 rounded-lg">
+                    גרור לכאן
+                  </div>
+                )}
+                {items.map((r: any) => (
+                  <SystemCard key={r.id} r={r} agents={agents} canWrite={canWrite} staleHours={staleHours}
+                    onUpdate={onUpdate} compact
+                    selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={onToggleSelect}
+                    draggable={canWrite && !selectMode} onDragStart={onDragStart} />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+

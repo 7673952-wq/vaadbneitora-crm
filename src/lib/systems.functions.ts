@@ -96,24 +96,25 @@ export const getSystem = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!sys) throw new Error("מערכת לא נמצאה");
 
-    const { data: notes } = await context.supabase
-      .from("system_notes").select("*").eq("system_id", data.id).order("created_at", { ascending: false });
-    const { data: transfers } = await context.supabase
-      .from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false });
-    const { data: children } = await context.supabase
-      .from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
-      .eq("parent_system_id", data.id).order("created_at", { ascending: true });
-    const { data: activity } = await context.supabase
-      .from("system_activity_log").select("*").eq("system_id", data.id)
-      .order("created_at", { ascending: false }).limit(300);
-    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
+    const [notesRes, transfersRes, childrenRes, activityRes, profilesRes, parentRes] = await Promise.all([
+      context.supabase.from("system_notes").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
+      context.supabase.from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
+      context.supabase.from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
+        .eq("parent_system_id", data.id).order("created_at", { ascending: true }),
+      context.supabase.from("system_activity_log").select("*").eq("system_id", data.id)
+        .order("created_at", { ascending: false }).limit(300),
+      context.supabase.from("profiles").select("id, display_name"),
+      sys.parent_system_id
+        ? context.supabase.from("systems").select("id, system_code, name").eq("id", sys.parent_system_id).maybeSingle()
+        : Promise.resolve({ data: null }),
+    ]);
+    const notes = notesRes.data;
+    const transfers = transfersRes.data;
+    const children = childrenRes.data;
+    const activity = activityRes.data;
+    const profiles = profilesRes.data;
+    const parent = (parentRes.data as { id: string; system_code: string; name: string } | null) ?? null;
 
-    let parent: { id: string; system_code: string; name: string } | null = null;
-    if (sys.parent_system_id) {
-      const { data: p } = await context.supabase
-        .from("systems").select("id, system_code, name").eq("id", sys.parent_system_id).maybeSingle();
-      parent = p ?? null;
-    }
     const pmap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
     return {
       system: { ...sys, agent_name: sys.assigned_agent_id ? pmap.get(sys.assigned_agent_id) ?? null : null },

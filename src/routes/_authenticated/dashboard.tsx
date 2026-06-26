@@ -188,7 +188,15 @@ function Dashboard() {
     onError: (e: any, _vars, ctx: any) => {
       if (ctx?.snapshots) {
         for (const [key, data] of ctx.snapshots) qc.setQueryData(key, data);
-  }
+      }
+      toast.error(e.message);
+    },
+    onSuccess: () => { toast.success("עודכן"); },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["systems"] });
+      qc.invalidateQueries({ queryKey: ["dueReminders"] });
+    },
+  });
 
   function toggleSelect(id: string) {
     setSelectedIds((prev) => {
@@ -229,14 +237,19 @@ function Dashboard() {
     clearSelection();
     setBulkStatus(""); setBulkAgent("");
   }
-      toast.error(e.message);
-    },
-    onSuccess: () => { toast.success("עודכן"); },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ["systems"] });
-      qc.invalidateQueries({ queryKey: ["dueReminders"] });
-    },
-  });
+
+  async function handleKanbanDrop(id: string, newStatus: string) {
+    const sys = (systems ?? []).find((s: any) => s.id === id);
+    if (!sys || sys.status === newStatus) return;
+    let reason = "";
+    if (!NO_REASON_STATUSES.has(newStatus)) {
+      const r = window.prompt(`סיבת שינוי סטטוס ל"${STATUS_LABEL[newStatus] || newStatus}":`, "");
+      if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
+      reason = r.trim();
+    }
+    updateMutation.mutate({ data: { id, status: newStatus, ...(reason ? { reason } : {}) } });
+  }
+
 
   function filterByRange(rows: any[], fromIso: string | null, toIso: string | null) {
     if (!fromIso && !toIso) return rows;

@@ -4,6 +4,18 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 
+// If a system_code doesn't already start with "0" or "972", and has
+// fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->
+// "0512345678"). Codes that already start with 0/972, or that have
+// 10+ digits, are left untouched.
+function normalizeSystemCode(code: string): string {
+  const trimmed = code.trim();
+  if (trimmed.startsWith("0") || trimmed.startsWith("972")) return trimmed;
+  const digitsOnly = trimmed.replace(/\D/g, "");
+  if (digitsOnly.length >= 10) return trimmed;
+  return "0" + trimmed;
+}
+
 const STATUS_VALUES = [
   "pending_check_close", "pending_check_open", "open", "to_open", "closed",
   "to_block", "block_from_root", "problem", "open_only_bimot", "close_only_bimot",
@@ -175,7 +187,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
       throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
     }
     const { data: row, error } = await context.supabase.from("systems").insert({
-      system_code: data.system_code,
+      system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
       parent_system_id: data.parent_id,
       status: "open",
@@ -209,13 +221,14 @@ export const createSystem = createServerFn({ method: "POST" })
     await ensureCanWrite(context.userId);
     const allowed = await userHasRole(context.userId, "agent");
     if (!allowed) throw new Error("רק נציג ומעלה יכול לפתוח מערכת");
+    const normalizedCode = normalizeSystemCode(data.system_code);
     const { data: existing } = await context.supabase
-      .from("systems").select("id").eq("system_code", data.system_code).maybeSingle();
+      .from("systems").select("id").eq("system_code", normalizedCode).maybeSingle();
     if (existing) throw new Error("מספר המערכת כבר קיים — לא ניתן לפתוח מערכת חדשה על מספר קיים");
     // Auto-assign the creator as the handling agent if none was selected.
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const { data: row, error } = await context.supabase.from("systems").insert({
-      system_code: data.system_code,
+      system_code: normalizedCode,
       name: sanitizeText(data.name),
       status: data.status,
       assigned_agent_id: assignedAgentId,
@@ -266,6 +279,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.phone !== undefined && data.phone !== null) data.phone = sanitizeText(data.phone);
     if (data.caller_phone !== undefined && data.caller_phone !== null) data.caller_phone = sanitizeText(data.caller_phone);
     if (data.source !== undefined && data.source !== null) data.source = sanitizeText(data.source);
+    if (data.system_code !== undefined) data.system_code = normalizeSystemCode(data.system_code);
     const { data: sys } = await context.supabase
       .from("systems")
       .select("id, assigned_agent_id, status, parent_system_id")
@@ -844,8 +858,9 @@ export const importSystems = createServerFn({ method: "POST" })
         ? `[ייבוא — חסרים פרטים: ${missingOptional.join(", ")}]${notes ? "\n" + notes : ""}`
         : notes;
 
+      const storedCode = normalizeSystemCode(system_code);
       const insertPayload: any = {
-        system_code, name, status,
+        system_code: storedCode, name, status,
         assigned_agent_id,
         notes: finalNotes,
         phone, source, caller_phone, email,

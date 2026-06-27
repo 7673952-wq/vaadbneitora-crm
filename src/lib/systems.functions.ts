@@ -55,49 +55,120 @@ export const listSystems = createServerFn({ method: "POST" })
     // Default 1000 preserves prior behavior for callers (charts/dashboard)
     // that aggregate over all systems — explicit small pages opt into real pagination.
     const pageSize = data.pageSize ?? 1000;
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
+    const offset = (page - 1) * pageSize;
 
-    let q = context.supabase
-      .from("systems")
-      .select(
-        "id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at",
-        { count: "exact" },
-      )
-      .order("created_at", { ascending: false })
-      .range(from, to);
+    // "Pending first" ordering: figure out which status keys are considered
+    // handled, then run two independent queries (waiting / handled) and
+    // stitch them together for the requested page. This keeps the rule
+    // consistent across pagination — every waiting row appears before any
+    // handled row — without paying for fetching the entire table.
+    const { data: settings } = await context.supabase
+      .from("status_settings").select("status_key, is_handled");
+    const handledKeys = ((settings ?? []) as any[])
+      .filter((s) => s.is_handled).map((s) => s.status_key as string);
 
-    if (data.status) q = q.eq("status", data.status as any);
-    if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
-    if (data.period) {
-      const now = new Date();
-      const start = new Date(now);
-      if (data.period === "day") start.setDate(now.getDate() - 1);
-      else if (data.period === "week") start.setDate(now.getDate() - 7);
-      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-      q = q.gte("updated_at", start.toISOString());
+    const baseSelect =
+      "id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
+
+    const applyFilters = (q: any) => {
+      if (data.status) q = q.eq("status", data.status as any);
+      if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
+      if (data.period) {
+        const now = new Date();
+        const start = new Date(now);
+        if (data.period === "day") start.setDate(now.getDate() - 1);
+        else if (data.period === "week") start.setDate(now.getDate() - 7);
+        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+        q = q.gte("updated_at", start.toISOString());
+      }
+      return q;
+    };
+
+    // If a specific status is filtered, the two-bucket split is irrelevant
+    // (everything is in one bucket already) so we fall back to a single
+    // query for performance.
+    if (data.status) {
+      let q = applyFilters(
+        context.supabase.from("systems").select(baseSelect, { count: "exact" })
+          .order("created_at", { ascending: false })
+          .range(offset, offset + pageSize - 1),
+      );
+      const { data: rows, error, count } = await q;
+      if (error) throw new Error(error.message);
+      const items = await enrichSystemRows(context.supabase, rows ?? []);
+      return { items, total: count ?? items.length, page, pageSize };
     }
-    const { data: rows, error, count } = await q;
-    if (error) throw new Error(error.message);
 
-    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
-    const profileMap = new Map((profiles ?? []).map((p) => [p.id, p]));
+    // Count both buckets first so we know where to slice the page from.
+    const [waitingCountRes, handledCountRes] = await Promise.all([
+      applyFilters(
+        context.supabase.from("systems").select("id", { count: "exact", head: true })
+          .not("status", "in", `(${handledKeys.map((k) => `"${k}"`).join(",") || '""'})`),
+      ),
+      handledKeys.length
+        ? applyFilters(
+            context.supabase.from("systems").select("id", { count: "exact", head: true })
+              .in("status", handledKeys as any),
+          )
+        : Promise.resolve({ count: 0 } as any),
+    ]);
+    const waitingTotal = waitingCountRes.count ?? 0;
+    const handledTotal = handledCountRes.count ?? 0;
+    const total = waitingTotal + handledTotal;
 
-    const parentIds = Array.from(new Set((rows ?? []).map((r) => r.parent_system_id).filter(Boolean) as string[]));
-    let parentMap = new Map<string, { id: string; system_code: string; name: string }>();
-    if (parentIds.length) {
-      const { data: parents } = await context.supabase
-        .from("systems").select("id, system_code, name").in("id", parentIds);
-      parentMap = new Map((parents ?? []).map((p) => [p.id, p]));
+    // Figure out how much of the page comes from each bucket.
+    const items: any[] = [];
+    let waitingRows: any[] = [];
+    let handledRows: any[] = [];
+    if (offset < waitingTotal) {
+      const take = Math.min(pageSize, waitingTotal - offset);
+      const { data: rows, error } = await applyFilters(
+        context.supabase.from("systems").select(baseSelect)
+          .not("status", "in", `(${handledKeys.map((k) => `"${k}"`).join(",") || '""'})`)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + take - 1),
+      );
+      if (error) throw new Error(error.message);
+      waitingRows = rows ?? [];
     }
-    const items = (rows ?? []).map((r) => ({
-      ...r,
-      agent: r.assigned_agent_id ? profileMap.get(r.assigned_agent_id) ?? null : null,
-      parent: r.parent_system_id ? parentMap.get(r.parent_system_id) ?? null : null,
-    }));
-    return { items, total: count ?? items.length, page, pageSize };
+    const remaining = pageSize - waitingRows.length;
+    if (remaining > 0 && handledTotal > 0) {
+      const handledOffset = Math.max(0, offset - waitingTotal);
+      const { data: rows, error } = await applyFilters(
+        context.supabase.from("systems").select(baseSelect)
+          .in("status", handledKeys as any)
+          .order("created_at", { ascending: false })
+          .range(handledOffset, handledOffset + remaining - 1),
+      );
+      if (error) throw new Error(error.message);
+      handledRows = rows ?? [];
+    }
+    items.push(...waitingRows, ...handledRows);
+    const enriched = await enrichSystemRows(context.supabase, items);
+    return { items: enriched, total, page, pageSize };
   });
+
+// Adds `agent` and `parent` lookup blobs onto raw system rows so the UI
+// can render them without an N+1.
+async function enrichSystemRows(supabase: any, rows: any[]) {
+  if (!rows.length) return [];
+  const { data: profiles } = await supabase.from("profiles").select("id, display_name");
+  const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+
+  const parentIds = Array.from(new Set(rows.map((r) => r.parent_system_id).filter(Boolean) as string[]));
+  let parentMap = new Map<string, { id: string; system_code: string; name: string }>();
+  if (parentIds.length) {
+    const { data: parents } = await supabase
+      .from("systems").select("id, system_code, name").in("id", parentIds);
+    parentMap = new Map((parents ?? []).map((p: any) => [p.id, p]));
+  }
+  return rows.map((r) => ({
+    ...r,
+    agent: r.assigned_agent_id ? profileMap.get(r.assigned_agent_id) ?? null : null,
+    parent: r.parent_system_id ? parentMap.get(r.parent_system_id) ?? null : null,
+  }));
+}
 
 export const getSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -771,6 +842,16 @@ export const importSystems = createServerFn({ method: "POST" })
     const created: any[] = [];
     const errors: { row: number; reason: string }[] = [];
     const incomplete: number[] = [];
+    // Each conflict tells the client which row has a duplicate name and
+    // lists the existing systems that share it, so the user can decide
+    // whether to make the new row a root system or a sub-system of one
+    // of the candidates.
+    const conflicts: Array<{
+      row: number;
+      name: string;
+      system_code: string;
+      candidates: Array<{ id: string; system_code: string; name: string }>;
+    }> = [];
 
     // Normalize phone-like codes: strip non-digits, then strip leading 0 / 972 / +972
     const normalizeCode = (v: string): string => {
@@ -782,21 +863,23 @@ export const importSystems = createServerFn({ method: "POST" })
     };
 
     // Existing codes + names for duplicate/parent detection
-    const { data: existingRows } = await context.supabase.from("systems").select("id, system_code, name, parent_system_id");
+    const { data: existingRows } = await context.supabase
+      .from("systems").select("id, system_code, name, parent_system_id");
     const existingCodes = new Set<string>(((existingRows ?? []) as any[]).map((r) => String(r.system_code)));
     const existingNormalized = new Set<string>(
       ((existingRows ?? []) as any[])
         .map((r) => normalizeCode(String(r.system_code ?? "")))
         .filter(Boolean),
     );
-    // Map name -> root system id (prefer parents over children)
-    const nameToRoot = new Map<string, string>();
+    // Map name -> list of candidate systems (any depth) for conflict UI
+    const nameToCandidates = new Map<string, Array<{ id: string; system_code: string; name: string }>>();
     for (const r of (existingRows ?? []) as any[]) {
       if (!r.name) continue;
       const key = String(r.name).trim();
       if (!key) continue;
-      if (!r.parent_system_id) nameToRoot.set(key, r.id);
-      else if (!nameToRoot.has(key)) nameToRoot.set(key, r.id);
+      const arr = nameToCandidates.get(key) ?? [];
+      arr.push({ id: r.id, system_code: r.system_code, name: r.name });
+      nameToCandidates.set(key, arr);
     }
 
     const seenInBatch = new Set<string>();
@@ -817,6 +900,15 @@ export const importSystems = createServerFn({ method: "POST" })
       const statusRaw = pick(r, ["סטטוס", "status"]);
       const status = resolveStatus(statusRaw);
 
+      // Per-row relation decision from a prior conflict-resolution round.
+      // The client sends `__relation` ("root" | "sub") and optionally
+      // `__parent_id` for "sub" choices. Rows without these fields go
+      // through normal conflict detection.
+      const relation = (r as any).__relation === "root" || (r as any).__relation === "sub"
+        ? (r as any).__relation as "root" | "sub" : null;
+      const parentIdOverride = typeof (r as any).__parent_id === "string"
+        ? String((r as any).__parent_id) : null;
+
       if (!system_code || !name || !status) {
         const missing: string[] = [];
         if (!system_code) missing.push("מספר מערכת");
@@ -834,9 +926,34 @@ export const importSystems = createServerFn({ method: "POST" })
         errors.push({ row: rowNum, reason: `המספר קיים ('${system_code}')` });
         continue;
       }
+
+      // Name-conflict detection: if a system with this name already exists
+      // and the row hasn't told us what to do, pause and ask the user.
+      const candidates = nameToCandidates.get(name) ?? [];
+      if (candidates.length > 0 && !relation) {
+        conflicts.push({
+          row: rowNum,
+          name,
+          system_code,
+          // Only root systems can be parents — filter out sub-systems
+          candidates: candidates.filter((c) =>
+            !((existingRows ?? []) as any[]).find((e) => e.id === c.id)?.parent_system_id),
+        });
+        continue;
+      }
+
+      let parent_system_id: string | null = null;
+      if (relation === "sub") {
+        // Pick the override if provided, otherwise fall back to first candidate
+        parent_system_id = parentIdOverride ?? candidates[0]?.id ?? null;
+        if (!parent_system_id) {
+          errors.push({ row: rowNum, reason: "לא נבחרה מערכת אב" });
+          continue;
+        }
+      }
+
       seenInBatch.add(system_code);
       if (normalizedCode) seenNormalizedInBatch.add(normalizedCode);
-
 
       const phone = pick(r, ["טלפון", "phone", "טלפון לחיוג"]) || null;
       const caller_phone = pick(r, ["טלפון פונה", "caller_phone"]) || null;
@@ -845,9 +962,6 @@ export const importSystems = createServerFn({ method: "POST" })
       const notes = pick(r, ["הערות", "notes"]) || null;
       const agentName = pick(r, ["נציג", "נציג מטפל", "agent", "assigned_agent"]);
       const assigned_agent_id = (agentName && nameToAgent.get(agentName)) || context.userId;
-
-      // If name already exists -> create as sub-system under that parent
-      const parent_system_id = nameToRoot.get(name) ?? null;
 
       const missingOptional: string[] = [];
       if (!phone) missingOptional.push("טלפון");
@@ -867,17 +981,14 @@ export const importSystems = createServerFn({ method: "POST" })
       };
       if (parent_system_id) insertPayload.parent_system_id = parent_system_id;
 
-      const { data: row, error } = await context.supabase.from("systems").insert(insertPayload).select("id, system_code, name").single();
-
+      const { data: row, error } = await context.supabase
+        .from("systems").insert(insertPayload).select("id, system_code, name").single();
 
       if (error) {
         errors.push({ row: rowNum, reason: error.message });
         continue;
       }
       created.push(row);
-      // If the Excel had a note in column H, also create a visible system note
-      // (the systems.notes column is not surfaced on the system card; the
-      // "הערות" panel reads from system_notes).
       if (notes && row?.id) {
         try {
           await context.supabase.from("system_notes").insert({
@@ -887,15 +998,19 @@ export const importSystems = createServerFn({ method: "POST" })
           // Non-fatal — the system was created; just skip the note.
         }
       }
-      // If this is a new root-level system, register its name so any later
-      // rows in the same import that share the name become sub-systems of it.
+      // Register newly created root systems so later rows in the same
+      // import can also conflict / become sub-systems if needed.
       if (!parent_system_id && row?.id && row?.name) {
         const key = String(row.name).trim();
-        if (key && !nameToRoot.has(key)) nameToRoot.set(key, row.id);
+        if (key) {
+          const arr = nameToCandidates.get(key) ?? [];
+          arr.push({ id: row.id, system_code: row.system_code, name: row.name });
+          nameToCandidates.set(key, arr);
+        }
       }
       if (missingOptional.length) incomplete.push(rowNum);
-
     }
 
-    return { createdCount: created.length, errors, incompleteRows: incomplete };
+    return { createdCount: created.length, errors, incompleteRows: incomplete, conflicts };
   });
+

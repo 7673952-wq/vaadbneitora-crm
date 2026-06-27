@@ -15,7 +15,7 @@ import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
   NO_REASON_STATUSES, type SystemStatus,
 } from "@/lib/status";
-import { useState, useEffect, useRef, type ReactNode } from "react";
+import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
@@ -364,20 +364,14 @@ function SystemDetail() {
                   </button>
                 )}
                 {showParentPick && !isSub && (
-                  <div className="flex items-center gap-1">
-                    <select value={parentChoice} onChange={(e) => setParentChoice(e.target.value)}
-                      className="text-xs rounded-md border border-input bg-background px-2 py-1.5">
-                      <option value="">— בחר אב —</option>
-                      {(mains ?? []).filter((m: any) => m.id !== id).map((m: any) => (
-                        <option key={m.id} value={m.id}>{m.system_code} · {m.name}</option>
-                      ))}
-                    </select>
-                    <button disabled={!parentChoice}
-                      onClick={() => parentMut.mutate({ data: { id, parent_system_id: parentChoice } })}
-                      className="text-xs px-2 py-1.5 bg-primary text-primary-foreground rounded-md disabled:opacity-50">אשר</button>
-                    <button onClick={() => setShowParentPick(false)}
-                      className="text-xs px-2 py-1.5 border border-input rounded-md">ביטול</button>
-                  </div>
+                  <ParentPicker
+                    mains={mains ?? []}
+                    excludeId={id}
+                    value={parentChoice}
+                    onChange={setParentChoice}
+                    onConfirm={() => parentMut.mutate({ data: { id, parent_system_id: parentChoice } })}
+                    onCancel={() => setShowParentPick(false)}
+                  />
                 )}
               </div>
             </div>
@@ -727,4 +721,78 @@ function EmailField({ initial, onSave }: { initial: string; onSave: (v: string |
     </div>
   );
 }
+
+/**
+ * Searchable parent-system picker: lets the admin type part of an existing
+ * system's name or code and pick from a filtered list, instead of scrolling
+ * through a long static <select>.
+ */
+function ParentPicker({
+  mains, excludeId, value, onChange, onConfirm, onCancel,
+}: {
+  mains: Array<{ id: string; system_code: string; name: string }>;
+  excludeId: string;
+  value: string;
+  onChange: (id: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const candidates = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const base = (mains ?? []).filter((m) => m.id !== excludeId);
+    if (!q) return base.slice(0, 50);
+    return base
+      .filter((m) =>
+        (m.name || "").toLowerCase().includes(q) ||
+        (m.system_code || "").toLowerCase().includes(q),
+      )
+      .slice(0, 50);
+  }, [mains, excludeId, query]);
+  const selected = (mains ?? []).find((m) => m.id === value) ?? null;
+
+  return (
+    <div className="flex flex-col gap-2 w-full max-w-md p-2 border border-input rounded-md bg-background">
+      <input
+        autoFocus
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="חפש מערכת אב לפי שם או מספר…"
+        className="text-xs rounded-md border border-input bg-background px-2 py-1.5"
+      />
+      <div className="max-h-48 overflow-y-auto rounded-md border border-border">
+        {candidates.length === 0 && (
+          <div className="text-xs text-muted-foreground text-center py-3">לא נמצאו תוצאות</div>
+        )}
+        {candidates.map((m: { id: string; system_code: string; name: string }) => (
+          <button
+            key={m.id}
+            type="button"
+            onClick={() => onChange(m.id)}
+            className={`w-full text-right px-2 py-1.5 text-xs hover:bg-accent ${value === m.id ? "bg-accent font-semibold" : ""}`}
+          >
+            <span className="font-mono">{m.system_code}</span> · {m.name}
+          </button>
+        ))}
+      </div>
+      {selected && (
+        <div className="text-xs text-muted-foreground">
+          נבחר: <span className="font-medium text-foreground">{selected.system_code} · {selected.name}</span>
+        </div>
+      )}
+      <div className="flex items-center gap-2 justify-end">
+        <button
+          disabled={!value}
+          onClick={onConfirm}
+          className="text-xs px-3 py-1.5 bg-primary text-primary-foreground rounded-md disabled:opacity-50"
+        >אשר</button>
+        <button
+          onClick={onCancel}
+          className="text-xs px-3 py-1.5 border border-input rounded-md"
+        >ביטול</button>
+      </div>
+    </div>
+  );
+}
+
 

@@ -1,0 +1,1 @@
+REVOKE EXECUTE ON FUNCTION public.inherit_parent_on_insert() FROM PUBLIC, anon, authenticated;

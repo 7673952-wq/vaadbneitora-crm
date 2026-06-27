@@ -1346,13 +1346,31 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
 
 
 
+type ImportConflict = {
+  row: number;
+  name: string;
+  system_code: string;
+  candidates: Array<{ id: string; system_code: string; name: string }>;
+};
+type ImportResult = {
+  createdCount: number;
+  errors: { row: number; reason: string }[];
+  incompleteRows: number[];
+  conflicts?: ImportConflict[];
+};
+
 function ImportModal({ onClose, onImport, agentNames = [] }: {
   onClose: () => void;
-  onImport: (rows: Array<Record<string, any>>) => Promise<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] }>;
+  onImport: (rows: Array<Record<string, any>>) => Promise<ImportResult>;
   agentNames?: string[];
 }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<{ createdCount: number; errors: { row: number; reason: string }[]; incompleteRows: number[] } | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  // Cache of the originally uploaded rows so we can re-submit just the
+  // conflicted rows once the user picks a parent/sub decision per row.
+  const [pendingRows, setPendingRows] = useState<Array<Record<string, any>>>([]);
+  // Per-conflict decision: "root" or { parentId } for sub.
+  const [decisions, setDecisions] = useState<Record<number, { relation: "root" } | { relation: "sub"; parentId: string }>>({});
 
   const HEADERS = ["מספר מערכת", "שם מערכת", "סטטוס", "טלפון", "טלפון פונה", "מקור", "דוא\"ל", "הערות", "נציג"];
 
@@ -1449,12 +1467,14 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
   async function handleFile(file: File) {
     setBusy(true);
     setResult(null);
+    setDecisions({});
     try {
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows: Array<Record<string, any>> = XLSX.utils.sheet_to_json(ws, { defval: "" });
       if (!rows.length) { toast.error("הקובץ ריק"); setBusy(false); return; }
+      setPendingRows(rows);
       const res = await onImport(rows);
       setResult(res);
     } catch (e: any) {
@@ -1464,9 +1484,46 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
     }
   }
 
+  // Re-submit the conflicted rows with the user's per-row decision attached.
+  async function applyDecisions() {
+    if (!result?.conflicts?.length) return;
+    setBusy(true);
+    try {
+      const rowsToSend = result.conflicts.map((c) => {
+        const decision = decisions[c.row];
+        if (!decision) return null;
+        const original = pendingRows[c.row - 2]; // row 1 is header
+        if (!original) return null;
+        return {
+          ...original,
+          __relation: decision.relation,
+          __parent_id: decision.relation === "sub" ? decision.parentId : undefined,
+        };
+      }).filter(Boolean) as Array<Record<string, any>>;
+      if (!rowsToSend.length) {
+        toast.error("יש לבחור הכרעה לפחות לשורה אחת");
+        setBusy(false);
+        return;
+      }
+      const res = await onImport(rowsToSend);
+      // Merge with prior result so the user sees cumulative counts.
+      setResult((prev) => ({
+        createdCount: (prev?.createdCount ?? 0) + res.createdCount,
+        errors: [...(prev?.errors ?? []), ...res.errors],
+        incompleteRows: [...(prev?.incompleteRows ?? []), ...res.incompleteRows],
+        conflicts: res.conflicts ?? [],
+      }));
+      setDecisions({});
+    } catch (e: any) {
+      toast.error(e?.message || "שגיאה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl max-w-lg w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+      <div className="bg-card border border-border rounded-2xl max-w-2xl w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-xl font-bold">ייבוא מערכות מאקסל</h2>
           <button onClick={onClose} className="p-1 hover:bg-accent rounded"><X className="h-4 w-4" /></button>
@@ -1503,6 +1560,75 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
                 {result.incompleteRows.length > 0 && <span> ({result.incompleteRows.length} עם פרטים חסרים — סומנו בהערות)</span>}
               </div>
             )}
+
+            {result.conflicts && result.conflicts.length > 0 && (
+              <div className="rounded-md border-2 border-amber-400 bg-amber-50 text-amber-900 p-3">
+                <div className="font-bold mb-2">
+                  התגלו {result.conflicts.length} שורות עם שם זהה למערכת קיימת — נדרשת הכרעה:
+                </div>
+                <div className="space-y-3 max-h-72 overflow-y-auto">
+                  {result.conflicts.map((c) => {
+                    const decision = decisions[c.row];
+                    return (
+                      <div key={c.row} className="border border-amber-300 rounded-md p-2 bg-white">
+                        <div className="text-xs text-muted-foreground mb-1">שורה {c.row}</div>
+                        <div className="text-sm font-medium mb-2">
+                          {c.system_code} · {c.name}
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="flex items-center gap-2 text-xs cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`r-${c.row}`}
+                              checked={decision?.relation === "root"}
+                              onChange={() => setDecisions((d) => ({ ...d, [c.row]: { relation: "root" } }))}
+                            />
+                            פתח כמערכת ראשית חדשה (אב נפרד)
+                          </label>
+                          {c.candidates.length > 0 && (
+                            <label className="flex items-center gap-2 text-xs cursor-pointer">
+                              <input
+                                type="radio"
+                                name={`r-${c.row}`}
+                                checked={decision?.relation === "sub"}
+                                onChange={() => setDecisions((d) => ({
+                                  ...d,
+                                  [c.row]: { relation: "sub", parentId: c.candidates[0].id },
+                                }))}
+                              />
+                              צרף כתת-מערכת תחת:
+                              <select
+                                disabled={decision?.relation !== "sub"}
+                                value={decision?.relation === "sub" ? decision.parentId : ""}
+                                onChange={(e) => setDecisions((d) => ({
+                                  ...d,
+                                  [c.row]: { relation: "sub", parentId: e.target.value },
+                                }))}
+                                className="text-xs rounded border border-input bg-background px-1 py-0.5"
+                              >
+                                {c.candidates.map((cand) => (
+                                  <option key={cand.id} value={cand.id}>
+                                    {cand.system_code} · {cand.name}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <button
+                  onClick={applyDecisions}
+                  disabled={busy || Object.keys(decisions).length === 0}
+                  className="mt-3 px-4 py-1.5 bg-primary text-primary-foreground rounded-md text-sm font-medium disabled:opacity-50"
+                >
+                  המשך עם ההכרעות ({Object.keys(decisions).length})
+                </button>
+              </div>
+            )}
+
             {result.errors.length > 0 && (
               <div className="rounded-md border border-red-300 bg-red-50 text-red-900 p-2">
                 <div className="font-medium mb-1">{result.errors.length} שורות לא יובאו:</div>

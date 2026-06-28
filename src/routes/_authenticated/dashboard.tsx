@@ -1025,7 +1025,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               </button>
             </div>
           </div>
-          {!matchedParent && (
+          {!willCreateAsSub && (
             <>
               <div>
                 <label className="text-sm font-medium block mb-1">סטטוס</label>

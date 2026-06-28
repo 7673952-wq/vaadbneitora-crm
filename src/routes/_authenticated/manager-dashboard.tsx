@@ -43,12 +43,8 @@ function ManagerDashboard() {
             דוחות מפורטים
             <ArrowLeft className="h-4 w-4" />
           </Link>
-          <Link to="/backups" className="flex items-center gap-2 border border-border px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent">
-            <Database className="h-4 w-4" />
-            גיבויים
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
         </div>
+
       </div>
 
       {/* KPI Cards */}

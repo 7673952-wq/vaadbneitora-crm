@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Database } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),

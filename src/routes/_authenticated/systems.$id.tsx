@@ -13,7 +13,7 @@ import {
 } from "@/lib/system-files.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
-  NO_REASON_STATUSES, type SystemStatus,
+  NO_REASON_STATUSES, type SystemStatus, buildDialNumber,
 } from "@/lib/status";
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -264,6 +264,18 @@ function SystemDetail() {
             </div>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
+            {s.system_code && (
+              <a href={`tel:${buildDialNumber(s.system_code)}`}
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-mono">
+                <Phone className="h-4 w-4" />חיוג {s.system_code}
+              </a>
+            )}
+            {s.caller_phone && (
+              <a href={`tel:${buildDialNumber(s.caller_phone)}`}
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 font-mono">
+                <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
+              </a>
+            )}
             {s.phone && (
               <a href={`tel:${s.phone}`}
                 className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">

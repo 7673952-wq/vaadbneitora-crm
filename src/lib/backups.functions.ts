@@ -214,11 +214,10 @@ export const restoreBackup = createServerFn({ method: "POST" })
     return result;
   });
 
-// Prepare a backup-by-email payload: build (or reuse) the folder's ZIP, generate
-// a 7-day signed URL, and return it together with the configured recipient.
-// The client opens a `mailto:` link with this content. Set the recipient under
-// "ניהול ראשי → מייל לגיבויים".
-export const prepareBackupEmail = createServerFn({ method: "POST" })
+// Build (or reuse) the folder's ZIP and email it as an actual attachment via
+// Resend. Recipient is configured under "ניהול ראשי → מייל לגיבויים".
+// Requires RESEND_API_KEY in env.
+export const sendBackupByEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder: string }) =>
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
@@ -227,7 +226,6 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // Look up the configured backup email.
     const { data: setting } = await supabaseAdmin
       .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
     const email = ((setting?.value as { email?: string } | null)?.email ?? "").trim();
@@ -235,34 +233,44 @@ export const prepareBackupEmail = createServerFn({ method: "POST" })
       throw new Error("לא הוגדר מייל לגיבויים. הגדר תחת 'ניהול ראשי → מייל לגיבויים'.");
     }
 
-    // Build the ZIP if it doesn't already exist (reuse logic from getBackupZipUrl).
+    const apiKey = process.env.RESEND_API_KEY;
+    if (!apiKey) throw new Error("חסר RESEND_API_KEY בהגדרות השרת");
+
     const JSZip = (await import("jszip")).default;
     const { data: files, error: listErr } = await supabaseAdmin.storage
       .from("backups").list(data.folder, { limit: 100 });
     if (listErr) throw new Error(listErr.message);
     if (!files || files.length === 0) throw new Error("אין קבצים בגיבוי");
 
-    const zipPath = `${data.folder}/backup-${data.folder}.zip`;
-    const hasZip = files.some((f) => f.name === `backup-${data.folder}.zip`);
-    if (!hasZip) {
-      const zip = new JSZip();
-      for (const f of files) {
-        if (!f.name || f.name.endsWith(".zip")) continue;
-        const { data: blob, error } = await supabaseAdmin.storage
-          .from("backups").download(`${data.folder}/${f.name}`);
-        if (error) throw new Error(`${f.name}: ${error.message}`);
-        zip.file(f.name, await blob.arrayBuffer());
-      }
-      const zipBuf = await zip.generateAsync({ type: "uint8array" });
-      const { error: upErr } = await supabaseAdmin.storage
-        .from("backups").upload(zipPath, zipBuf, { contentType: "application/zip", upsert: true });
-      if (upErr) throw new Error(upErr.message);
+    const zip = new JSZip();
+    for (const f of files) {
+      if (!f.name || f.name.endsWith(".zip")) continue;
+      const { data: blob, error } = await supabaseAdmin.storage
+        .from("backups").download(`${data.folder}/${f.name}`);
+      if (error) throw new Error(`${f.name}: ${error.message}`);
+      zip.file(f.name, await blob.arrayBuffer());
     }
+    const zipBuf = await zip.generateAsync({ type: "uint8array" });
+    const base64 = Buffer.from(zipBuf).toString("base64");
+    const filename = `backup-${data.folder}.zip`;
 
-    // 7-day signed download URL.
-    const { data: signed, error: signErr } = await supabaseAdmin.storage
-      .from("backups").createSignedUrl(zipPath, 60 * 60 * 24 * 7);
-    if (signErr) throw new Error(signErr.message);
-
-    return { email, url: signed.signedUrl, folder: data.folder };
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        from: "CRM Backups <onboarding@resend.dev>",
+        to: [email],
+        subject: `גיבוי CRM — ${data.folder}`,
+        text: `מצורף קובץ הגיבוי של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+        attachments: [{ filename, content: base64 }],
+      }),
+    });
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => "");
+      throw new Error(`Resend נכשל (${resp.status}): ${errText.slice(0, 200)}`);
+    }
+    return { email, folder: data.folder, sizeKb: Math.round(zipBuf.length / 1024) };
   });

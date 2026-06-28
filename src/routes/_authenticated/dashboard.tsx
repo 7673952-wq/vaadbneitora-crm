@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem,
-  importSystems,
+  importSystems, getStatusCounts,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -71,7 +71,7 @@ function Dashboard() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(200);
   const [showCreate, setShowCreate] = useState(false);
-  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
+  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string; parent_id?: string }>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
@@ -105,6 +105,11 @@ function Dashboard() {
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
   const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const statusCountsFn = useServerFn(getStatusCounts);
+  const { data: globalStatusCounts } = useQuery({
+    queryKey: ["statusCounts", agentId, period],
+    queryFn: () => statusCountsFn({ data: { agentId: agentId || null, period: period || null } }),
+  });
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -135,11 +140,13 @@ function Dashboard() {
     });
   }, [systems, search]);
 
+  // Global per-status counts across ALL systems (not just the current page).
   const stats = useMemo(() => {
+    if (globalStatusCounts) return globalStatusCounts as Record<string, number>;
     const counts: Record<string, number> = {};
     (systems ?? []).forEach((s: any) => { counts[s.status] = (counts[s.status] || 0) + 1; });
     return counts;
-  }, [systems]);
+  }, [systems, globalStatusCounts]);
   const chartData = useMemo(() => STATUS_OPTIONS
     .map((s, i) => ({ name: s.label, value: stats[s.value] ?? 0, color: PIE_COLORS[i % PIE_COLORS.length] }))
     .filter((item) => item.value > 0), [stats]);
@@ -488,6 +495,19 @@ function Dashboard() {
           <option value="month">חודשי</option>
           <option value="year">שנתי</option>
         </select>
+        <select
+          value={String(pageSize)}
+          onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+          className="px-3 py-2 text-sm rounded-lg border border-input bg-background"
+          aria-label="מספר פריטים בעמוד"
+          title="מספר פריטים בעמוד"
+        >
+          <option value="50">50 בעמוד</option>
+          <option value="100">100 בעמוד</option>
+          <option value="200">200 בעמוד</option>
+          <option value="1000">1000 בעמוד</option>
+          <option value="0">הכל</option>
+        </select>
         {(status || agentId || period || search) && (
           <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
@@ -598,47 +618,29 @@ function Dashboard() {
       </div>
 
 
-      {total > 0 && (
+      {total > 0 && pageSize !== 0 && totalPages > 1 && (
         <div className="flex items-center justify-center gap-4 flex-wrap">
-          <Select
-            value={String(pageSize)}
-            onValueChange={(v) => { setPageSize(Number(v)); setPage(1); }}
-          >
-            <SelectTrigger className="w-[110px] h-9 text-sm" aria-label="מספר פריטים בעמוד">
-              <SelectValue placeholder="50" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-              <SelectItem value="200">200</SelectItem>
-              <SelectItem value="1000">1000</SelectItem>
-              <SelectItem value="0">הכל</SelectItem>
-            </SelectContent>
-          </Select>
-          {pageSize !== 0 && (
-            <Pagination>
-              <PaginationContent>
-                <PaginationItem>
-                  <PaginationPrevious
-                    onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }}
-                    className={page === 1 ? "pointer-events-none opacity-50" : ""}
-                  />
-                </PaginationItem>
-                <PaginationItem>
-                  <span className="px-3 py-2 text-sm tabular-nums">
-                    עמוד {page} מתוך {totalPages}
-                  </span>
-                </PaginationItem>
-                <PaginationItem>
-                  <PaginationNext
-                    onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }}
-                    className={page >= totalPages ? "pointer-events-none opacity-50" : ""}
-                  />
-                </PaginationItem>
-              </PaginationContent>
-            </Pagination>
-          )}
-
+          <Pagination>
+            <PaginationContent>
+              <PaginationItem>
+                <PaginationPrevious
+                  onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.max(1, p - 1)); }}
+                  className={page === 1 ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+              <PaginationItem>
+                <span className="px-3 py-2 text-sm tabular-nums">
+                  עמוד {page} מתוך {totalPages}
+                </span>
+              </PaginationItem>
+              <PaginationItem>
+                <PaginationNext
+                  onClick={(e: any) => { e.preventDefault(); setPage((p) => Math.min(totalPages, p + 1)); }}
+                  className={page >= totalPages ? "pointer-events-none opacity-50" : ""}
+                />
+              </PaginationItem>
+            </PaginationContent>
+          </Pagination>
         </div>
       )}
 
@@ -888,6 +890,9 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
+  // When a duplicate name is detected the user must choose: create a sub-system
+  // under the matched parent, or open a new root with the same name.
+  const [createMode, setCreateMode] = useState<"sub" | "root">("sub");
   const [busy, setBusy] = useState(false);
   const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
@@ -904,16 +909,19 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         setSuggestions(rows ?? []);
         const exact = (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
         setMatchedParent(exact ?? null);
+        setCreateMode("sub");
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.name, findFn]);
 
+  const willCreateAsSub = !!matchedParent && createMode === "sub";
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     try {
-      if (matchedParent) {
+      if (willCreateAsSub && matchedParent) {
         await subFn({ data: {
           parent_id: matchedParent.id,
           system_code: form.system_code,
@@ -970,8 +978,16 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               </div>
             )}
             {matchedParent && (
-              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2">
-                שם זה כבר קיים — היצירה תתבצע כ-<strong>תת-מערכת</strong> תחת "{matchedParent.name}".
+              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2 space-y-1.5">
+                <div className="font-medium">שם זה כבר קיים כאב-מערכת ({matchedParent.system_code}). מה לעשות?</div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
+                  <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="createMode" checked={createMode === "root"} onChange={() => setCreateMode("root")} />
+                  <span>פתח אב-מערכת חדשה עם אותו שם</span>
+                </label>
               </div>
             )}
           </div>
@@ -1009,7 +1025,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               </button>
             </div>
           </div>
-          {!matchedParent && (
+          {!willCreateAsSub && (
             <>
               <div>
                 <label className="text-sm font-medium block mb-1">סטטוס</label>
@@ -1031,7 +1047,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="submit" disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-              {busy ? "..." : matchedParent ? "הוסף תת-מערכת" : "הוסף"}
+              {busy ? "..." : willCreateAsSub ? "הוסף תת-מערכת" : "הוסף"}
             </button>
           </div>
         </form>
@@ -1219,40 +1235,39 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
   );
 }
 
-function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { system_code?: string; name?: string }) => void; canCreate: boolean }) {
+function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { system_code?: string; name?: string; parent_id?: string }) => void; canCreate: boolean }) {
   const navigate = useNavigate();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);
-  const [code, setCode] = useState("");
-  const [name, setName] = useState("");
+  const [query, setQuery] = useState("");
   const [codeResult, setCodeResult] = useState<any | null | undefined>(undefined);
   const [nameResults, setNameResults] = useState<any[] | undefined>(undefined);
 
+  // Run both lookups in parallel: code lookup for the numeric portion, name
+  // lookup for any text. This keeps a single input box but covers both flows.
   useEffect(() => {
-    const v = code.trim();
-    if (!v) { setCodeResult(undefined); return; }
+    const v = query.trim();
+    if (v.length < 2) { setCodeResult(undefined); setNameResults(undefined); return; }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const r = await codeFn({ data: { code: v } });
-        if (!cancelled) setCodeResult(r);
+        const isCodeLike = /^\d+$/.test(v);
+        const [c, n] = await Promise.all([
+          isCodeLike ? codeFn({ data: { code: v } }) : Promise.resolve(undefined),
+          nameFn({ data: { name: v } }),
+        ]);
+        if (cancelled) return;
+        setCodeResult(c);
+        setNameResults(n ?? []);
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [code, codeFn]);
+  }, [query, codeFn, nameFn]);
 
-  useEffect(() => {
-    const v = name.trim();
-    if (v.length < 2) { setNameResults(undefined); return; }
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const r = await nameFn({ data: { name: v } });
-        if (!cancelled) setNameResults(r ?? []);
-      } catch { /* ignore */ }
-    }, 250);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [name, nameFn]);
+  const v = query.trim();
+  const nothingFound = v.length >= 2 && codeResult !== undefined && nameResults !== undefined
+    && !codeResult && (nameResults?.length ?? 0) === 0;
+  const exactNameMatch = nameResults?.find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
@@ -1260,86 +1275,77 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
         <Search className="h-4 w-4 text-indigo-600" />
         <h2 className="text-sm font-semibold">בדיקה מהירה</h2>
       </div>
-      <div className="grid md:grid-cols-2 gap-4">
-        {/* By code */}
-        <div>
-          <label className="text-xs font-medium block mb-1 text-muted-foreground">מספר מערכת</label>
-          <input value={code} onChange={(e) => setCode(e.target.value)}
-            placeholder="הזן מספר מערכת..."
-            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-          {code.trim() && codeResult === undefined && (
-            <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>
-          )}
-          {code.trim() && codeResult && (
-            <button onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
-              className={`mt-2 w-full text-right border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-mono opacity-80">{codeResult.system_code}</div>
-                  <div className="text-sm font-semibold truncate">{codeResult.name}</div>
-                </div>
-                <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(STATUS_TONE[codeResult.status as SystemStatus])}`}>
-                  {STATUS_LABEL[codeResult.status as SystemStatus]}
-                </span>
-              </div>
-              <div className="text-[11px] mt-1 opacity-75">לחץ למעבר למערכת</div>
-            </button>
-          )}
-          {code.trim() && codeResult === null && (
-            <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
-              <div className="text-sm text-emerald-900 font-medium">מספר זה לא קיים במערכת</div>
-              {canCreate ? (
-                <button onClick={() => onOpenCreate({ system_code: code })}
-                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
-                  <Plus className="h-3 w-3" />פתח מערכת חדשה
-                </button>
-              ) : (
-                <div className="text-xs text-emerald-800 mt-1">פנה למנהל לפתיחת מערכת חדשה</div>
-              )}
-            </div>
-          )}
-        </div>
+      <input value={query} onChange={(e) => setQuery(e.target.value)}
+        placeholder="הזן מספר מערכת או שם מערכת..."
+        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
 
-        {/* By name */}
-        <div>
-          <label className="text-xs font-medium block mb-1 text-muted-foreground">שם מערכת</label>
-          <input value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="הזן שם מערכת..."
-            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-          {name.trim().length >= 2 && nameResults === undefined && (
-            <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>
-          )}
-          {name.trim().length >= 2 && nameResults && nameResults.length > 0 && (
-            <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto">
-              {nameResults.map((r: any) => (
-                <button key={r.id} onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
-                  className="w-full text-right border border-border rounded-lg p-2 hover:bg-accent transition flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
-                    <div className="text-sm font-medium truncate">{r.name}</div>
-                  </div>
-                  {r.parent_system_id && (
-                    <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
-                  )}
-                </button>
-              ))}
+      {v.length >= 2 && codeResult === undefined && nameResults === undefined && (
+        <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>
+      )}
+
+      {codeResult && (
+        <button onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
+          className={`mt-2 w-full text-right border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-mono opacity-80">{codeResult.system_code}</div>
+              <div className="text-sm font-semibold truncate">{codeResult.name}</div>
             </div>
-          )}
-          {name.trim().length >= 2 && nameResults && nameResults.length === 0 && (
-            <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
-              <div className="text-sm text-emerald-900 font-medium">לא נמצאה מערכת בשם זה</div>
-              {canCreate ? (
-                <button onClick={() => onOpenCreate({ name: name })}
-                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
-                  <Plus className="h-3 w-3" />פתח מערכת חדשה
-                </button>
-              ) : (
-                <div className="text-xs text-emerald-800 mt-1">פנה למנהל לפתיחת מערכת חדשה</div>
+            <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(STATUS_TONE[codeResult.status as SystemStatus])}`}>
+              {STATUS_LABEL[codeResult.status as SystemStatus]}
+            </span>
+          </div>
+          <div className="text-[11px] mt-1 opacity-75">לחץ למעבר למערכת</div>
+        </button>
+      )}
+
+      {nameResults && nameResults.length > 0 && (
+        <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto">
+          {nameResults.map((r: any) => (
+            <button key={r.id} onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
+              className="w-full text-right border border-border rounded-lg p-2 hover:bg-accent transition flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
+                <div className="text-sm font-medium truncate">{r.name}</div>
+              </div>
+              {r.parent_system_id && (
+                <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
               )}
-            </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Choice when typed name matches an existing root */}
+      {canCreate && exactNameMatch && (
+        <div className="mt-2 border-2 border-amber-300 bg-amber-50 rounded-lg p-2.5 space-y-2">
+          <div className="text-sm text-amber-900 font-medium">השם "{exactNameMatch.name}" כבר קיים. מה לפתוח?</div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onOpenCreate({ name: v })}
+              className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
+              <Plus className="h-3 w-3" />פתח אב-מערכת חדשה
+            </button>
+            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id })}
+              className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
+              <CornerUpRight className="h-3 w-3" />פתח תת-מערכת תחת הקיימת
+            </button>
+          </div>
+        </div>
+      )}
+
+      {nothingFound && (
+        <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">
+          <div className="text-sm text-emerald-900 font-medium">לא נמצאה מערכת תואמת</div>
+          {canCreate ? (
+            <button onClick={() => onOpenCreate(/^\d+$/.test(v) ? { system_code: v } : { name: v })}
+              className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
+              <Plus className="h-3 w-3" />פתח מערכת חדשה
+            </button>
+          ) : (
+            <div className="text-xs text-emerald-800 mt-1">פנה למנהל לפתיחת מערכת חדשה</div>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

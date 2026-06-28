@@ -149,6 +149,46 @@ export const listSystems = createServerFn({ method: "POST" })
     return { items: enriched, total, page, pageSize };
   });
 
+// Global per-status counts across ALL systems (with optional agent/period
+// filters), independent of dashboard pagination.
+export const getStatusCounts = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      agentId: z.string().uuid().nullable().optional(),
+      period: periodSchema.nullable().optional(),
+    }).strict().parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    let q = context.supabase.from("systems").select("status");
+    if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
+    if (data.period) {
+      const now = new Date();
+      const start = new Date(now);
+      if (data.period === "day") start.setDate(now.getDate() - 1);
+      else if (data.period === "week") start.setDate(now.getDate() - 7);
+      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+      q = q.gte("updated_at", start.toISOString());
+    }
+    // Paginate through everything to bypass the 1000-row default.
+    const counts: Record<string, number> = {};
+    const pageSize = 1000;
+    let from = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data: rows, error } = await q.range(from, from + pageSize - 1);
+      if (error) throw new Error(error.message);
+      if (!rows || rows.length === 0) break;
+      for (const r of rows as any[]) counts[r.status] = (counts[r.status] ?? 0) + 1;
+      if (rows.length < pageSize) break;
+      from += pageSize;
+    }
+    return counts;
+  });
+
+
+
 // Adds `agent` and `parent` lookup blobs onto raw system rows so the UI
 // can render them without an N+1.
 async function enrichSystemRows(supabase: any, rows: any[]) {

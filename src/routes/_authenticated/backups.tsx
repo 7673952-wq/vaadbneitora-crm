@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, prepareBackupEmail } from "@/lib/backups.functions";
+import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, sendBackupByEmail } from "@/lib/backups.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail } from "lucide-react";
@@ -161,13 +161,13 @@ function BackupsPage() {
     }
   }
 
-  const emailFn = useServerFn(prepareBackupEmail);
+  const emailFn = useServerFn(sendBackupByEmail);
   const [emailing, setEmailing] = useState<string | null>(null);
   async function emailFolder(folder: string) {
     try {
       setEmailing(folder);
-      const { email } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
-      toast.success(`קובץ הגיבוי נשלח אל ${email}`);
+      const res = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      toast.success(`נשלח אל ${res.email} (${res.sizeKb} KB)`);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשליחת מייל");
     } finally {

@@ -1047,7 +1047,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="submit" disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-              {busy ? "..." : matchedParent ? "הוסף תת-מערכת" : "הוסף"}
+              {busy ? "..." : willCreateAsSub ? "הוסף תת-מערכת" : "הוסף"}
             </button>
           </div>
         </form>

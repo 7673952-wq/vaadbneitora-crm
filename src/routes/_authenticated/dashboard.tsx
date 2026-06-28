@@ -402,7 +402,22 @@ function Dashboard() {
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">דשבורד מערכות</h1>
-          <p className="text-muted-foreground text-sm mt-1">סה"כ {total} מערכות · מציג {filtered.length}</p>
+          <p className="text-muted-foreground text-sm mt-1 flex items-center gap-1">
+            סה"כ {total} מערכות · מציג{" "}
+            <select
+              value={String(pageSize)}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+              className="border-none bg-transparent p-0 text-sm font-medium text-foreground underline-offset-2 hover:underline focus:outline-none focus:ring-0 cursor-pointer"
+              aria-label="מספר פריטים בעמוד"
+              title="מספר פריטים בעמוד"
+            >
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="200">200</option>
+              <option value="1000">1000</option>
+              <option value="0">הכל</option>
+            </select>
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={() => setShowCharts(!showCharts)}
@@ -494,19 +509,6 @@ function Dashboard() {
           <option value="week">שבועי</option>
           <option value="month">חודשי</option>
           <option value="year">שנתי</option>
-        </select>
-        <select
-          value={String(pageSize)}
-          onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
-          className="px-3 py-2 text-sm rounded-lg border border-input bg-background"
-          aria-label="מספר פריטים בעמוד"
-          title="מספר פריטים בעמוד"
-        >
-          <option value="50">50 בעמוד</option>
-          <option value="100">100 בעמוד</option>
-          <option value="200">200 בעמוד</option>
-          <option value="1000">1000 בעמוד</option>
-          <option value="0">הכל</option>
         </select>
         {(status || agentId || period || search) && (
           <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setPage(1); }}

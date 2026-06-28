@@ -495,6 +495,19 @@ function Dashboard() {
           <option value="month">חודשי</option>
           <option value="year">שנתי</option>
         </select>
+        <select
+          value={String(pageSize)}
+          onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1); }}
+          className="px-3 py-2 text-sm rounded-lg border border-input bg-background"
+          aria-label="מספר פריטים בעמוד"
+          title="מספר פריטים בעמוד"
+        >
+          <option value="50">50 בעמוד</option>
+          <option value="100">100 בעמוד</option>
+          <option value="200">200 בעמוד</option>
+          <option value="1000">1000 בעמוד</option>
+          <option value="0">הכל</option>
+        </select>
         {(status || agentId || period || search) && (
           <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">

@@ -71,7 +71,7 @@ function Dashboard() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(200);
   const [showCreate, setShowCreate] = useState(false);
-  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string }>({});
+  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string; parent_id?: string }>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {

@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-const RECIPIENT_EMAIL = process.env.WEEKLY_REPORT_EMAIL ?? "";
-
 export const Route = createFileRoute("/api/public/hooks/weekly-backup")({
   server: {
     handlers: {
@@ -19,39 +17,49 @@ export const Route = createFileRoute("/api/public/hooks/weekly-backup")({
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const result = await runBackup();
 
-          // Build signed URLs (valid 7 days) for each file
-          const links: { name: string; url: string }[] = [];
-          for (const f of result.files) {
-            const { data: signed } = await supabaseAdmin.storage
-              .from("backups")
-              .createSignedUrl(f.path, 60 * 60 * 24 * 7);
-            if (signed?.signedUrl) links.push({ name: f.name, url: signed.signedUrl });
+          // Resolve recipient from app_settings, fallback to env.
+          const { data: setting } = await supabaseAdmin
+            .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
+          const recipient = ((setting?.value as { email?: string } | null)?.email ?? process.env.WEEKLY_REPORT_EMAIL ?? "").trim();
+
+          let emailStatus: any = "skipped (no recipient or no RESEND_API_KEY)";
+          const apiKey = process.env.RESEND_API_KEY;
+          if (recipient && apiKey) {
+            try {
+              // Build zip of the backup folder.
+              const JSZip = (await import("jszip")).default;
+              const zip = new JSZip();
+              for (const f of result.files) {
+                const { data: blob, error } = await supabaseAdmin.storage
+                  .from("backups").download(f.path);
+                if (error) throw new Error(`${f.name}: ${error.message}`);
+                zip.file(f.name, await blob.arrayBuffer());
+              }
+              const zipBuf = await zip.generateAsync({ type: "uint8array" });
+              const base64 = Buffer.from(zipBuf).toString("base64");
+              const filename = `backup-${result.folder}.zip`;
+
+              const resp = await fetch("https://api.resend.com/emails", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${apiKey}`,
+                },
+                body: JSON.stringify({
+                  from: "CRM Backups <onboarding@resend.dev>",
+                  to: [recipient],
+                  subject: `גיבוי CRM שבועי — ${result.folder}`,
+                  text: `מצורף קובץ הגיבוי השבועי של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+                  attachments: [{ filename, content: base64 }],
+                }),
+              });
+              emailStatus = resp.ok ? "sent" : `failed:${resp.status}:${(await resp.text()).slice(0, 200)}`;
+            } catch (e: any) {
+              emailStatus = `error:${e?.message ?? "unknown"}`;
+            }
           }
 
-          // Try to send email via Lovable Email (if configured)
-          let emailStatus: any = "skipped (no email infra)";
-          try {
-            const baseUrl = new URL(request.url).origin;
-            const sendResp = await fetch(`${baseUrl}/lovable/email/transactional/send`, {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                "apikey": process.env.SUPABASE_PUBLISHABLE_KEY!,
-                "Authorization": `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""}`,
-              },
-              body: JSON.stringify({
-                templateName: "weekly-backup",
-                recipientEmail: RECIPIENT_EMAIL,
-                idempotencyKey: `weekly-backup-${result.folder}`,
-                templateData: { folder: result.folder, links },
-              }),
-            });
-            emailStatus = sendResp.ok ? "sent" : `failed:${sendResp.status}`;
-          } catch (e: any) {
-            emailStatus = `error:${e?.message ?? "unknown"}`;
-          }
-
-          return new Response(JSON.stringify({ ok: true, ...result, links, emailStatus }), {
+          return new Response(JSON.stringify({ ok: true, ...result, emailStatus, recipient }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           });

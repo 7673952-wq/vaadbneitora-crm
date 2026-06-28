@@ -921,7 +921,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
     e.preventDefault();
     setBusy(true);
     try {
-      if (matchedParent) {
+      if (willCreateAsSub && matchedParent) {
         await subFn({ data: {
           parent_id: matchedParent.id,
           system_code: form.system_code,

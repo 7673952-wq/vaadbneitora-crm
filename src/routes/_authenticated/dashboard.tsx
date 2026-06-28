@@ -140,11 +140,13 @@ function Dashboard() {
     });
   }, [systems, search]);
 
+  // Global per-status counts across ALL systems (not just the current page).
   const stats = useMemo(() => {
+    if (globalStatusCounts) return globalStatusCounts as Record<string, number>;
     const counts: Record<string, number> = {};
     (systems ?? []).forEach((s: any) => { counts[s.status] = (counts[s.status] || 0) + 1; });
     return counts;
-  }, [systems]);
+  }, [systems, globalStatusCounts]);
   const chartData = useMemo(() => STATUS_OPTIONS
     .map((s, i) => ({ name: s.label, value: stats[s.value] ?? 0, color: PIE_COLORS[i % PIE_COLORS.length] }))
     .filter((item) => item.value > 0), [stats]);

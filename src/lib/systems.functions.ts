@@ -185,6 +185,9 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       from += pageSize;
     }
     return counts;
+  });
+
+
 
 // Adds `agent` and `parent` lookup blobs onto raw system rows so the UI
 // can render them without an N+1.

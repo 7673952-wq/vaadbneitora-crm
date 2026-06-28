@@ -978,8 +978,16 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               </div>
             )}
             {matchedParent && (
-              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2">
-                שם זה כבר קיים — היצירה תתבצע כ-<strong>תת-מערכת</strong> תחת "{matchedParent.name}".
+              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2 space-y-1.5">
+                <div className="font-medium">שם זה כבר קיים כאב-מערכת ({matchedParent.system_code}). מה לעשות?</div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
+                  <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="radio" name="createMode" checked={createMode === "root"} onChange={() => setCreateMode("root")} />
+                  <span>פתח אב-מערכת חדשה עם אותו שם</span>
+                </label>
               </div>
             )}
           </div>

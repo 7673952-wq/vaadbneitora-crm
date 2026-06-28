@@ -266,13 +266,13 @@ function SystemDetail() {
           <div className="flex items-center gap-2 flex-wrap">
             {s.system_code && (
               <a href={`tel:${buildDialNumber(s.system_code)}`}
-                className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-mono">
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
                 <Phone className="h-4 w-4" />חיוג {s.system_code}
               </a>
             )}
             {s.caller_phone && (
               <a href={`tel:${buildDialNumber(s.caller_phone)}`}
-                className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700 font-mono">
+                className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700">
                 <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
               </a>
             )}

@@ -105,6 +105,11 @@ function Dashboard() {
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
   const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize));
+  const statusCountsFn = useServerFn(getStatusCounts);
+  const { data: globalStatusCounts } = useQuery({
+    queryKey: ["statusCounts", agentId, period],
+    queryFn: () => statusCountsFn({ data: { agentId: agentId || null, period: period || null } }),
+  });
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),

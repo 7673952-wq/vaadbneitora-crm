@@ -161,13 +161,13 @@ function BackupsPage() {
     }
   }
 
-  const emailFn = useServerFn(prepareBackupEmail);
+  const emailFn = useServerFn(sendBackupByEmail);
   const [emailing, setEmailing] = useState<string | null>(null);
   async function emailFolder(folder: string) {
     try {
       setEmailing(folder);
-      const { email } = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
-      toast.success(`קובץ הגיבוי נשלח אל ${email}`);
+      const res = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      toast.success(`נשלח אל ${res.email} (${res.sizeKb} KB)`);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשליחת מייל");
     } finally {

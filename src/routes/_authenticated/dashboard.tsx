@@ -890,6 +890,9 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
+  // When a duplicate name is detected the user must choose: create a sub-system
+  // under the matched parent, or open a new root with the same name.
+  const [createMode, setCreateMode] = useState<"sub" | "root">("sub");
   const [busy, setBusy] = useState(false);
   const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
@@ -906,10 +909,13 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         setSuggestions(rows ?? []);
         const exact = (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
         setMatchedParent(exact ?? null);
+        setCreateMode("sub");
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.name, findFn]);
+
+  const willCreateAsSub = !!matchedParent && createMode === "sub";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

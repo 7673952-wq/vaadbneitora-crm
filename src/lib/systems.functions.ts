@@ -304,10 +304,9 @@ export const addSubSystem = createServerFn({ method: "POST" })
     if (!isAdmin && parent.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
     }
-    const { data: row, error } = await context.supabase.from("systems").insert({
+    const { data: inserted, error } = await context.supabase.from("systems").insert({
       system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
-      parent_system_id: data.parent_id,
       status: data.status ?? "open",
       assigned_agent_id: parent.assigned_agent_id,
       notes: sanitizeOptional(data.notes ?? null),
@@ -317,6 +316,16 @@ export const addSubSystem = createServerFn({ method: "POST" })
       email: data.email || null,
     }).select().single();
     if (error) throw new Error(error.message);
+    const { data: row, error: parentError } = await context.supabase
+      .from("systems")
+      .update({ parent_system_id: data.parent_id })
+      .eq("id", inserted.id)
+      .select()
+      .single();
+    if (parentError) {
+      await context.supabase.from("systems").delete().eq("id", inserted.id);
+      throw new Error(parentError.message);
+    }
     return row;
   });
 

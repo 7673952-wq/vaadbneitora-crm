@@ -917,14 +917,14 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         if (cancelled) return;
         setSuggestions(rows ?? []);
         const exact = initial?.parent_id
-          ? (rows ?? []).find((r: any) => r.id === initial.parent_id)
+          ? ((rows ?? []).find((r: any) => r.id === initial.parent_id) ?? initial.parent ?? null)
           : (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
         setMatchedParent(exact ?? null);
         setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [form.name, findFn, initial?.parent_id]);
+  }, [form.name, findFn, initial?.parent_id, initial?.createMode]);
 
   const willCreateAsSub = !!matchedParent && createMode === "sub";
 

@@ -1240,7 +1240,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
   );
 }
 
-function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { system_code?: string; name?: string; parent_id?: string }) => void; canCreate: boolean }) {
+function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: CreateInitial) => void; canCreate: boolean }) {
   const navigate = useNavigate();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);
@@ -1326,11 +1326,11 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
         <div className="mt-2 border-2 border-amber-300 bg-amber-50 rounded-lg p-2.5 space-y-2">
           <div className="text-sm text-amber-900 font-medium">השם "{exactNameMatch.name}" כבר קיים. מה לפתוח?</div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => onOpenCreate({ name: v })}
+            <button onClick={() => onOpenCreate({ name: v, createMode: "root" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
               <Plus className="h-3 w-3" />פתח אב-מערכת חדשה
             </button>
-            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id })}
+            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id, createMode: "sub" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
               <CornerUpRight className="h-3 w-3" />פתח תת-מערכת תחת הקיימת
             </button>

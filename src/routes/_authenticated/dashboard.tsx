@@ -42,6 +42,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Period = "" | "day" | "week" | "month" | "year";
+type CreateInitial = { system_code?: string; name?: string; parent_id?: string; createMode?: "root" | "sub" };
 
 const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab308", "#0284c7", "#4f46e5", "#0891b2", "#7c3aed", "#c026d3", "#ea580c", "#334155"];
 
@@ -71,7 +72,7 @@ function Dashboard() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(200);
   const [showCreate, setShowCreate] = useState(false);
-  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string; parent_id?: string }>({});
+  const [createInitial, setCreateInitial] = useState<CreateInitial>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {

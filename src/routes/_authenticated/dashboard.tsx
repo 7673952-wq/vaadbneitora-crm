@@ -888,7 +888,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 }
 
 
-function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
+function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string; parent_id?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
@@ -909,13 +909,15 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
-        const exact = (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+        const exact = initial?.parent_id
+          ? (rows ?? []).find((r: any) => r.id === initial.parent_id)
+          : (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
         setMatchedParent(exact ?? null);
-        setCreateMode("sub");
+        setCreateMode(initial?.parent_id ? "sub" : "root");
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [form.name, findFn]);
+  }, [form.name, findFn, initial?.parent_id]);
 
   const willCreateAsSub = !!matchedParent && createMode === "sub";
 
@@ -928,8 +930,12 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           parent_id: matchedParent.id,
           system_code: form.system_code,
           name: form.name.trim() || undefined,
+          status: form.status,
+          notes: form.notes,
+          phone: buildDialNumber(form.system_code) || form.phone || undefined,
           source: form.source,
           caller_phone: form.caller_phone,
+          email: form.email || undefined,
         } });
         toast.success(`נוספה תת-מערכת למערכת "${matchedParent.name}"`);
       } else {
@@ -1027,25 +1033,21 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               </button>
             </div>
           </div>
-          {!willCreateAsSub && (
-            <>
-              <div>
-                <label className="text-sm font-medium block mb-1">סטטוס</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-              <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
-                המערכת תיפתח אוטומטית על שמך כנציג המטפל. ניתן לשייך לנציג אחר לאחר הפתיחה.
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">הערות</label>
-                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-              </div>
-            </>
-          )}
+          <div>
+            <label className="text-sm font-medium block mb-1">סטטוס</label>
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+            {willCreateAsSub ? "תת־המערכת תיפתח עם הסטטוס שנבחר כאן, בלי לרשת סטטוס מהאב." : "המערכת תיפתח אוטומטית על שמך כנציג המטפל. ניתן לשייך לנציג אחר לאחר הפתיחה."}
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">הערות</label>
+            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          </div>
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="submit" disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">

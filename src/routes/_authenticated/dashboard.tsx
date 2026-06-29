@@ -889,13 +889,13 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 }
 
 
-function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string; parent_id?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
+function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(null);
   // When a duplicate name is detected the user must choose: create a sub-system
   // under the matched parent, or open a new root with the same name.
-  const [createMode, setCreateMode] = useState<"sub" | "root">("sub");
+  const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
   const [busy, setBusy] = useState(false);
   const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
@@ -914,7 +914,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           ? (rows ?? []).find((r: any) => r.id === initial.parent_id)
           : (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
         setMatchedParent(exact ?? null);
-        setCreateMode(initial?.parent_id ? "sub" : "root");
+        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };

@@ -42,7 +42,13 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Period = "" | "day" | "week" | "month" | "year";
-type CreateInitial = { system_code?: string; name?: string; parent_id?: string; createMode?: "root" | "sub" };
+type CreateInitial = {
+  system_code?: string;
+  name?: string;
+  parent_id?: string;
+  parent?: { id: string; system_code: string; name: string };
+  createMode?: "root" | "sub";
+};
 
 const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab308", "#0284c7", "#4f46e5", "#0891b2", "#7c3aed", "#c026d3", "#ea580c", "#334155"];
 
@@ -892,7 +898,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [matchedParent, setMatchedParent] = useState<any | null>(null);
+  const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
   // When a duplicate name is detected the user must choose: create a sub-system
   // under the matched parent, or open a new root with the same name.
   const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
@@ -1330,7 +1336,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
               <Plus className="h-3 w-3" />פתח אב-מערכת חדשה
             </button>
-            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id, createMode: "sub" })}
+            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id, parent: exactNameMatch, createMode: "sub" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
               <CornerUpRight className="h-3 w-3" />פתח תת-מערכת תחת הקיימת
             </button>

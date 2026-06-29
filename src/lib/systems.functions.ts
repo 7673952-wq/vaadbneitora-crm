@@ -276,13 +276,20 @@ export const getSystem = createServerFn({ method: "POST" })
 
 export const addSubSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { parent_id: string; system_code: string; name?: string; source?: string; caller_phone?: string }) =>
+  .inputValidator((d: {
+    parent_id: string; system_code: string; name?: string; status?: string;
+    notes?: string; phone?: string; source?: string; caller_phone?: string; email?: string;
+  }) =>
     z.object({
       parent_id: z.string().uuid(),
       system_code: z.string().min(1).max(60),
       name: z.string().max(200).optional(),
+      status: statusSchema.optional(),
+      notes: z.string().max(2000).optional(),
+      phone: z.string().max(60).optional(),
       source: z.string().max(40).optional(),
       caller_phone: z.string().max(40).optional(),
+      email: z.string().email().max(200).optional().or(z.literal("")),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -297,15 +304,28 @@ export const addSubSystem = createServerFn({ method: "POST" })
     if (!isAdmin && parent.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
     }
-    const { data: row, error } = await context.supabase.from("systems").insert({
+    const { data: inserted, error } = await context.supabase.from("systems").insert({
       system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
-      parent_system_id: data.parent_id,
-      status: "open",
+      status: data.status ?? "open",
+      assigned_agent_id: parent.assigned_agent_id,
+      notes: sanitizeOptional(data.notes ?? null),
+      phone: sanitizeOptional(data.phone ?? null),
       source: sanitizeOptional(data.source ?? null),
       caller_phone: sanitizeOptional(data.caller_phone ?? null),
+      email: data.email || null,
     }).select().single();
     if (error) throw new Error(error.message);
+    const { data: row, error: parentError } = await context.supabase
+      .from("systems")
+      .update({ parent_system_id: data.parent_id })
+      .eq("id", inserted.id)
+      .select()
+      .single();
+    if (parentError) {
+      await context.supabase.from("systems").delete().eq("id", inserted.id);
+      throw new Error(parentError.message);
+    }
     return row;
   });
 
@@ -1019,14 +1039,27 @@ export const importSystems = createServerFn({ method: "POST" })
         notes: finalNotes,
         phone, source, caller_phone, email,
       };
-      if (parent_system_id) insertPayload.parent_system_id = parent_system_id;
 
+      // Important: create the row with its Excel status first, then attach it
+      // to the parent. This completely bypasses any parent-inheritance insert
+      // trigger, so imported sub-systems keep the status from their own row.
       const { data: row, error } = await context.supabase
         .from("systems").insert(insertPayload).select("id, system_code, name").single();
 
       if (error) {
         errors.push({ row: rowNum, reason: error.message });
         continue;
+      }
+      if (parent_system_id && row?.id) {
+        const { error: parentError } = await context.supabase
+          .from("systems")
+          .update({ parent_system_id })
+          .eq("id", row.id);
+        if (parentError) {
+          await context.supabase.from("systems").delete().eq("id", row.id);
+          errors.push({ row: rowNum, reason: parentError.message });
+          continue;
+        }
       }
       created.push(row);
       if (notes && row?.id) {

@@ -42,6 +42,13 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Period = "" | "day" | "week" | "month" | "year";
+type CreateInitial = {
+  system_code?: string;
+  name?: string;
+  parent_id?: string;
+  parent?: { id: string; system_code: string; name: string };
+  createMode?: "root" | "sub";
+};
 
 const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab308", "#0284c7", "#4f46e5", "#0891b2", "#7c3aed", "#c026d3", "#ea580c", "#334155"];
 
@@ -71,7 +78,7 @@ function Dashboard() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(200);
   const [showCreate, setShowCreate] = useState(false);
-  const [createInitial, setCreateInitial] = useState<{ system_code?: string; name?: string; parent_id?: string }>({});
+  const [createInitial, setCreateInitial] = useState<CreateInitial>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
@@ -888,13 +895,13 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 }
 
 
-function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: { system_code?: string; name?: string }; onClose: () => void; agents: any[]; onDone: () => void }) {
+function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [matchedParent, setMatchedParent] = useState<any | null>(null);
+  const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
   // When a duplicate name is detected the user must choose: create a sub-system
   // under the matched parent, or open a new root with the same name.
-  const [createMode, setCreateMode] = useState<"sub" | "root">("sub");
+  const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
   const [busy, setBusy] = useState(false);
   const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
@@ -909,13 +916,15 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
-        const exact = (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+        const exact = initial?.parent_id
+          ? ((rows ?? []).find((r: any) => r.id === initial.parent_id) ?? initial.parent ?? null)
+          : (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
         setMatchedParent(exact ?? null);
-        setCreateMode("sub");
+        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [form.name, findFn]);
+  }, [form.name, findFn, initial?.parent_id, initial?.createMode]);
 
   const willCreateAsSub = !!matchedParent && createMode === "sub";
 
@@ -928,8 +937,12 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
           parent_id: matchedParent.id,
           system_code: form.system_code,
           name: form.name.trim() || undefined,
+          status: form.status,
+          notes: form.notes,
+          phone: buildDialNumber(form.system_code) || form.phone || undefined,
           source: form.source,
           caller_phone: form.caller_phone,
+          email: form.email || undefined,
         } });
         toast.success(`נוספה תת-מערכת למערכת "${matchedParent.name}"`);
       } else {
@@ -967,7 +980,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
               autoComplete="off"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-            {suggestions.length > 0 && form.name.trim().length >= 2 && (
+            {suggestions.length > 0 && form.name.trim().length >= 2 && !matchedParent && (
               <div className="absolute z-10 left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {suggestions.map((s: any) => (
                   <button type="button" key={s.id}
@@ -1027,25 +1040,21 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
               </button>
             </div>
           </div>
-          {!willCreateAsSub && (
-            <>
-              <div>
-                <label className="text-sm font-medium block mb-1">סטטוס</label>
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-                  {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </div>
-              <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
-                המערכת תיפתח אוטומטית על שמך כנציג המטפל. ניתן לשייך לנציג אחר לאחר הפתיחה.
-              </div>
-              <div>
-                <label className="text-sm font-medium block mb-1">הערות</label>
-                <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-              </div>
-            </>
-          )}
+          <div>
+            <label className="text-sm font-medium block mb-1">סטטוס</label>
+            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          </div>
+          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+            {willCreateAsSub ? "תת־המערכת תיפתח עם הסטטוס שנבחר כאן, בלי לרשת סטטוס מהאב." : "המערכת תיפתח אוטומטית על שמך כנציג המטפל. ניתן לשייך לנציג אחר לאחר הפתיחה."}
+          </div>
+          <div>
+            <label className="text-sm font-medium block mb-1">הערות</label>
+            <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          </div>
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="submit" disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
@@ -1237,7 +1246,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
   );
 }
 
-function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { system_code?: string; name?: string; parent_id?: string }) => void; canCreate: boolean }) {
+function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: CreateInitial) => void; canCreate: boolean }) {
   const navigate = useNavigate();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);
@@ -1323,11 +1332,11 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: { s
         <div className="mt-2 border-2 border-amber-300 bg-amber-50 rounded-lg p-2.5 space-y-2">
           <div className="text-sm text-amber-900 font-medium">השם "{exactNameMatch.name}" כבר קיים. מה לפתוח?</div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => onOpenCreate({ name: v })}
+            <button onClick={() => onOpenCreate({ name: v, createMode: "root" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
               <Plus className="h-3 w-3" />פתח אב-מערכת חדשה
             </button>
-            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id })}
+            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id, parent: exactNameMatch, createMode: "sub" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
               <CornerUpRight className="h-3 w-3" />פתח תת-מערכת תחת הקיימת
             </button>

@@ -974,7 +974,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
               autoComplete="off"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-            {suggestions.length > 0 && form.name.trim().length >= 2 && (
+            {suggestions.length > 0 && form.name.trim().length >= 2 && !matchedParent && (
               <div className="absolute z-10 left-0 right-0 mt-1 bg-popover border border-border rounded-lg shadow-lg max-h-48 overflow-y-auto">
                 {suggestions.map((s: any) => (
                   <button type="button" key={s.id}

@@ -55,18 +55,6 @@ const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab
 function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
-
-  function copyToClipboard(value: string, key: string, label: string) {
-    navigator.clipboard.writeText(value)
-      .then(() => {
-        toast.success(`${label} הועתק`);
-        setCopiedKey(key);
-        setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
-      })
-      .catch(() => toast.error("ההעתקה נכשלה"));
-  }
-
   const listFn = useServerFn(listSystems);
   const agentsFn = useServerFn(listAgents);
   const meFn = useServerFn(getMyRole);
@@ -975,6 +963,18 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
 
 function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  function copyToClipboard(value: string, key: string, label: string) {
+    navigator.clipboard.writeText(value)
+      .then(() => {
+        toast.success(`${label} הועתק`);
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
+      })
+      .catch(() => toast.error("ההעתקה נכשלה"));
+  }
+
   const cardCls = statusCardClasses(r.status);
   const openedAt = r.created_at
     ? new Intl.DateTimeFormat("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date(r.created_at))

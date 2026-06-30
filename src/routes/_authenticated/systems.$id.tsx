@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
@@ -68,6 +68,18 @@ function SystemDetail() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  function copyToClipboard(value: string, key: string, label: string) {
+    navigator.clipboard.writeText(value)
+      .then(() => {
+        toast.success(`${label} הועתק`);
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
+      })
+      .catch(() => toast.error("ההעתקה נכשלה"));
+  }
+
   const getFn = useServerFn(getSystem);
   const agentsFn = useServerFn(listAgents);
   const mainsFn = useServerFn(listMainSystems);
@@ -265,16 +277,34 @@ function SystemDetail() {
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             {s.system_code && (
-              <a href={`tel:${buildDialNumber(s.system_code)}`}
-                className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
-                <Phone className="h-4 w-4" />חיוג {s.system_code}
-              </a>
+              <div className="flex items-center gap-1">
+                <a href={`tel:${buildDialNumber(s.system_code)}`}
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
+                  <Phone className="h-4 w-4" />חיוג {s.system_code}
+                </a>
+                <button onClick={() => copyToClipboard(s.system_code, "code", "מזהה המערכת")}
+                  title="העתק מזהה מערכת"
+                  className="p-2 border border-border rounded-lg hover:bg-accent text-muted-foreground">
+                  {copiedKey === "code"
+                    ? <Check className="h-4 w-4 text-emerald-600" />
+                    : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
             )}
             {s.caller_phone && (
-              <a href={`tel:${buildDialNumber(s.caller_phone)}`}
-                className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700">
-                <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
-              </a>
+              <div className="flex items-center gap-1">
+                <a href={`tel:${buildDialNumber(s.caller_phone)}`}
+                  className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700">
+                  <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
+                </a>
+                <button onClick={() => copyToClipboard(s.caller_phone, "caller", "מספר הפונה")}
+                  title="העתק מספר פונה"
+                  className="p-2 border border-border rounded-lg hover:bg-accent text-muted-foreground">
+                  {copiedKey === "caller"
+                    ? <Check className="h-4 w-4 text-emerald-600" />
+                    : <Copy className="h-4 w-4" />}
+                </button>
+              </div>
             )}
             {s.phone && (
               <a href={`tel:${s.phone}`}

@@ -117,6 +117,8 @@ function Dashboard() {
     queryKey: ["statusCounts", agentId, period],
     queryFn: () => statusCountsFn({ data: { agentId: agentId || null, period: period || null } }),
   });
+  const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => !isSpecialWorkflowStatus(s.value)), [statusSettings]);
+  const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => isSpecialWorkflowStatus(s.value)), [statusSettings]);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -337,19 +339,27 @@ function Dashboard() {
   }
 
   function exportCrmXlsx(rows: any[], label: string) {
-    const filteredRows = rows.filter((r: any) => r.status === "to_block" || r.status === "to_open");
-    if (!filteredRows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
-    const data = filteredRows.map((r: any) => ({
-      phone_number: buildDialNumber(r.system_code),
-      caller_id: buildDialNumber(r.caller_phone || r.phone || r.system_code),
-      active: 1,
-      call_type: "ALL",
-      status: r.status === "to_block" ? "BLOCKED" : "OPEN",
+    const makeRows = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN") => crmRows.map((r: any) => ({
+      ID: buildDialNumber(r.system_code),
+      "שם מערכת": r.name ?? "",
+      "1": 1,
+      ALL: "ALL",
+      סטטוס: crmStatus,
     }));
-    const ws = XLSX.utils.json_to_sheet(data, { header: ["phone_number", "caller_id", "active", "call_type", "status"] });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "CRM");
-    XLSX.writeFile(wb, `crm_block_open_${label}.xlsx`);
+    const write = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN", fileLabel: string) => {
+      if (!crmRows.length) return false;
+      const ws = XLSX.utils.json_to_sheet(makeRows(crmRows, crmStatus), { header: ["ID", "שם מערכת", "1", "ALL", "סטטוס"] });
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
+      XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);
+      return true;
+    };
+    const blockRows = rows.filter((r: any) => r.status === "to_block");
+    const openRows = rows.filter((r: any) => r.status === "to_open");
+    const wroteBlock = write(blockRows, "BLOCKED", "לביצוע_חסימה");
+    const wroteOpen = write(openRows, "OPEN", "לביצוע_פתיחה");
+    if (!wroteBlock && !wroteOpen) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
+    toast.success(`נוצרו ${Number(wroteBlock) + Number(wroteOpen)} קבצי לביצוע חסימה/פתיחה`);
   }
 
   function exportFullXlsx(rows: any[], label: string) {
@@ -461,18 +471,9 @@ function Dashboard() {
       <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAgent} />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        {STATUS_OPTIONS.map((s) => {
-          const active = status === s.value;
-          return (
-            <button key={s.value} type="button"
-              onClick={() => setStatus(active ? "" : s.value)}
-              className={`border-2 rounded-lg p-2 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
-              <div className="text-[11px] opacity-80 truncate">{s.label}</div>
-              <div className="text-lg font-bold mt-0.5">{stats[s.value] ?? 0}</div>
-            </button>
-          );
-        })}
+      <div className="space-y-3">
+        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} />
+        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} />
       </div>
 
       {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
@@ -1215,7 +1216,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
                 { v: "xlsx", l: "Excel מלא" },
                 { v: "csv", l: "CSV" },
                 { v: "pdf", l: "PDF להדפסה" },
-                { v: "crm", l: "Excel CRM (חסום/פתוח)" },
+                { v: "crm", l: "לביצוע חסימה/פתיחה" },
               ] as { v: ExportFormat; l: string }[]).map((f) => (
                 <button key={f.v} type="button" onClick={() => setFormat(f.v)}
                   className={`text-sm py-2 rounded-lg border ${format === f.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>

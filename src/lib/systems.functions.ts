@@ -849,7 +849,6 @@ export const detectMissingSystemSeries = createServerFn({ method: "POST" })
     const width = Math.max(String(data.start).replace(/\D/g, "").length, String(data.end).replace(/\D/g, "").length);
     const prefix = sanitizeOptional(data.prefix ?? "") ?? "";
     const wanted = Array.from({ length: count }, (_, i) => `${prefix}${String(startNum + i).padStart(width, "0")}`);
-    const normalizedWanted = new Map(wanted.map((code) => [code.replace(/\D/g, "").replace(/^972/, "").replace(/^0+/, ""), code]));
 
     const { data: rows, error } = await context.supabase
       .from("systems")

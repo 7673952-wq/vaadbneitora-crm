@@ -20,6 +20,8 @@ const STATUS_VALUES = [
   "pending_check_close", "pending_check_open", "open", "to_open", "closed",
   "to_block", "block_from_root", "problem", "open_only_bimot", "close_only_bimot",
   "open_in_simahedrin", "close_in_simahedrin", "send_to_yosela",
+  "sent_to_yosela", "blocked_from_root", "send_to_committee",
+  "sent_to_committee", "blocked_in_committee",
 ] as const;
 const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
@@ -881,6 +883,11 @@ export const importSystems = createServerFn({ method: "POST" })
       "לפתוח רק בימות": "open_only_bimot", "פתוח רק בימות": "close_only_bimot",
       "לפתיחה בסימהדרין": "open_in_simahedrin", "לחסימה בסימהדרין": "close_in_simahedrin",
       "לשלוח ליוסלה": "send_to_yosela",
+      "נשלח ליוסלה": "sent_to_yosela",
+      "נחסם מהשורש": "blocked_from_root",
+      "לשלוח לועדה": "send_to_committee", "לשלוח לוועדה": "send_to_committee",
+      "נשלח לועדה": "sent_to_committee", "נשלח לוועדה": "sent_to_committee",
+      "נחסם בועדה": "blocked_in_committee", "נחסם בוועדה": "blocked_in_committee",
     };
     for (const [k, v] of Object.entries(DEFAULTS)) if (!labelToKey.has(k)) labelToKey.set(k, v);
 

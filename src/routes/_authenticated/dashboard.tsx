@@ -15,7 +15,7 @@ import {
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square } from "lucide-react";
+import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square, Copy, Check } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import * as XLSX from "xlsx";
@@ -55,6 +55,18 @@ const PIE_COLORS = ["#059669", "#84cc16", "#dc2626", "#fb7185", "#f59e0b", "#eab
 function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  function copyToClipboard(value: string, key: string, label: string) {
+    navigator.clipboard.writeText(value)
+      .then(() => {
+        toast.success(`${label} הועתק`);
+        setCopiedKey(key);
+        setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 1500);
+      })
+      .catch(() => toast.error("ההעתקה נכשלה"));
+  }
+
   const listFn = useServerFn(listSystems);
   const agentsFn = useServerFn(listAgents);
   const meFn = useServerFn(getMyRole);
@@ -1045,19 +1057,37 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
         <div className="flex items-center justify-between gap-2">
           <span className="truncate">נציג: {r.agent?.display_name ?? "לא משויך"}</span>
           {r.system_code && (
-            <a href={`tel:${buildDialNumber(r.system_code)}`}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-mono">
-              <Phone className="h-2.5 w-2.5" />{r.system_code}
-            </a>
+            <div className="flex items-center gap-1">
+              <a href={`tel:${buildDialNumber(r.system_code)}`}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-mono">
+                <Phone className="h-2.5 w-2.5" />{r.system_code}
+              </a>
+              <button onClick={() => copyToClipboard(r.system_code, `${r.id}-code`, "מזהה המערכת")}
+                title="העתק מזהה מערכת"
+                className="p-1 rounded border border-border hover:bg-accent">
+                {copiedKey === `${r.id}-code`
+                  ? <Check className="h-2.5 w-2.5 text-emerald-600" />
+                  : <Copy className="h-2.5 w-2.5" />}
+              </button>
+            </div>
           )}
         </div>
         {r.caller_phone && (
           <div className="flex items-center justify-between gap-2">
             <span className="truncate">פונה: {r.caller_phone}</span>
-            <a href={`tel:${buildDialNumber(r.caller_phone)}`}
-              className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700 font-mono">
-              <Phone className="h-2.5 w-2.5" />{r.caller_phone}
-            </a>
+            <div className="flex items-center gap-1">
+              <a href={`tel:${buildDialNumber(r.caller_phone)}`}
+                className="flex items-center gap-1 px-2 py-0.5 rounded bg-sky-600 text-white hover:bg-sky-700 font-mono">
+                <Phone className="h-2.5 w-2.5" />{r.caller_phone}
+              </a>
+              <button onClick={() => copyToClipboard(r.caller_phone, `${r.id}-caller`, "מספר הפונה")}
+                title="העתק מספר פונה"
+                className="p-1 rounded border border-border hover:bg-accent">
+                {copiedKey === `${r.id}-caller`
+                  ? <Check className="h-2.5 w-2.5 text-emerald-600" />
+                  : <Copy className="h-2.5 w-2.5" />}
+              </button>
+            </div>
           </div>
         )}
         {openedAt && (

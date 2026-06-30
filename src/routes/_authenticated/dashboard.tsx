@@ -81,6 +81,7 @@ function Dashboard() {
   const [createInitial, setCreateInitial] = useState<CreateInitial>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showMissingSeries, setShowMissingSeries] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
     if (typeof window === "undefined") return "list";
     return (window.localStorage.getItem("dashboardViewMode") as any) || "list";
@@ -451,6 +452,12 @@ function Dashboard() {
             />
           )}
           {me?.isAdmin && (
+            <button onClick={() => setShowMissingSeries(true)}
+              className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Search className="h-4 w-4 text-emerald-600" />השלמת סדרות
+            </button>
+          )}
+          {me?.isAdmin && (
             <>
               {me?.isSuperAdmin && (
                 <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
@@ -700,6 +707,17 @@ function Dashboard() {
         />
       )}
 
+      {showMissingSeries && me?.isAdmin && (
+        <MissingSeriesModal
+          onClose={() => setShowMissingSeries(false)}
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ["systems"] });
+            qc.invalidateQueries({ queryKey: ["statusCounts"] });
+            setShowMissingSeries(false);
+          }}
+        />
+      )}
+
     </div>
   );
 }
@@ -728,6 +746,133 @@ function StatusCards({ title, options, activeStatus, stats, onSelect }: {
             </button>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+
+function MissingSeriesModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const detectFn = useServerFn(detectMissingSystemSeries);
+  const createFn = useServerFn(createMissingSystems);
+  const [prefix, setPrefix] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [namePrefix, setNamePrefix] = useState("מערכת");
+  const [status, setStatus] = useState("open");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ missing: string[]; total: number; existing: number } | null>(null);
+
+  async function detect() {
+    if (!start.trim() || !end.trim()) { toast.error("יש להזין מזהה התחלה וסיום"); return; }
+    setBusy(true);
+    try {
+      const res: any = await detectFn({ data: { prefix: prefix.trim(), start: start.trim(), end: end.trim() } });
+      setResult(res);
+      toast.success(`נמצאו ${res.missing.length} מערכות חסרות מתוך ${res.total}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "בדיקת הסדרה נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createMissing() {
+    if (!result?.missing?.length) return;
+    if (result.missing.length > 500) {
+      toast.error("יצירה אוטומטית מוגבלת ל-500 מערכות בכל פעולה. צמצם את הטווח.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res: any = await createFn({ data: { codes: result.missing, namePrefix: namePrefix.trim() || "מערכת", status } });
+      toast.success(`נוצרו ${res.createdCount} מערכות חסרות`);
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.message ?? "יצירת המערכות נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+        <div className="p-5 border-b border-border flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">זיהוי סדרות מזהים והשלמת מערכות חסרות</h2>
+            <p className="text-sm text-muted-foreground mt-1">הזן טווח מספרים, והמערכת תציג אילו מזהים חסרים ב-CRM.</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid sm:grid-cols-3 gap-3">
+            <label className="text-sm space-y-1">
+              <span className="font-medium">קידומת אופציונלית</span>
+              <input value={prefix} onChange={(e) => { setPrefix(e.target.value); setResult(null); }} placeholder="לדוגמה 02"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="font-medium">מזהה התחלה</span>
+              <input value={start} onChange={(e) => { setStart(e.target.value); setResult(null); }} placeholder="1000"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="font-medium">מזהה סיום</span>
+              <input value={end} onChange={(e) => { setEnd(e.target.value); setResult(null); }} placeholder="1200"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-sm space-y-1">
+              <span className="font-medium">שם בסיס למערכות שייווצרו</span>
+              <input value={namePrefix} onChange={(e) => setNamePrefix(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="font-medium">סטטוס לפתיחה אוטומטית</span>
+              <select value={status} onChange={(e) => setStatus(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button disabled={busy} onClick={detect}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+              {busy ? "בודק..." : "בדוק חסרים"}
+            </button>
+            {result && result.missing.length > 0 && (
+              <button disabled={busy || result.missing.length > 500} onClick={createMissing}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50">
+                צור את החסרים ({Math.min(result.missing.length, 500)})
+              </button>
+            )}
+          </div>
+
+          {result && (
+            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-center text-sm">
+                <div className="rounded-lg bg-background p-3"><div className="text-muted-foreground">סה״כ בטווח</div><div className="text-xl font-bold">{result.total}</div></div>
+                <div className="rounded-lg bg-background p-3"><div className="text-muted-foreground">קיימים</div><div className="text-xl font-bold text-emerald-700">{result.existing}</div></div>
+                <div className="rounded-lg bg-background p-3"><div className="text-muted-foreground">חסרים</div><div className="text-xl font-bold text-red-700">{result.missing.length}</div></div>
+              </div>
+              {result.missing.length > 0 ? (
+                <div>
+                  <div className="text-sm font-medium mb-2">מזהים חסרים:</div>
+                  <div className="max-h-48 overflow-auto rounded-lg border border-border bg-background p-2 flex flex-wrap gap-1">
+                    {result.missing.map((code) => <span key={code} className="text-xs font-mono px-2 py-1 rounded bg-red-50 text-red-800 border border-red-100">{code}</span>)}
+                  </div>
+                  {result.missing.length > 500 && <p className="text-xs text-red-700 mt-2">יש יותר מ-500 חסרים. צמצם את הטווח כדי ליצור אוטומטית.</p>}
+                </div>
+              ) : (
+                <div className="text-sm text-emerald-800 font-medium">לא חסרה אף מערכת בטווח הזה.</div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

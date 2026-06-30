@@ -1965,3 +1965,4 @@ function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatu
     </div>
   );
 }
+

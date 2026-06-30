@@ -340,22 +340,24 @@ function Dashboard() {
   }
 
   function exportCrmXlsx(rows: any[], label: string) {
-    const makeRows = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN") => crmRows.map((r: any) => ({
-      ID: buildDialNumber(r.system_code),
-      "שם מערכת": r.name ?? "",
-      "1": 1,
-      ALL: "ALL",
-      סטטוס: crmStatus,
-    }));
+    // CRM format must be raw rows with NO headers:
+    // A=ID, B=שם מערכת, C=1, D=ALL, E=BLOCKED/OPEN
+    const makeRows = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN") => crmRows.map((r: any) => [
+      buildDialNumber(r.system_code),
+      r.name ?? "",
+      1,
+      "ALL",
+      crmStatus,
+    ]);
     const write = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN", fileLabel: string) => {
       if (!crmRows.length) return false;
-      const ws = XLSX.utils.json_to_sheet(makeRows(crmRows, crmStatus), { header: ["ID", "שם מערכת", "1", "ALL", "סטטוס"] });
+      const ws = XLSX.utils.aoa_to_sheet(makeRows(crmRows, crmStatus));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
       XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);
       return true;
     };
-    const blockRows = rows.filter((r: any) => r.status === "to_block");
+    const blockRows = rows.filter((r: any) => r.status === "to_block" || r.status === "block_from_root");
     const openRows = rows.filter((r: any) => r.status === "to_open");
     const wroteBlock = write(blockRows, "BLOCKED", "לביצוע_חסימה");
     const wroteOpen = write(openRows, "OPEN", "לביצוע_פתיחה");
@@ -1074,6 +1076,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
+  const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);
   // When a duplicate name is detected the user must choose: create a sub-system
   // under the matched parent, or open a new root with the same name.
   const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
@@ -1091,9 +1094,13 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
+        const exactRoots = (rows ?? []).filter((r: any) =>
+          r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id,
+        );
         const exact = initial?.parent_id
           ? ((rows ?? []).find((r: any) => r.id === initial.parent_id) ?? initial.parent ?? null)
-          : (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+          : exactRoots[0];
+        setMatchedParentOptions(initial?.parent_id && exact ? [exact] : exactRoots);
         setMatchedParent(exact ?? null);
         setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
       } catch { /* ignore */ }
@@ -1174,6 +1181,20 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
                   <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
                   <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>
                 </label>
+                {createMode === "sub" && matchedParentOptions.length > 1 && (
+                  <select
+                    value={matchedParent.id}
+                    onChange={(e) => {
+                      const chosen = matchedParentOptions.find((p: any) => p.id === e.target.value);
+                      if (chosen) setMatchedParent(chosen);
+                    }}
+                    className="w-full rounded-md border border-amber-300 bg-white px-2 py-1 text-xs"
+                  >
+                    {matchedParentOptions.map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.system_code} · {p.name}</option>
+                    ))}
+                  </select>
+                )}
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="createMode" checked={createMode === "root"} onChange={() => setCreateMode("root")} />
                   <span>פתח אב-מערכת חדשה עם אותו שם</span>
@@ -1453,7 +1474,8 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   const v = query.trim();
   const nothingFound = v.length >= 2 && codeResult !== undefined && nameResults !== undefined
     && !codeResult && (nameResults?.length ?? 0) === 0;
-  const exactNameMatch = nameResults?.find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+  const exactNameMatches = (nameResults ?? []).filter((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+  const exactNameMatch = exactNameMatches[0];
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
@@ -1511,10 +1533,12 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
               <Plus className="h-3 w-3" />פתח אב-מערכת חדשה
             </button>
-            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id, parent: exactNameMatch, createMode: "sub" })}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
-              <CornerUpRight className="h-3 w-3" />פתח תת-מערכת תחת הקיימת
-            </button>
+            {exactNameMatches.slice(0, 5).map((parent: any) => (
+              <button key={parent.id} onClick={() => onOpenCreate({ name: v, parent_id: parent.id, parent, createMode: "sub" })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
+                <CornerUpRight className="h-3 w-3" />תת תחת {parent.system_code}
+              </button>
+            ))}
           </div>
         </div>
       )}

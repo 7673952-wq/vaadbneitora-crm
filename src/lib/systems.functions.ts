@@ -20,6 +20,8 @@ const STATUS_VALUES = [
   "pending_check_close", "pending_check_open", "open", "to_open", "closed",
   "to_block", "block_from_root", "problem", "open_only_bimot", "close_only_bimot",
   "open_in_simahedrin", "close_in_simahedrin", "send_to_yosela",
+  "sent_to_yosela", "blocked_from_root", "send_to_committee",
+  "sent_to_committee", "blocked_in_committee",
 ] as const;
 const statusSchema = z.enum(STATUS_VALUES);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
@@ -826,6 +828,85 @@ export const listMainSystems = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
+export const detectMissingSystemSeries = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      start: z.string().min(1).max(60),
+      end: z.string().min(1).max(60),
+      prefix: z.string().max(20).optional(),
+    }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    const startNum = Number(String(data.start).replace(/\D/g, ""));
+    const endNum = Number(String(data.end).replace(/\D/g, ""));
+    if (!Number.isSafeInteger(startNum) || !Number.isSafeInteger(endNum) || endNum < startNum) {
+      throw new Error("טווח מזהים לא תקין");
+    }
+    const count = endNum - startNum + 1;
+    if (count > 5000) throw new Error("טווח גדול מדי — עד 5,000 מזהים בבדיקה אחת");
+
+    const width = Math.max(String(data.start).replace(/\D/g, "").length, String(data.end).replace(/\D/g, "").length);
+    const prefix = sanitizeOptional(data.prefix ?? "") ?? "";
+    const wanted = Array.from({ length: count }, (_, i) => `${prefix}${String(startNum + i).padStart(width, "0")}`);
+
+    const { data: rows, error } = await context.supabase
+      .from("systems")
+      .select("system_code")
+      .in("system_code", wanted as any);
+    if (error) throw new Error(error.message);
+
+    const existingExact = new Set((rows ?? []).map((r: any) => String(r.system_code)));
+    const missing = wanted.filter((code) => !existingExact.has(code));
+
+    // Also catch equivalent phone-style codes that differ only by leading 0/972.
+    if (missing.length > 0) {
+      const { data: allRows, error: allErr } = await context.supabase
+        .from("systems")
+        .select("system_code")
+        .limit(10000);
+      if (allErr) throw new Error(allErr.message);
+      const existingNormalized = new Set((allRows ?? [])
+        .map((r: any) => String(r.system_code ?? "").replace(/\D/g, "").replace(/^972/, "").replace(/^0+/, ""))
+        .filter(Boolean));
+      const missingNormalized = missing.filter((code) => !existingNormalized.has(code.replace(/\D/g, "").replace(/^972/, "").replace(/^0+/, "")));
+      return { missing: missingNormalized, total: count, existing: count - missingNormalized.length };
+    }
+
+    return { missing, total: count, existing: count - missing.length };
+  });
+
+export const createMissingSystems = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) =>
+    z.object({
+      codes: z.array(z.string().min(1).max(60)).min(1).max(500),
+      namePrefix: z.string().min(1).max(120).default("מערכת"),
+      status: statusSchema.default("open"),
+    }).parse(d ?? {}),
+  )
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const isAdmin = await userHasRole(context.userId, "admin");
+    if (!isAdmin) throw new Error("רק מנהל יכול להשלים סדרות מזהים");
+    const rows = data.codes.map((code) => {
+      const normalized = normalizeSystemCode(code);
+      return {
+        system_code: normalized,
+        name: sanitizeText(`${data.namePrefix} ${normalized}`.trim()),
+        status: data.status,
+        assigned_agent_id: context.userId,
+        notes: "נוצר אוטומטית מהשלמת סדרת מזהים",
+      };
+    });
+    const { data: created, error } = await context.supabase
+      .from("systems")
+      .insert(rows)
+      .select("id, system_code, name");
+    if (error) throw new Error(error.message);
+    return { createdCount: created?.length ?? 0 };
+  });
+
 export const findSystemByName = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
@@ -881,6 +962,11 @@ export const importSystems = createServerFn({ method: "POST" })
       "לפתוח רק בימות": "open_only_bimot", "פתוח רק בימות": "close_only_bimot",
       "לפתיחה בסימהדרין": "open_in_simahedrin", "לחסימה בסימהדרין": "close_in_simahedrin",
       "לשלוח ליוסלה": "send_to_yosela",
+      "נשלח ליוסלה": "sent_to_yosela",
+      "נחסם מהשורש": "blocked_from_root",
+      "לשלוח לועדה": "send_to_committee", "לשלוח לוועדה": "send_to_committee",
+      "נשלח לועדה": "sent_to_committee", "נשלח לוועדה": "sent_to_committee",
+      "נחסם בועדה": "blocked_in_committee", "נחסם בוועדה": "blocked_in_committee",
     };
     for (const [k, v] of Object.entries(DEFAULTS)) if (!labelToKey.has(k)) labelToKey.set(k, v);
 

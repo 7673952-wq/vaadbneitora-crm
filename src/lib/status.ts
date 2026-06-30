@@ -7,7 +7,7 @@
 
 export type StatusOption = { value: string; label: string; tone: string; is_handled?: boolean; assigned_agent_ids?: string[] };
 
-const DEFAULT_HANDLED = new Set(["open", "closed", "open_only_bimot"]);
+const DEFAULT_HANDLED = new Set(["open", "closed", "open_only_bimot", "sent_to_yosela", "blocked_from_root", "sent_to_committee", "blocked_in_committee"]);
 // Status changes that DON'T require a "reason" prompt.
 export const NO_REASON_STATUSES = new Set(["open", "closed", "open_only_bimot"]);
 
@@ -25,7 +25,25 @@ const DEFAULT_STATUS_OPTIONS: StatusOption[] = [
   { value: "open_in_simahedrin", label: "לפתיחה בסימהדרין", tone: "cyan" },
   { value: "close_in_simahedrin", label: "לחסימה בסימהדרין", tone: "violet" },
   { value: "send_to_yosela", label: "לשלוח ליוסלה", tone: "fuchsia" },
+  { value: "sent_to_yosela", label: "נשלח ליוסלה", tone: "pink" },
+  { value: "blocked_from_root", label: "נחסם מהשורש", tone: "darkred" },
+  { value: "send_to_committee", label: "לשלוח לוועדה", tone: "purple" },
+  { value: "sent_to_committee", label: "נשלח לוועדה", tone: "violet" },
+  { value: "blocked_in_committee", label: "נחסם בוועדה", tone: "black" },
 ].map((s) => ({ ...s, is_handled: DEFAULT_HANDLED.has(s.value), assigned_agent_ids: [] as string[] }));
+
+export const SPECIAL_WORKFLOW_STATUS_KEYS = [
+  "send_to_yosela",
+  "sent_to_yosela",
+  "blocked_from_root",
+  "send_to_committee",
+  "sent_to_committee",
+  "blocked_in_committee",
+] as const;
+
+export function isSpecialWorkflowStatus(status: string): boolean {
+  return (SPECIAL_WORKFLOW_STATUS_KEYS as readonly string[]).includes(status);
+}
 
 // Mutable runtime arrays/maps. Imported by reference everywhere.
 export const STATUS_OPTIONS: StatusOption[] = [...DEFAULT_STATUS_OPTIONS];

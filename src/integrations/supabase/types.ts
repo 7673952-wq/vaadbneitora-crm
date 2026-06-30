@@ -359,6 +359,11 @@ export type Database = {
         | "block_from_root"
         | "to_block"
         | "to_open"
+        | "sent_to_yosela"
+        | "blocked_from_root"
+        | "send_to_committee"
+        | "sent_to_committee"
+        | "blocked_in_committee"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -501,6 +506,11 @@ export const Constants = {
         "block_from_root",
         "to_block",
         "to_open",
+        "sent_to_yosela",
+        "blocked_from_root",
+        "send_to_committee",
+        "sent_to_committee",
+        "blocked_in_committee",
       ],
     },
   },

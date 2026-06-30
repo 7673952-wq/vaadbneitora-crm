@@ -4,14 +4,14 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem,
-  importSystems, getStatusCounts,
+  importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, applyStatusSettings, NO_REASON_STATUSES, type SystemStatus,
-  CALLER_SOURCES, buildDialNumber,
+  CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -81,6 +81,7 @@ function Dashboard() {
   const [createInitial, setCreateInitial] = useState<CreateInitial>({});
   const [showExport, setShowExport] = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showMissingSeries, setShowMissingSeries] = useState(false);
   const [viewMode, setViewMode] = useState<"list" | "kanban">(() => {
     if (typeof window === "undefined") return "list";
     return (window.localStorage.getItem("dashboardViewMode") as any) || "list";
@@ -117,6 +118,8 @@ function Dashboard() {
     queryKey: ["statusCounts", agentId, period],
     queryFn: () => statusCountsFn({ data: { agentId: agentId || null, period: period || null } }),
   });
+  const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => !isSpecialWorkflowStatus(s.value)), [statusSettings]);
+  const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => isSpecialWorkflowStatus(s.value)), [statusSettings]);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -337,19 +340,29 @@ function Dashboard() {
   }
 
   function exportCrmXlsx(rows: any[], label: string) {
-    const filteredRows = rows.filter((r: any) => r.status === "to_block" || r.status === "to_open");
-    if (!filteredRows.length) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
-    const data = filteredRows.map((r: any) => ({
-      phone_number: buildDialNumber(r.system_code),
-      caller_id: buildDialNumber(r.caller_phone || r.phone || r.system_code),
-      active: 1,
-      call_type: "ALL",
-      status: r.status === "to_block" ? "BLOCKED" : "OPEN",
-    }));
-    const ws = XLSX.utils.json_to_sheet(data, { header: ["phone_number", "caller_id", "active", "call_type", "status"] });
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "CRM");
-    XLSX.writeFile(wb, `crm_block_open_${label}.xlsx`);
+    // CRM format must be raw rows with NO headers:
+    // A=ID, B=שם מערכת, C=1, D=ALL, E=BLOCKED/OPEN
+    const makeRows = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN") => crmRows.map((r: any) => [
+      buildDialNumber(r.system_code),
+      r.name ?? "",
+      1,
+      "ALL",
+      crmStatus,
+    ]);
+    const write = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN", fileLabel: string) => {
+      if (!crmRows.length) return false;
+      const ws = XLSX.utils.aoa_to_sheet(makeRows(crmRows, crmStatus));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
+      XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);
+      return true;
+    };
+    const blockRows = rows.filter((r: any) => r.status === "to_block" || r.status === "block_from_root");
+    const openRows = rows.filter((r: any) => r.status === "to_open");
+    const wroteBlock = write(blockRows, "BLOCKED", "לביצוע_חסימה");
+    const wroteOpen = write(openRows, "OPEN", "לביצוע_פתיחה");
+    if (!wroteBlock && !wroteOpen) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
+    toast.success(`נוצרו ${Number(wroteBlock) + Number(wroteOpen)} קבצי לביצוע חסימה/פתיחה`);
   }
 
   function exportFullXlsx(rows: any[], label: string) {
@@ -441,6 +454,12 @@ function Dashboard() {
             />
           )}
           {me?.isAdmin && (
+            <button onClick={() => setShowMissingSeries(true)}
+              className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Search className="h-4 w-4 text-emerald-600" />השלמת סדרות
+            </button>
+          )}
+          {me?.isAdmin && (
             <>
               {me?.isSuperAdmin && (
                 <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
@@ -461,18 +480,9 @@ function Dashboard() {
       <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAgent} />
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
-        {STATUS_OPTIONS.map((s) => {
-          const active = status === s.value;
-          return (
-            <button key={s.value} type="button"
-              onClick={() => setStatus(active ? "" : s.value)}
-              className={`border-2 rounded-lg p-2 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
-              <div className="text-[11px] opacity-80 truncate">{s.label}</div>
-              <div className="text-lg font-bold mt-0.5">{stats[s.value] ?? 0}</div>
-            </button>
-          );
-        })}
+      <div className="space-y-3">
+        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} />
+        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} />
       </div>
 
       {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
@@ -699,6 +709,173 @@ function Dashboard() {
         />
       )}
 
+      {showMissingSeries && me?.isAdmin && (
+        <MissingSeriesModal
+          onClose={() => setShowMissingSeries(false)}
+          onDone={() => {
+            qc.invalidateQueries({ queryKey: ["systems"] });
+            qc.invalidateQueries({ queryKey: ["statusCounts"] });
+            setShowMissingSeries(false);
+          }}
+        />
+      )}
+
+    </div>
+  );
+}
+
+
+function StatusCards({ title, options, activeStatus, stats, onSelect }: {
+  title: string;
+  options: Array<{ value: string; label: string }>;
+  activeStatus: string;
+  stats: Record<string, number>;
+  onSelect: (value: string) => void;
+}) {
+  if (!options.length) return null;
+  return (
+    <div>
+      <div className="text-xs font-semibold text-muted-foreground mb-1.5">{title}</div>
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {options.map((s) => {
+          const active = activeStatus === s.value;
+          return (
+            <button key={s.value} type="button"
+              onClick={() => onSelect(s.value)}
+              className={`border-2 rounded-lg p-2 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
+              <div className="text-[11px] opacity-80 truncate">{s.label}</div>
+              <div className="text-lg font-bold mt-0.5">{stats[s.value] ?? 0}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+
+function MissingSeriesModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
+  const detectFn = useServerFn(detectMissingSystemSeries);
+  const createFn = useServerFn(createMissingSystems);
+  const [prefix, setPrefix] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [namePrefix, setNamePrefix] = useState("מערכת");
+  const [status, setStatus] = useState("open");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ missing: string[]; total: number; existing: number } | null>(null);
+
+  async function detect() {
+    if (!start.trim() || !end.trim()) { toast.error("יש להזין מזהה התחלה וסיום"); return; }
+    setBusy(true);
+    try {
+      const res: any = await detectFn({ data: { prefix: prefix.trim(), start: start.trim(), end: end.trim() } });
+      setResult(res);
+      toast.success(`נמצאו ${res.missing.length} מערכות חסרות מתוך ${res.total}`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "בדיקת הסדרה נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createMissing() {
+    if (!result?.missing?.length) return;
+    if (result.missing.length > 500) {
+      toast.error("יצירה אוטומטית מוגבלת ל-500 מערכות בכל פעולה. צמצם את הטווח.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res: any = await createFn({ data: { codes: result.missing, namePrefix: namePrefix.trim() || "מערכת", status } });
+      toast.success(`נוצרו ${res.createdCount} מערכות חסרות`);
+      onDone();
+    } catch (e: any) {
+      toast.error(e?.message ?? "יצירת המערכות נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-auto">
+        <div className="p-5 border-b border-border flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">זיהוי סדרות מזהים והשלמת מערכות חסרות</h2>
+            <p className="text-sm text-muted-foreground mt-1">הזן טווח מספרים, והמערכת תציג אילו מזהים חסרים ב-CRM.</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="grid sm:grid-cols-3 gap-3">
+            <label className="text-sm space-y-1">
+              <span className="font-medium">קידומת אופציונלית</span>
+              <input value={prefix} onChange={(e) => { setPrefix(e.target.value); setResult(null); }} placeholder="לדוגמה 02"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="font-medium">מזהה התחלה</span>
+              <input value={start} onChange={(e) => { setStart(e.target.value); setResult(null); }} placeholder="1000"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="font-medium">מזהה סיום</span>
+              <input value={end} onChange={(e) => { setEnd(e.target.value); setResult(null); }} placeholder="1200"
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+          </div>
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <label className="text-sm space-y-1">
+              <span className="font-medium">שם בסיס למערכות שייווצרו</span>
+              <input value={namePrefix} onChange={(e) => setNamePrefix(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="font-medium">סטטוס לפתיחה אוטומטית</span>
+              <select value={status} onChange={(e) => setStatus(e.target.value)}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button disabled={busy} onClick={detect}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+              {busy ? "בודק..." : "בדוק חסרים"}
+            </button>
+            {result && result.missing.length > 0 && (
+              <button disabled={busy || result.missing.length > 500} onClick={createMissing}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50">
+                צור את החסרים ({Math.min(result.missing.length, 500)})
+              </button>
+            )}
+          </div>
+
+          {result && (
+            <div className="rounded-xl border border-border bg-muted/30 p-4 space-y-3">
+              <div className="grid grid-cols-3 gap-3 text-center text-sm">
+                <div className="rounded-lg bg-background p-3"><div className="text-muted-foreground">סה״כ בטווח</div><div className="text-xl font-bold">{result.total}</div></div>
+                <div className="rounded-lg bg-background p-3"><div className="text-muted-foreground">קיימים</div><div className="text-xl font-bold text-emerald-700">{result.existing}</div></div>
+                <div className="rounded-lg bg-background p-3"><div className="text-muted-foreground">חסרים</div><div className="text-xl font-bold text-red-700">{result.missing.length}</div></div>
+              </div>
+              {result.missing.length > 0 ? (
+                <div>
+                  <div className="text-sm font-medium mb-2">מזהים חסרים:</div>
+                  <div className="max-h-48 overflow-auto rounded-lg border border-border bg-background p-2 flex flex-wrap gap-1">
+                    {result.missing.map((code) => <span key={code} className="text-xs font-mono px-2 py-1 rounded bg-red-50 text-red-800 border border-red-100">{code}</span>)}
+                  </div>
+                  {result.missing.length > 500 && <p className="text-xs text-red-700 mt-2">יש יותר מ-500 חסרים. צמצם את הטווח כדי ליצור אוטומטית.</p>}
+                </div>
+              ) : (
+                <div className="text-sm text-emerald-800 font-medium">לא חסרה אף מערכת בטווח הזה.</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -899,6 +1076,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
+  const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);
   // When a duplicate name is detected the user must choose: create a sub-system
   // under the matched parent, or open a new root with the same name.
   const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
@@ -916,9 +1094,13 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
+        const exactRoots = (rows ?? []).filter((r: any) =>
+          r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id,
+        );
         const exact = initial?.parent_id
           ? ((rows ?? []).find((r: any) => r.id === initial.parent_id) ?? initial.parent ?? null)
-          : (rows ?? []).find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+          : exactRoots[0];
+        setMatchedParentOptions(initial?.parent_id && exact ? [exact] : exactRoots);
         setMatchedParent(exact ?? null);
         setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
       } catch { /* ignore */ }
@@ -999,6 +1181,20 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
                   <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
                   <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>
                 </label>
+                {createMode === "sub" && matchedParentOptions.length > 1 && (
+                  <select
+                    value={matchedParent.id}
+                    onChange={(e) => {
+                      const chosen = matchedParentOptions.find((p: any) => p.id === e.target.value);
+                      if (chosen) setMatchedParent(chosen);
+                    }}
+                    className="w-full rounded-md border border-amber-300 bg-white px-2 py-1 text-xs"
+                  >
+                    {matchedParentOptions.map((p: any) => (
+                      <option key={p.id} value={p.id}>{p.system_code} · {p.name}</option>
+                    ))}
+                  </select>
+                )}
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="createMode" checked={createMode === "root"} onChange={() => setCreateMode("root")} />
                   <span>פתח אב-מערכת חדשה עם אותו שם</span>
@@ -1215,7 +1411,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
                 { v: "xlsx", l: "Excel מלא" },
                 { v: "csv", l: "CSV" },
                 { v: "pdf", l: "PDF להדפסה" },
-                { v: "crm", l: "Excel CRM (חסום/פתוח)" },
+                { v: "crm", l: "לביצוע חסימה/פתיחה" },
               ] as { v: ExportFormat; l: string }[]).map((f) => (
                 <button key={f.v} type="button" onClick={() => setFormat(f.v)}
                   className={`text-sm py-2 rounded-lg border ${format === f.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
@@ -1278,7 +1474,8 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   const v = query.trim();
   const nothingFound = v.length >= 2 && codeResult !== undefined && nameResults !== undefined
     && !codeResult && (nameResults?.length ?? 0) === 0;
-  const exactNameMatch = nameResults?.find((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+  const exactNameMatches = (nameResults ?? []).filter((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+  const exactNameMatch = exactNameMatches[0];
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm">
@@ -1336,10 +1533,12 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
               <Plus className="h-3 w-3" />פתח אב-מערכת חדשה
             </button>
-            <button onClick={() => onOpenCreate({ name: v, parent_id: exactNameMatch.id, parent: exactNameMatch, createMode: "sub" })}
-              className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
-              <CornerUpRight className="h-3 w-3" />פתח תת-מערכת תחת הקיימת
-            </button>
+            {exactNameMatches.slice(0, 5).map((parent: any) => (
+              <button key={parent.id} onClick={() => onOpenCreate({ name: v, parent_id: parent.id, parent, createMode: "sub" })}
+                className="inline-flex items-center gap-1 px-3 py-1.5 border border-amber-400 text-amber-900 rounded-md text-xs font-medium hover:bg-amber-100">
+                <CornerUpRight className="h-3 w-3" />תת תחת {parent.system_code}
+              </button>
+            ))}
           </div>
         </div>
       )}

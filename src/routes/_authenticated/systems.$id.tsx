@@ -297,7 +297,7 @@ function SystemDetail() {
                   className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700">
                   <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
                 </a>
-                <button onClick={() => copyToClipboard(s.caller_phone, "caller", "מספר הפונה")}
+                <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
                   title="העתק מספר פונה"
                   className="p-2 border border-border rounded-lg hover:bg-accent text-muted-foreground">
                   {copiedKey === "caller"

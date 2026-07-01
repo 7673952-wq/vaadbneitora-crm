@@ -311,7 +311,7 @@ export const createSystem = createServerFn({ method: "POST" })
 export const updateSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {
-    id: string; status?: string; assigned_agent_id?: string | null;
+    id: string; status?: string; secondary_status?: string | null; assigned_agent_id?: string | null;
     name?: string; system_code?: string; notes?: string; phone?: string | null;
     caller_phone?: string | null; source?: string | null; audio_url?: string | null;
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
@@ -321,6 +321,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     z.object({
       id: z.string().uuid(),
       status: statusSchema.optional(),
+      secondary_status: statusSchema.nullable().optional(),
       assigned_agent_id: z.string().uuid().nullable().optional(),
       name: z.string().min(1).max(200).optional(),
       system_code: z.string().min(1).max(60).optional(),

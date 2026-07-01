@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({ meta: [{ title: "התחברות | CRM" }] }),
@@ -35,12 +36,12 @@ function AuthPage() {
         <form onSubmit={handleSignIn} className="bg-card border border-border rounded-2xl p-8 shadow-sm space-y-5">
           <div>
             <label className="text-sm font-medium block mb-2">דוא"ל</label>
-            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring" />
           </div>
           <div>
             <label className="text-sm font-medium block mb-2">סיסמה</label>
-            <input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
+            <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)}
               className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring" />
           </div>
           <button type="submit" disabled={loading}

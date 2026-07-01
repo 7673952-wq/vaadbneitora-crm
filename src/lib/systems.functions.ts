@@ -54,101 +54,33 @@ export const listSystems = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const page = data.page ?? 1;
-    // Default 1000 preserves prior behavior for callers (charts/dashboard)
-    // that aggregate over all systems — explicit small pages opt into real pagination.
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
 
-    // "Pending first" ordering: figure out which status keys are considered
-    // handled, then run two independent queries (waiting / handled) and
-    // stitch them together for the requested page. This keeps the rule
-    // consistent across pagination — every waiting row appears before any
-    // handled row — without paying for fetching the entire table.
-    const { data: settings } = await context.supabase
-      .from("status_settings").select("status_key, is_handled");
-    const handledKeys = ((settings ?? []) as any[])
-      .filter((s) => s.is_handled).map((s) => s.status_key as string);
-
     const baseSelect =
-      "id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
+      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
 
-    const applyFilters = (q: any) => {
-      if (data.status) q = q.eq("status", data.status as any);
-      if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
-      if (data.period) {
-        const now = new Date();
-        const start = new Date(now);
-        if (data.period === "day") start.setDate(now.getDate() - 1);
-        else if (data.period === "week") start.setDate(now.getDate() - 7);
-        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-        q = q.gte("updated_at", start.toISOString());
-      }
-      return q;
-    };
-
-    // If a specific status is filtered, the two-bucket split is irrelevant
-    // (everything is in one bucket already) so we fall back to a single
-    // query for performance.
-    if (data.status) {
-      let q = applyFilters(
-        context.supabase.from("systems").select(baseSelect, { count: "exact" })
-          .order("created_at", { ascending: false })
-          .range(offset, offset + pageSize - 1),
-      );
-      const { data: rows, error, count } = await q;
-      if (error) throw new Error(error.message);
-      const items = await enrichSystemRows(context.supabase, rows ?? []);
-      return { items, total: count ?? items.length, page, pageSize };
+    let q = context.supabase.from("systems").select(baseSelect, { count: "exact" });
+    if (data.status) q = q.eq("status", data.status as any);
+    if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
+    if (data.period) {
+      const now = new Date();
+      const start = new Date(now);
+      if (data.period === "day") start.setDate(now.getDate() - 1);
+      else if (data.period === "week") start.setDate(now.getDate() - 7);
+      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+      q = q.gte("updated_at", start.toISOString());
     }
-
-    // Count both buckets first so we know where to slice the page from.
-    const [waitingCountRes, handledCountRes] = await Promise.all([
-      applyFilters(
-        context.supabase.from("systems").select("id", { count: "exact", head: true })
-          .not("status", "in", `(${handledKeys.map((k) => `"${k}"`).join(",") || '""'})`),
-      ),
-      handledKeys.length
-        ? applyFilters(
-            context.supabase.from("systems").select("id", { count: "exact", head: true })
-              .in("status", handledKeys as any),
-          )
-        : Promise.resolve({ count: 0 } as any),
-    ]);
-    const waitingTotal = waitingCountRes.count ?? 0;
-    const handledTotal = handledCountRes.count ?? 0;
-    const total = waitingTotal + handledTotal;
-
-    // Figure out how much of the page comes from each bucket.
-    const items: any[] = [];
-    let waitingRows: any[] = [];
-    let handledRows: any[] = [];
-    if (offset < waitingTotal) {
-      const take = Math.min(pageSize, waitingTotal - offset);
-      const { data: rows, error } = await applyFilters(
-        context.supabase.from("systems").select(baseSelect)
-          .not("status", "in", `(${handledKeys.map((k) => `"${k}"`).join(",") || '""'})`)
-          .order("created_at", { ascending: false })
-          .range(offset, offset + take - 1),
-      );
-      if (error) throw new Error(error.message);
-      waitingRows = rows ?? [];
-    }
-    const remaining = pageSize - waitingRows.length;
-    if (remaining > 0 && handledTotal > 0) {
-      const handledOffset = Math.max(0, offset - waitingTotal);
-      const { data: rows, error } = await applyFilters(
-        context.supabase.from("systems").select(baseSelect)
-          .in("status", handledKeys as any)
-          .order("created_at", { ascending: false })
-          .range(handledOffset, handledOffset + remaining - 1),
-      );
-      if (error) throw new Error(error.message);
-      handledRows = rows ?? [];
-    }
-    items.push(...waitingRows, ...handledRows);
-    const enriched = await enrichSystemRows(context.supabase, items);
-    return { items: enriched, total, page, pageSize };
+    // Pending-first ordering is enforced by the client, which splits rows into
+    // "waiting" / "handled" buckets from status_settings.is_handled. Keep the
+    // server query simple (most recently updated first) to avoid PostgREST
+    // enum filter pitfalls that previously returned an empty list.
+    q = q.order("updated_at", { ascending: false }).range(offset, offset + pageSize - 1);
+    const { data: rows, error, count } = await q;
+    if (error) throw new Error(error.message);
+    const items = await enrichSystemRows(context.supabase, rows ?? []);
+    return { items, total: count ?? items.length, page, pageSize };
   });
 
 // Global per-status counts across ALL systems (with optional agent/period

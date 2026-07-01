@@ -364,8 +364,8 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.system_code !== undefined && !(await checkSuper())) {
       throw new Error("רק מנהל ראשי יכול לשנות את מזהה המערכת");
     }
-    if (data.name !== undefined && !(await checkSuper())) {
-      throw new Error("רק מנהל ראשי יכול לשנות את שם המערכת");
+    if (data.name !== undefined && !isAdmin && !(await checkSuper())) {
+  throw new Error("רק מנהל יכול לשנות את שם המערכת");
     }
     const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
     if (data.status && data.status !== sys.status) {

@@ -1106,3 +1106,95 @@ export const importSystems = createServerFn({ method: "POST" })
     return { createdCount: created.length, errors, incompleteRows: incomplete, conflicts };
   });
 
+
+// Scan every existing system_code, group by "prefix" (all digits except the
+// last N), and identify series where enough sibling IDs share that prefix.
+// A configurable settings row `series_detection` in app_settings drives which
+// suffix-lengths to try and the minimum group size. For each series found,
+// the missing numeric slots in the range [min..max] are returned so the
+// admin can decide which ones to create.
+export const scanSystemSeries = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const isAdmin = await userHasRole(context.userId, "admin");
+    if (!isAdmin) throw new Error("רק מנהל יכול לסרוק סדרות");
+
+    const { data: cfgRow } = await context.supabase
+      .from("app_settings").select("value").eq("key", "series_detection").maybeSingle();
+    const cfg = (cfgRow?.value as any) ?? { modes: [{ strip: 2, min: 10 }, { strip: 3, min: 30 }] };
+    const modes: Array<{ strip: number; min: number }> = Array.isArray(cfg.modes) ? cfg.modes : [];
+    if (!modes.length) return { series: [] as any[], settings: cfg };
+
+    // Fetch all codes (bounded).
+    const all: string[] = [];
+    let from = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data: rows, error } = await context.supabase
+        .from("systems").select("system_code").range(from, from + 999);
+      if (error) throw new Error(error.message);
+      if (!rows || rows.length === 0) break;
+      all.push(...rows.map((r: any) => String(r.system_code ?? "")).filter(Boolean));
+      if (rows.length < 1000) break;
+      from += 1000;
+      if (from > 50000) break;
+    }
+    const digitCodes = all.map((c) => c.replace(/\D/g, "")).filter((c) => c.length >= 4);
+    const existingSet = new Set(digitCodes);
+
+    // For each mode, build groups keyed by prefix.
+    const seenPrefix = new Set<string>();
+    const series: Array<{
+      prefix: string;
+      strip: number;
+      width: number;
+      count: number;
+      min: string;
+      max: string;
+      existing: string[];
+      missing: string[];
+    }> = [];
+
+    for (const mode of modes) {
+      const groups = new Map<string, string[]>();
+      for (const c of digitCodes) {
+        if (c.length <= mode.strip) continue;
+        const prefix = c.slice(0, c.length - mode.strip);
+        const arr = groups.get(prefix) ?? [];
+        arr.push(c);
+        groups.set(prefix, arr);
+      }
+      for (const [prefix, members] of groups) {
+        if (members.length < mode.min) continue;
+        // Skip if we already recorded a series with a longer/equal prefix
+        // (i.e. a more specific mode already covered these systems).
+        if (seenPrefix.has(prefix)) continue;
+        seenPrefix.add(prefix);
+
+        const nums = members.map((m) => Number(m.slice(prefix.length)));
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        const width = mode.strip;
+        const wanted: string[] = [];
+        for (let i = min; i <= max; i++) {
+          wanted.push(prefix + String(i).padStart(width, "0"));
+        }
+        const missing = wanted.filter((w) => !existingSet.has(w));
+        series.push({
+          prefix,
+          strip: mode.strip,
+          width,
+          count: members.length,
+          min: prefix + String(min).padStart(width, "0"),
+          max: prefix + String(max).padStart(width, "0"),
+          existing: members,
+          missing,
+        });
+      }
+    }
+    // Only surface series that actually have gaps.
+    return {
+      series: series.filter((s) => s.missing.length > 0).sort((a, b) => b.missing.length - a.missing.length),
+      settings: cfg,
+    };
+  });

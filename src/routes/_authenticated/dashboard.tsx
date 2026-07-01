@@ -700,7 +700,16 @@ function Dashboard() {
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);
-            else if (format === "crm") exportCrmXlsx(rows, label);
+            else if (format === "crm") {
+              // Prompt for which CRM export variant to produce.
+              const choice = window.prompt(
+                "בחר סוג ייצוא CRM:\n1 = לפתוח (OPEN)\n2 = לחסום (CLOSED)\n3 = לפתוח בימות + לחסום בסימהדרין (2 קבצים)",
+                "1",
+              );
+              if (!choice) return;
+              const mode = choice.trim() === "2" ? "block" : choice.trim() === "3" ? "both" : "open";
+              exportCrmXlsx(rows, label, mode);
+            }
             setShowExport(false);
           }}
         />

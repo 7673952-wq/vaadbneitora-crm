@@ -54,101 +54,33 @@ export const listSystems = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const page = data.page ?? 1;
-    // Default 1000 preserves prior behavior for callers (charts/dashboard)
-    // that aggregate over all systems — explicit small pages opt into real pagination.
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
 
-    // "Pending first" ordering: figure out which status keys are considered
-    // handled, then run two independent queries (waiting / handled) and
-    // stitch them together for the requested page. This keeps the rule
-    // consistent across pagination — every waiting row appears before any
-    // handled row — without paying for fetching the entire table.
-    const { data: settings } = await context.supabase
-      .from("status_settings").select("status_key, is_handled");
-    const handledKeys = ((settings ?? []) as any[])
-      .filter((s) => s.is_handled).map((s) => s.status_key as string);
-
     const baseSelect =
-      "id, system_code, name, status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
+      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
 
-    const applyFilters = (q: any) => {
-      if (data.status) q = q.eq("status", data.status as any);
-      if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
-      if (data.period) {
-        const now = new Date();
-        const start = new Date(now);
-        if (data.period === "day") start.setDate(now.getDate() - 1);
-        else if (data.period === "week") start.setDate(now.getDate() - 7);
-        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-        q = q.gte("updated_at", start.toISOString());
-      }
-      return q;
-    };
-
-    // If a specific status is filtered, the two-bucket split is irrelevant
-    // (everything is in one bucket already) so we fall back to a single
-    // query for performance.
-    if (data.status) {
-      let q = applyFilters(
-        context.supabase.from("systems").select(baseSelect, { count: "exact" })
-          .order("created_at", { ascending: false })
-          .range(offset, offset + pageSize - 1),
-      );
-      const { data: rows, error, count } = await q;
-      if (error) throw new Error(error.message);
-      const items = await enrichSystemRows(context.supabase, rows ?? []);
-      return { items, total: count ?? items.length, page, pageSize };
+    let q = context.supabase.from("systems").select(baseSelect, { count: "exact" });
+    if (data.status) q = q.eq("status", data.status as any);
+    if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
+    if (data.period) {
+      const now = new Date();
+      const start = new Date(now);
+      if (data.period === "day") start.setDate(now.getDate() - 1);
+      else if (data.period === "week") start.setDate(now.getDate() - 7);
+      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+      q = q.gte("updated_at", start.toISOString());
     }
-
-    // Count both buckets first so we know where to slice the page from.
-    const [waitingCountRes, handledCountRes] = await Promise.all([
-      applyFilters(
-        context.supabase.from("systems").select("id", { count: "exact", head: true })
-          .not("status", "in", `(${handledKeys.map((k) => `"${k}"`).join(",") || '""'})`),
-      ),
-      handledKeys.length
-        ? applyFilters(
-            context.supabase.from("systems").select("id", { count: "exact", head: true })
-              .in("status", handledKeys as any),
-          )
-        : Promise.resolve({ count: 0 } as any),
-    ]);
-    const waitingTotal = waitingCountRes.count ?? 0;
-    const handledTotal = handledCountRes.count ?? 0;
-    const total = waitingTotal + handledTotal;
-
-    // Figure out how much of the page comes from each bucket.
-    const items: any[] = [];
-    let waitingRows: any[] = [];
-    let handledRows: any[] = [];
-    if (offset < waitingTotal) {
-      const take = Math.min(pageSize, waitingTotal - offset);
-      const { data: rows, error } = await applyFilters(
-        context.supabase.from("systems").select(baseSelect)
-          .not("status", "in", `(${handledKeys.map((k) => `"${k}"`).join(",") || '""'})`)
-          .order("created_at", { ascending: false })
-          .range(offset, offset + take - 1),
-      );
-      if (error) throw new Error(error.message);
-      waitingRows = rows ?? [];
-    }
-    const remaining = pageSize - waitingRows.length;
-    if (remaining > 0 && handledTotal > 0) {
-      const handledOffset = Math.max(0, offset - waitingTotal);
-      const { data: rows, error } = await applyFilters(
-        context.supabase.from("systems").select(baseSelect)
-          .in("status", handledKeys as any)
-          .order("created_at", { ascending: false })
-          .range(handledOffset, handledOffset + remaining - 1),
-      );
-      if (error) throw new Error(error.message);
-      handledRows = rows ?? [];
-    }
-    items.push(...waitingRows, ...handledRows);
-    const enriched = await enrichSystemRows(context.supabase, items);
-    return { items: enriched, total, page, pageSize };
+    // Pending-first ordering is enforced by the client, which splits rows into
+    // "waiting" / "handled" buckets from status_settings.is_handled. Keep the
+    // server query simple (most recently updated first) to avoid PostgREST
+    // enum filter pitfalls that previously returned an empty list.
+    q = q.order("updated_at", { ascending: false }).range(offset, offset + pageSize - 1);
+    const { data: rows, error, count } = await q;
+    if (error) throw new Error(error.message);
+    const items = await enrichSystemRows(context.supabase, rows ?? []);
+    return { items, total: count ?? items.length, page, pageSize };
   });
 
 // Global per-status counts across ALL systems (with optional agent/period
@@ -379,7 +311,7 @@ export const createSystem = createServerFn({ method: "POST" })
 export const updateSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {
-    id: string; status?: string; assigned_agent_id?: string | null;
+    id: string; status?: string; secondary_status?: string | null; assigned_agent_id?: string | null;
     name?: string; system_code?: string; notes?: string; phone?: string | null;
     caller_phone?: string | null; source?: string | null; audio_url?: string | null;
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
@@ -389,6 +321,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     z.object({
       id: z.string().uuid(),
       status: statusSchema.optional(),
+      secondary_status: statusSchema.nullable().optional(),
       assigned_agent_id: z.string().uuid().nullable().optional(),
       name: z.string().min(1).max(200).optional(),
       system_code: z.string().min(1).max(60).optional(),
@@ -1173,3 +1106,95 @@ export const importSystems = createServerFn({ method: "POST" })
     return { createdCount: created.length, errors, incompleteRows: incomplete, conflicts };
   });
 
+
+// Scan every existing system_code, group by "prefix" (all digits except the
+// last N), and identify series where enough sibling IDs share that prefix.
+// A configurable settings row `series_detection` in app_settings drives which
+// suffix-lengths to try and the minimum group size. For each series found,
+// the missing numeric slots in the range [min..max] are returned so the
+// admin can decide which ones to create.
+export const scanSystemSeries = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const isAdmin = await userHasRole(context.userId, "admin");
+    if (!isAdmin) throw new Error("רק מנהל יכול לסרוק סדרות");
+
+    const { data: cfgRow } = await context.supabase
+      .from("app_settings").select("value").eq("key", "series_detection").maybeSingle();
+    const cfg = (cfgRow?.value as any) ?? { modes: [{ strip: 2, min: 10 }, { strip: 3, min: 30 }] };
+    const modes: Array<{ strip: number; min: number }> = Array.isArray(cfg.modes) ? cfg.modes : [];
+    if (!modes.length) return { series: [] as any[], settings: cfg };
+
+    // Fetch all codes (bounded).
+    const all: string[] = [];
+    let from = 0;
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const { data: rows, error } = await context.supabase
+        .from("systems").select("system_code").range(from, from + 999);
+      if (error) throw new Error(error.message);
+      if (!rows || rows.length === 0) break;
+      all.push(...rows.map((r: any) => String(r.system_code ?? "")).filter(Boolean));
+      if (rows.length < 1000) break;
+      from += 1000;
+      if (from > 50000) break;
+    }
+    const digitCodes = all.map((c) => c.replace(/\D/g, "")).filter((c) => c.length >= 4);
+    const existingSet = new Set(digitCodes);
+
+    // For each mode, build groups keyed by prefix.
+    const seenPrefix = new Set<string>();
+    const series: Array<{
+      prefix: string;
+      strip: number;
+      width: number;
+      count: number;
+      min: string;
+      max: string;
+      existing: string[];
+      missing: string[];
+    }> = [];
+
+    for (const mode of modes) {
+      const groups = new Map<string, string[]>();
+      for (const c of digitCodes) {
+        if (c.length <= mode.strip) continue;
+        const prefix = c.slice(0, c.length - mode.strip);
+        const arr = groups.get(prefix) ?? [];
+        arr.push(c);
+        groups.set(prefix, arr);
+      }
+      for (const [prefix, members] of groups) {
+        if (members.length < mode.min) continue;
+        // Skip if we already recorded a series with a longer/equal prefix
+        // (i.e. a more specific mode already covered these systems).
+        if (seenPrefix.has(prefix)) continue;
+        seenPrefix.add(prefix);
+
+        const nums = members.map((m) => Number(m.slice(prefix.length)));
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        const width = mode.strip;
+        const wanted: string[] = [];
+        for (let i = min; i <= max; i++) {
+          wanted.push(prefix + String(i).padStart(width, "0"));
+        }
+        const missing = wanted.filter((w) => !existingSet.has(w));
+        series.push({
+          prefix,
+          strip: mode.strip,
+          width,
+          count: members.length,
+          min: prefix + String(min).padStart(width, "0"),
+          max: prefix + String(max).padStart(width, "0"),
+          existing: members,
+          missing,
+        });
+      }
+    }
+    // Only surface series that actually have gaps.
+    return {
+      series: series.filter((s) => s.missing.length > 0).sort((a, b) => b.missing.length - a.missing.length),
+      settings: cfg,
+    };
+  });

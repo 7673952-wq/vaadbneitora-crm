@@ -297,7 +297,7 @@ function SystemDetail() {
                   className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700">
                   <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
                 </a>
-                <button onClick={() => copyToClipboard(s.caller_phone, "caller", "מספר הפונה")}
+                <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
                   title="העתק מספר פונה"
                   className="p-2 border border-border rounded-lg hover:bg-accent text-muted-foreground">
                   {copiedKey === "caller"
@@ -360,6 +360,18 @@ function SystemDetail() {
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
               {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium block mb-2">סטטוס משני (אופציונלי)</label>
+            <select
+              value={s.secondary_status || ""}
+              onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
+              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
+              <option value="">— ללא —</option>
+              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <p className="text-[11px] text-muted-foreground mt-1">מוצג רק בכרטיס המערכת, לא בדשבורד.</p>
           </div>
 
           <div>

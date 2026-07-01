@@ -339,30 +339,46 @@ function Dashboard() {
     w.document.open(); w.document.write(html); w.document.close();
   }
 
-  function exportCrmXlsx(rows: any[], label: string) {
-    // CRM format must be raw rows with NO headers:
-    // A=ID, B=שם מערכת, C=1, D=ALL, E=BLOCKED/OPEN
-    const makeRows = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN") => crmRows.map((r: any) => [
+  // CRM export: 5-column XLSX with the fixed English headers requested by
+  // the operations team: number / note / active / call_type / status.
+  // `mode` picks which rows land in which file(s):
+  //  - "open"  → single file with status="OPEN" for every row
+  //  - "block" → single file with status="CLOSED" for every row
+  //  - "both"  → two files, one OPEN and one CLOSED, based on the row's own
+  //              current status (to_open/open* → OPEN, to_block/block* → CLOSED)
+  function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
+    const HEADERS = ["number", "note", "active", "call_type", "status"];
+    const buildRow = (r: any, statusText: "OPEN" | "CLOSED") => [
       buildDialNumber(r.system_code),
-      r.name ?? "",
+      (r.notes ?? "").replace(/\n/g, " "),
       1,
       "ALL",
-      crmStatus,
-    ]);
-    const write = (crmRows: any[], crmStatus: "BLOCKED" | "OPEN", fileLabel: string) => {
-      if (!crmRows.length) return false;
-      const ws = XLSX.utils.aoa_to_sheet(makeRows(crmRows, crmStatus));
+      statusText,
+    ];
+    const write = (rowsToWrite: any[][], fileLabel: string) => {
+      if (!rowsToWrite.length) return false;
+      const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...rowsToWrite]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
       XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);
       return true;
     };
-    const blockRows = rows.filter((r: any) => r.status === "to_block" || r.status === "block_from_root");
-    const openRows = rows.filter((r: any) => r.status === "to_open");
-    const wroteBlock = write(blockRows, "BLOCKED", "לביצוע_חסימה");
-    const wroteOpen = write(openRows, "OPEN", "לביצוע_פתיחה");
-    if (!wroteBlock && !wroteOpen) { toast.info("אין מערכות בסטטוס לחסום/לפתוח בטווח זה"); return; }
-    toast.success(`נוצרו ${Number(wroteBlock) + Number(wroteOpen)} קבצי לביצוע חסימה/פתיחה`);
+    let filesWritten = 0;
+    if (mode === "open") {
+      const openRows = rows.filter((r: any) => r.status === "to_open" || r.status === "open_only_bimot");
+      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לביצוע_פתיחה")) filesWritten++;
+    } else if (mode === "block") {
+      const blockRows = rows.filter((r: any) => r.status === "to_block" || r.status === "block_from_root" || r.status === "close_in_simahedrin");
+      if (write(blockRows.map((r) => buildRow(r, "CLOSED")), "לביצוע_חסימה")) filesWritten++;
+    } else {
+      // "both" — לפתוח בימות ↔ לחסום בסימהדרין: produce two files.
+      const openRows = rows.filter((r: any) => r.status === "open_only_bimot" || r.status === "open_in_simahedrin" || r.status === "to_open");
+      const blockRows = rows.filter((r: any) => r.status === "close_in_simahedrin" || r.status === "to_block" || r.status === "block_from_root");
+      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
+      if (write(blockRows.map((r) => buildRow(r, "CLOSED")), "לחסום_בסימהדרין")) filesWritten++;
+    }
+    if (filesWritten === 0) toast.info("אין מערכות בסטטוסים המתאימים בטווח זה");
+    else toast.success(`נוצרו ${filesWritten} קבצים`);
   }
 
   function exportFullXlsx(rows: any[], label: string) {
@@ -454,12 +470,6 @@ function Dashboard() {
             />
           )}
           {me?.isAdmin && (
-            <button onClick={() => setShowMissingSeries(true)}
-              className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              <Search className="h-4 w-4 text-emerald-600" />השלמת סדרות
-            </button>
-          )}
-          {me?.isAdmin && (
             <>
               {me?.isSuperAdmin && (
                 <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
@@ -479,10 +489,10 @@ function Dashboard() {
       {/* Quick lookup */}
       <QuickLookup onOpenCreate={(initial) => { setCreateInitial(initial ?? {}); setShowCreate(true); }} canCreate={!!me?.isAgent} />
 
-      {/* Stats */}
-      <div className="space-y-3">
-        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} />
-        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} />
+      {/* Stats — regular + workflow side-by-side, same height, compact */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-3 items-stretch">
+        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact={false} columns={7} />
+        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact columns={3} />
       </div>
 
       {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
@@ -684,7 +694,16 @@ function Dashboard() {
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);
-            else if (format === "crm") exportCrmXlsx(rows, label);
+            else if (format === "crm") {
+              // Prompt for which CRM export variant to produce.
+              const choice = window.prompt(
+                "בחר סוג ייצוא CRM:\n1 = לפתוח (OPEN)\n2 = לחסום (CLOSED)\n3 = לפתוח בימות + לחסום בסימהדרין (2 קבצים)",
+                "1",
+              );
+              if (!choice) return;
+              const mode = choice.trim() === "2" ? "block" : choice.trim() === "3" ? "both" : "open";
+              exportCrmXlsx(rows, label, mode);
+            }
             setShowExport(false);
           }}
         />
@@ -725,26 +744,31 @@ function Dashboard() {
 }
 
 
-function StatusCards({ title, options, activeStatus, stats, onSelect }: {
+function StatusCards({ title, options, activeStatus, stats, onSelect, compact = false, columns = 7 }: {
   title: string;
   options: Array<{ value: string; label: string }>;
   activeStatus: string;
   stats: Record<string, number>;
   onSelect: (value: string) => void;
+  compact?: boolean;
+  columns?: number;
 }) {
   if (!options.length) return null;
+  const gridCls = columns === 3
+    ? "grid grid-cols-3 gap-1.5"
+    : "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2";
   return (
-    <div>
+    <div className="h-full flex flex-col">
       <div className="text-xs font-semibold text-muted-foreground mb-1.5">{title}</div>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className={gridCls}>
         {options.map((s) => {
           const active = activeStatus === s.value;
           return (
             <button key={s.value} type="button"
               onClick={() => onSelect(s.value)}
-              className={`border-2 rounded-lg p-2 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
-              <div className="text-[11px] opacity-80 truncate">{s.label}</div>
-              <div className="text-lg font-bold mt-0.5">{stats[s.value] ?? 0}</div>
+              className={`border-2 rounded-lg ${compact ? "p-1.5" : "p-2"} text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
+              <div className={`${compact ? "text-[10px]" : "text-[11px]"} opacity-80 truncate leading-tight`}>{s.label}</div>
+              <div className={`${compact ? "text-sm" : "text-lg"} font-bold ${compact ? "mt-0" : "mt-0.5"}`}>{stats[s.value] ?? 0}</div>
             </button>
           );
         })}

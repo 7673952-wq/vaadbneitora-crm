@@ -1,10 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import { toast } from "sonner";
 import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
 import { getMyRole } from "@/lib/admin.functions";
+import { scanSystemSeries, createMissingSystems } from "@/lib/systems.functions";
+import { STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),
@@ -14,6 +18,7 @@ export const Route = createFileRoute("/_authenticated/manager-dashboard")({
 function ManagerDashboard() {
   const meFn = useServerFn(getMyRole);
   const fn = useServerFn(getManagerDashboard);
+  const [showSeries, setShowSeries] = useState(false);
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data, isLoading } = useQuery({
     queryKey: ["manager-dashboard"],
@@ -38,13 +43,16 @@ function ManagerDashboard() {
           <h1 className="text-2xl font-bold">דשבורד מנהלים</h1>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setShowSeries(true)}
+            className="flex items-center gap-2 border border-emerald-400 text-emerald-800 bg-emerald-50 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-100">
+            <Search className="h-4 w-4" />השלמת סדרות
+          </button>
           <Link to="/reports" className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90">
             <BarChart3 className="h-4 w-4" />
             דוחות מפורטים
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </div>
-
       </div>
 
       {/* KPI Cards */}
@@ -113,6 +121,8 @@ function ManagerDashboard() {
           )}
         </div>
       </div>
+
+      {showSeries && <SeriesScannerModal onClose={() => setShowSeries(false)} />}
     </div>
   );
 }
@@ -132,6 +142,166 @@ function KpiCard({ label, value, icon, tone }: { label: string; value: number; i
         <div className="opacity-70">{icon}</div>
       </div>
       <div className="text-3xl font-bold mt-2">{value}</div>
+    </div>
+  );
+}
+
+// Scans every existing system_code, groups by common prefix, and lists the
+// numeric gaps. The admin picks which missing codes to create (and at what
+// status) and this fires off `createMissingSystems` with the selection.
+function SeriesScannerModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const scanFn = useServerFn(scanSystemSeries);
+  const createFn = useServerFn(createMissingSystems);
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ series: any[]; settings: any } | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [status, setStatus] = useState("open");
+  const [namePrefix, setNamePrefix] = useState("מערכת");
+
+  async function scan() {
+    setBusy(true);
+    try {
+      const res: any = await scanFn();
+      setResult(res);
+      setSelected(new Set());
+      if (!res.series.length) toast.info("לא נמצאו סדרות עם מערכות חסרות");
+      else toast.success(`נמצאו ${res.series.length} סדרות עם חוסרים`);
+    } catch (e: any) {
+      toast.error(e?.message ?? "הסריקה נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggle(code: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(code)) n.delete(code); else n.add(code);
+      return n;
+    });
+  }
+  function toggleGroup(missing: string[]) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      const allSelected = missing.every((c) => n.has(c));
+      for (const c of missing) { if (allSelected) n.delete(c); else n.add(c); }
+      return n;
+    });
+  }
+
+  async function createSelected() {
+    if (selected.size === 0) { toast.info("בחר לפחות מזהה אחד ליצירה"); return; }
+    if (selected.size > 500) { toast.error("ניתן ליצור עד 500 מערכות בכל פעם"); return; }
+    setBusy(true);
+    try {
+      const res: any = await createFn({ data: { codes: Array.from(selected), namePrefix: namePrefix.trim() || "מערכת", status } });
+      toast.success(`נוצרו ${res.createdCount} מערכות`);
+      qc.invalidateQueries({ queryKey: ["systems"] });
+      qc.invalidateQueries({ queryKey: ["statusCounts"] });
+      onClose();
+    } catch (e: any) {
+      toast.error(e?.message ?? "היצירה נכשלה");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-auto">
+        <div className="p-5 border-b border-border flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">השלמת סדרות מזהים</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              המערכת סורקת את כל המזהים הקיימים ומזהה סדרות לפי ההגדרות ב'ניהול'. ליד כל סדרה מוצגים המזהים החסרים.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg"><X className="h-4 w-4" /></button>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <button disabled={busy} onClick={scan}
+              className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium disabled:opacity-50">
+              {busy ? "סורק..." : "סרוק מערכת לזיהוי"}
+            </button>
+            {result && (
+              <span className="text-xs text-muted-foreground">
+                הגדרות נוכחיות: {(result.settings?.modes ?? []).map((m: any) => `${m.strip} ספרות ≥ ${m.min}`).join(" · ")}
+              </span>
+            )}
+          </div>
+
+          {result && result.series.length === 0 && (
+            <div className="text-center text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg py-6 text-sm font-medium">
+              אין סדרות עם מערכות חסרות.
+            </div>
+          )}
+
+          {result && result.series.length > 0 && (
+            <>
+              <div className="space-y-3">
+                {result.series.map((s: any) => {
+                  const allSel = s.missing.every((c: string) => selected.has(c));
+                  return (
+                    <div key={`${s.prefix}-${s.strip}`} className="border border-border rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between gap-2 bg-muted/40 p-3">
+                        <div className="text-sm">
+                          <div className="font-semibold">סדרה: <span className="font-mono">{s.prefix}…</span> ({s.strip} ספרות מזהות)</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {s.count} מערכות קיימות · טווח <span className="font-mono">{s.min}</span> – <span className="font-mono">{s.max}</span> · חסרות <span className="font-bold text-red-700">{s.missing.length}</span>
+                          </div>
+                        </div>
+                        <button onClick={() => toggleGroup(s.missing)}
+                          className="text-xs px-2 py-1 rounded border border-input bg-white hover:bg-accent shrink-0">
+                          {allSel ? "בטל בחירה" : "בחר הכל"}
+                        </button>
+                      </div>
+                      <div className="p-2 flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                        {s.missing.map((code: string) => {
+                          const on = selected.has(code);
+                          return (
+                            <button key={code} onClick={() => toggle(code)}
+                              className={`text-xs font-mono px-2 py-1 rounded border ${on ? "bg-emerald-500 text-white border-emerald-600" : "bg-red-50 text-red-800 border-red-200 hover:bg-red-100"}`}>
+                              {code}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid sm:grid-cols-2 gap-3 pt-2 border-t border-border">
+                <label className="text-sm space-y-1">
+                  <span className="font-medium">שם בסיס למערכות שייווצרו</span>
+                  <input value={namePrefix} onChange={(e) => setNamePrefix(e.target.value)}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                </label>
+                <label className="text-sm space-y-1">
+                  <span className="font-medium">סטטוס לפתיחה</span>
+                  <select value={status} onChange={(e) => setStatus(e.target.value)}
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
+                    {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 pt-2">
+                <div className="text-sm">
+                  נבחרו לפתיחה: <span className="font-bold">{selected.size}</span>
+                </div>
+                <button disabled={busy || selected.size === 0} onClick={createSelected}
+                  className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium disabled:opacity-50">
+                  {busy ? "יוצר..." : "צור את הנבחרים"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

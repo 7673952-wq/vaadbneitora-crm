@@ -22,9 +22,11 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       // focus the input after clearing
       innerRef.current.focus();
 
-      // dispatch a native input event so uncontrolled listeners notice
-      const inputEvent = new Event("input", { bubbles: true });
-      innerRef.current.dispatchEvent(inputEvent);
+      // dispatch a native input event so uncontrolled listeners notice (guarded for SSR/build)
+      if (typeof Event !== "undefined") {
+        const inputEvent = new Event("input", { bubbles: true });
+        innerRef.current.dispatchEvent(inputEvent);
+      }
 
       // call React's onChange if provided (controlled inputs)
       if (typeof onChange === "function") {

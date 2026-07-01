@@ -470,12 +470,6 @@ function Dashboard() {
             />
           )}
           {me?.isAdmin && (
-            <button onClick={() => setShowMissingSeries(true)}
-              className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-              <Search className="h-4 w-4 text-emerald-600" />השלמת סדרות
-            </button>
-          )}
-          {me?.isAdmin && (
             <>
               {me?.isSuperAdmin && (
                 <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">

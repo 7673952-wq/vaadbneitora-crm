@@ -725,26 +725,31 @@ function Dashboard() {
 }
 
 
-function StatusCards({ title, options, activeStatus, stats, onSelect }: {
+function StatusCards({ title, options, activeStatus, stats, onSelect, compact = false, columns = 7 }: {
   title: string;
   options: Array<{ value: string; label: string }>;
   activeStatus: string;
   stats: Record<string, number>;
   onSelect: (value: string) => void;
+  compact?: boolean;
+  columns?: number;
 }) {
   if (!options.length) return null;
+  const gridCls = columns === 3
+    ? "grid grid-cols-3 gap-1.5"
+    : "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2";
   return (
-    <div>
+    <div className="h-full flex flex-col">
       <div className="text-xs font-semibold text-muted-foreground mb-1.5">{title}</div>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+      <div className={gridCls}>
         {options.map((s) => {
           const active = activeStatus === s.value;
           return (
             <button key={s.value} type="button"
               onClick={() => onSelect(s.value)}
-              className={`border-2 rounded-lg p-2 text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
-              <div className="text-[11px] opacity-80 truncate">{s.label}</div>
-              <div className="text-lg font-bold mt-0.5">{stats[s.value] ?? 0}</div>
+              className={`border-2 rounded-lg ${compact ? "p-1.5" : "p-2"} text-right transition ${statusCardClasses(s.value)} ${active ? "ring-2 ring-primary ring-offset-2" : ""}`}>
+              <div className={`${compact ? "text-[10px]" : "text-[11px]"} opacity-80 truncate leading-tight`}>{s.label}</div>
+              <div className={`${compact ? "text-sm" : "text-lg"} font-bold ${compact ? "mt-0" : "mt-0.5"}`}>{stats[s.value] ?? 0}</div>
             </button>
           );
         })}

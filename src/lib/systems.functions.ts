@@ -861,12 +861,13 @@ export const findSystemByName = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: rows } = await context.supabase
+    const { data: rows, error } = await context.supabase
       .from("systems")
-      .select("id, system_code, name, parent_system_id")
+      .select("id, system_code, name, parent_system_id, parent:systems!parent_system_id(id, system_code, name)")
       .ilike("name", `%${data.name}%`)
       .order("name", { ascending: true })
       .limit(20);
+    if (error) throw new Error(error.message);
     return rows ?? [];
   });
 

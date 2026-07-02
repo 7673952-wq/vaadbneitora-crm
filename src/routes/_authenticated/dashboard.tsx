@@ -1150,15 +1150,24 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
-        const exactRoots = (rows ?? []).filter((r: any) =>
-          r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id,
-        );
-        const exact = initial?.parent_id
-          ? ((rows ?? []).find((r: any) => r.id === initial.parent_id) ?? initial.parent ?? null)
-          : exactRoots[0];
-        setMatchedParentOptions(initial?.parent_id && exact ? [exact] : exactRoots);
-        setMatchedParent(exact ?? null);
-        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
+        const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+        const target = norm(v);
+        const exactMatches = (rows ?? []).filter((r: any) => norm(r.name) === target);
+        // Parent options: roots that match by name PLUS parents of matching
+        // sub-systems (so "קו ההגנה" that exists only as sub-systems still
+        // offers a valid parent to nest under).
+        const optsMap = new Map<string, any>();
+        for (const r of exactMatches) {
+          if (!r.parent_system_id) optsMap.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
+          else if (r.parent) optsMap.set(r.parent.id, r.parent);
+        }
+        const opts = Array.from(optsMap.values());
+        const initialPick = initial?.parent_id
+          ? (opts.find((p: any) => p.id === initial.parent_id) ?? initial.parent ?? null)
+          : (opts[0] ?? null);
+        setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
+        setMatchedParent(initialPick);
+        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
@@ -1549,7 +1558,20 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   const v = query.trim();
   const nothingFound = v.length >= 2 && codeResult !== undefined && nameResults !== undefined
     && !codeResult && (nameResults?.length ?? 0) === 0;
-  const exactNameMatches = (nameResults ?? []).filter((r: any) => r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id);
+  // Broadened duplicate detection: exact name match against roots OR parents
+  // of matching sub-systems (so a name that exists only as sub-systems still
+  // surfaces the "root vs sub" choice).
+  const exactNameMatches = (() => {
+    const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+    const target = norm(v);
+    const map = new Map<string, any>();
+    for (const r of (nameResults ?? [])) {
+      if (norm(r.name) !== target) continue;
+      if (!r.parent_system_id) map.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
+      else if (r.parent) map.set(r.parent.id, r.parent);
+    }
+    return Array.from(map.values());
+  })();
   const exactNameMatch = exactNameMatches[0];
 
   return (
@@ -1558,9 +1580,18 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
         <Search className="h-4 w-4 text-indigo-600" />
         <h2 className="text-sm font-semibold">בדיקה מהירה</h2>
       </div>
-      <input value={query} onChange={(e) => setQuery(e.target.value)}
-        placeholder="הזן מספר מערכת או שם מערכת..."
-        className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+      <div className="relative">
+        <input value={query} onChange={(e) => setQuery(e.target.value)}
+          placeholder="הזן מספר מערכת או שם מערכת..."
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 pl-8 text-sm" />
+        {query && (
+          <button type="button" onClick={() => setQuery("")}
+            aria-label="נקה"
+            className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+            ✕
+          </button>
+        )}
+      </div>
 
       {v.length >= 2 && codeResult === undefined && nameResults === undefined && (
         <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>

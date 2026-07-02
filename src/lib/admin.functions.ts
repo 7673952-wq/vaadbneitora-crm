@@ -21,6 +21,48 @@ async function assertPermission(context: { userId: string }, permission: import(
   await assertPermission(context.userId, permission);
 }
 
+async function assertAnyPermission(context: { userId: string }, permissions: import("@/lib/permissions.server").PermissionKey[]) {
+  const { assertAnyPermission } = await import("@/lib/permissions.server");
+  await assertAnyPermission(context.userId, permissions);
+}
+
+const WORKFLOW_STATUS_KEYS = new Set(["send_to_yosela", "sent_to_yosela", "blocked_from_root", "send_to_committee", "sent_to_committee", "blocked_in_committee"]);
+const DEFAULT_STATUS_SETTINGS = [
+  ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
+  ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
+  ["to_open", "לפתוח", "lightgreen", 3, false],
+  ["to_block", "לחסום", "lightred", 4, false],
+  ["block_from_root", "לחסום מהשורש", "brightred", 5, false],
+  ["problem", "בעיה", "orange", 6, false],
+  ["open", "פתוח", "green", 7, true],
+  ["closed", "חסום", "red", 8, true],
+  ["open_only_bimot", "לפתוח רק בימות", "sky", 9, true],
+  ["close_only_bimot", "פתוח רק בימות", "indigo", 10, false],
+  ["open_in_simahedrin", "לפתיחה בסימהדרין", "cyan", 11, false],
+  ["close_in_simahedrin", "לחסימה בסימהדרין", "violet", 12, false],
+  ["send_to_yosela", "לשלוח ליוסלה", "fuchsia", 13, false],
+  ["sent_to_yosela", "נשלח ליוסלה", "pink", 14, true],
+  ["blocked_from_root", "נחסם מהשורש", "darkred", 15, true],
+  ["send_to_committee", "לשלוח לוועדה", "purple", 16, false],
+  ["sent_to_committee", "נשלח לוועדה", "violet", 17, true],
+  ["blocked_in_committee", "נחסם בוועדה", "black", 18, true],
+] as const;
+
+async function seedMissingStatusSettings() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const rows = DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
+    status_key,
+    label,
+    tone,
+    sort_order,
+    is_custom: false,
+    is_handled,
+    is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
+    assigned_agent_ids: [],
+  }));
+  await supabaseAdmin.from("status_settings").upsert(rows, { onConflict: "status_key", ignoreDuplicates: true } as any);
+}
+
 export const createUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>

@@ -339,16 +339,18 @@ function Dashboard() {
     w.document.open(); w.document.write(html); w.document.close();
   }
 
-  // CRM export: 5-column XLSX with the fixed English headers requested by
-  // the operations team: number / note / active / call_type / status.
-  // `mode` picks which rows land in which file(s):
-  //  - "open"  → single file with status="OPEN" for every row
-  //  - "block" → single file with status="CLOSED" for every row
-  //  - "both"  → two files, one OPEN and one CLOSED, based on the row's own
-  //              current status (to_open/open* → OPEN, to_block/block* → CLOSED)
+  // CRM export: 5-column XLSX with fixed English headers (operations team).
+  //   number / note / active / call_type / status
+  // Modes (chosen in the ExportModal):
+  //   "open"  → only rows currently in "לפתוח" (to_open). status = OPEN.
+  //   "block" → only rows currently in "לחסום" (to_block). status = BLOCKED.
+  //   "both"  → only rows in "לפתוח בימות / לחסום בסימהדרין"
+  //             (open_only_bimot + close_in_simahedrin), emitted as TWO files:
+  //             the open subset with status=OPEN, the block subset with
+  //             status=BLOCKED.
   function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
     const HEADERS = ["number", "note", "active", "call_type", "status"];
-    const buildRow = (r: any, statusText: "OPEN" | "CLOSED") => [
+    const buildRow = (r: any, statusText: "OPEN" | "BLOCKED") => [
       buildDialNumber(r.system_code),
       (r.notes ?? "").replace(/\n/g, " "),
       1,
@@ -365,19 +367,18 @@ function Dashboard() {
     };
     let filesWritten = 0;
     if (mode === "open") {
-      const openRows = rows.filter((r: any) => r.status === "to_open" || r.status === "open_only_bimot");
-      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לביצוע_פתיחה")) filesWritten++;
+      const openRows = rows.filter((r: any) => r.status === "to_open");
+      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח")) filesWritten++;
     } else if (mode === "block") {
-      const blockRows = rows.filter((r: any) => r.status === "to_block" || r.status === "block_from_root" || r.status === "close_in_simahedrin");
-      if (write(blockRows.map((r) => buildRow(r, "CLOSED")), "לביצוע_חסימה")) filesWritten++;
+      const blockRows = rows.filter((r: any) => r.status === "to_block");
+      if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום")) filesWritten++;
     } else {
-      // "both" — לפתוח בימות ↔ לחסום בסימהדרין: produce two files.
-      const openRows = rows.filter((r: any) => r.status === "open_only_bimot" || r.status === "open_in_simahedrin" || r.status === "to_open");
-      const blockRows = rows.filter((r: any) => r.status === "close_in_simahedrin" || r.status === "to_block" || r.status === "block_from_root");
+      const openRows = rows.filter((r: any) => r.status === "open_only_bimot");
+      const blockRows = rows.filter((r: any) => r.status === "close_in_simahedrin");
       if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
-      if (write(blockRows.map((r) => buildRow(r, "CLOSED")), "לחסום_בסימהדרין")) filesWritten++;
+      if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום_בסימהדרין")) filesWritten++;
     }
-    if (filesWritten === 0) toast.info("אין מערכות בסטטוסים המתאימים בטווח זה");
+    if (filesWritten === 0) toast.info("אין מערכות בקטגוריה זו בטווח שנבחר");
     else toast.success(`נוצרו ${filesWritten} קבצים`);
   }
 
@@ -687,23 +688,24 @@ function Dashboard() {
           allRows={systems ?? []}
           agents={agents ?? []}
           onClose={() => setShowExport(false)}
-          onExport={(format, fromIso, toIso, label, statusFilter, agentFilter) => {
-            let rows = filterByRange(systems ?? [], fromIso, toIso);
+          onExport={async (format, fromIso, toIso, label, statusFilter, agentFilter, crmMode) => {
+            // For exports we ALWAYS pull the full dataset from the server —
+            // the dashboard cache is limited to the current page and would
+            // otherwise silently truncate "all" exports.
+            let source: any[] = systems ?? [];
+            try {
+              const full: any = await listFn({ data: { status: null, agentId: null, period: null, page: 1, pageSize: 100000 } });
+              if (Array.isArray(full?.items)) source = full.items;
+            } catch {
+              // fall back to whatever is already cached
+            }
+            let rows = filterByRange(source, fromIso, toIso);
             if (statusFilter.length > 0) rows = rows.filter((r: any) => statusFilter.includes(r.status));
             if (agentFilter.length > 0) rows = rows.filter((r: any) => agentFilter.includes(r.assigned_agent_id || "__unassigned"));
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);
-            else if (format === "crm") {
-              // Prompt for which CRM export variant to produce.
-              const choice = window.prompt(
-                "בחר סוג ייצוא CRM:\n1 = לפתוח (OPEN)\n2 = לחסום (CLOSED)\n3 = לפתוח בימות + לחסום בסימהדרין (2 קבצים)",
-                "1",
-              );
-              if (!choice) return;
-              const mode = choice.trim() === "2" ? "block" : choice.trim() === "3" ? "both" : "open";
-              exportCrmXlsx(rows, label, mode);
-            }
+            else if (format === "crm") exportCrmXlsx(rows, label, crmMode ?? "open");
             setShowExport(false);
           }}
         />
@@ -1324,13 +1326,14 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
   allRows: any[];
   agents: any[];
   onClose: () => void;
-  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[], agentFilter: string[]) => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[], agentFilter: string[], crmMode?: "open" | "block" | "both") => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState<string>(today);
   const [to, setTo] = useState<string>(today);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
+  const [crmMode, setCrmMode] = useState<"open" | "block" | "both">("open");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [agentFilter, setAgentFilter] = useState<string[]>([]);
 
@@ -1472,7 +1475,25 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
                   {f.l}
                 </button>
               ))}
+          </div>
+
+          {format === "crm" && (
+            <div>
+              <label className="text-sm font-medium block mb-2">קטגוריה לייצוא</label>
+              <div className="grid grid-cols-1 gap-2">
+                {([
+                  { v: "open", l: "לפתוח (OPEN)" },
+                  { v: "block", l: "לחסום (BLOCKED)" },
+                  { v: "both", l: "לפתוח בימות / לחסום בסימהדרין (2 קבצים)" },
+                ] as { v: "open" | "block" | "both"; l: string }[]).map((m) => (
+                  <button key={m.v} type="button" onClick={() => setCrmMode(m.v)}
+                    className={`text-sm py-2 rounded-lg border ${crmMode === m.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                    {m.l}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
           </div>
 
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
@@ -1484,7 +1505,7 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
               className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="button" onClick={() => {
               const { fromIso, toIso, label } = computeRange();
-              onExport(format, fromIso, toIso, label, statusFilter, agentFilter);
+              onExport(format, fromIso, toIso, label, statusFilter, agentFilter, crmMode);
             }}
               className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
               ייצא

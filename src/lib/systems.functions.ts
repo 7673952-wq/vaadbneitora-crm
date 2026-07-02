@@ -60,27 +60,44 @@ export const listSystems = createServerFn({ method: "POST" })
     const baseSelect =
       "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
 
-    let q = context.supabase.from("systems").select(baseSelect, { count: "exact" });
-    if (data.status) q = q.eq("status", data.status as any);
-    if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
-    if (data.period) {
-      const now = new Date();
-      const start = new Date(now);
-      if (data.period === "day") start.setDate(now.getDate() - 1);
-      else if (data.period === "week") start.setDate(now.getDate() - 7);
-      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-      q = q.gte("updated_at", start.toISOString());
+    const buildQuery = (from: number, to: number, withCount: boolean) => {
+      let q = context.supabase
+        .from("systems")
+        .select(baseSelect, withCount ? { count: "exact" } : {});
+      if (data.status) q = q.eq("status", data.status as any);
+      if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
+      if (data.period) {
+        const now = new Date();
+        const start = new Date(now);
+        if (data.period === "day") start.setDate(now.getDate() - 1);
+        else if (data.period === "week") start.setDate(now.getDate() - 7);
+        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+        q = q.gte("updated_at", start.toISOString());
+      }
+      return q.order("updated_at", { ascending: false }).range(from, to);
+    };
+
+    // PostgREST caps a single response at ~1000 rows. When the caller asks
+    // for more (e.g. "All" in the dashboard, or a full export), fetch the
+    // window in 1000-row chunks so we return everything requested.
+    const CHUNK = 1000;
+    const endTo = offset + pageSize - 1;
+    const allRows: any[] = [];
+    let total = 0;
+    let first = true;
+    for (let from = offset; from <= endTo; from += CHUNK) {
+      const to = Math.min(from + CHUNK - 1, endTo);
+      const { data: rows, error, count } = await buildQuery(from, to, first);
+      if (error) throw new Error(error.message);
+      if (first && typeof count === "number") total = count;
+      first = false;
+      const got = rows ?? [];
+      allRows.push(...got);
+      if (got.length < to - from + 1) break;
     }
-    // Pending-first ordering is enforced by the client, which splits rows into
-    // "waiting" / "handled" buckets from status_settings.is_handled. Keep the
-    // server query simple (most recently updated first) to avoid PostgREST
-    // enum filter pitfalls that previously returned an empty list.
-    q = q.order("updated_at", { ascending: false }).range(offset, offset + pageSize - 1);
-    const { data: rows, error, count } = await q;
-    if (error) throw new Error(error.message);
-    const items = await enrichSystemRows(context.supabase, rows ?? []);
-    return { items, total: count ?? items.length, page, pageSize };
+    const items = await enrichSystemRows(context.supabase, allRows);
+    return { items, total: total || items.length, page, pageSize };
   });
 
 // Global per-status counts across ALL systems (with optional agent/period

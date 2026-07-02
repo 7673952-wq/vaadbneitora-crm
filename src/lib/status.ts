@@ -5,7 +5,7 @@
 // see the latest values on next render. Trigger a re-render by invalidating
 // affected queries after admin saves.
 
-export type StatusOption = { value: string; label: string; tone: string; is_handled?: boolean; assigned_agent_ids?: string[] };
+export type StatusOption = { value: string; label: string; tone: string; is_handled?: boolean; is_mandatory?: boolean; assigned_agent_ids?: string[] };
 
 const DEFAULT_HANDLED = new Set(["open", "closed", "open_only_bimot", "sent_to_yosela", "blocked_from_root", "sent_to_committee", "blocked_in_committee"]);
 // Status changes that DON'T require a "reason" prompt.

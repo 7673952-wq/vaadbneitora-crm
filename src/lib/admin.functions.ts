@@ -329,6 +329,119 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ============= Dynamic permissions =============
+
+export const listPermissionSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertPermission(context, "permissions_manage");
+    await seedMissingRolePermissions();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { PERMISSION_DEFINITIONS } = await import("@/lib/permissions.server");
+    const [{ data: rolePermissions, error: rpErr }, { data: userPermissions, error: upErr }, { data: profiles }, { data: roles }, usersList] = await Promise.all([
+      supabaseAdmin.from("role_permissions").select("role, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
+      supabaseAdmin.from("user_permissions").select("user_id, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
+      supabaseAdmin.from("profiles").select("id, display_name, created_at"),
+      supabaseAdmin.from("user_roles").select("user_id, role"),
+      supabaseAdmin.auth.admin.listUsers(),
+    ]);
+    if (rpErr) throw fromSupabase(rpErr);
+    if (upErr) throw fromSupabase(upErr);
+
+    const roleMap = new Map<string, string[]>();
+    (roles ?? []).forEach((r: any) => {
+      const arr = roleMap.get(r.user_id) ?? [];
+      arr.push(r.role);
+      roleMap.set(r.user_id, arr);
+    });
+    const profileMap = new Map<string, any>();
+    (profiles ?? []).forEach((p: any) => profileMap.set(p.id, p));
+    const users = (usersList.data?.users ?? []).map((u: any) => {
+      const p = profileMap.get(u.id);
+      return {
+        id: u.id,
+        display_name: p?.display_name ?? (u.user_metadata?.display_name as string | undefined) ?? u.email?.split("@")[0] ?? "משתמש",
+        email: u.email ?? "",
+        roles: roleMap.get(u.id) ?? [],
+      };
+    }).sort((a: any, b: any) => String(a.display_name).localeCompare(String(b.display_name), "he"));
+
+    return {
+      roles: ROLES,
+      permissions: PERMISSION_DEFINITIONS,
+      rolePermissions: rolePermissions ?? [],
+      userPermissions: userPermissions ?? [],
+      users,
+    };
+  });
+
+export const setRolePermission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { role: string; permission: string; allowed: boolean }) =>
+    z.object({
+      role: z.enum(ROLES),
+      permission: z.enum(PERMISSION_KEYS),
+      allowed: z.boolean(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "permissions_manage");
+    if (data.role === "super_admin" && data.permission === "permissions_manage" && data.allowed === false) {
+      throw new AppError("לא ניתן להסיר הרשאת ניהול הרשאות ממנהל ראשי", { code: "bad_request" });
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("role_permissions").upsert({
+      role: data.role,
+      permission: data.permission,
+      allowed: data.allowed,
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const setUserPermission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; permission: string; allowed: boolean }) =>
+    z.object({
+      user_id: z.string().uuid(),
+      permission: z.enum(PERMISSION_KEYS),
+      allowed: z.boolean(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "permissions_manage");
+    if (data.user_id === context.userId && data.permission === "permissions_manage" && data.allowed === false) {
+      throw new AppError("לא ניתן להסיר מעצמך הרשאת ניהול הרשאות", { code: "bad_request" });
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("user_permissions").upsert({
+      user_id: data.user_id,
+      permission: data.permission,
+      allowed: data.allowed,
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const deleteUserPermission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; permission: string }) =>
+    z.object({ user_id: z.string().uuid(), permission: z.enum(PERMISSION_KEYS) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "permissions_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("user_permissions")
+      .delete()
+      .eq("user_id", data.user_id)
+      .eq("permission", data.permission);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
 // ============= Series detection settings =============
 
 const SERIES_KEY = "series_detection";

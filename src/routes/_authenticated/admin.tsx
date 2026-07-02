@@ -9,6 +9,7 @@ import {
   getBackupEmail, setBackupEmail,
   getStaleWarningHours, setStaleWarningHours,
   getSeriesDetection, setSeriesDetection,
+  listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -28,7 +29,8 @@ function AdminPage() {
 
   if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
   if (meError) return <AdminError message={meError.message} />;
-  if (me && !me.isAdmin) {
+  const canOpenAdmin = me?.isAdmin || me?.permissions?.settings_manage || me?.permissions?.users_manage || me?.permissions?.permissions_manage || me?.permissions?.backup_manage;
+  if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
   }
 

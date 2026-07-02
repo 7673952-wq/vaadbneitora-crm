@@ -7,13 +7,18 @@ import { sanitizeText } from "@/lib/sanitize";
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.
 async function assertAdmin(context: { userId: string }) {
-  const { assertRole } = await import("@/lib/permissions.server");
-  await assertRole(context.userId, "admin");
+  const { assertAnyPermission } = await import("@/lib/permissions.server");
+  await assertAnyPermission(context.userId, ["settings_manage", "users_manage", "permissions_manage", "backup_manage"]);
 }
 
 async function assertSuperAdmin(context: { userId: string }) {
-  const { assertRole } = await import("@/lib/permissions.server");
-  await assertRole(context.userId, "super_admin");
+  const { assertAnyPermission } = await import("@/lib/permissions.server");
+  await assertAnyPermission(context.userId, ["users_manage", "permissions_manage"]);
+}
+
+async function assertPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey) {
+  const { assertPermission } = await import("@/lib/permissions.server");
+  await assertPermission(context.userId, permission);
 }
 
 export const createUser = createServerFn({ method: "POST" })

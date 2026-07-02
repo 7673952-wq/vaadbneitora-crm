@@ -1150,15 +1150,24 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
-        const exactRoots = (rows ?? []).filter((r: any) =>
-          r.name.trim().toLowerCase() === v.toLowerCase() && !r.parent_system_id,
-        );
-        const exact = initial?.parent_id
-          ? ((rows ?? []).find((r: any) => r.id === initial.parent_id) ?? initial.parent ?? null)
-          : exactRoots[0];
-        setMatchedParentOptions(initial?.parent_id && exact ? [exact] : exactRoots);
-        setMatchedParent(exact ?? null);
-        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (exact ? current : "root")));
+        const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+        const target = norm(v);
+        const exactMatches = (rows ?? []).filter((r: any) => norm(r.name) === target);
+        // Parent options: roots that match by name PLUS parents of matching
+        // sub-systems (so "קו ההגנה" that exists only as sub-systems still
+        // offers a valid parent to nest under).
+        const optsMap = new Map<string, any>();
+        for (const r of exactMatches) {
+          if (!r.parent_system_id) optsMap.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
+          else if (r.parent) optsMap.set(r.parent.id, r.parent);
+        }
+        const opts = Array.from(optsMap.values());
+        const initialPick = initial?.parent_id
+          ? (opts.find((p: any) => p.id === initial.parent_id) ?? initial.parent ?? null)
+          : (opts[0] ?? null);
+        setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
+        setMatchedParent(initialPick);
+        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };

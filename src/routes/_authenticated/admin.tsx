@@ -4,16 +4,18 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listUsersForAdmin, createUser, deleteUser, setUserRole, getMyRole,
   updateUserDisplayName, updateUserEmail, updateUserPassword,
-  listStatusSettings, upsertStatusSetting, deleteStatusSetting,
+  listStatusSettings, upsertStatusSetting, deleteStatusSetting, reorderStatusSettings,
   getAutoSnoozeSetting, setAutoSnoozeSetting,
   getBackupEmail, setBackupEmail,
   getStaleWarningHours, setStaleWarningHours,
+  getSeriesDetection, setSeriesDetection,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus, Clock, FileText, Database } from "lucide-react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks, Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
@@ -21,9 +23,61 @@ export const Route = createFileRoute("/_authenticated/admin")({
 });
 
 function AdminPage() {
+  const meFn = useServerFn(getMyRole);
+  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
+
+  if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
+  if (meError) return <AdminError message={meError.message} />;
+  if (me && !me.isAdmin) {
+    return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
+  }
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <div className="flex items-end justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">ניהול</h1>
+          <p className="text-muted-foreground text-sm mt-1">משתמשים, סטטוסים, הרשאות, סדרות והגדרות מערכת</p>
+        </div>
+        {me?.isSuperAdmin && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link to="/audit" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <FileText className="h-4 w-4" />יומן בקרה
+            </Link>
+            <Link to="/backups" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+              <Database className="h-4 w-4" />גיבויים
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <Tabs defaultValue="users" dir="rtl">
+        <TabsList className="flex flex-wrap gap-1 h-auto">
+          <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>
+          <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>
+          <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>
+          <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>
+          <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>
+        <TabsContent value="general" className="mt-4 space-y-6">
+          <AutoSnoozePanel />
+          <BackupEmailPanel />
+          <StaleHoursPanel />
+        </TabsContent>
+        <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>
+        <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>
+        <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+// ============= Users Panel =============
+function UsersPanel({ me }: { me: any }) {
   const qc = useQueryClient();
   const agentsFn = useServerFn(listUsersForAdmin);
-  const meFn = useServerFn(getMyRole);
   const createFn = useServerFn(createUser);
   const deleteFn = useServerFn(deleteUser);
   const roleFn = useServerFn(setUserRole);
@@ -31,11 +85,9 @@ function AdminPage() {
   const emailFn = useServerFn(updateUserEmail);
   const pwFn = useServerFn(updateUserPassword);
 
-  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
-  const { data: users, error: usersError, isLoading: usersLoading } = useQuery({
+  const { data: users, error: usersError } = useQuery({
     queryKey: ["admin_users"],
     queryFn: async () => agentsFn({ headers: await getAuthHeaders() }),
-    enabled: me?.isAdmin === true,
   });
 
   const [showCreate, setShowCreate] = useState(false);
@@ -48,12 +100,7 @@ function AdminPage() {
 
   const createMut = useMutation({
     mutationFn: (vars: any) => withAuth(createFn, vars),
-    onSuccess: () => {
-      toast.success("משתמש נוצר");
-      invalidate();
-      setShowCreate(false);
-      setForm({ email: "", password: "", display_name: "", role: "agent" as const });
-    },
+    onSuccess: () => { toast.success("משתמש נוצר"); invalidate(); setShowCreate(false); setForm({ email: "", password: "", display_name: "", role: "agent" }); },
     onError: onErr,
   });
   const deleteMut = useMutation({ mutationFn: (vars: any) => withAuth(deleteFn, vars), onSuccess: () => { toast.success("נמחק"); invalidate(); }, onError: onErr });
@@ -62,29 +109,10 @@ function AdminPage() {
   const emailMut = useMutation({ mutationFn: (vars: any) => withAuth(emailFn, vars), onSuccess: () => { toast.success('דוא"ל עודכן'); invalidate(); setEditing(null); }, onError: onErr });
   const pwMut = useMutation({ mutationFn: (vars: any) => withAuth(pwFn, vars), onSuccess: () => { toast.success("סיסמה עודכנה"); invalidate(); setEditing(null); }, onError: onErr });
 
-
-  if (meLoading) {
-    return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
-  }
-
-  if (meError) {
-    return <AdminError message={meError.message} />;
-  }
-
-  if (me && !me.isAdmin) {
-    return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
-  }
-
-  if (usersError) {
-    return <AdminError message={usersError.message} />;
-  }
+  if (usersError) return <AdminError message={usersError.message} />;
 
   function startEdit(u: any, field: "name" | "email" | "password") {
-    setEditing({
-      id: u.id,
-      field,
-      value: field === "name" ? u.display_name : field === "email" ? u.email : "",
-    });
+    setEditing({ id: u.id, field, value: field === "name" ? u.display_name : field === "email" ? u.email : "" });
   }
   function submitEdit() {
     if (!editing) return;
@@ -96,29 +124,12 @@ function AdminPage() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-end justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">ניהול</h1>
-          <p className="text-muted-foreground text-sm mt-1">ניהול משתמשים, הרשאות, סטטוסים וצבעי המערכת</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {me?.isSuperAdmin && (
-            <>
-              <Link to="/audit" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-                <FileText className="h-4 w-4" />יומן בקרה
-              </Link>
-              <Link to="/backups" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
-                <Database className="h-4 w-4" />גיבויים
-              </Link>
-            </>
-          )}
-          <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
-            <UserPlus className="h-4 w-4" />משתמש חדש
-          </button>
-        </div>
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <button onClick={() => setShowCreate(true)} className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+          <UserPlus className="h-4 w-4" />משתמש חדש
+        </button>
       </div>
-
       <div className="bg-card border border-border rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 border-b border-border">
@@ -144,7 +155,6 @@ function AdminPage() {
                   <td className="px-4 py-3">
                     {editingThis && editing?.field === "name" ? (
                       <EditRow value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
-
                     ) : (
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{u.display_name}</span>
@@ -167,11 +177,10 @@ function AdminPage() {
                       </div>
                     )}
                   </td>
-
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <select value={currentRole} disabled={u.id === me?.userId}
-                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as "admin" | "agent" | "super_admin" | "viewer" } })}
+                        onChange={(e) => roleMut.mutate({ data: { user_id: u.id, role: e.target.value as any } })}
                         className="text-xs rounded-md border border-input bg-background px-2 py-1">
                         <option value="viewer">צופה</option>
                         <option value="agent">נציג</option>
@@ -185,8 +194,7 @@ function AdminPage() {
                     {u.last_sign_in_at ? new Date(u.last_sign_in_at).toLocaleString("he-IL") : "—"}
                   </td>
                   <td className="px-4 py-3 text-left whitespace-nowrap">
-                    <button onClick={() => startEdit(u, "password")} title="שנה סיסמה"
-                      className="text-muted-foreground hover:text-foreground p-1.5 rounded hover:bg-accent">
+                    <button onClick={() => startEdit(u, "password")} title="שנה סיסמה" className="text-muted-foreground hover:text-foreground p-1.5 rounded hover:bg-accent">
                       <Key className="h-4 w-4" />
                     </button>
                     {u.id !== me?.userId && (
@@ -222,30 +230,23 @@ function AdminPage() {
               <div className="flex gap-2 justify-end pt-2">
                 <button type="button" onClick={() => setShowCreate(false)} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
                 <button type="submit" disabled={createMut.isPending} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
-              {createMut.isPending ? "יוצר..." : "צור משתמש"}
+                  {createMut.isPending ? "יוצר..." : "צור משתמש"}
                 </button>
               </div>
             </form>
           </div>
         </div>
       )}
-
-      <AutoSnoozePanel />
-      <BackupEmailPanel />
-      <StaleHoursPanel />
-      <StatusSettingsPanel />
     </div>
   );
 }
 
+// ============= Backup Email =============
 function BackupEmailPanel() {
   const getFn = useServerFn(getBackupEmail);
   const setFn = useServerFn(setBackupEmail);
   const qc = useQueryClient();
-  const { data } = useQuery({
-    queryKey: ["backup_email"],
-    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
-  });
+  const { data } = useQuery({ queryKey: ["backup_email"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
   const [email, setEmail] = useState("");
   useEffect(() => { if (data) setEmail(data.email); }, [data]);
   const mut = useMutation({
@@ -256,23 +257,12 @@ function BackupEmailPanel() {
   return (
     <div className="bg-card border border-border rounded-xl p-5">
       <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Mail className="h-4 w-4" />מייל לגיבויים</h2>
-      <p className="text-xs text-muted-foreground mb-3">
-        כתובת המייל שאליה יישלח קישור הגיבוי בלחיצה על "שלח למייל" במסך הגיבויים.
-      </p>
+      <p className="text-xs text-muted-foreground mb-3">כתובת המייל שאליה יישלח קישור הגיבוי בלחיצה על "שלח למייל" במסך הגיבויים.</p>
       <div className="flex gap-2 flex-wrap">
-        <input
-          type="email"
-          dir="ltr"
-          placeholder="name@example.com"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 min-w-[240px] rounded-lg border border-input bg-background px-3 py-2 text-sm"
-        />
-        <button
-          onClick={() => mut.mutate({ data: { email: email.trim() } })}
-          disabled={mut.isPending || email === (data?.email ?? "")}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
+        <input type="email" dir="ltr" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)}
+          className="flex-1 min-w-[240px] rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        <button onClick={() => mut.mutate({ data: { email: email.trim() } })} disabled={mut.isPending || email === (data?.email ?? "")}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {mut.isPending ? "שומר..." : "שמור"}
         </button>
       </div>
@@ -280,14 +270,12 @@ function BackupEmailPanel() {
   );
 }
 
+// ============= Stale Hours =============
 function StaleHoursPanel() {
   const getFn = useServerFn(getStaleWarningHours);
   const setFn = useServerFn(setStaleWarningHours);
   const qc = useQueryClient();
-  const { data } = useQuery({
-    queryKey: ["stale_warning_hours"],
-    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
-  });
+  const { data } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
   const [hours, setHours] = useState<number>(24);
   useEffect(() => { if (data) setHours(data.hours); }, [data]);
   const mut = useMutation({
@@ -298,22 +286,14 @@ function StaleHoursPanel() {
   return (
     <div className="bg-card border border-border rounded-xl p-5">
       <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />צביעת אזהרה — זמן ללא טיפול</h2>
-      <p className="text-xs text-muted-foreground mb-3">
-        מערכת שלא נגעו בה X שעות ועדיין לא טופלה תוצג עם מסגרת אדומה מהבהבת. 0 = מבוטל.
-      </p>
+      <p className="text-xs text-muted-foreground mb-3">מערכת שלא נגעו בה X שעות ועדיין לא טופלה תוצג עם מסגרת אדומה מהבהבת. 0 = מבוטל.</p>
       <div className="flex gap-2 items-center flex-wrap">
-        <input
-          type="number" min={0} max={8760}
-          value={hours}
+        <input type="number" min={0} max={8760} value={hours}
           onChange={(e) => setHours(Math.max(0, Math.min(8760, Number(e.target.value) || 0)))}
-          className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm"
-        />
+          className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
         <span className="text-sm text-muted-foreground">שעות</span>
-        <button
-          onClick={() => mut.mutate({ data: { hours } })}
-          disabled={mut.isPending || hours === (data?.hours ?? 24)}
-          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50"
-        >
+        <button onClick={() => mut.mutate({ data: { hours } })} disabled={mut.isPending || hours === (data?.hours ?? 24)}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {mut.isPending ? "שומר..." : "שמור"}
         </button>
       </div>
@@ -321,11 +301,45 @@ function StaleHoursPanel() {
   );
 }
 
+// ============= Auto Snooze =============
+function AutoSnoozePanel() {
+  const getFn = useServerFn(getAutoSnoozeSetting);
+  const setFn = useServerFn(setAutoSnoozeSetting);
+  const qc = useQueryClient();
+  const { data: current } = useQuery({ queryKey: ["auto_snooze"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const [thresholdDays, setThresholdDays] = useState<number>(30);
+  useEffect(() => { if (current) setThresholdDays(current.threshold_days); }, [current]);
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+  const saveMut = useMutation({
+    mutationFn: () => withAuth(setFn, { data: { unit: "day" as const, date: null, threshold_days: thresholdDays } }),
+    onSuccess: () => { toast.success("הגדרה נשמרה"); qc.invalidateQueries({ queryKey: ["auto_snooze"] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />תזכורת אוטומטית</h2>
+      <p className="text-xs text-muted-foreground mb-3">מערכת בסטטוס ממתין שלא טופלה במשך מספר הימים שתגדיר, תופיע אוטומטית כתזכורת לנציג המשוייך אליה.</p>
+      <div className="flex gap-3 items-end flex-wrap">
+        <Field label="סף ימים ללא טיפול">
+          <input type="number" min={0} value={thresholdDays} onChange={(e) => setThresholdDays(Number(e.target.value))}
+            className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+        </Field>
+        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50">
+          {saveMut.isPending ? "שומר..." : "שמור הגדרה"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ============= Statuses Panel =============
 function StatusSettingsPanel() {
   const qc = useQueryClient();
   const listFn = useServerFn(listStatusSettings);
   const upsertFn = useServerFn(upsertStatusSetting);
   const delFn = useServerFn(deleteStatusSetting);
+  const reorderFn = useServerFn(reorderStatusSettings);
   const agentsFn = useServerFn(listUsersForAdmin);
   const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
   const { data: agents } = useQuery({ queryKey: ["admin_users"], queryFn: async () => agentsFn({ headers: await getAuthHeaders() }) });
@@ -335,37 +349,40 @@ function StatusSettingsPanel() {
     applyStatusSettings(fresh as any);
     qc.invalidateQueries({ queryKey: ["systems"] });
   };
-
   const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
-
-  const upsertMut = useMutation({
-    mutationFn: (vars: any) => withAuth(upsertFn, vars),
-    onSuccess: async () => { await refresh(); toast.success("נשמר"); },
-    onError: (e: any) => toast.error(e.message),
-  });
-  const delMut = useMutation({
-    mutationFn: (vars: any) => withAuth(delFn, vars),
-    onSuccess: async () => { await refresh(); toast.success("נמחק"); },
-    onError: (e: any) => toast.error(e.message),
-  });
+  const upsertMut = useMutation({ mutationFn: (vars: any) => withAuth(upsertFn, vars), onSuccess: async () => { await refresh(); toast.success("נשמר"); }, onError: (e: any) => toast.error(e.message) });
+  const delMut = useMutation({ mutationFn: (vars: any) => withAuth(delFn, vars), onSuccess: async () => { await refresh(); toast.success("נמחק"); }, onError: (e: any) => toast.error(e.message) });
+  const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); }, onError: (e: any) => toast.error(e.message) });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true });
+
+  const sorted = [...((rows ?? []) as any[])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const move = (idx: number, delta: number) => {
+    const next = [...sorted];
+    const j = idx + delta;
+    if (j < 0 || j >= next.length) return;
+    [next[idx], next[j]] = [next[j], next[idx]];
+    reorderMut.mutate({ data: { order: next.map((r) => r.status_key) } });
+  };
+  const renumber = () => reorderMut.mutate({ data: { order: sorted.map((r) => r.status_key) } });
 
   return (
-    <div className="mt-10">
-      <div className="flex items-end justify-between flex-wrap gap-3 mb-3">
-        <div>
-          <h2 className="text-2xl font-bold flex items-center gap-2"><Palette className="h-5 w-5" /> ניהול סטטוסים</h2>
-          <p className="text-sm text-muted-foreground mt-1">ערוך תוויות, צבעים, מצב (טופל/ממתין) ושיוך אוטומטי לנציגים. שינויים חלים מיד.</p>
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <p className="text-sm text-muted-foreground">סטטוסי "חובה" מוצגים בשורה הראשית בדשבורד. סטטוסים "אופציונליים" מוצגים בשורה נפרדת (עמודה של יוסלה/ועדה).</p>
+        <div className="flex gap-2">
+          <button onClick={renumber} className="flex items-center gap-1 px-3 py-1.5 border border-border rounded-lg text-xs hover:bg-accent" title="מספר מחדש 1..N">
+            <ListChecks className="h-3.5 w-3.5" /> מספר מחדש
+          </button>
+          <button onClick={() => setShowAdd((v) => !v)} className="flex items-center gap-2 px-3 py-1.5 bg-secondary text-secondary-foreground rounded-lg text-sm hover:bg-secondary/80">
+            <Plus className="h-4 w-4" /> סטטוס חדש
+          </button>
         </div>
-        <button onClick={() => setShowAdd((v) => !v)} className="flex items-center gap-2 px-3 py-2 bg-secondary text-secondary-foreground rounded-lg text-sm hover:bg-secondary/80">
-          <Plus className="h-4 w-4" /> סטטוס חדש
-        </button>
       </div>
 
       {showAdd && (
-        <div className="bg-card border border-border rounded-xl p-4 mb-4 grid sm:grid-cols-6 gap-2 items-end">
+        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-6 gap-2 items-end">
           <Field label="מפתח (אנגלית)"><input value={newRow.status_key} onChange={(e) => setNewRow({ ...newRow, status_key: e.target.value })} placeholder="my_custom_status" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="תווית"><input value={newRow.label} onChange={(e) => setNewRow({ ...newRow, label: e.target.value })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="צבע">
@@ -373,11 +390,16 @@ function StatusSettingsPanel() {
               {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}
             </select>
           </Field>
-          <Field label="מיקום"><input type="number" value={newRow.sort_order} onChange={(e) => setNewRow({ ...newRow, sort_order: Number(e.target.value) })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="מצב">
             <select value={newRow.is_handled ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, is_handled: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
               <option value="0">ממתין לטיפול</option>
               <option value="1">טופל</option>
+            </select>
+          </Field>
+          <Field label="חובה/אופציונלי">
+            <select value={newRow.is_mandatory ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, is_mandatory: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="1">חובה (שורה ראשית)</option>
+              <option value="0">אופציונלי (שורה נפרדת)</option>
             </select>
           </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>
@@ -388,18 +410,20 @@ function StatusSettingsPanel() {
         <table className="w-full text-sm">
           <thead className="bg-muted/50 border-b border-border">
             <tr className="text-right">
+              <th className="px-3 py-2 font-medium text-muted-foreground w-16">#</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">תצוגה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">תווית</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">סדר</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">שורה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {(rows ?? []).map((r: any) => (
-              <StatusEditRow key={r.status_key} row={r} agents={(agents ?? []) as any[]}
+            {sorted.map((r: any, idx: number) => (
+              <StatusEditRow key={r.status_key} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+                onMove={(delta) => move(idx, delta)}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
               />
@@ -411,19 +435,27 @@ function StatusSettingsPanel() {
   );
 }
 
-
-function StatusEditRow({ row, agents, onSave, onDelete }: { row: any; agents: any[]; onSave: (p: { label: string; tone: string; sort_order: number; is_handled: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
-  const [order, setOrder] = useState<number>(row.sort_order ?? 0);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
+  const [mandatory, setMandatory] = useState<boolean>(row.is_mandatory ?? true);
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || order !== row.sort_order || handled !== !!row.is_handled || idsDirty;
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || idsDirty;
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <tr className="border-b border-border last:border-0 align-top">
+      <td className="px-3 py-2">
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-mono w-6">{index + 1}</span>
+          <div className="flex flex-col">
+            <button onClick={() => onMove(-1)} disabled={index === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowUp className="h-3 w-3" /></button>
+            <button onClick={() => onMove(1)} disabled={index === total - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowDown className="h-3 w-3" /></button>
+          </div>
+        </div>
+      </td>
       <td className="px-3 py-2">
         <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(tone)}`}>{label || row.status_key}</span>
         <div className="text-[10px] font-mono text-muted-foreground mt-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
@@ -434,11 +466,16 @@ function StatusEditRow({ row, agents, onSave, onDelete }: { row: any; agents: an
           {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
       </td>
-      <td className="px-3 py-2"><input type="number" value={order} onChange={(e) => setOrder(Number(e.target.value))} className="w-20 rounded-md border border-input bg-background px-2 py-1 text-sm" /></td>
       <td className="px-3 py-2">
         <select value={handled ? "1" : "0"} onChange={(e) => setHandled(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
           <option value="0">ממתין</option>
           <option value="1">טופל</option>
+        </select>
+      </td>
+      <td className="px-3 py-2">
+        <select value={mandatory ? "1" : "0"} onChange={(e) => setMandatory(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
+          <option value="1">חובה</option>
+          <option value="0">אופציונלי</option>
         </select>
       </td>
       <td className="px-3 py-2">
@@ -456,7 +493,7 @@ function StatusEditRow({ row, agents, onSave, onDelete }: { row: any; agents: an
         </div>
       </td>
       <td className="px-3 py-2 text-left whitespace-nowrap">
-        <button disabled={!dirty} onClick={() => onSave({ label, tone, sort_order: order, is_handled: handled, assigned_agent_ids: agentIds })}
+        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, assigned_agent_ids: agentIds })}
           className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30">שמור</button>
         {onDelete && (
           <button onClick={onDelete} className="text-destructive hover:bg-destructive/10 rounded p-1.5 mr-1"><Trash2 className="h-4 w-4 inline" /></button>
@@ -466,7 +503,103 @@ function StatusEditRow({ row, agents, onSave, onDelete }: { row: any; agents: an
   );
 }
 
+// ============= Series Detection =============
+function SeriesSettingsPanel() {
+  const getFn = useServerFn(getSeriesDetection);
+  const setFn = useServerFn(setSeriesDetection);
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["series_detection"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const [modes, setModes] = useState<Array<{ strip: number; min: number }>>([]);
+  useEffect(() => { if (data) setModes(data.modes); }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { modes: Array<{ strip: number; min: number }> } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["series_detection"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
 
+  const update = (i: number, patch: Partial<{ strip: number; min: number }>) => {
+    const next = [...modes]; next[i] = { ...next[i], ...patch }; setModes(next);
+  };
+  const remove = (i: number) => setModes(modes.filter((_, idx) => idx !== i));
+  const add = () => setModes([...modes, { strip: 2, min: 10 }]);
+
+  return (
+    <div className="space-y-3">
+      <div className="bg-card border border-border rounded-xl p-5">
+        <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><SearchIcon className="h-4 w-4" />הגדרות "השלמת סדרות"</h2>
+        <p className="text-xs text-muted-foreground mb-4">
+          כל שורה מגדירה חוק לזיהוי סדרות: "התעלם מ־N ספרות אחרונות" ו"מינימום מספרים דומים כדי להיחשב סדרה".
+          לדוגמה: התעלמות מ־2 ספרות אחרונות, מינימום 10 מספרים דומים → תזוהה כסדרה.
+        </p>
+        <div className="space-y-2">
+          {modes.map((m, i) => (
+            <div key={i} className="flex items-end gap-2 flex-wrap">
+              <Field label="ספרות אחרונות להתעלמות">
+                <input type="number" min={1} max={10} value={m.strip} onChange={(e) => update(i, { strip: Number(e.target.value) })}
+                  className="w-28 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+              </Field>
+              <Field label="מינימום מספרים בסדרה">
+                <input type="number" min={2} max={1000} value={m.min} onChange={(e) => update(i, { min: Number(e.target.value) })}
+                  className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+              </Field>
+              <button onClick={() => remove(i)} className="text-destructive hover:bg-destructive/10 rounded p-2"><Trash2 className="h-4 w-4" /></button>
+            </div>
+          ))}
+          <button onClick={add} className="flex items-center gap-1 text-sm text-primary hover:underline">
+            <Plus className="h-3.5 w-3.5" /> הוסף חוק
+          </button>
+        </div>
+        <div className="mt-4">
+          <button onClick={() => mut.mutate({ data: { modes } })} disabled={mut.isPending || modes.length === 0}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+            {mut.isPending ? "שומר..." : "שמור הגדרות"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============= Permissions (info) =============
+function PermissionsPanel() {
+  const rows: Array<{ action: string; roles: string }> = [
+    { action: "צפייה בכל המערכות", roles: "צופה, נציג, מנהל, מנהל ראשי" },
+    { action: "יצירת/עריכת מערכת", roles: "נציג, מנהל, מנהל ראשי" },
+    { action: "מחיקת מערכת", roles: "מנהל ראשי" },
+    { action: "שינוי סטטוס", roles: "נציג, מנהל, מנהל ראשי" },
+    { action: "העברה בין נציגים", roles: "נציג (על המערכות שלו), מנהל, מנהל ראשי" },
+    { action: "ייבוא/ייצוא", roles: "מנהל, מנהל ראשי" },
+    { action: "סריקת סדרות", roles: "מנהל, מנהל ראשי" },
+    { action: "ניהול משתמשים", roles: "מנהל ראשי" },
+    { action: "עריכת סטטוסים", roles: "מנהל ראשי" },
+    { action: "גיבויים ויומן בקרה", roles: "מנהל ראשי" },
+  ];
+  return (
+    <div className="space-y-3">
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
+        <div className="flex items-center gap-2 font-semibold mb-1"><LockKeyhole className="h-4 w-4" />מטריצת הרשאות</div>
+        <p className="text-xs">כרגע ההרשאות מוגדרות לפי תפקידים (צופה / נציג / מנהל / מנהל ראשי). מטריצה דינמית מלאה לפי פעולה+תפקיד היא שדרוג שדורש עדכון של כל הפעולות בשרת ונעשית בסבב נפרד.</p>
+      </div>
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 border-b border-border">
+            <tr className="text-right"><th className="px-4 py-3 font-medium">פעולה</th><th className="px-4 py-3 font-medium">מי מורשה</th></tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.action} className="border-b border-border last:border-0">
+                <td className="px-4 py-3 font-medium">{r.action}</td>
+                <td className="px-4 py-3 text-muted-foreground">{r.roles}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ============= Shared bits =============
 function AdminError({ message }: { message: string }) {
   return (
     <div className="max-w-xl mx-auto text-center py-20">
@@ -475,11 +608,9 @@ function AdminError({ message }: { message: string }) {
     </div>
   );
 }
-
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className="text-sm font-medium block mb-1">{label}</label>{children}</div>;
 }
-
 function EditRow({ value, onChange, onSave, onCancel, type = "text", placeholder }: { value: string; onChange: (v: string) => void; onSave: () => void; onCancel: () => void; type?: string; placeholder?: string }) {
   return (
     <div className="flex items-center gap-1">
@@ -492,53 +623,3 @@ function EditRow({ value, onChange, onSave, onCancel, type = "text", placeholder
     </div>
   );
 }
-
-function AutoSnoozePanel() {
-  const getFn = useServerFn(getAutoSnoozeSetting);
-  const setFn = useServerFn(setAutoSnoozeSetting);
-  const qc = useQueryClient();
-  const { data: current } = useQuery({ queryKey: ["auto_snooze"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
-
-  const [thresholdDays, setThresholdDays] = useState<number>(30);
-
-  useEffect(() => {
-    if (!current) return;
-    setThresholdDays(current.threshold_days);
-  }, [current]);
-
-  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
-  const buildPayload = () => ({ unit: "day" as const, date: null, threshold_days: thresholdDays });
-
-  const saveMut = useMutation({
-    mutationFn: () => withAuth(setFn, { data: buildPayload() }),
-    onSuccess: () => { toast.success("הגדרה נשמרה"); qc.invalidateQueries({ queryKey: ["auto_snooze"] }); },
-    onError: (e: any) => toast.error(e.message),
-  });
-
-  return (
-    <div className="mt-10">
-      <div className="mb-3">
-        <h2 className="text-2xl font-bold flex items-center gap-2"><Clock className="h-5 w-5" /> תזכורת אוטומטית</h2>
-        <p className="text-sm text-muted-foreground mt-1">מערכת בסטטוס ממתין שלא טופלה במשך מספר הימים שתגדיר, תופיע אוטומטית כתזכורת לנציג המשוייך אליה.</p>
-      </div>
-      <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-3 gap-3 items-end">
-        <Field label="סף ימים ללא טיפול">
-          <input type="number" min={0} value={thresholdDays} onChange={(e) => setThresholdDays(Number(e.target.value))}
-            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
-        </Field>
-        <div>
-          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-            className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50">
-            {saveMut.isPending ? "שומר..." : "שמור הגדרה"}
-          </button>
-        </div>
-      </div>
-      {current && (
-        <p className="text-xs text-muted-foreground mt-2">
-          הגדרה שמורה: סף {current.threshold_days} ימים.
-        </p>
-      )}
-    </div>
-  );
-}
-

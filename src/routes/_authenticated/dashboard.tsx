@@ -1475,7 +1475,25 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
                   {f.l}
                 </button>
               ))}
+          </div>
+
+          {format === "crm" && (
+            <div>
+              <label className="text-sm font-medium block mb-2">קטגוריה לייצוא</label>
+              <div className="grid grid-cols-1 gap-2">
+                {([
+                  { v: "open", l: "לפתוח (OPEN)" },
+                  { v: "block", l: "לחסום (BLOCKED)" },
+                  { v: "both", l: "לפתוח בימות / לחסום בסימהדרין (2 קבצים)" },
+                ] as { v: "open" | "block" | "both"; l: string }[]).map((m) => (
+                  <button key={m.v} type="button" onClick={() => setCrmMode(m.v)}
+                    className={`text-sm py-2 rounded-lg border ${crmMode === m.v ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                    {m.l}
+                  </button>
+                ))}
+              </div>
             </div>
+          )}
           </div>
 
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">

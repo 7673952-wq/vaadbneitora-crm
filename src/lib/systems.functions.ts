@@ -113,6 +113,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     z.object({
       agentId: z.string().uuid().nullable().optional(),
       period: periodSchema.nullable().optional(),
+      dateFrom: isoDate,
+      dateTo: isoDate,
     }).strict().parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
@@ -127,6 +129,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
       q = q.gte("updated_at", start.toISOString());
     }
+    if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
+    if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
     // Paginate through everything to bypass the 1000-row default.
     const counts: Record<string, number> = {};
     const pageSize = 1000;

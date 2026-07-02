@@ -9,7 +9,7 @@ import {
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, STATUS_MANDATORY, toneClasses,
   statusCardClasses, applyStatusSettings, NO_REASON_STATUSES, type SystemStatus,
   CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus,
 } from "@/lib/status";

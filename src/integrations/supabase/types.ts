@@ -58,6 +58,7 @@ export type Database = {
           assigned_agent_ids: string[]
           is_custom: boolean
           is_handled: boolean
+          is_mandatory: boolean
           label: string
           sort_order: number
           status_key: string
@@ -68,6 +69,7 @@ export type Database = {
           assigned_agent_ids?: string[]
           is_custom?: boolean
           is_handled?: boolean
+          is_mandatory?: boolean
           label: string
           sort_order?: number
           status_key: string
@@ -78,6 +80,7 @@ export type Database = {
           assigned_agent_ids?: string[]
           is_custom?: boolean
           is_handled?: boolean
+          is_mandatory?: boolean
           label?: string
           sort_order?: number
           status_key?: string

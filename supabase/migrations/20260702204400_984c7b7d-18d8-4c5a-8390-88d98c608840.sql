@@ -1,0 +1,1 @@
+ALTER TABLE public.status_settings ADD COLUMN IF NOT EXISTS is_mandatory BOOLEAN NOT NULL DEFAULT true;

@@ -78,6 +78,8 @@ export const listSystems = createServerFn({ method: "POST" })
         else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
         q = q.gte("updated_at", start.toISOString());
       }
+      if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
+      if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
       return q.order("updated_at", { ascending: false }).range(from, to);
     };
 

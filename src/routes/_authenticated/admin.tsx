@@ -9,7 +9,9 @@ import {
   getBackupEmail, setBackupEmail,
   getStaleWarningHours, setStaleWarningHours,
   getSeriesDetection, setSeriesDetection,
+  listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
+import { listAgents } from "@/lib/systems.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState, useEffect } from "react";
@@ -28,7 +30,15 @@ function AdminPage() {
 
   if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
   if (meError) return <AdminError message={meError.message} />;
-  if (me && !me.isAdmin) {
+  const perms = (me?.permissions ?? {}) as Record<string, boolean>;
+  const canUsers = !!perms.users_manage;
+  const canGeneral = !!(perms.settings_manage || perms.backup_manage);
+  const canStatuses = !!perms.settings_manage;
+  const canSeries = !!perms.series_manage;
+  const canPermissions = !!perms.permissions_manage;
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions;
+  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canSeries ? "series" : "permissions";
+  if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
   }
 
@@ -51,24 +61,24 @@ function AdminPage() {
         )}
       </div>
 
-      <Tabs defaultValue="users" dir="rtl">
+      <Tabs defaultValue={defaultTab} dir="rtl">
         <TabsList className="flex flex-wrap gap-1 h-auto">
-          <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>
-          <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>
-          <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>
-          <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>
-          <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>
+          {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
+          {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
+          {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
+          {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
+          {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>
-        <TabsContent value="general" className="mt-4 space-y-6">
+        {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
+        {canGeneral && <TabsContent value="general" className="mt-4 space-y-6">
           <AutoSnoozePanel />
           <BackupEmailPanel />
           <StaleHoursPanel />
-        </TabsContent>
-        <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>
-        <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>
-        <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>
+        </TabsContent>}
+        {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
+        {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
+        {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
       </Tabs>
     </div>
   );
@@ -77,7 +87,7 @@ function AdminPage() {
 // ============= Users Panel =============
 function UsersPanel({ me }: { me: any }) {
   const qc = useQueryClient();
-  const agentsFn = useServerFn(listUsersForAdmin);
+  const agentsFn = useServerFn(listAgents);
   const createFn = useServerFn(createUser);
   const deleteFn = useServerFn(deleteUser);
   const roleFn = useServerFn(setUserRole);
@@ -560,40 +570,111 @@ function SeriesSettingsPanel() {
   );
 }
 
-// ============= Permissions (info) =============
+// ============= Permissions =============
 function PermissionsPanel() {
-  const rows: Array<{ action: string; roles: string }> = [
-    { action: "צפייה בכל המערכות", roles: "צופה, נציג, מנהל, מנהל ראשי" },
-    { action: "יצירת/עריכת מערכת", roles: "נציג, מנהל, מנהל ראשי" },
-    { action: "מחיקת מערכת", roles: "מנהל ראשי" },
-    { action: "שינוי סטטוס", roles: "נציג, מנהל, מנהל ראשי" },
-    { action: "העברה בין נציגים", roles: "נציג (על המערכות שלו), מנהל, מנהל ראשי" },
-    { action: "ייבוא/ייצוא", roles: "מנהל, מנהל ראשי" },
-    { action: "סריקת סדרות", roles: "מנהל, מנהל ראשי" },
-    { action: "ניהול משתמשים", roles: "מנהל ראשי" },
-    { action: "עריכת סטטוסים", roles: "מנהל ראשי" },
-    { action: "גיבויים ויומן בקרה", roles: "מנהל ראשי" },
-  ];
+  const qc = useQueryClient();
+  const listFn = useServerFn(listPermissionSettings);
+  const roleFn = useServerFn(setRolePermission);
+  const userFn = useServerFn(setUserPermission);
+  const clearFn = useServerFn(deleteUserPermission);
+  const { data, error, isLoading } = useQuery({ queryKey: ["permission_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
+  const [selectedUser, setSelectedUser] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["permission_settings"] }); qc.invalidateQueries({ queryKey: ["me"] }); };
+  const roleMut = useMutation({ mutationFn: async (vars: any) => roleFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("הרשאת תפקיד עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
+  const userMut = useMutation({ mutationFn: async (vars: any) => userFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("הרשאת משתמש עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
+  const clearMut = useMutation({ mutationFn: async (vars: any) => clearFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("חריגה הוסרה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
+
+  if (isLoading) return <div className="text-center py-8 text-muted-foreground">טוען הרשאות...</div>;
+  if (error) return <AdminError message={error.message} />;
+
+  const roles = (data?.roles ?? []) as string[];
+  const permissions = (data?.permissions ?? []) as Array<{ key: string; label: string; description?: string }>;
+  const roleRows = (data?.rolePermissions ?? []) as Array<{ role: string; permission: string; allowed: boolean }>;
+  const userRows = (data?.userPermissions ?? []) as Array<{ user_id: string; permission: string; allowed: boolean }>;
+  const users = ((data?.users ?? []) as any[]).filter((u) => !search.trim() || `${u.display_name} ${u.email}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const roleLabel: Record<string, string> = { viewer: "צופה", agent: "נציג", admin: "מנהל", super_admin: "מנהל ראשי" };
+  const roleAllowed = (role: string, permission: string) => roleRows.find((r) => r.role === role && r.permission === permission)?.allowed ?? false;
+  const userOverride = (userId: string, permission: string) => userRows.find((r) => r.user_id === userId && r.permission === permission)?.allowed;
+  const selected = users.find((u) => u.id === selectedUser) ?? (data?.users ?? []).find((u: any) => u.id === selectedUser);
+
   return (
-    <div className="space-y-3">
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-        <div className="flex items-center gap-2 font-semibold mb-1"><LockKeyhole className="h-4 w-4" />מטריצת הרשאות</div>
-        <p className="text-xs">כרגע ההרשאות מוגדרות לפי תפקידים (צופה / נציג / מנהל / מנהל ראשי). מטריצה דינמית מלאה לפי פעולה+תפקיד היא שדרוג שדורש עדכון של כל הפעולות בשרת ונעשית בסבב נפרד.</p>
-      </div>
+    <div className="space-y-6">
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="p-4 border-b border-border">
+          <h2 className="text-lg font-semibold flex items-center gap-2"><LockKeyhole className="h-4 w-4" />הרשאות לפי תפקיד</h2>
+          <p className="text-xs text-muted-foreground mt-1">כיבוי/הדלקה כאן משפיע על כל המשתמשים בתפקיד, אלא אם הוגדרה להם חריגה אישית.</p>
+        </div>
+        <table className="w-full text-sm min-w-[760px]">
           <thead className="bg-muted/50 border-b border-border">
-            <tr className="text-right"><th className="px-4 py-3 font-medium">פעולה</th><th className="px-4 py-3 font-medium">מי מורשה</th></tr>
+            <tr className="text-right">
+              <th className="px-4 py-3 font-medium">הרשאה</th>
+              {roles.map((r) => <th key={r} className="px-4 py-3 font-medium text-center">{roleLabel[r] ?? r}</th>)}
+            </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
-              <tr key={r.action} className="border-b border-border last:border-0">
-                <td className="px-4 py-3 font-medium">{r.action}</td>
-                <td className="px-4 py-3 text-muted-foreground">{r.roles}</td>
+            {permissions.map((p) => (
+              <tr key={p.key} className="border-b border-border last:border-0">
+                <td className="px-4 py-3">
+                  <div className="font-medium">{p.label}</div>
+                  <div className="text-xs text-muted-foreground">{p.description}</div>
+                </td>
+                {roles.map((r) => {
+                  const active = roleAllowed(r, p.key);
+                  return (
+                    <td key={`${r}:${p.key}`} className="px-4 py-3 text-center">
+                      <button onClick={() => roleMut.mutate({ data: { role: r, permission: p.key, allowed: !active } })}
+                        disabled={roleMut.isPending}
+                        className={`inline-flex items-center justify-center w-10 h-6 rounded-full border text-xs font-bold ${active ? "bg-emerald-600 text-white border-emerald-600" : "bg-background text-muted-foreground border-input"}`}>
+                        {active ? "כן" : "לא"}
+                      </button>
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="p-4 border-b border-border space-y-3">
+          <h2 className="text-lg font-semibold">הרשאות לפי משתמש</h2>
+          <div className="flex gap-2 flex-wrap">
+            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש משתמש..." className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            <select value={selectedUser} onChange={(e) => setSelectedUser(e.target.value)} className="min-w-64 rounded-lg border border-input bg-background px-3 py-2 text-sm">
+              <option value="">בחר משתמש</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.display_name} · {u.email}</option>)}
+            </select>
+          </div>
+          <p className="text-xs text-muted-foreground">"לפי תפקיד" מסיר חריגה אישית. "כן" או "לא" גוברים על הרשאת התפקיד.</p>
+        </div>
+        {selected ? (
+          <table className="w-full text-sm">
+            <tbody>
+              {permissions.map((p) => {
+                const override = userOverride(selected.id, p.key);
+                return (
+                  <tr key={p.key} className="border-b border-border last:border-0">
+                    <td className="px-4 py-3 font-medium">{p.label}</td>
+                    <td className="px-4 py-3 text-left">
+                      <select value={override === undefined ? "inherit" : override ? "allow" : "deny"}
+                        onChange={(e) => {
+                          if (e.target.value === "inherit") clearMut.mutate({ data: { user_id: selected.id, permission: p.key } });
+                          else userMut.mutate({ data: { user_id: selected.id, permission: p.key, allowed: e.target.value === "allow" } });
+                        }}
+                        className="rounded-md border border-input bg-background px-2 py-1 text-sm">
+                        <option value="inherit">לפי תפקיד</option>
+                        <option value="allow">כן - חריגה אישית</option>
+                        <option value="deny">לא - חריגה אישית</option>
+                      </select>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : <div className="p-6 text-sm text-muted-foreground text-center">בחר משתמש כדי להגדיר חריגות אישיות.</div>}
       </div>
     </div>
   );

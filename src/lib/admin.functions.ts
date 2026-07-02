@@ -7,13 +7,84 @@ import { sanitizeText } from "@/lib/sanitize";
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.
 async function assertAdmin(context: { userId: string }) {
-  const { assertRole } = await import("@/lib/permissions.server");
-  await assertRole(context.userId, "admin");
+  const { assertAnyPermission } = await import("@/lib/permissions.server");
+  await assertAnyPermission(context.userId, ["settings_manage", "users_manage", "permissions_manage", "backup_manage"]);
 }
 
 async function assertSuperAdmin(context: { userId: string }) {
-  const { assertRole } = await import("@/lib/permissions.server");
-  await assertRole(context.userId, "super_admin");
+  const { assertAnyPermission } = await import("@/lib/permissions.server");
+  await assertAnyPermission(context.userId, ["users_manage", "permissions_manage"]);
+}
+
+async function assertPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey) {
+  const { assertPermission } = await import("@/lib/permissions.server");
+  await assertPermission(context.userId, permission);
+}
+
+async function assertAnyPermission(context: { userId: string }, permissions: import("@/lib/permissions.server").PermissionKey[]) {
+  const { assertAnyPermission } = await import("@/lib/permissions.server");
+  await assertAnyPermission(context.userId, permissions);
+}
+
+const WORKFLOW_STATUS_KEYS = new Set(["send_to_yosela", "sent_to_yosela", "blocked_from_root", "send_to_committee", "sent_to_committee", "blocked_in_committee"]);
+const ROLES = ["viewer", "agent", "admin", "super_admin"] as const;
+const PERMISSION_KEYS = [
+  "systems_read", "systems_write", "systems_delete", "status_change", "agent_transfer", "notes_write", "files_manage",
+  "import_export", "series_manage", "backup_manage", "audit_view", "settings_manage", "users_manage", "permissions_manage",
+] as const;
+const DEFAULT_STATUS_SETTINGS = [
+  ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
+  ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
+  ["to_open", "לפתוח", "lightgreen", 3, false],
+  ["to_block", "לחסום", "lightred", 4, false],
+  ["block_from_root", "לחסום מהשורש", "brightred", 5, false],
+  ["problem", "בעיה", "orange", 6, false],
+  ["open", "פתוח", "green", 7, true],
+  ["closed", "חסום", "red", 8, true],
+  ["open_only_bimot", "לפתוח רק בימות", "sky", 9, true],
+  ["close_only_bimot", "פתוח רק בימות", "indigo", 10, false],
+  ["open_in_simahedrin", "לפתיחה בסימהדרין", "cyan", 11, false],
+  ["close_in_simahedrin", "לחסימה בסימהדרין", "violet", 12, false],
+  ["send_to_yosela", "לשלוח ליוסלה", "fuchsia", 13, false],
+  ["sent_to_yosela", "נשלח ליוסלה", "pink", 14, true],
+  ["blocked_from_root", "נחסם מהשורש", "darkred", 15, true],
+  ["send_to_committee", "לשלוח לוועדה", "purple", 16, false],
+  ["sent_to_committee", "נשלח לוועדה", "violet", 17, true],
+  ["blocked_in_committee", "נחסם בוועדה", "black", 18, true],
+] as const;
+
+async function seedMissingStatusSettings() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const rows = DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
+    status_key,
+    label,
+    tone,
+    sort_order,
+    is_custom: false,
+    is_handled,
+    is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
+    assigned_agent_ids: [],
+  }));
+  const { error } = await supabaseAdmin.from("status_settings").upsert(rows, { onConflict: "status_key", ignoreDuplicates: true } as any);
+  if (error && String(error.message).includes("is_mandatory")) {
+    await supabaseAdmin.from("status_settings").upsert(rows.map(({ is_mandatory, ...r }) => r), { onConflict: "status_key", ignoreDuplicates: true } as any);
+  }
+}
+
+async function seedMissingRolePermissions() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
+    viewer: { systems_read: true },
+    agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true },
+    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true },
+    super_admin: Object.fromEntries(PERMISSION_KEYS.map((p) => [p, true])) as Record<(typeof PERMISSION_KEYS)[number], boolean>,
+  };
+  const rows = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({
+    role,
+    permission,
+    allowed: defaults[role][permission] === true,
+  })));
+  await supabaseAdmin.from("role_permissions").upsert(rows, { onConflict: "role,permission", ignoreDuplicates: true } as any);
 }
 
 export const createUser = createServerFn({ method: "POST" })
@@ -27,7 +98,7 @@ export const createUser = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -48,7 +119,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -62,7 +133,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
@@ -80,7 +151,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
@@ -95,7 +166,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw fromSupabase(error);
@@ -108,7 +179,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw fromSupabase(error);
@@ -118,6 +189,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { getUserPermissionMap } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
       context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
       context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
@@ -140,6 +212,7 @@ export const getMyRole = createServerFn({ method: "GET" })
       isSuperAdmin,
       isAgent,
       isViewer,
+      permissions: await getUserPermissionMap(context.userId),
       displayName: (prof as any)?.display_name ?? null,
     };
   });
@@ -148,7 +221,7 @@ export const getMyRole = createServerFn({ method: "GET" })
 export const listUsersForAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
       supabaseAdmin.from("profiles").select("id, display_name, created_at"),
@@ -178,12 +251,38 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
 
 export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let { data, error } = await supabaseAdmin
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });
+    if (error && String(error.message).includes("is_mandatory")) {
+      const fallback = await supabaseAdmin
+        .from("status_settings")
+        .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
+        .order("sort_order", { ascending: true });
+      if (fallback.error) throw fromSupabase(fallback.error);
+      data = (fallback.data ?? []).map((r: any) => ({ ...r, is_mandatory: !WORKFLOW_STATUS_KEYS.has(r.status_key) }));
+      error = null;
+    }
     if (error) throw fromSupabase(error);
+    if (!data || data.length === 0) {
+      await seedMissingStatusSettings();
+      let fresh = await supabaseAdmin
+        .from("status_settings")
+        .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
+        .order("sort_order", { ascending: true });
+      if (fresh.error && String(fresh.error.message).includes("is_mandatory")) {
+        const fallback = await supabaseAdmin
+          .from("status_settings")
+          .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
+          .order("sort_order", { ascending: true });
+        fresh = { ...fallback, data: (fallback.data ?? []).map((r: any) => ({ ...r, is_mandatory: !WORKFLOW_STATUS_KEYS.has(r.status_key) })) } as any;
+      }
+      if (fresh.error) throw fromSupabase(fresh.error);
+      data = fresh.data;
+    }
     return data ?? [];
   });
 
@@ -202,7 +301,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: any = {
       status_key: data.status_key,
@@ -214,7 +313,12 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
     if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
-    const { error } = await supabaseAdmin.from("status_settings").upsert(patch);
+    let { error } = await supabaseAdmin.from("status_settings").upsert(patch);
+    if (error && String(error.message).includes("is_mandatory")) {
+      delete patch.is_mandatory;
+      const retry = await supabaseAdmin.from("status_settings").upsert(patch);
+      error = retry.error;
+    }
     if (error) throw fromSupabase(error);
     return { ok: true };
   });
@@ -225,7 +329,7 @@ export const reorderStatusSettings = createServerFn({ method: "POST" })
     z.object({ order: z.array(z.string().min(1).max(60)).max(200) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Renumber sequentially 1..N
     await Promise.all(
@@ -242,9 +346,122 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
     z.object({ status_key: z.string().min(1).max(60) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("status_settings").delete().eq("status_key", data.status_key);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+// ============= Dynamic permissions =============
+
+export const listPermissionSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertPermission(context, "permissions_manage");
+    await seedMissingRolePermissions();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { PERMISSION_DEFINITIONS } = await import("@/lib/permissions.server");
+    const [{ data: rolePermissions, error: rpErr }, { data: userPermissions, error: upErr }, { data: profiles }, { data: roles }, usersList] = await Promise.all([
+      supabaseAdmin.from("role_permissions").select("role, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
+      supabaseAdmin.from("user_permissions").select("user_id, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
+      supabaseAdmin.from("profiles").select("id, display_name, created_at"),
+      supabaseAdmin.from("user_roles").select("user_id, role"),
+      supabaseAdmin.auth.admin.listUsers(),
+    ]);
+    if (rpErr) throw fromSupabase(rpErr);
+    if (upErr) throw fromSupabase(upErr);
+
+    const roleMap = new Map<string, string[]>();
+    (roles ?? []).forEach((r: any) => {
+      const arr = roleMap.get(r.user_id) ?? [];
+      arr.push(r.role);
+      roleMap.set(r.user_id, arr);
+    });
+    const profileMap = new Map<string, any>();
+    (profiles ?? []).forEach((p: any) => profileMap.set(p.id, p));
+    const users = (usersList.data?.users ?? []).map((u: any) => {
+      const p = profileMap.get(u.id);
+      return {
+        id: u.id,
+        display_name: p?.display_name ?? (u.user_metadata?.display_name as string | undefined) ?? u.email?.split("@")[0] ?? "משתמש",
+        email: u.email ?? "",
+        roles: roleMap.get(u.id) ?? [],
+      };
+    }).sort((a: any, b: any) => String(a.display_name).localeCompare(String(b.display_name), "he"));
+
+    return {
+      roles: ROLES,
+      permissions: PERMISSION_DEFINITIONS,
+      rolePermissions: rolePermissions ?? [],
+      userPermissions: userPermissions ?? [],
+      users,
+    };
+  });
+
+export const setRolePermission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { role: string; permission: string; allowed: boolean }) =>
+    z.object({
+      role: z.enum(ROLES),
+      permission: z.enum(PERMISSION_KEYS),
+      allowed: z.boolean(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "permissions_manage");
+    if (data.role === "super_admin" && data.permission === "permissions_manage" && data.allowed === false) {
+      throw new AppError("לא ניתן להסיר הרשאת ניהול הרשאות ממנהל ראשי", { code: "bad_request" });
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("role_permissions").upsert({
+      role: data.role,
+      permission: data.permission,
+      allowed: data.allowed,
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const setUserPermission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; permission: string; allowed: boolean }) =>
+    z.object({
+      user_id: z.string().uuid(),
+      permission: z.enum(PERMISSION_KEYS),
+      allowed: z.boolean(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "permissions_manage");
+    if (data.user_id === context.userId && data.permission === "permissions_manage" && data.allowed === false) {
+      throw new AppError("לא ניתן להסיר מעצמך הרשאת ניהול הרשאות", { code: "bad_request" });
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("user_permissions").upsert({
+      user_id: data.user_id,
+      permission: data.permission,
+      allowed: data.allowed,
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const deleteUserPermission = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { user_id: string; permission: string }) =>
+    z.object({ user_id: z.string().uuid(), permission: z.enum(PERMISSION_KEYS) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "permissions_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
+      .from("user_permissions")
+      .delete()
+      .eq("user_id", data.user_id)
+      .eq("permission", data.permission);
     if (error) throw fromSupabase(error);
     return { ok: true };
   });
@@ -276,7 +493,7 @@ export const setSeriesDetection = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "series_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: SERIES_KEY, value: { modes: data.modes }, updated_by: context.userId,
@@ -308,7 +525,7 @@ export const setAutoSnoozeSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: AUTO_SNOOZE_KEY,
@@ -339,7 +556,7 @@ const BACKUP_EMAIL_KEY = "backup_email";
 export const getBackupEmail = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", BACKUP_EMAIL_KEY).maybeSingle();
     const v = (data?.value as { email?: string } | null) ?? null;
@@ -352,7 +569,7 @@ export const setBackupEmail = createServerFn({ method: "POST" })
     z.object({ email: z.string().email().max(200).or(z.literal("")) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: BACKUP_EMAIL_KEY,
@@ -383,7 +600,7 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
     z.object({ hours: z.number().int().min(0).max(8760) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: STALE_HOURS_KEY,

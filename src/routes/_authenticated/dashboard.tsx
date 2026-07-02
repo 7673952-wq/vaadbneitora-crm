@@ -688,23 +688,24 @@ function Dashboard() {
           allRows={systems ?? []}
           agents={agents ?? []}
           onClose={() => setShowExport(false)}
-          onExport={(format, fromIso, toIso, label, statusFilter, agentFilter) => {
-            let rows = filterByRange(systems ?? [], fromIso, toIso);
+          onExport={async (format, fromIso, toIso, label, statusFilter, agentFilter, crmMode) => {
+            // For exports we ALWAYS pull the full dataset from the server —
+            // the dashboard cache is limited to the current page and would
+            // otherwise silently truncate "all" exports.
+            let source: any[] = systems ?? [];
+            try {
+              const full: any = await listFn({ data: { status: null, agentId: null, period: null, page: 1, pageSize: 100000 } });
+              if (Array.isArray(full?.items)) source = full.items;
+            } catch {
+              // fall back to whatever is already cached
+            }
+            let rows = filterByRange(source, fromIso, toIso);
             if (statusFilter.length > 0) rows = rows.filter((r: any) => statusFilter.includes(r.status));
             if (agentFilter.length > 0) rows = rows.filter((r: any) => agentFilter.includes(r.assigned_agent_id || "__unassigned"));
             if (format === "csv") exportCsv(rows, label);
             else if (format === "pdf") exportPdfRows(rows, label);
             else if (format === "xlsx") exportFullXlsx(rows, label);
-            else if (format === "crm") {
-              // Prompt for which CRM export variant to produce.
-              const choice = window.prompt(
-                "בחר סוג ייצוא CRM:\n1 = לפתוח (OPEN)\n2 = לחסום (CLOSED)\n3 = לפתוח בימות + לחסום בסימהדרין (2 קבצים)",
-                "1",
-              );
-              if (!choice) return;
-              const mode = choice.trim() === "2" ? "block" : choice.trim() === "3" ? "both" : "open";
-              exportCrmXlsx(rows, label, mode);
-            }
+            else if (format === "crm") exportCrmXlsx(rows, label, crmMode ?? "open");
             setShowExport(false);
           }}
         />

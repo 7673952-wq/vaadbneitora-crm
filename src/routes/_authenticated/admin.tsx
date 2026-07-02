@@ -11,6 +11,7 @@ import {
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
+import { listAgents } from "@/lib/systems.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState, useEffect } from "react";
@@ -29,7 +30,14 @@ function AdminPage() {
 
   if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
   if (meError) return <AdminError message={meError.message} />;
-  const canOpenAdmin = me?.isAdmin || me?.permissions?.settings_manage || me?.permissions?.users_manage || me?.permissions?.permissions_manage || me?.permissions?.backup_manage;
+  const perms = me?.permissions ?? {};
+  const canUsers = !!perms.users_manage;
+  const canGeneral = !!(perms.settings_manage || perms.backup_manage);
+  const canStatuses = !!perms.settings_manage;
+  const canSeries = !!perms.series_manage;
+  const canPermissions = !!perms.permissions_manage;
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions;
+  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canSeries ? "series" : "permissions";
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
   }
@@ -53,24 +61,24 @@ function AdminPage() {
         )}
       </div>
 
-      <Tabs defaultValue="users" dir="rtl">
+      <Tabs defaultValue={defaultTab} dir="rtl">
         <TabsList className="flex flex-wrap gap-1 h-auto">
-          <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>
-          <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>
-          <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>
-          <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>
-          <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>
+          {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
+          {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
+          {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
+          {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
+          {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
         </TabsList>
 
-        <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>
-        <TabsContent value="general" className="mt-4 space-y-6">
+        {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
+        {canGeneral && <TabsContent value="general" className="mt-4 space-y-6">
           <AutoSnoozePanel />
           <BackupEmailPanel />
           <StaleHoursPanel />
-        </TabsContent>
-        <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>
-        <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>
-        <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>
+        </TabsContent>}
+        {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
+        {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
+        {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
       </Tabs>
     </div>
   );

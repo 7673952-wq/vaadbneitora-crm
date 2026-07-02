@@ -1326,13 +1326,14 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
   allRows: any[];
   agents: any[];
   onClose: () => void;
-  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[], agentFilter: string[]) => void;
+  onExport: (format: ExportFormat, fromIso: string | null, toIso: string | null, label: string, statusFilter: string[], agentFilter: string[], crmMode?: "open" | "block" | "both") => void;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const [preset, setPreset] = useState<RangePreset>("month");
   const [from, setFrom] = useState<string>(today);
   const [to, setTo] = useState<string>(today);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
+  const [crmMode, setCrmMode] = useState<"open" | "block" | "both">("open");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [agentFilter, setAgentFilter] = useState<string[]>([]);
 

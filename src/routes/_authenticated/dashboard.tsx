@@ -551,25 +551,17 @@ function Dashboard() {
           <option value="">כל הנציגים</option>
           {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
         </select>
-        <select value={period} onChange={(e) => { setPeriod(e.target.value as Period); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
-          <option value="">כל הזמנים</option>
-          <option value="day">יומי</option>
-          <option value="week">שבועי</option>
-          <option value="month">חודשי</option>
-          <option value="year">שנתי</option>
-        </select>
-        <div className="flex items-center gap-1 text-xs">
-          <label className="text-muted-foreground">מ־</label>
-          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 rounded-lg border border-input bg-background" />
-          {dateFrom && <button onClick={() => { setDateFrom(""); setPage(1); }} aria-label="נקה תאריך התחלה"
-            className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-          <label className="text-muted-foreground ms-1">עד</label>
-          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 rounded-lg border border-input bg-background" />
-          {dateTo && <button onClick={() => { setDateTo(""); setPage(1); }} aria-label="נקה תאריך סיום"
-            className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
+        <TimeFilter
+          period={period}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={(next) => {
+            setPeriod(next.period);
+            setDateFrom(next.dateFrom);
+            setDateTo(next.dateTo);
+            setPage(1);
+          }}
+        />
         {(status || agentId || period || search || dateFrom || dateTo) && (
           <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">

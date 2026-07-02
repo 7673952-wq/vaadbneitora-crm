@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -6,6 +6,7 @@ import { Bell, ArrowRightLeft, MessageSquare, Activity } from "lucide-react";
 import { listMyNotifications } from "@/lib/admin.functions";
 
 const LS_KEY = "notif_last_read_at";
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // hide older than 7 days
 
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
@@ -25,8 +26,13 @@ export function NotificationBell() {
     queryFn: () => fn(),
     refetchInterval: 60_000,
   });
-  const items = (data ?? []) as any[];
+  const rawItems = (data ?? []) as any[];
+  const items = useMemo(() => {
+    const cutoff = Date.now() - MAX_AGE_MS;
+    return rawItems.filter((n) => new Date(n.created_at).getTime() >= cutoff);
+  }, [rawItems]);
   const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
   const [lastRead, setLastRead] = useState<number>(() => {
     if (typeof window === "undefined") return 0;
     return Number(window.localStorage.getItem(LS_KEY) || 0);
@@ -45,8 +51,24 @@ export function NotificationBell() {
     }
   }, [open, items, lastRead]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <button
         onClick={() => setOpen((v) => !v)}
         title="התראות"
@@ -60,49 +82,47 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full mt-1 z-50 w-[360px] max-h-[480px] overflow-auto rounded-xl border border-border bg-popover shadow-xl">
-            <div className="sticky top-0 bg-popover/95 backdrop-blur px-3 py-2 border-b text-sm font-semibold">
-              התראות {unread > 0 && <span className="text-xs text-red-600">({unread} חדשות)</span>}
-            </div>
-            {items.length === 0 ? (
-              <div className="p-4 text-sm text-muted-foreground text-center">אין התראות חדשות</div>
-            ) : (
-              <ul className="divide-y">
-                {items.map((n) => {
-                  const isUnread = new Date(n.created_at).getTime() > lastRead;
-                  const Icon = n.kind === "transfer" ? ArrowRightLeft : n.kind === "note" ? MessageSquare : Activity;
-                  return (
-                    <li key={n.id} className={isUnread ? "bg-amber-50/60" : ""}>
-                      <Link
-                        to="/systems/$id"
-                        params={{ id: n.system_id }}
-                        onClick={() => setOpen(false)}
-                        className="flex gap-2 p-3 text-sm hover:bg-accent"
-                      >
-                        <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-medium truncate">{n.title}</span>
-                            <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(n.created_at)}</span>
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {n.system_code} · {n.system_name}
-                          </div>
-                          <div className="text-xs mt-0.5 truncate">
-                            <span className="text-muted-foreground">{n.detail}</span>
-                            {n.reason && <span className="text-foreground/80"> · {n.reason}</span>}
-                          </div>
-                        </div>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+        <div className="absolute left-0 top-full mt-1 z-50 w-[360px] max-h-[480px] overflow-auto rounded-xl border border-border bg-popover shadow-xl">
+          <div className="sticky top-0 bg-popover/95 backdrop-blur px-3 py-2 border-b text-sm font-semibold flex items-center justify-between">
+            <span>התראות {unread > 0 && <span className="text-xs text-red-600">({unread} חדשות)</span>}</span>
+            <span className="text-[10px] text-muted-foreground font-normal">7 ימים אחרונים</span>
           </div>
-        </>
+          {items.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground text-center">אין התראות חדשות</div>
+          ) : (
+            <ul className="divide-y">
+              {items.map((n) => {
+                const isUnread = new Date(n.created_at).getTime() > lastRead;
+                const Icon = n.kind === "transfer" ? ArrowRightLeft : n.kind === "note" ? MessageSquare : Activity;
+                return (
+                  <li key={n.id} className={isUnread ? "bg-amber-50/60" : ""}>
+                    <Link
+                      to="/systems/$id"
+                      params={{ id: n.system_id }}
+                      onClick={() => setOpen(false)}
+                      className="flex gap-2 p-3 text-sm hover:bg-accent"
+                    >
+                      <Icon className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-medium truncate">{n.title}</span>
+                          <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(n.created_at)}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {n.system_code} · {n.system_name}
+                        </div>
+                        <div className="text-xs mt-0.5 truncate">
+                          <span className="text-muted-foreground">{n.detail}</span>
+                          {n.reason && <span className="text-foreground/80"> · {n.reason}</span>}
+                        </div>
+                      </div>
+                    </Link>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
       )}
     </div>
   );

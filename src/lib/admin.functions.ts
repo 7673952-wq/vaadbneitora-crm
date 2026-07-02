@@ -197,7 +197,7 @@ export const getMyRole = createServerFn({ method: "GET" })
 export const listUsersForAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
       supabaseAdmin.from("profiles").select("id, display_name, created_at"),
@@ -227,12 +227,22 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
 
 export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+  .handler(async () => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let { data, error } = await supabaseAdmin
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });
     if (error) throw fromSupabase(error);
+    if (!data || data.length === 0) {
+      await seedMissingStatusSettings();
+      const fresh = await supabaseAdmin
+        .from("status_settings")
+        .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
+        .order("sort_order", { ascending: true });
+      if (fresh.error) throw fromSupabase(fresh.error);
+      data = fresh.data;
+    }
     return data ?? [];
   });
 
@@ -251,7 +261,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const patch: any = {
       status_key: data.status_key,
@@ -274,7 +284,7 @@ export const reorderStatusSettings = createServerFn({ method: "POST" })
     z.object({ order: z.array(z.string().min(1).max(60)).max(200) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Renumber sequentially 1..N
     await Promise.all(
@@ -291,7 +301,7 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
     z.object({ status_key: z.string().min(1).max(60) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("status_settings").delete().eq("status_key", data.status_key);
     if (error) throw fromSupabase(error);
@@ -325,7 +335,7 @@ export const setSeriesDetection = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "series_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: SERIES_KEY, value: { modes: data.modes }, updated_by: context.userId,
@@ -357,7 +367,7 @@ export const setAutoSnoozeSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: AUTO_SNOOZE_KEY,

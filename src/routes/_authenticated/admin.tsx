@@ -30,7 +30,7 @@ function AdminPage() {
 
   if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
   if (meError) return <AdminError message={meError.message} />;
-  const perms = me?.permissions ?? {};
+  const perms = (me?.permissions ?? {}) as Record<string, boolean>;
   const canUsers = !!perms.users_manage;
   const canGeneral = !!(perms.settings_manage || perms.backup_manage);
   const canStatuses = !!perms.settings_manage;
@@ -87,7 +87,7 @@ function AdminPage() {
 // ============= Users Panel =============
 function UsersPanel({ me }: { me: any }) {
   const qc = useQueryClient();
-  const agentsFn = useServerFn(listUsersForAdmin);
+  const agentsFn = useServerFn(listAgents);
   const createFn = useServerFn(createUser);
   const deleteFn = useServerFn(deleteUser);
   const roleFn = useServerFn(setUserRole);

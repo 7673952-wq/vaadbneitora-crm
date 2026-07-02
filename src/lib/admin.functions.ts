@@ -181,7 +181,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("status_settings")
-      .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
+      .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });
     if (error) throw fromSupabase(error);
     return data ?? [];
@@ -189,7 +189,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; assigned_agent_ids?: string[] }) =>
+  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; assigned_agent_ids?: string[] }) =>
     z.object({
       status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
       label: z.string().min(1).max(100),
@@ -197,6 +197,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       sort_order: z.number().int().min(0).max(10000).optional(),
       is_custom: z.boolean().optional(),
       is_handled: z.boolean().optional(),
+      is_mandatory: z.boolean().optional(),
       assigned_agent_ids: z.array(z.string().uuid()).max(50).optional(),
     }).parse(d),
   )
@@ -211,9 +212,27 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       is_custom: data.is_custom ?? false,
     };
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
+    if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
     const { error } = await supabaseAdmin.from("status_settings").upsert(patch);
     if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const reorderStatusSettings = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { order: string[] }) =>
+    z.object({ order: z.array(z.string().min(1).max(60)).max(200) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertSuperAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Renumber sequentially 1..N
+    await Promise.all(
+      data.order.map((key, idx) =>
+        supabaseAdmin.from("status_settings").update({ sort_order: idx + 1 }).eq("status_key", key),
+      ),
+    );
     return { ok: true };
   });
 
@@ -229,6 +248,43 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
     if (error) throw fromSupabase(error);
     return { ok: true };
   });
+
+// ============= Series detection settings =============
+
+const SERIES_KEY = "series_detection";
+type SeriesMode = { strip: number; min: number };
+const DEFAULT_SERIES: { modes: SeriesMode[] } = { modes: [{ strip: 2, min: 10 }, { strip: 3, min: 30 }] };
+
+export const getSeriesDetection = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", SERIES_KEY).maybeSingle();
+    const val = (data?.value as any) ?? DEFAULT_SERIES;
+    const modes: SeriesMode[] = Array.isArray(val.modes) ? val.modes : DEFAULT_SERIES.modes;
+    return { modes };
+  });
+
+export const setSeriesDetection = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { modes: SeriesMode[] }) =>
+    z.object({
+      modes: z.array(z.object({
+        strip: z.number().int().min(1).max(10),
+        min: z.number().int().min(2).max(1000),
+      })).min(1).max(10),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: SERIES_KEY, value: { modes: data.modes }, updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
 
 // ============= Auto-snooze settings =============
 

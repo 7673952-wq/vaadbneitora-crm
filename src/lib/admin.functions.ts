@@ -398,7 +398,7 @@ const BACKUP_EMAIL_KEY = "backup_email";
 export const getBackupEmail = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertAdmin(context);
+    await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", BACKUP_EMAIL_KEY).maybeSingle();
     const v = (data?.value as { email?: string } | null) ?? null;
@@ -411,7 +411,7 @@ export const setBackupEmail = createServerFn({ method: "POST" })
     z.object({ email: z.string().email().max(200).or(z.literal("")) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: BACKUP_EMAIL_KEY,
@@ -442,7 +442,7 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
     z.object({ hours: z.number().int().min(0).max(8760) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertAdmin(context);
+    await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: STALE_HOURS_KEY,

@@ -339,16 +339,18 @@ function Dashboard() {
     w.document.open(); w.document.write(html); w.document.close();
   }
 
-  // CRM export: 5-column XLSX with the fixed English headers requested by
-  // the operations team: number / note / active / call_type / status.
-  // `mode` picks which rows land in which file(s):
-  //  - "open"  → single file with status="OPEN" for every row
-  //  - "block" → single file with status="CLOSED" for every row
-  //  - "both"  → two files, one OPEN and one CLOSED, based on the row's own
-  //              current status (to_open/open* → OPEN, to_block/block* → CLOSED)
+  // CRM export: 5-column XLSX with fixed English headers (operations team).
+  //   number / note / active / call_type / status
+  // Modes (chosen in the ExportModal):
+  //   "open"  → only rows currently in "לפתוח" (to_open). status = OPEN.
+  //   "block" → only rows currently in "לחסום" (to_block). status = BLOCKED.
+  //   "both"  → only rows in "לפתוח בימות / לחסום בסימהדרין"
+  //             (open_only_bimot + close_in_simahedrin), emitted as TWO files:
+  //             the open subset with status=OPEN, the block subset with
+  //             status=BLOCKED.
   function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
     const HEADERS = ["number", "note", "active", "call_type", "status"];
-    const buildRow = (r: any, statusText: "OPEN" | "CLOSED") => [
+    const buildRow = (r: any, statusText: "OPEN" | "BLOCKED") => [
       buildDialNumber(r.system_code),
       (r.notes ?? "").replace(/\n/g, " "),
       1,
@@ -365,19 +367,18 @@ function Dashboard() {
     };
     let filesWritten = 0;
     if (mode === "open") {
-      const openRows = rows.filter((r: any) => r.status === "to_open" || r.status === "open_only_bimot");
-      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לביצוע_פתיחה")) filesWritten++;
+      const openRows = rows.filter((r: any) => r.status === "to_open");
+      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח")) filesWritten++;
     } else if (mode === "block") {
-      const blockRows = rows.filter((r: any) => r.status === "to_block" || r.status === "block_from_root" || r.status === "close_in_simahedrin");
-      if (write(blockRows.map((r) => buildRow(r, "CLOSED")), "לביצוע_חסימה")) filesWritten++;
+      const blockRows = rows.filter((r: any) => r.status === "to_block");
+      if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום")) filesWritten++;
     } else {
-      // "both" — לפתוח בימות ↔ לחסום בסימהדרין: produce two files.
-      const openRows = rows.filter((r: any) => r.status === "open_only_bimot" || r.status === "open_in_simahedrin" || r.status === "to_open");
-      const blockRows = rows.filter((r: any) => r.status === "close_in_simahedrin" || r.status === "to_block" || r.status === "block_from_root");
+      const openRows = rows.filter((r: any) => r.status === "open_only_bimot");
+      const blockRows = rows.filter((r: any) => r.status === "close_in_simahedrin");
       if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
-      if (write(blockRows.map((r) => buildRow(r, "CLOSED")), "לחסום_בסימהדרין")) filesWritten++;
+      if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום_בסימהדרין")) filesWritten++;
     }
-    if (filesWritten === 0) toast.info("אין מערכות בסטטוסים המתאימים בטווח זה");
+    if (filesWritten === 0) toast.info("אין מערכות בקטגוריה זו בטווח שנבחר");
     else toast.success(`נוצרו ${filesWritten} קבצים`);
   }
 

@@ -27,6 +27,11 @@ async function assertAnyPermission(context: { userId: string }, permissions: imp
 }
 
 const WORKFLOW_STATUS_KEYS = new Set(["send_to_yosela", "sent_to_yosela", "blocked_from_root", "send_to_committee", "sent_to_committee", "blocked_in_committee"]);
+const ROLES = ["viewer", "agent", "admin", "super_admin"] as const;
+const PERMISSION_KEYS = [
+  "systems_read", "systems_write", "systems_delete", "status_change", "agent_transfer", "notes_write", "files_manage",
+  "import_export", "series_manage", "backup_manage", "audit_view", "settings_manage", "users_manage", "permissions_manage",
+] as const;
 const DEFAULT_STATUS_SETTINGS = [
   ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
   ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
@@ -61,6 +66,22 @@ async function seedMissingStatusSettings() {
     assigned_agent_ids: [],
   }));
   await supabaseAdmin.from("status_settings").upsert(rows, { onConflict: "status_key", ignoreDuplicates: true } as any);
+}
+
+async function seedMissingRolePermissions() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
+    viewer: { systems_read: true },
+    agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true },
+    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true },
+    super_admin: Object.fromEntries(PERMISSION_KEYS.map((p) => [p, true])) as Record<(typeof PERMISSION_KEYS)[number], boolean>,
+  };
+  const rows = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({
+    role,
+    permission,
+    allowed: defaults[role][permission] === true,
+  })));
+  await supabaseAdmin.from("role_permissions").upsert(rows, { onConflict: "role,permission", ignoreDuplicates: true } as any);
 }
 
 export const createUser = createServerFn({ method: "POST" })

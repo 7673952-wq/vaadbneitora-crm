@@ -73,6 +73,8 @@ function Dashboard() {
   const [status, setStatus] = useState<string>("");
   const [agentId, setAgentId] = useState<string>("");
   const [period, setPeriod] = useState<Period>("");
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
   const [search, setSearch] = useState("");
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [page, setPage] = useState(1);

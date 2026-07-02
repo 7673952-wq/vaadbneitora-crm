@@ -373,10 +373,13 @@ function Dashboard() {
       const blockRows = rows.filter((r: any) => r.status === "to_block");
       if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום")) filesWritten++;
     } else {
-      const openRows = rows.filter((r: any) => r.status === "open_only_bimot");
-      const blockRows = rows.filter((r: any) => r.status === "close_in_simahedrin");
-      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
-      if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום_בסימהדרין")) filesWritten++;
+      // Category "לפתוח בימות / לחסום בסימהדרין": same rows exported twice —
+      // once as OPEN (for ימות) and once as BLOCKED (for סנהדרין).
+      const categoryRows = rows.filter(
+        (r: any) => r.status === "open_only_bimot" || r.status === "close_in_simahedrin",
+      );
+      if (write(categoryRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
+      if (write(categoryRows.map((r) => buildRow(r, "BLOCKED")), "לחסום_בסימהדרין")) filesWritten++;
     }
     if (filesWritten === 0) toast.info("אין מערכות בקטגוריה זו בטווח שנבחר");
     else toast.success(`נוצרו ${filesWritten} קבצים`);

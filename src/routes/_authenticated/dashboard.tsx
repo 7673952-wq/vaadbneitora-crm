@@ -222,9 +222,9 @@ function Dashboard() {
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
     } }),
   });
-  // Split by admin-configured mandatory flag; falls back to "non-workflow" default in STATUS_MANDATORY.
-  const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false && !isSpecialWorkflowStatus(s.value) || s.is_mandatory === true), [statusSettings]);
-  const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => !(STATUS_MANDATORY[s.value] !== false && !isSpecialWorkflowStatus(s.value) || s.is_mandatory === true)), [statusSettings]);
+  // Split by admin-configured mandatory flag (defaults to non-workflow=mandatory in STATUS_MANDATORY).
+  const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false), [statusSettings]);
+  const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] === false), [statusSettings]);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),

@@ -535,7 +535,13 @@ function Dashboard() {
         <div className="relative">
           <Search className="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש לפי מערכת, שם, נציג, טלפון או סטטוס..."
-            className="pr-9 pl-3 py-2 text-sm rounded-lg border border-input bg-background w-72 focus:outline-none focus:ring-2 focus:ring-ring" />
+            className="pr-9 pl-8 py-2 text-sm rounded-lg border border-input bg-background w-72 focus:outline-none focus:ring-2 focus:ring-ring" />
+          {search && (
+            <button onClick={() => setSearch("")} aria-label="נקה חיפוש"
+              className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5 rounded">
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
         <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הסטטוסים</option>
@@ -552,8 +558,20 @@ function Dashboard() {
           <option value="month">חודשי</option>
           <option value="year">שנתי</option>
         </select>
-        {(status || agentId || period || search) && (
-          <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setPage(1); }}
+        <div className="flex items-center gap-1 text-xs">
+          <label className="text-muted-foreground">מ־</label>
+          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            className="px-2 py-1.5 rounded-lg border border-input bg-background" />
+          {dateFrom && <button onClick={() => { setDateFrom(""); setPage(1); }} aria-label="נקה תאריך התחלה"
+            className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
+          <label className="text-muted-foreground ms-1">עד</label>
+          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
+            className="px-2 py-1.5 rounded-lg border border-input bg-background" />
+          {dateTo && <button onClick={() => { setDateTo(""); setPage(1); }} aria-label="נקה תאריך סיום"
+            className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
+        </div>
+        {(status || agentId || period || search || dateFrom || dateTo) && (
+          <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <X className="h-3 w-3" />נקה סינון
           </button>

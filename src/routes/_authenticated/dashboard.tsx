@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square, Copy, Check } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
 import {
   Pagination,
@@ -42,6 +43,98 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 type Period = "" | "day" | "week" | "month" | "year";
+
+const PERIOD_LABELS: Record<Period, string> = {
+  "": "כל הזמנים",
+  day: "יומי",
+  week: "שבועי",
+  month: "חודשי",
+  year: "שנתי",
+};
+
+function TimeFilter({
+  period,
+  dateFrom,
+  dateTo,
+  onChange,
+}: {
+  period: Period;
+  dateFrom: string;
+  dateTo: string;
+  onChange: (next: { period: Period; dateFrom: string; dateTo: string }) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const active = period || dateFrom || dateTo;
+  const label = dateFrom || dateTo
+    ? `${dateFrom || "…"} — ${dateTo || "…"}`
+    : PERIOD_LABELS[period];
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border ${active ? "border-primary text-primary" : "border-input"} bg-background`}
+        >
+          <Clock className="h-3.5 w-3.5" />
+          <span>{label}</span>
+          {active && (
+            <X
+              className="h-3.5 w-3.5 opacity-70 hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange({ period: "", dateFrom: "", dateTo: "" });
+              }}
+            />
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 p-3 space-y-3" align="start">
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">תקופה</div>
+          <select
+            value={period}
+            onChange={(e) => onChange({ period: e.target.value as Period, dateFrom: "", dateTo: "" })}
+            className="w-full px-2 py-1.5 text-sm rounded-md border border-input bg-background"
+          >
+            {(Object.keys(PERIOD_LABELS) as Period[]).map((p) => (
+              <option key={p} value={p}>{PERIOD_LABELS[p]}</option>
+            ))}
+          </select>
+        </div>
+        <div className="space-y-1">
+          <div className="text-xs text-muted-foreground">טווח תאריכים</div>
+          <div className="flex items-center gap-1 text-xs">
+            <label className="text-muted-foreground w-6">מ־</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => onChange({ period: "", dateFrom: e.target.value, dateTo })}
+              className="flex-1 px-2 py-1.5 rounded-md border border-input bg-background"
+            />
+          </div>
+          <div className="flex items-center gap-1 text-xs">
+            <label className="text-muted-foreground w-6">עד</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => onChange({ period: "", dateFrom, dateTo: e.target.value })}
+              className="flex-1 px-2 py-1.5 rounded-md border border-input bg-background"
+            />
+          </div>
+        </div>
+        {active && (
+          <button
+            onClick={() => onChange({ period: "", dateFrom: "", dateTo: "" })}
+            className="w-full text-xs text-muted-foreground hover:text-foreground flex items-center justify-center gap-1"
+          >
+            <X className="h-3 w-3" />נקה
+          </button>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 type CreateInitial = {
   system_code?: string;
   name?: string;
@@ -551,25 +644,17 @@ function Dashboard() {
           <option value="">כל הנציגים</option>
           {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
         </select>
-        <select value={period} onChange={(e) => { setPeriod(e.target.value as Period); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
-          <option value="">כל הזמנים</option>
-          <option value="day">יומי</option>
-          <option value="week">שבועי</option>
-          <option value="month">חודשי</option>
-          <option value="year">שנתי</option>
-        </select>
-        <div className="flex items-center gap-1 text-xs">
-          <label className="text-muted-foreground">מ־</label>
-          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 rounded-lg border border-input bg-background" />
-          {dateFrom && <button onClick={() => { setDateFrom(""); setPage(1); }} aria-label="נקה תאריך התחלה"
-            className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-          <label className="text-muted-foreground ms-1">עד</label>
-          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
-            className="px-2 py-1.5 rounded-lg border border-input bg-background" />
-          {dateTo && <button onClick={() => { setDateTo(""); setPage(1); }} aria-label="נקה תאריך סיום"
-            className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>}
-        </div>
+        <TimeFilter
+          period={period}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={(next) => {
+            setPeriod(next.period);
+            setDateFrom(next.dateFrom);
+            setDateTo(next.dateTo);
+            setPage(1);
+          }}
+        />
         {(status || agentId || period || search || dateFrom || dateTo) && (
           <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">

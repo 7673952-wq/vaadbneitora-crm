@@ -109,16 +109,25 @@ function Dashboard() {
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({
-    queryKey: ["systems", status, agentId, period, page, pageSize],
-    queryFn: async () => listFn({ data: { status: status || null, agentId: agentId || null, period: period || null, page, pageSize: serverPageSize } }),
+    queryKey: ["systems", status, agentId, period, dateFrom, dateTo, page, pageSize],
+    queryFn: async () => listFn({ data: {
+      status: status || null, agentId: agentId || null, period: period || null,
+      dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
+      dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
+      page, pageSize: serverPageSize,
+    } }),
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
   const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const statusCountsFn = useServerFn(getStatusCounts);
   const { data: globalStatusCounts } = useQuery({
-    queryKey: ["statusCounts", agentId, period],
-    queryFn: () => statusCountsFn({ data: { agentId: agentId || null, period: period || null } }),
+    queryKey: ["statusCounts", agentId, period, dateFrom, dateTo],
+    queryFn: () => statusCountsFn({ data: {
+      agentId: agentId || null, period: period || null,
+      dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
+      dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
+    } }),
   });
   const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => !isSpecialWorkflowStatus(s.value)), [statusSettings]);
   const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => isSpecialWorkflowStatus(s.value)), [statusSettings]);

@@ -40,10 +40,13 @@ async function ensureCanWrite(userId: string) {
 
 
 const periodSchema = z.enum(["day", "week", "month", "year"]);
+const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
 const listSystemsInputSchema = z.object({
   status: statusSchema.nullable().optional(),
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
+  dateFrom: isoDate,
+  dateTo: isoDate,
   page: z.number().int().min(1).max(10000).optional(),
   pageSize: z.number().int().min(1).max(100000).optional(),
 }).strict();
@@ -75,6 +78,8 @@ export const listSystems = createServerFn({ method: "POST" })
         else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
         q = q.gte("updated_at", start.toISOString());
       }
+      if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
+      if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
       return q.order("updated_at", { ascending: false }).range(from, to);
     };
 
@@ -108,6 +113,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     z.object({
       agentId: z.string().uuid().nullable().optional(),
       period: periodSchema.nullable().optional(),
+      dateFrom: isoDate,
+      dateTo: isoDate,
     }).strict().parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
@@ -122,6 +129,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
       q = q.gte("updated_at", start.toISOString());
     }
+    if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
+    if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
     // Paginate through everything to bypass the 1000-row default.
     const counts: Record<string, number> = {};
     const pageSize = 1000;

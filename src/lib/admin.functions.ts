@@ -32,7 +32,7 @@ export const createUser = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -53,7 +53,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -67,7 +67,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
@@ -85,7 +85,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
@@ -100,7 +100,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw fromSupabase(error);
@@ -113,7 +113,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertSuperAdmin(context);
+    await assertPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw fromSupabase(error);
@@ -123,6 +123,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { getUserPermissionMap } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
       context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
       context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
@@ -145,6 +146,7 @@ export const getMyRole = createServerFn({ method: "GET" })
       isSuperAdmin,
       isAgent,
       isViewer,
+      permissions: await getUserPermissionMap(context.userId),
       displayName: (prof as any)?.display_name ?? null,
     };
   });

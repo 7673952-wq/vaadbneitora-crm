@@ -1256,7 +1256,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 
 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
+  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
   const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);

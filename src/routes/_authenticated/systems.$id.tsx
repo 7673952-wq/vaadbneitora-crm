@@ -12,7 +12,7 @@ import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
 } from "@/lib/system-files.functions";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_MANDATORY, toneClasses, statusCardClasses,
   NO_REASON_STATUSES, type SystemStatus, buildDialNumber,
 } from "@/lib/status";
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";

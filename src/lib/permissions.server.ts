@@ -199,6 +199,10 @@ export function isPermissionKey(permission: string): permission is PermissionKey
 export async function hasPermission(userId: string, permission: PermissionKey): Promise<boolean> {
   const roles = await getUserRoles(userId);
   if (!roles.length) return false;
+  // A super admin must always retain full management access. Dynamic
+  // permission rows can narrow admin/agent/viewer roles, but cannot lock the
+  // only top-level administrator out of statuses, permissions, or users.
+  if (roles.includes("super_admin")) return true;
 
   const stored = await getStoredPermissionSettings();
   const storedOverride = stored.userPermissions.find((r) => r.user_id === userId && r.permission === permission);

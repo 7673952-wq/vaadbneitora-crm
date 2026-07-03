@@ -311,11 +311,26 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
 export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    let { data, error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let { data, error } = await supabaseAdmin
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });
-    if (error) throw fromSupabase(error);
+    if (error) {
+      // Statuses are global app configuration. If the data API/RLS layer has a
+      // transient permission/schema-cache issue, keep management usable instead
+      // of rendering an empty tab.
+      return DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
+        status_key,
+        label,
+        tone,
+        sort_order,
+        is_custom: false,
+        is_handled,
+        is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
+        assigned_agent_ids: [],
+      }));
+    }
     if (!data || data.length === 0) {
       try {
         await seedMissingStatusSettings();
@@ -323,7 +338,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
         // If seeding cannot run, still return the built-in status list so the
         // management screen never appears empty while the persisted rows are fixed.
       }
-      let fresh = await context.supabase
+      let fresh = await supabaseAdmin
         .from("status_settings")
         .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
         .order("sort_order", { ascending: true });

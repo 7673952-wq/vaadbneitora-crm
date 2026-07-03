@@ -49,7 +49,7 @@ const DEFAULT_ROLE_PERMISSION_ROWS = ROLES.flatMap((role) => PERMISSION_KEYS.map
     || (role === "admin" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "files_manage", "import_export", "series_manage", "backup_manage", "settings_manage"].includes(permission))
     || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "files_manage"].includes(permission))
     || (role === "viewer" && permission === "systems_read"),
-})) as { role: string; permission: string; allowed: boolean }[];
+}))) as { role: string; permission: string; allowed: boolean }[];
 const DEFAULT_STATUS_SETTINGS = [
   ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
   ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],

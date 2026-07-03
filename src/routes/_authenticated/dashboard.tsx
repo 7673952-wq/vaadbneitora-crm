@@ -610,8 +610,8 @@ function Dashboard() {
 
       {/* Stats — regular + workflow side-by-side, same height, compact */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-3 items-stretch">
-        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact={false} columns={7} />
-        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={secondaryStats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact columns={3} />
+        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setSecondaryStatus(""); setPage(1); }} compact={false} columns={7} />
+        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={secondaryStatus} stats={secondaryStats} onSelect={(value) => { setSecondaryStatus(secondaryStatus === value ? "" : value); setStatus(""); setPage(1); }} compact columns={3} />
       </div>
 
       {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (

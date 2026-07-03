@@ -1163,21 +1163,28 @@ export const scanSystemSeries = createServerFn({ method: "GET" })
     const modes: Array<{ strip: number; min: number }> = Array.isArray(cfg.modes) ? cfg.modes : [];
     if (!modes.length) return { series: [] as any[], settings: cfg };
 
-    // Fetch all codes (bounded).
-    const all: string[] = [];
+    // Fetch codes with name + status so the UI can surface details about the
+    // existing systems in each detected series.
+    type Row = { id: string; system_code: string; name: string; status: string };
+    const all: Row[] = [];
     let from = 0;
     // eslint-disable-next-line no-constant-condition
     while (true) {
       const { data: rows, error } = await context.supabase
-        .from("systems").select("system_code").range(from, from + 999);
+        .from("systems").select("id, system_code, name, status").range(from, from + 999);
       if (error) throw new Error(error.message);
       if (!rows || rows.length === 0) break;
-      all.push(...rows.map((r: any) => String(r.system_code ?? "")).filter(Boolean));
+      all.push(...(rows as any[]).filter((r) => r?.system_code) as Row[]);
       if (rows.length < 1000) break;
       from += 1000;
       if (from > 50000) break;
     }
-    const digitCodes = all.map((c) => c.replace(/\D/g, "")).filter((c) => c.length >= 4);
+    const byDigits = new Map<string, Row>();
+    for (const r of all) {
+      const d = String(r.system_code).replace(/\D/g, "");
+      if (d.length >= 4) byDigits.set(d, r);
+    }
+    const digitCodes = Array.from(byDigits.keys());
     const existingSet = new Set(digitCodes);
 
     // For each mode, build groups keyed by prefix.

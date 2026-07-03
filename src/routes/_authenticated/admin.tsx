@@ -87,7 +87,7 @@ function AdminPage() {
 // ============= Users Panel =============
 function UsersPanel({ me }: { me: any }) {
   const qc = useQueryClient();
-  const agentsFn = useServerFn(listAgents);
+  const agentsFn = useServerFn(listUsersForAdmin);
   const createFn = useServerFn(createUser);
   const deleteFn = useServerFn(deleteUser);
   const roleFn = useServerFn(setUserRole);
@@ -99,6 +99,7 @@ function UsersPanel({ me }: { me: any }) {
     queryKey: ["admin_users"],
     queryFn: async () => agentsFn({ headers: await getAuthHeaders() }),
   });
+
 
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ email: "", password: "", display_name: "", role: "agent" as "admin" | "agent" | "super_admin" | "viewer" });

@@ -32,6 +32,24 @@ const PERMISSION_KEYS = [
   "systems_read", "systems_write", "systems_delete", "status_change", "agent_transfer", "notes_write", "files_manage",
   "import_export", "series_manage", "backup_manage", "audit_view", "settings_manage", "users_manage", "permissions_manage",
 ] as const;
+
+function isSchemaCacheMissing(error: unknown): boolean {
+  const e = error as { code?: string; message?: string; details?: string } | null | undefined;
+  const text = `${e?.code ?? ""} ${e?.message ?? ""} ${e?.details ?? ""}`;
+  return e?.code === "PGRST205"
+    || text.includes("schema cache")
+    || text.includes("Could not find the table")
+    || text.includes("relation") && text.includes("does not exist");
+}
+
+const DEFAULT_ROLE_PERMISSION_ROWS = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({
+  role,
+  permission,
+  allowed: role === "super_admin"
+    || (role === "admin" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "files_manage", "import_export", "series_manage", "backup_manage", "settings_manage"].includes(permission))
+    || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "files_manage"].includes(permission))
+    || (role === "viewer" && permission === "systems_read"),
+}))) as { role: string; permission: string; allowed: boolean }[];
 const DEFAULT_STATUS_SETTINGS = [
   ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
   ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
@@ -369,8 +387,8 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
       supabaseAdmin.from("user_roles").select("user_id, role"),
       supabaseAdmin.auth.admin.listUsers(),
     ]);
-    if (rpErr) throw fromSupabase(rpErr);
-    if (upErr) throw fromSupabase(upErr);
+    if (rpErr && !isSchemaCacheMissing(rpErr)) throw fromSupabase(rpErr);
+    if (upErr && !isSchemaCacheMissing(upErr)) throw fromSupabase(upErr);
 
     const roleMap = new Map<string, string[]>();
     (roles ?? []).forEach((r: any) => {
@@ -393,8 +411,8 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
     return {
       roles: ROLES,
       permissions: PERMISSION_DEFINITIONS,
-      rolePermissions: rolePermissions ?? [],
-      userPermissions: userPermissions ?? [],
+      rolePermissions: rpErr ? DEFAULT_ROLE_PERMISSION_ROWS : rolePermissions ?? [],
+      userPermissions: upErr ? [] : userPermissions ?? [],
       users,
     };
   });

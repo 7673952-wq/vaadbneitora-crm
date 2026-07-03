@@ -109,6 +109,19 @@ const HEBREW_LABEL: Record<Role, string> = {
   viewer: "צופה",
 };
 
+function isSchemaCacheMissing(error: unknown): boolean {
+  const e = error as { code?: string; message?: string; details?: string } | null | undefined;
+  const text = `${e?.code ?? ""} ${e?.message ?? ""} ${e?.details ?? ""}`;
+  return e?.code === "PGRST205"
+    || text.includes("schema cache")
+    || text.includes("Could not find the table")
+    || text.includes("relation") && text.includes("does not exist");
+}
+
+function defaultPermissionForRoles(roles: Role[], permission: PermissionKey): boolean {
+  return roles.some((role) => DEFAULT_ROLE_PERMISSIONS[role]?.[permission] === true);
+}
+
 function rank(role: string): number {
   const idx = ROLE_HIERARCHY.indexOf(role as Role);
   return idx === -1 ? Number.POSITIVE_INFINITY : idx;
@@ -152,6 +165,7 @@ export async function hasPermission(userId: string, permission: PermissionKey): 
     .eq("permission", permission)
     .maybeSingle();
   if (overrideError && overrideError.code !== "PGRST116") {
+    if (isSchemaCacheMissing(overrideError)) return defaultPermissionForRoles(roles, permission);
     throw new AppError(overrideError.message, { code: "internal", cause: overrideError });
   }
   if (typeof (userOverride as any)?.allowed === "boolean") return Boolean((userOverride as any).allowed);
@@ -161,13 +175,16 @@ export async function hasPermission(userId: string, permission: PermissionKey): 
     .select("role, allowed")
     .eq("permission", permission)
     .in("role", roles as any);
-  if (roleError) throw new AppError(roleError.message, { code: "internal", cause: roleError });
+  if (roleError) {
+    if (isSchemaCacheMissing(roleError)) return defaultPermissionForRoles(roles, permission);
+    throw new AppError(roleError.message, { code: "internal", cause: roleError });
+  }
 
   if ((roleRows ?? []).some((r: any) => r.allowed === true)) return true;
   if ((roleRows ?? []).some((r: any) => r.allowed === false)) return false;
 
   // Fallback for fresh/local databases before the permissions seed exists.
-  return roles.some((role) => DEFAULT_ROLE_PERMISSIONS[role]?.[permission] === true);
+  return defaultPermissionForRoles(roles, permission);
 }
 
 export async function getUserPermissionMap(userId: string): Promise<Record<PermissionKey, boolean>> {

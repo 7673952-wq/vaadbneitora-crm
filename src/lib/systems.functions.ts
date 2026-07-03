@@ -1196,7 +1196,7 @@ export const scanSystemSeries = createServerFn({ method: "GET" })
       count: number;
       min: string;
       max: string;
-      existing: string[];
+      existing: Array<{ code: string; id: string; name: string; status: string }>;
       missing: string[];
     }> = [];
 

@@ -257,9 +257,18 @@ function Dashboard() {
 
   // Global per-status counts across ALL systems (not just the current page).
   const stats = useMemo(() => {
-    if (globalStatusCounts) return globalStatusCounts as Record<string, number>;
+    const gsc = globalStatusCounts as any;
+    if (gsc?.primary) return gsc.primary as Record<string, number>;
+    if (gsc && typeof gsc === "object") return gsc as Record<string, number>;
     const counts: Record<string, number> = {};
     (systems ?? []).forEach((s: any) => { counts[s.status] = (counts[s.status] || 0) + 1; });
+    return counts;
+  }, [systems, globalStatusCounts]);
+  const secondaryStats = useMemo(() => {
+    const gsc = globalStatusCounts as any;
+    if (gsc?.secondary) return gsc.secondary as Record<string, number>;
+    const counts: Record<string, number> = {};
+    (systems ?? []).forEach((s: any) => { if (s.secondary_status) counts[s.secondary_status] = (counts[s.secondary_status] || 0) + 1; });
     return counts;
   }, [systems, globalStatusCounts]);
   const chartData = useMemo(() => STATUS_OPTIONS

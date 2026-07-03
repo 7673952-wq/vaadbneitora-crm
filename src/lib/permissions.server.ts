@@ -109,6 +109,13 @@ const HEBREW_LABEL: Record<Role, string> = {
   viewer: "צופה",
 };
 
+const PERMISSION_SETTINGS_KEY = "permission_settings";
+
+type StoredPermissionSettings = {
+  rolePermissions: Array<{ role: string; permission: string; allowed: boolean }>;
+  userPermissions: Array<{ user_id: string; permission: string; allowed: boolean }>;
+};
+
 function isSchemaCacheMissing(error: unknown): boolean {
   const e = error as { code?: string; message?: string; details?: string } | null | undefined;
   const text = `${e?.code ?? ""} ${e?.message ?? ""} ${e?.details ?? ""}`;
@@ -120,6 +127,41 @@ function isSchemaCacheMissing(error: unknown): boolean {
 
 function defaultPermissionForRoles(roles: Role[], permission: PermissionKey): boolean {
   return roles.some((role) => DEFAULT_ROLE_PERMISSIONS[role]?.[permission] === true);
+}
+
+function defaultRolePermissionRows() {
+  return ROLE_HIERARCHY.flatMap((role) => PERMISSION_DEFINITIONS.map((p) => ({
+    role,
+    permission: p.key,
+    allowed: DEFAULT_ROLE_PERMISSIONS[role][p.key],
+  })));
+}
+
+function normalizePermissionSettings(value: unknown): StoredPermissionSettings {
+  const v = (value ?? {}) as Partial<StoredPermissionSettings>;
+  const rolePermissions = Array.isArray(v.rolePermissions) && v.rolePermissions.length
+    ? v.rolePermissions
+        .filter((r: any) => ROLE_HIERARCHY.includes(r?.role) && isPermissionKey(r?.permission) && typeof r?.allowed === "boolean")
+        .map((r: any) => ({ role: r.role, permission: r.permission, allowed: r.allowed }))
+    : defaultRolePermissionRows();
+  const userPermissions = Array.isArray(v.userPermissions)
+    ? v.userPermissions
+        .filter((r: any) => typeof r?.user_id === "string" && isPermissionKey(r?.permission) && typeof r?.allowed === "boolean")
+        .map((r: any) => ({ user_id: r.user_id, permission: r.permission, allowed: r.allowed }))
+    : [];
+  return { rolePermissions, userPermissions };
+}
+
+async function getStoredPermissionSettings(): Promise<StoredPermissionSettings> {
+  const { data, error } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", PERMISSION_SETTINGS_KEY)
+    .maybeSingle();
+  if (error && error.code !== "PGRST116") {
+    return { rolePermissions: defaultRolePermissionRows(), userPermissions: [] };
+  }
+  return normalizePermissionSettings((data as any)?.value);
 }
 
 function rank(role: string): number {
@@ -157,6 +199,13 @@ export function isPermissionKey(permission: string): permission is PermissionKey
 export async function hasPermission(userId: string, permission: PermissionKey): Promise<boolean> {
   const roles = await getUserRoles(userId);
   if (!roles.length) return false;
+
+  const stored = await getStoredPermissionSettings();
+  const storedOverride = stored.userPermissions.find((r) => r.user_id === userId && r.permission === permission);
+  if (typeof storedOverride?.allowed === "boolean") return storedOverride.allowed;
+  const storedRoleRows = stored.rolePermissions.filter((r) => r.permission === permission && roles.includes(r.role as Role));
+  if (storedRoleRows.some((r) => r.allowed === true)) return true;
+  if (storedRoleRows.some((r) => r.allowed === false)) return false;
 
   const { data: userOverride, error: overrideError } = await supabaseAdmin
     .from("user_permissions")

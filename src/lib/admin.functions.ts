@@ -50,6 +50,47 @@ const DEFAULT_ROLE_PERMISSION_ROWS = ROLES.flatMap((role) => PERMISSION_KEYS.map
     || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "files_manage"].includes(permission))
     || (role === "viewer" && permission === "systems_read"),
 }))) as { role: string; permission: string; allowed: boolean }[];
+const PERMISSION_SETTINGS_KEY = "permission_settings";
+
+type PermissionSettingsValue = {
+  rolePermissions: Array<{ role: string; permission: string; allowed: boolean; updated_at?: string; updated_by?: string | null }>;
+  userPermissions: Array<{ user_id: string; permission: string; allowed: boolean; updated_at?: string; updated_by?: string | null }>;
+};
+
+function normalizePermissionSettings(value: unknown): PermissionSettingsValue {
+  const v = (value ?? {}) as Partial<PermissionSettingsValue>;
+  const rolePermissions = Array.isArray(v.rolePermissions) && v.rolePermissions.length
+    ? v.rolePermissions
+        .filter((r: any) => ROLES.includes(r?.role) && PERMISSION_KEYS.includes(r?.permission) && typeof r?.allowed === "boolean")
+        .map((r: any) => ({ role: r.role, permission: r.permission, allowed: r.allowed, updated_at: r.updated_at, updated_by: r.updated_by ?? null }))
+    : DEFAULT_ROLE_PERMISSION_ROWS;
+  const userPermissions = Array.isArray(v.userPermissions)
+    ? v.userPermissions
+        .filter((r: any) => typeof r?.user_id === "string" && PERMISSION_KEYS.includes(r?.permission) && typeof r?.allowed === "boolean")
+        .map((r: any) => ({ user_id: r.user_id, permission: r.permission, allowed: r.allowed, updated_at: r.updated_at, updated_by: r.updated_by ?? null }))
+    : [];
+  return { rolePermissions, userPermissions };
+}
+
+async function readPermissionSettings(supabaseAdmin: any): Promise<PermissionSettingsValue> {
+  const { data, error } = await supabaseAdmin
+    .from("app_settings")
+    .select("value")
+    .eq("key", PERMISSION_SETTINGS_KEY)
+    .maybeSingle();
+  if (error && error.code !== "PGRST116") throw fromSupabase(error);
+  return normalizePermissionSettings((data as any)?.value);
+}
+
+async function writePermissionSettings(supabaseAdmin: any, value: PermissionSettingsValue, userId: string) {
+  const { error } = await supabaseAdmin.from("app_settings").upsert({
+    key: PERMISSION_SETTINGS_KEY,
+    value,
+    updated_at: new Date().toISOString(),
+    updated_by: userId,
+  });
+  if (error) throw fromSupabase(error);
+}
 const DEFAULT_STATUS_SETTINGS = [
   ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
   ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
@@ -377,9 +418,9 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertPermission(context, "permissions_manage");
-    await seedMissingRolePermissions();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { PERMISSION_DEFINITIONS } = await import("@/lib/permissions.server");
+    const storedSettings = await readPermissionSettings(supabaseAdmin);
     const [{ data: rolePermissions, error: rpErr }, { data: userPermissions, error: upErr }, { data: profiles }, { data: roles }, usersList] = await Promise.all([
       supabaseAdmin.from("role_permissions").select("role, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
       supabaseAdmin.from("user_permissions").select("user_id, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
@@ -411,8 +452,8 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
     return {
       roles: ROLES,
       permissions: PERMISSION_DEFINITIONS,
-      rolePermissions: rpErr ? DEFAULT_ROLE_PERMISSION_ROWS : rolePermissions ?? [],
-      userPermissions: upErr ? [] : userPermissions ?? [],
+      rolePermissions: storedSettings.rolePermissions.length ? storedSettings.rolePermissions : (rpErr ? DEFAULT_ROLE_PERMISSION_ROWS : rolePermissions ?? []),
+      userPermissions: storedSettings.userPermissions.length ? storedSettings.userPermissions : (upErr ? [] : userPermissions ?? []),
       users,
     };
   });
@@ -432,13 +473,12 @@ export const setRolePermission = createServerFn({ method: "POST" })
       throw new AppError("לא ניתן להסיר הרשאת ניהול הרשאות ממנהל ראשי", { code: "bad_request" });
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("role_permissions").upsert({
-      role: data.role,
-      permission: data.permission,
-      allowed: data.allowed,
-      updated_by: context.userId,
-    });
-    if (error) throw fromSupabase(error);
+    const settings = await readPermissionSettings(supabaseAdmin);
+    const row = { role: data.role, permission: data.permission, allowed: data.allowed, updated_at: new Date().toISOString(), updated_by: context.userId };
+    const idx = settings.rolePermissions.findIndex((r) => r.role === data.role && r.permission === data.permission);
+    if (idx >= 0) settings.rolePermissions[idx] = row;
+    else settings.rolePermissions.push(row);
+    await writePermissionSettings(supabaseAdmin, settings, context.userId);
     return { ok: true };
   });
 
@@ -457,13 +497,12 @@ export const setUserPermission = createServerFn({ method: "POST" })
       throw new AppError("לא ניתן להסיר מעצמך הרשאת ניהול הרשאות", { code: "bad_request" });
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("user_permissions").upsert({
-      user_id: data.user_id,
-      permission: data.permission,
-      allowed: data.allowed,
-      updated_by: context.userId,
-    });
-    if (error) throw fromSupabase(error);
+    const settings = await readPermissionSettings(supabaseAdmin);
+    const row = { user_id: data.user_id, permission: data.permission, allowed: data.allowed, updated_at: new Date().toISOString(), updated_by: context.userId };
+    const idx = settings.userPermissions.findIndex((r) => r.user_id === data.user_id && r.permission === data.permission);
+    if (idx >= 0) settings.userPermissions[idx] = row;
+    else settings.userPermissions.push(row);
+    await writePermissionSettings(supabaseAdmin, settings, context.userId);
     return { ok: true };
   });
 
@@ -475,12 +514,9 @@ export const deleteUserPermission = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertPermission(context, "permissions_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin
-      .from("user_permissions")
-      .delete()
-      .eq("user_id", data.user_id)
-      .eq("permission", data.permission);
-    if (error) throw fromSupabase(error);
+    const settings = await readPermissionSettings(supabaseAdmin);
+    settings.userPermissions = settings.userPermissions.filter((r) => !(r.user_id === data.user_id && r.permission === data.permission));
+    await writePermissionSettings(supabaseAdmin, settings, context.userId);
     return { ok: true };
   });
 

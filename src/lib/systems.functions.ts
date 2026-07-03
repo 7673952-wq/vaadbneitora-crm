@@ -1232,7 +1232,10 @@ export const scanSystemSeries = createServerFn({ method: "GET" })
           count: members.length,
           min: prefix + String(min).padStart(width, "0"),
           max: prefix + String(max).padStart(width, "0"),
-          existing: members,
+          existing: members.map((m) => {
+            const r = byDigits.get(m)!;
+            return { code: m, id: r.id, name: r.name, status: r.status };
+          }).sort((a, b) => a.code.localeCompare(b.code)),
           missing,
         });
       }

@@ -12,7 +12,7 @@ import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
 } from "@/lib/system-files.functions";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, toneClasses, statusCardClasses,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_MANDATORY, toneClasses, statusCardClasses,
   NO_REASON_STATUSES, type SystemStatus, buildDialNumber,
 } from "@/lib/status";
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
@@ -358,7 +358,7 @@ function SystemDetail() {
               updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim() } });
             }}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
-              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 
@@ -369,7 +369,7 @@ function SystemDetail() {
               onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
               <option value="">— ללא —</option>
-              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <p className="text-[11px] text-muted-foreground mt-1">מוצג רק בכרטיס המערכת, לא בדשבורד.</p>
           </div>

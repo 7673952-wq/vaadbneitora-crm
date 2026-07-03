@@ -257,9 +257,18 @@ function Dashboard() {
 
   // Global per-status counts across ALL systems (not just the current page).
   const stats = useMemo(() => {
-    if (globalStatusCounts) return globalStatusCounts as Record<string, number>;
+    const gsc = globalStatusCounts as any;
+    if (gsc?.primary) return gsc.primary as Record<string, number>;
+    if (gsc && typeof gsc === "object") return gsc as Record<string, number>;
     const counts: Record<string, number> = {};
     (systems ?? []).forEach((s: any) => { counts[s.status] = (counts[s.status] || 0) + 1; });
+    return counts;
+  }, [systems, globalStatusCounts]);
+  const secondaryStats = useMemo(() => {
+    const gsc = globalStatusCounts as any;
+    if (gsc?.secondary) return gsc.secondary as Record<string, number>;
+    const counts: Record<string, number> = {};
+    (systems ?? []).forEach((s: any) => { if (s.secondary_status) counts[s.secondary_status] = (counts[s.secondary_status] || 0) + 1; });
     return counts;
   }, [systems, globalStatusCounts]);
   const chartData = useMemo(() => STATUS_OPTIONS
@@ -601,7 +610,7 @@ function Dashboard() {
       {/* Stats — regular + workflow side-by-side, same height, compact */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-3 items-stretch">
         <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact={false} columns={7} />
-        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact columns={3} />
+        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={secondaryStats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact columns={3} />
       </div>
 
       {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
@@ -1186,7 +1195,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
             onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
-            {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <select value={r.assigned_agent_id || ""} onChange={(e) => onUpdate?.({ id: r.id, assigned_agent_id: e.target.value || null })}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
@@ -1247,7 +1256,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 
 
 function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "open", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
+  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
   const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);
@@ -1295,6 +1304,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.status) { toast.error("יש לבחור סטטוס"); return; }
     setBusy(true);
     try {
       if (willCreateAsSub && matchedParent) {
@@ -1420,10 +1430,11 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             </div>
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">סטטוס</label>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+            <label className="text-sm font-medium block mb-1">סטטוס <span className="text-red-600">*</span></label>
+            <select required value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              <option value="">— בחר סטטוס —</option>
+              {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">

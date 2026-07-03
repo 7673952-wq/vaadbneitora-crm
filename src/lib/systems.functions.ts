@@ -118,7 +118,7 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     }).strict().parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
-    let q = context.supabase.from("systems").select("status");
+    let q = context.supabase.from("systems").select("status, secondary_status");
     if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
     if (data.period) {
       const now = new Date();
@@ -132,7 +132,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
     if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
     // Paginate through everything to bypass the 1000-row default.
-    const counts: Record<string, number> = {};
+    const primary: Record<string, number> = {};
+    const secondary: Record<string, number> = {};
     const pageSize = 1000;
     let from = 0;
     // eslint-disable-next-line no-constant-condition
@@ -140,11 +141,15 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       const { data: rows, error } = await q.range(from, from + pageSize - 1);
       if (error) throw new Error(error.message);
       if (!rows || rows.length === 0) break;
-      for (const r of rows as any[]) counts[r.status] = (counts[r.status] ?? 0) + 1;
+      for (const r of rows as any[]) {
+        if (r.status) primary[r.status] = (primary[r.status] ?? 0) + 1;
+        if (r.secondary_status) secondary[r.secondary_status] = (secondary[r.secondary_status] ?? 0) + 1;
+      }
       if (rows.length < pageSize) break;
       from += pageSize;
     }
-    return counts;
+    // Back-compat: spread primary at top-level so old callers keep working.
+    return { ...primary, primary, secondary };
   });
 
 

@@ -164,6 +164,7 @@ function Dashboard() {
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");
+  const [secondaryStatus, setSecondaryStatus] = useState<string>("");
   const [agentId, setAgentId] = useState<string>("");
   const [period, setPeriod] = useState<Period>("");
   const [dateFrom, setDateFrom] = useState<string>("");

@@ -69,7 +69,7 @@ export const listSystems = createServerFn({ method: "POST" })
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
       if (data.status) q = q.eq("status", data.status as any);
-      if (data.secondaryStatus) q = q.eq("secondary_status", data.secondaryStatus as any);
+      if (data.secondaryStatus) q = q.or(`secondary_status.eq.${data.secondaryStatus},status.eq.${data.secondaryStatus}`);
       if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
       if (data.period) {
         const now = new Date();
@@ -136,6 +136,7 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     // Paginate through everything to bypass the 1000-row default.
     const primary: Record<string, number> = {};
     const secondary: Record<string, number> = {};
+    const any: Record<string, number> = {};
     const pageSize = 1000;
     let from = 0;
     // eslint-disable-next-line no-constant-condition
@@ -146,12 +147,15 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       for (const r of rows as any[]) {
         if (r.status) primary[r.status] = (primary[r.status] ?? 0) + 1;
         if (r.secondary_status) secondary[r.secondary_status] = (secondary[r.secondary_status] ?? 0) + 1;
+        for (const key of new Set([r.status, r.secondary_status].filter(Boolean))) {
+          any[key as string] = (any[key as string] ?? 0) + 1;
+        }
       }
       if (rows.length < pageSize) break;
       from += pageSize;
     }
     // Back-compat: spread primary at top-level so old callers keep working.
-    return { ...primary, primary, secondary };
+    return { ...primary, primary, secondary, any };
   });
 
 

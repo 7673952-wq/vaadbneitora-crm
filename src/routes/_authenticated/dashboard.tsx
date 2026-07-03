@@ -267,9 +267,14 @@ function Dashboard() {
   }, [systems, globalStatusCounts]);
   const secondaryStats = useMemo(() => {
     const gsc = globalStatusCounts as any;
+    if (gsc?.any) return gsc.any as Record<string, number>;
     if (gsc?.secondary) return gsc.secondary as Record<string, number>;
     const counts: Record<string, number> = {};
-    (systems ?? []).forEach((s: any) => { if (s.secondary_status) counts[s.secondary_status] = (counts[s.secondary_status] || 0) + 1; });
+    (systems ?? []).forEach((s: any) => {
+      for (const key of new Set([s.status, s.secondary_status].filter(Boolean))) {
+        counts[key as string] = (counts[key as string] || 0) + 1;
+      }
+    });
     return counts;
   }, [systems, globalStatusCounts]);
   const chartData = useMemo(() => STATUS_OPTIONS

@@ -366,7 +366,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
         .maybeSingle();
       if (verifyError) throw fromSupabase(verifyError);
       if ((saved as any)?.is_mandatory !== data.is_mandatory) {
-        throw new AppError("השינוי לחובה/אופציונלי לא נשמר. רענן ונסה שוב.", { code: "status_save_failed" });
+        throw new AppError("השינוי לחובה/אופציונלי לא נשמר. רענן ונסה שוב.", { code: "internal" });
       }
     }
     return { ok: true };

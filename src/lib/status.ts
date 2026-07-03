@@ -33,6 +33,7 @@ const DEFAULT_STATUS_OPTIONS: StatusOption[] = [
 ].map((s) => ({ ...s, is_handled: DEFAULT_HANDLED.has(s.value), assigned_agent_ids: [] as string[] }));
 
 export const SPECIAL_WORKFLOW_STATUS_KEYS = [
+  "block_from_root",
   "send_to_yosela",
   "sent_to_yosela",
   "blocked_from_root",

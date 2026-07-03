@@ -26,7 +26,7 @@ async function assertAnyPermission(context: { userId: string }, permissions: imp
   await assertAnyPermission(context.userId, permissions);
 }
 
-const WORKFLOW_STATUS_KEYS = new Set(["send_to_yosela", "sent_to_yosela", "blocked_from_root", "send_to_committee", "sent_to_committee", "blocked_in_committee"]);
+const WORKFLOW_STATUS_KEYS = new Set(["block_from_root", "send_to_yosela", "sent_to_yosela", "blocked_from_root", "send_to_committee", "sent_to_committee", "blocked_in_committee"]);
 const ROLES = ["viewer", "agent", "admin", "super_admin"] as const;
 const PERMISSION_KEYS = [
   "systems_read", "systems_write", "systems_delete", "status_change", "agent_transfer", "notes_write", "files_manage",

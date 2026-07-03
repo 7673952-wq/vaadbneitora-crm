@@ -1430,10 +1430,11 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             </div>
           </div>
           <div>
-            <label className="text-sm font-medium block mb-1">סטטוס</label>
-            <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
+            <label className="text-sm font-medium block mb-1">סטטוס <span className="text-red-600">*</span></label>
+            <select required value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
-              {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              <option value="">— בחר סטטוס —</option>
+              {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">

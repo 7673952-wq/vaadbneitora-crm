@@ -310,23 +310,37 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
 
 export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async () => {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  .handler(async ({ context }) => {
     let { data, error } = await supabaseAdmin
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });
     if (error) throw fromSupabase(error);
     if (!data || data.length === 0) {
-      await seedMissingStatusSettings();
-      let fresh = await supabaseAdmin
+      try {
+        await seedMissingStatusSettings();
+      } catch {
+        // If seeding cannot run, still return the built-in status list so the
+        // management screen never appears empty while the persisted rows are fixed.
+      }
+      let fresh = await context.supabase
         .from("status_settings")
         .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
         .order("sort_order", { ascending: true });
       if (fresh.error) throw fromSupabase(fresh.error);
       data = fresh.data;
     }
-    return data ?? [];
+    if (data && data.length > 0) return data;
+    return DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
+      status_key,
+      label,
+      tone,
+      sort_order,
+      is_custom: false,
+      is_handled,
+      is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
+      assigned_agent_ids: [],
+    }));
   });
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })

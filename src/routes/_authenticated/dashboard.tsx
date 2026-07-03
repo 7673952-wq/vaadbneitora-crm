@@ -1195,7 +1195,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
             onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
-            {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <select value={r.assigned_agent_id || ""} onChange={(e) => onUpdate?.({ id: r.id, assigned_agent_id: e.target.value || null })}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">

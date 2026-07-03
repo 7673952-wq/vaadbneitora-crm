@@ -12,7 +12,7 @@ import {
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
 import { listAgents } from "@/lib/systems.functions";
-import { AVAILABLE_TONES, toneClasses, applyStatusSettings } from "@/lib/status";
+import { AVAILABLE_TONES, STATUS_OPTIONS, toneClasses, applyStatusSettings } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -352,7 +352,7 @@ function StatusSettingsPanel() {
   const delFn = useServerFn(deleteStatusSetting);
   const reorderFn = useServerFn(reorderStatusSettings);
   const agentsFn = useServerFn(listUsersForAdmin);
-  const { data: rows } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
+  const { data: rows, error: rowsError, isLoading: rowsLoading } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
   const { data: agents } = useQuery({ queryKey: ["admin_users"], queryFn: async () => agentsFn({ headers: await getAuthHeaders() }) });
 
   const refresh = async () => {
@@ -368,7 +368,17 @@ function StatusSettingsPanel() {
   const [showAdd, setShowAdd] = useState(false);
   const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true });
 
-  const sorted = [...((rows ?? []) as any[])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const fallbackRows = STATUS_OPTIONS.map((s, idx) => ({
+    status_key: s.value,
+    label: s.label,
+    tone: s.tone,
+    sort_order: idx + 1,
+    is_custom: false,
+    is_handled: !!s.is_handled,
+    is_mandatory: s.is_mandatory ?? true,
+    assigned_agent_ids: s.assigned_agent_ids ?? [],
+  }));
+  const sorted = [...(((rows as any[] | undefined)?.length ? rows : fallbackRows) as any[])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const move = (idx: number, delta: number) => {
     const next = [...sorted];
     const j = idx + delta;
@@ -391,6 +401,9 @@ function StatusSettingsPanel() {
           </button>
         </div>
       </div>
+
+      {rowsLoading && <div className="bg-muted/40 border border-border rounded-xl p-4 text-sm text-muted-foreground">טוען סטטוסים...</div>}
+      {rowsError && <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-sm text-destructive">לא ניתן לטעון סטטוסים שמורים: {rowsError.message}. מוצגת רשימת ברירת־המחדל.</div>}
 
       {showAdd && (
         <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-6 gap-2 items-end">

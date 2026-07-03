@@ -366,9 +366,9 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       status_key: data.status_key,
       label: sanitizeText(data.label),
       tone: data.tone,
-      sort_order: data.sort_order ?? 0,
       is_custom: data.is_custom ?? false,
     };
+    if (data.sort_order !== undefined) patch.sort_order = data.sort_order;
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
     if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;

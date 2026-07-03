@@ -43,6 +43,7 @@ const periodSchema = z.enum(["day", "week", "month", "year"]);
 const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
 const listSystemsInputSchema = z.object({
   status: statusSchema.nullable().optional(),
+  secondaryStatus: statusSchema.nullable().optional(),
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
   dateFrom: isoDate,

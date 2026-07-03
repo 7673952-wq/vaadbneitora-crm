@@ -3,6 +3,12 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { AppError, fromSupabase } from "@/lib/errors";
 import { sanitizeText } from "@/lib/sanitize";
+import {
+  deleteStatusSettingStable,
+  readStatusSettings,
+  reorderStatusSettingsStable,
+  upsertStatusSettingStable,
+} from "@/lib/status-settings";
 
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.
@@ -26,7 +32,6 @@ async function assertAnyPermission(context: { userId: string }, permissions: imp
   await assertAnyPermission(context.userId, permissions);
 }
 
-const WORKFLOW_STATUS_KEYS = new Set(["block_from_root", "send_to_yosela", "sent_to_yosela", "blocked_from_root", "send_to_committee", "sent_to_committee", "blocked_in_committee"]);
 const ROLES = ["viewer", "agent", "admin", "super_admin"] as const;
 const PERMISSION_KEYS = [
   "systems_read", "systems_write", "systems_delete", "status_change", "agent_transfer", "notes_write", "files_manage",
@@ -91,45 +96,6 @@ async function writePermissionSettings(supabaseAdmin: any, value: PermissionSett
   });
   if (error) throw fromSupabase(error);
 }
-const DEFAULT_STATUS_SETTINGS = [
-  ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
-  ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
-  ["to_open", "לפתוח", "lightgreen", 3, false],
-  ["to_block", "לחסום", "lightred", 4, false],
-  ["block_from_root", "לחסום מהשורש", "brightred", 5, false],
-  ["problem", "בעיה", "orange", 6, false],
-  ["open", "פתוח", "green", 7, true],
-  ["closed", "חסום", "red", 8, true],
-  ["open_only_bimot", "לפתוח רק בימות", "sky", 9, true],
-  ["close_only_bimot", "פתוח רק בימות", "indigo", 10, false],
-  ["open_in_simahedrin", "לפתיחה בסימהדרין", "cyan", 11, false],
-  ["close_in_simahedrin", "לחסימה בסימהדרין", "violet", 12, false],
-  ["send_to_yosela", "לשלוח ליוסלה", "fuchsia", 13, false],
-  ["sent_to_yosela", "נשלח ליוסלה", "pink", 14, true],
-  ["blocked_from_root", "נחסם מהשורש", "darkred", 15, true],
-  ["send_to_committee", "לשלוח לוועדה", "purple", 16, false],
-  ["sent_to_committee", "נשלח לוועדה", "violet", 17, true],
-  ["blocked_in_committee", "נחסם בוועדה", "black", 18, true],
-] as const;
-
-async function seedMissingStatusSettings() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-  const rows = DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
-    status_key,
-    label,
-    tone,
-    sort_order,
-    is_custom: false,
-    is_handled,
-    is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
-    assigned_agent_ids: [],
-  }));
-  const { error } = await supabaseAdmin.from("status_settings").upsert(rows, { onConflict: "status_key", ignoreDuplicates: true } as any);
-  if (error && String(error.message).includes("is_mandatory")) {
-    await supabaseAdmin.from("status_settings").upsert(rows.map(({ is_mandatory, ...r }) => r), { onConflict: "status_key", ignoreDuplicates: true } as any);
-  }
-}
-
 async function seedMissingRolePermissions() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
@@ -312,50 +278,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    let { data, error } = await supabaseAdmin
-      .from("status_settings")
-      .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
-      .order("sort_order", { ascending: true });
-    if (error) {
-      // Statuses are global app configuration. If the data API/RLS layer has a
-      // transient permission/schema-cache issue, keep management usable instead
-      // of rendering an empty tab.
-      return DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
-        status_key,
-        label,
-        tone,
-        sort_order,
-        is_custom: false,
-        is_handled,
-        is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
-        assigned_agent_ids: [],
-      }));
-    }
-    if (!data || data.length === 0) {
-      try {
-        await seedMissingStatusSettings();
-      } catch {
-        // If seeding cannot run, still return the built-in status list so the
-        // management screen never appears empty while the persisted rows are fixed.
-      }
-      let fresh = await supabaseAdmin
-        .from("status_settings")
-        .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
-        .order("sort_order", { ascending: true });
-      if (fresh.error) throw fromSupabase(fresh.error);
-      data = fresh.data;
-    }
-    if (data && data.length > 0) return data;
-    return DEFAULT_STATUS_SETTINGS.map(([status_key, label, tone, sort_order, is_handled]) => ({
-      status_key,
-      label,
-      tone,
-      sort_order,
-      is_custom: false,
-      is_handled,
-      is_mandatory: !WORKFLOW_STATUS_KEYS.has(status_key),
-      assigned_agent_ids: [],
-    }));
+    return readStatusSettings(supabaseAdmin);
   });
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
@@ -385,19 +308,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
     if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
-    const { error } = await supabaseAdmin.from("status_settings").upsert(patch, { onConflict: "status_key" } as any);
-    if (error) throw fromSupabase(error);
-    if (data.is_mandatory !== undefined) {
-      const { data: saved, error: verifyError } = await supabaseAdmin
-        .from("status_settings")
-        .select("is_mandatory")
-        .eq("status_key", data.status_key)
-        .maybeSingle();
-      if (verifyError) throw fromSupabase(verifyError);
-      if ((saved as any)?.is_mandatory !== data.is_mandatory) {
-        throw new AppError("השינוי לחובה/אופציונלי לא נשמר. רענן ונסה שוב.", { code: "internal" });
-      }
-    }
+    await upsertStatusSettingStable(supabaseAdmin, patch, context.userId);
     return { ok: true };
   });
 
@@ -409,12 +320,7 @@ export const reorderStatusSettings = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    // Renumber sequentially 1..N
-    await Promise.all(
-      data.order.map((key, idx) =>
-        supabaseAdmin.from("status_settings").update({ sort_order: idx + 1 }).eq("status_key", key),
-      ),
-    );
+    await reorderStatusSettingsStable(supabaseAdmin, data.order, context.userId);
     return { ok: true };
   });
 
@@ -426,8 +332,7 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("status_settings").delete().eq("status_key", data.status_key);
-    if (error) throw fromSupabase(error);
+    await deleteStatusSettingStable(supabaseAdmin, data.status_key, context.userId);
     return { ok: true };
   });
 

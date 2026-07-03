@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { readStatusSettings } from "@/lib/status-settings";
 
 export const listAuditLog = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -71,19 +72,19 @@ export const listAuditLog = createServerFn({ method: "POST" })
     const allProfileIds = Array.from(new Set([...actorIds, ...valueIds]));
     const allSystemIds = Array.from(new Set([...systemIds, ...parentSystemIds]));
 
-    const [systemsRes, profilesRes, statusRes] = await Promise.all([
+    const [systemsRes, profilesRes, statusRows] = await Promise.all([
       allSystemIds.length
         ? context.supabase.from("systems").select("id, system_code, name").in("id", allSystemIds)
         : Promise.resolve({ data: [] as any[] }),
       allProfileIds.length
         ? context.supabase.from("profiles").select("id, display_name").in("id", allProfileIds)
         : Promise.resolve({ data: [] as any[] }),
-      context.supabase.from("status_settings").select("status_key, label"),
+      readStatusSettings(context.supabase),
     ]);
 
     const sysMap = new Map((systemsRes.data ?? []).map((s: any) => [s.id, s]));
     const profMap = new Map((profilesRes.data ?? []).map((p: any) => [p.id, p.display_name]));
-    const statusMap = new Map((statusRes.data ?? []).map((s: any) => [s.status_key, s.label]));
+    const statusMap = new Map((statusRows ?? []).map((s: any) => [s.status_key, s.label]));
     // Built-in fallback labels (in case status_settings was customized away)
     const DEFAULT_STATUS_LABELS: Record<string, string> = {
       pending_check_close: "לבדיקה לחסימה", pending_check_open: "לבדיקה לפתיחה",

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
+import { readStatusSettings } from "@/lib/status-settings";
 
 // If a system_code doesn't already start with "0" or "972", and has
 // fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->
@@ -424,12 +425,8 @@ export const updateSystem = createServerFn({ method: "POST" })
     // Auto-assign the configured agent for this status (if any and caller
     // didn't already pick one in the same request).
     if (data.status && data.status !== sys.status && data.assigned_agent_id === undefined) {
-      const { data: setting } = await context.supabase
-        .from("status_settings")
-        .select("assigned_agent_ids")
-        .eq("status_key", data.status)
-        .maybeSingle();
-      const ids: string[] = (setting as any)?.assigned_agent_ids ?? [];
+      const setting = (await readStatusSettings(context.supabase)).find((row) => row.status_key === data.status);
+      const ids: string[] = setting?.assigned_agent_ids ?? [];
       if (ids.length > 0) {
         (data as any).assigned_agent_id = ids[0];
       }
@@ -675,10 +672,7 @@ export const listDueReminders = createServerFn({ method: "GET" })
       .limit(200);
     if (e1) throw new Error(e1.message);
 
-    const { data: statuses, error: e2 } = await context.supabase
-      .from("status_settings")
-      .select("status_key, is_handled, assigned_agent_ids");
-    if (e2) throw new Error(e2.message);
+    const statuses = await readStatusSettings(context.supabase);
     const pendingStatusKeys = (statuses ?? [])
       .filter((s: any) => s.is_handled === false)
       .map((s: any) => s.status_key);
@@ -917,9 +911,8 @@ export const importSystems = createServerFn({ method: "POST" })
     if (!isAdmin) throw new Error("רק מנהל יכול לייבא מערכות");
 
     const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);
-    // Load label -> key map from status_settings (fallback to defaults handled in client)
-    const { data: settings } = await context.supabase
-      .from("status_settings").select("status_key, label");
+    // Load label -> key map from the stable status settings config.
+    const settings = await readStatusSettings(context.supabase);
     const labelToKey = new Map<string, string>();
     for (const s of (settings ?? []) as any[]) {
       if (s.label) labelToKey.set(String(s.label).trim(), s.status_key);

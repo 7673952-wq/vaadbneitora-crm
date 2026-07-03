@@ -316,15 +316,6 @@ export const listStatusSettings = createServerFn({ method: "GET" })
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });
-    if (error && String(error.message).includes("is_mandatory")) {
-      const fallback = await supabaseAdmin
-        .from("status_settings")
-        .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
-        .order("sort_order", { ascending: true });
-      if (fallback.error) throw fromSupabase(fallback.error);
-      data = (fallback.data ?? []).map((r: any) => ({ ...r, is_mandatory: !WORKFLOW_STATUS_KEYS.has(r.status_key) }));
-      error = null;
-    }
     if (error) throw fromSupabase(error);
     if (!data || data.length === 0) {
       await seedMissingStatusSettings();
@@ -332,13 +323,6 @@ export const listStatusSettings = createServerFn({ method: "GET" })
         .from("status_settings")
         .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
         .order("sort_order", { ascending: true });
-      if (fresh.error && String(fresh.error.message).includes("is_mandatory")) {
-        const fallback = await supabaseAdmin
-          .from("status_settings")
-          .select("status_key, label, tone, sort_order, is_custom, is_handled, assigned_agent_ids")
-          .order("sort_order", { ascending: true });
-        fresh = { ...fallback, data: (fallback.data ?? []).map((r: any) => ({ ...r, is_mandatory: !WORKFLOW_STATUS_KEYS.has(r.status_key) })) } as any;
-      }
       if (fresh.error) throw fromSupabase(fresh.error);
       data = fresh.data;
     }
@@ -372,13 +356,19 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
     if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
-    let { error } = await supabaseAdmin.from("status_settings").upsert(patch);
-    if (error && String(error.message).includes("is_mandatory")) {
-      delete patch.is_mandatory;
-      const retry = await supabaseAdmin.from("status_settings").upsert(patch);
-      error = retry.error;
-    }
+    const { error } = await supabaseAdmin.from("status_settings").upsert(patch, { onConflict: "status_key" } as any);
     if (error) throw fromSupabase(error);
+    if (data.is_mandatory !== undefined) {
+      const { data: saved, error: verifyError } = await supabaseAdmin
+        .from("status_settings")
+        .select("is_mandatory")
+        .eq("status_key", data.status_key)
+        .maybeSingle();
+      if (verifyError) throw fromSupabase(verifyError);
+      if ((saved as any)?.is_mandatory !== data.is_mandatory) {
+        throw new AppError("השינוי לחובה/אופציונלי לא נשמר. רענן ונסה שוב.", { code: "status_save_failed" });
+      }
+    }
     return { ok: true };
   });
 

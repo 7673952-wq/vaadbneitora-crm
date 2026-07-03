@@ -311,7 +311,7 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
 export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    let { data, error } = await supabaseAdmin
+    let { data, error } = await context.supabase
       .from("status_settings")
       .select("status_key, label, tone, sort_order, is_custom, is_handled, is_mandatory, assigned_agent_ids")
       .order("sort_order", { ascending: true });

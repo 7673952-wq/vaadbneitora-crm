@@ -258,6 +258,37 @@ function SeriesScannerModal({ onClose }: { onClose: () => void }) {
                           {allSel ? "בטל בחירה" : "בחר הכל"}
                         </button>
                       </div>
+
+                      {Array.isArray(s.existing) && s.existing.length > 0 && (
+                        <div className="border-b border-border bg-background">
+                          <div className="px-3 py-1.5 text-[11px] font-semibold text-muted-foreground bg-muted/20">
+                            מערכות קיימות בסדרה ({s.existing.length}):
+                          </div>
+                          <div className="max-h-48 overflow-y-auto divide-y divide-border/60">
+                            {s.existing.map((ex: any) => (
+                              <div key={ex.id} className="flex items-center justify-between gap-2 px-3 py-1.5 text-xs">
+                                <div className="min-w-0 flex items-center gap-2">
+                                  <span className="font-mono text-muted-foreground shrink-0">{ex.code}</span>
+                                  <span className="truncate font-medium" title={ex.name}>{ex.name}</span>
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded border text-[10px]"
+                                    style={{ borderColor: "var(--border)" }}>
+                                    {STATUS_LABEL[ex.status] ?? ex.status}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <a href={`tel:${buildDialNumber(ex.code)}`}
+                                    className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                                    title="חייג לבדיקת סטטוס">חייג</a>
+                                  <Link to="/systems/$id" params={{ id: ex.id }}
+                                    className="px-2 py-0.5 rounded border border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"
+                                    title="פתח כרטיס מערכת">פתח</Link>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
                       <div className="p-2 flex flex-wrap gap-1 max-h-40 overflow-y-auto">
                         {s.missing.map((code: string) => {
                           const on = selected.has(code);

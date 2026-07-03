@@ -43,6 +43,7 @@ const periodSchema = z.enum(["day", "week", "month", "year"]);
 const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
 const listSystemsInputSchema = z.object({
   status: statusSchema.nullable().optional(),
+  secondaryStatus: statusSchema.nullable().optional(),
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
   dateFrom: isoDate,
@@ -68,6 +69,7 @@ export const listSystems = createServerFn({ method: "POST" })
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
       if (data.status) q = q.eq("status", data.status as any);
+      if (data.secondaryStatus) q = q.eq("secondary_status", data.secondaryStatus as any);
       if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
       if (data.period) {
         const now = new Date();

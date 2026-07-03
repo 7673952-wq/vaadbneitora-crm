@@ -164,6 +164,7 @@ function Dashboard() {
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");
+  const [secondaryStatus, setSecondaryStatus] = useState<string>("");
   const [agentId, setAgentId] = useState<string>("");
   const [period, setPeriod] = useState<Period>("");
   const [dateFrom, setDateFrom] = useState<string>("");
@@ -202,9 +203,9 @@ function Dashboard() {
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({
-    queryKey: ["systems", status, agentId, period, dateFrom, dateTo, page, pageSize],
+    queryKey: ["systems", status, secondaryStatus, agentId, period, dateFrom, dateTo, page, pageSize],
     queryFn: async () => listFn({ data: {
-      status: status || null, agentId: agentId || null, period: period || null,
+      status: status || null, secondaryStatus: secondaryStatus || null, agentId: agentId || null, period: period || null,
       dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
       page, pageSize: serverPageSize,
@@ -609,8 +610,8 @@ function Dashboard() {
 
       {/* Stats — regular + workflow side-by-side, same height, compact */}
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_auto] gap-3 items-stretch">
-        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact={false} columns={7} />
-        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={status} stats={secondaryStats} onSelect={(value) => { setStatus(status === value ? "" : value); setPage(1); }} compact columns={3} />
+        <StatusCards title="סטטוסים כלליים" options={regularStatusOptions} activeStatus={status} stats={stats} onSelect={(value) => { setStatus(status === value ? "" : value); setSecondaryStatus(""); setPage(1); }} compact={false} columns={7} />
+        <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={secondaryStatus} stats={secondaryStats} onSelect={(value) => { setSecondaryStatus(secondaryStatus === value ? "" : value); setStatus(""); setPage(1); }} compact columns={3} />
       </div>
 
       {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (

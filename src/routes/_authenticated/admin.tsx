@@ -433,7 +433,7 @@ function StatusSettingsPanel() {
           </thead>
           <tbody>
             {sorted.map((r: any, idx: number) => (
-              <StatusEditRow key={r.status_key} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
                 onMove={(delta) => move(idx, delta)}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}

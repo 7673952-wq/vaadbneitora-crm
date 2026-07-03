@@ -9,6 +9,7 @@ import {
   reorderStatusSettingsStable,
   upsertStatusSettingStable,
 } from "@/lib/status-settings.server";
+} from "@/lib/status-settings";
 
 // All authorization goes through `assertRole` / `hasRole` from
 // @/lib/permissions.server — no other mechanism is used in this file.

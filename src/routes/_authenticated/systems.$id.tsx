@@ -358,7 +358,7 @@ function SystemDetail() {
               updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim() } });
             }}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
-              {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </div>
 

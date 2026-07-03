@@ -1304,6 +1304,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.status) { toast.error("יש לבחור סטטוס"); return; }
     setBusy(true);
     try {
       if (willCreateAsSub && matchedParent) {

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { scanSystemSeries, createMissingSystems } from "@/lib/systems.functions";
-import { STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, buildDialNumber, type SystemStatus } from "@/lib/status";
+import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X } from "lucide-react";
 

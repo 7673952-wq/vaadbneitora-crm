@@ -1150,7 +1150,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
     <div onClick={handleCardClick}
       draggable={draggable}
       onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
-      className={`border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-2 ring-red-500 animate-pulse-stale" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}
+      className={`relative border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-4 ring-red-600 animate-pulse-stale border-red-600" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}
       title={isStale ? `מערכת ללא טיפול מעל ${staleHours} שעות` : undefined}>
       {selectMode && (
         <div className="flex items-center justify-end mb-1" onClick={(e) => { e.stopPropagation(); onToggleSelect?.(r.id); }}>
@@ -1158,8 +1158,9 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
         </div>
       )}
       {isStale && (
-        <div className="text-[10px] font-bold text-red-700 bg-red-100 border border-red-300 rounded px-1.5 py-0.5 inline-block mb-1">
-          ⚠ ללא טיפול מעל {staleHours}ש'
+        <div className="animate-stale-badge text-[11px] font-extrabold text-white shadow-md rounded-md px-2 py-1 inline-flex items-center gap-1 mb-1.5 ring-2 ring-white">
+          <span className="text-sm leading-none">⚠</span>
+          <span>ללא טיפול מעל {staleHours} שעות</span>
         </div>
       )}
       <div className="flex items-start justify-between gap-2">

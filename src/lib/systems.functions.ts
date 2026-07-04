@@ -54,15 +54,17 @@ async function buildStatusAliasMap(supabase: any) {
 async function resolveStatusFilterValues(supabase: any, value?: string | null) {
   const raw = value?.trim();
   if (!raw) return [];
-  const { settings } = await buildStatusAliasMap(supabase);
+  const { settings, aliasToKey } = await buildStatusAliasMap(supabase);
   const normalizedRaw = raw.replace(/\s+/g, " ");
   const matchingSettings = settings.filter((row) =>
     statusLabelVariants(row.status_key).includes(raw)
       || statusLabelVariants(row.label).includes(raw)
       || row.label.replace(/\s+/g, " ") === normalizedRaw,
   );
+  const canonicalRaw = aliasToKey.get(raw) ?? aliasToKey.get(normalizedRaw) ?? raw;
   return uniqueStrings([
     raw,
+    canonicalRaw,
     ...matchingSettings.flatMap((row) => [row.status_key, ...statusLabelVariants(row.label)]),
   ]);
 }
@@ -70,6 +72,11 @@ async function resolveStatusFilterValues(supabase: any, value?: string | null) {
 const PRIMARY_STATUS_VALUES = new Set<string>(STATUS_VALUES);
 function primaryStatusFilterValues(values: string[]) {
   return values.filter((value) => PRIMARY_STATUS_VALUES.has(value));
+}
+
+function statusValueMatches(value: string | null | undefined, accepted: Set<string>) {
+  if (!value) return false;
+  return statusLabelVariants(String(value)).some((variant) => accepted.has(variant));
 }
 
 // All authorization in this file goes through `assertRole` / `hasRole`
@@ -107,7 +114,6 @@ export const listSystems = createServerFn({ method: "POST" })
     const statusValues = await resolveStatusFilterValues(context.supabase, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
     const primaryStatusValues = primaryStatusFilterValues(statusValues);
-    const primarySecondaryStatusValues = primaryStatusFilterValues(secondaryStatusValues);
     if (data.status && primaryStatusValues.length === 0 && secondaryStatusValues.length === 0) {
       return { items: [], total: 0, page: data.page ?? 1, pageSize: data.pageSize ?? 1000 };
     }
@@ -135,44 +141,37 @@ export const listSystems = createServerFn({ method: "POST" })
       return q;
     };
 
-    // Optional/workflow statuses can live either in `secondary_status` or, for
-    // older rows, directly in `status`. Fetch both paths separately and merge;
-    // this avoids PostgREST edge cases when OR-ing enum and text columns.
-    if (secondaryStatusValues.length > 0) {
-      const fetchByColumn = async (column: "status" | "secondary_status") => {
-        if (column === "status" && primarySecondaryStatusValues.length === 0) return [];
-        if (statusValues.length > 0 && column === "status" && !primaryStatusValues.some((value) => primarySecondaryStatusValues.includes(value))) return [];
-        const rows: any[] = [];
-        const CHUNK = 1000;
-        const valuesForColumn = column === "status" && statusValues.length > 0
-          ? primarySecondaryStatusValues.filter((value) => primaryStatusValues.includes(value))
-          : column === "status" ? primarySecondaryStatusValues : secondaryStatusValues;
-        for (const value of valuesForColumn) {
-          for (let from = 0; ; from += CHUNK) {
-            let q = context.supabase
-              .from("systems")
-              .select(baseSelect)
-              .eq(column, value as any);
-            if (primaryStatusValues.length > 0 && column !== "status") q = q.in("status", primaryStatusValues as any);
-            q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
-            const { data: got, error } = await q;
-            if (error) throw new Error(error.message);
-            rows.push(...(got ?? []));
-            if (!got || got.length < CHUNK) break;
-          }
-        }
-        return rows;
-      };
-
-      const merged = new Map<string, any>();
-      for (const row of [...await fetchByColumn("secondary_status"), ...await fetchByColumn("status")]) {
-        merged.set(row.id, row);
+    // Status filters must support both the fixed enum column (`status`) and
+    // the flexible optional column (`secondary_status`), including custom
+    // statuses and legacy rows that stored workflow statuses in either place.
+    // Fetch the filtered window in JS instead of building enum/text OR queries,
+    // so a custom optional status can never be dropped by the database cast.
+    if (statusValues.length > 0 || secondaryStatusValues.length > 0) {
+      const statusSet = new Set(statusValues);
+      const secondaryStatusSet = new Set(secondaryStatusValues);
+      const allRows: any[] = [];
+      const CHUNK = 1000;
+      for (let from = 0; ; from += CHUNK) {
+        let q = context.supabase
+          .from("systems")
+          .select(baseSelect);
+        q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
+        const { data: rows, error } = await q;
+        if (error) throw new Error(error.message);
+        allRows.push(...(rows ?? []));
+        if (!rows || rows.length < CHUNK) break;
       }
-      const allRows = Array.from(merged.values()).sort(
-        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
-      );
-      const items = await enrichSystemRows(context.supabase, allRows.slice(offset, endTo + 1));
-      return { items, total: allRows.length, page, pageSize };
+
+      const filteredRows = allRows.filter((row) => {
+        const matchesPrimary = statusValues.length === 0
+          || statusValueMatches(row.status, statusSet);
+        const matchesSecondary = secondaryStatusValues.length === 0
+          || statusValueMatches(row.secondary_status, secondaryStatusSet)
+          || statusValueMatches(row.status, secondaryStatusSet);
+        return matchesPrimary && matchesSecondary;
+      });
+      const items = await enrichSystemRows(context.supabase, filteredRows.slice(offset, endTo + 1));
+      return { items, total: filteredRows.length, page, pageSize };
     }
 
     const buildQuery = (from: number, to: number, withCount: boolean) => {

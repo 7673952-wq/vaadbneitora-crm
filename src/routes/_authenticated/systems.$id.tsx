@@ -349,7 +349,7 @@ function SystemDetail() {
             <select value={s.status} onChange={(e) => {
               const newStatus = e.target.value;
               if (newStatus === s.status) return;
-              if (NO_REASON_STATUSES.has(newStatus)) {
+              if (!statusRequiresReason(newStatus)) {
                 updateMut.mutate({ data: { id, status: newStatus } });
                 return;
               }

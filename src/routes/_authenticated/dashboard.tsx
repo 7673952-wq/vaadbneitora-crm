@@ -19,6 +19,7 @@ import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight,
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
+import { HandledRatioChart } from "@/components/HandledRatioChart";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
 import {
@@ -638,7 +639,10 @@ function Dashboard() {
 
       {showCharts && (
         <>
-          <HandlingSpeedChart />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <HandlingSpeedChart />
+            <HandledRatioChart />
+          </div>
           {(chartData.length > 0 || agentChartData.length > 0) && (
             <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
               <div className="flex items-center justify-between mb-3">

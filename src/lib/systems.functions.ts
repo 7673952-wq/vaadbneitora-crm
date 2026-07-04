@@ -1151,6 +1151,39 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
     }));
   });
 
+// Handled vs not-handled ratio for systems created within the selected period.
+export const getHandledRatio = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { period: string }) =>
+    z.object({ period: z.enum(["day", "3days", "week", "month", "year"]) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const hoursByPeriod: Record<string, number> = {
+      day: 24, "3days": 72, week: 24 * 7, month: 24 * 30, year: 24 * 365,
+    };
+    const from = new Date(Date.now() - hoursByPeriod[data.period] * 3600_000);
+
+    const { data: statusRows } = await context.supabase
+      .from("status_settings").select("status_key, is_handled");
+    const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
+    if (handledKeys.size === 0) {
+      ["closed", "close_in_simahedrin", "block_from_root"].forEach((k) => handledKeys.add(k));
+    }
+
+    const { data: sys } = await context.supabase
+      .from("systems")
+      .select("status")
+      .gte("created_at", from.toISOString())
+      .limit(20000);
+
+    let handled = 0, notHandled = 0;
+    for (const s of (sys ?? [])) {
+      if (handledKeys.has((s as any).status)) handled++; else notHandled++;
+    }
+    return { handled, notHandled, total: handled + notHandled };
+  });
+
+
+
 
 
 

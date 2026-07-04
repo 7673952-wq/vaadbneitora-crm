@@ -63,6 +63,7 @@ export const STATUS_LABEL: Record<string, string> = {};
 export const STATUS_TONE: Record<string, string> = {};
 export const STATUS_HANDLED: Record<string, boolean> = {};
 export const STATUS_MANDATORY: Record<string, boolean> = {};
+export const STATUS_REQUIRES_REASON: Record<string, boolean> = {};
 export const STATUS_AGENTS: Record<string, string[]> = {};
 function isDefaultMandatory(key: string) {
   return !(SPECIAL_WORKFLOW_STATUS_KEYS as readonly string[]).includes(key);
@@ -72,12 +73,14 @@ function rebuildMaps() {
   for (const k of Object.keys(STATUS_TONE)) delete STATUS_TONE[k];
   for (const k of Object.keys(STATUS_HANDLED)) delete STATUS_HANDLED[k];
   for (const k of Object.keys(STATUS_MANDATORY)) delete STATUS_MANDATORY[k];
+  for (const k of Object.keys(STATUS_REQUIRES_REASON)) delete STATUS_REQUIRES_REASON[k];
   for (const k of Object.keys(STATUS_AGENTS)) delete STATUS_AGENTS[k];
   for (const s of STATUS_OPTIONS) {
     STATUS_LABEL[s.value] = s.label;
     STATUS_TONE[s.value] = s.tone;
     STATUS_HANDLED[s.value] = !!s.is_handled;
     STATUS_MANDATORY[s.value] = s.is_mandatory ?? isDefaultMandatory(s.value);
+    STATUS_REQUIRES_REASON[s.value] = s.requires_reason ?? isDefaultRequiresReason(s.value);
     STATUS_AGENTS[s.value] = s.assigned_agent_ids ?? [];
   }
 }

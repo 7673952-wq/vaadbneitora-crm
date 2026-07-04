@@ -1044,6 +1044,44 @@ export const findSystemByCode = createServerFn({ method: "POST" })
     return row ?? null;
   });
 
+// Ensures a persistent ROOT system with the given name exists (used for
+// "category" parents like "קו ההגנה" that group many sub-systems). If a root
+// with that exact name is missing it is created on-the-fly and returned.
+export const ensureCategoryRoot = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const allowed = await userHasRole(context.userId, "agent");
+    if (!allowed) throw new Error("רק נציג ומעלה יכול לפתוח מערכת");
+    const name = sanitizeText(data.name).trim();
+    const { data: found } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, parent_system_id")
+      .ilike("name", name)
+      .is("parent_system_id", null)
+      .limit(1)
+      .maybeSingle();
+    if (found) return found;
+    let code = `cat-${name}`;
+    for (let i = 0; i < 5; i++) {
+      const { data: taken } = await context.supabase
+        .from("systems").select("id").eq("system_code", code).is("parent_system_id", null).maybeSingle();
+      if (!taken) break;
+      code = `cat-${name}-${Math.floor(Math.random() * 1e6)}`;
+    }
+    const { data: row, error } = await context.supabase.from("systems").insert({
+      system_code: code,
+      name,
+      status: "open" as any,
+      assigned_agent_id: context.userId,
+    } as any).select("id, system_code, name, parent_system_id").single();
+    if (error) throw new Error(error.message);
+    return row;
+  });
+
+
+
 
 export const importSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

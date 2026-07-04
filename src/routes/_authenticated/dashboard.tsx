@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
-  listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem,
+  listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
   importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
@@ -1300,6 +1300,14 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
   const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
   const subFn = useServerFn(addSubSystem);
+  const ensureCategoryRootFn = useServerFn(ensureCategoryRoot);
+  // Names that must ALWAYS present the "open as sub / open as new root" choice,
+  // even when no matching root exists yet in the DB. If sub is chosen the root
+  // is created on-the-fly by ensureCategoryRoot before the sub is attached.
+  const CATEGORY_NAMES = ["קו ההגנה"];
+  const normalizeName = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const isCategoryName = (s: string) => CATEGORY_NAMES.some((c) => normalizeName(c) === normalizeName(s));
+  const VIRTUAL_PARENT_ID = "__virtual_category_root__";
 
   useEffect(() => {
     const v = form.name.trim();
@@ -1353,6 +1361,14 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
         setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
         setMatchedParent(initialPick);
         setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
+        // Category-name fallback: even when no root match was found, present the
+        // sub/root choice so users can always attach a new sub under the category.
+        if (!initialPick && isCategoryName(v)) {
+          const virtual = { id: VIRTUAL_PARENT_ID, name: v.trim(), system_code: "" };
+          setMatchedParent(virtual);
+          setMatchedParentOptions([virtual]);
+          setCreateMode((current) => initial?.createMode ?? current);
+        }
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
@@ -1367,9 +1383,15 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
     setBusy(true);
     try {
       if (willCreateAsSub && matchedParent?.id) {
+        let parentId = matchedParent.id;
+        if (parentId === VIRTUAL_PARENT_ID) {
+          const root = await ensureCategoryRootFn({ data: { name: matchedParent.name } });
+          if (!root?.id) throw new Error("לא הצלחתי לוודא את מערכת האב");
+          parentId = root.id;
+        }
 
         await subFn({ data: {
-          parent_id: matchedParent.id,
+          parent_id: parentId,
           system_code: form.system_code,
           name: form.name.trim() || undefined,
           status: form.status,
@@ -1429,7 +1451,7 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
             )}
             {matchedParent && (
               <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2 space-y-1.5">
-                <div className="font-medium">שם זה כבר קיים כאב-מערכת ({matchedParent.system_code}). מה לעשות?</div>
+                <div className="font-medium">{matchedParent.id === VIRTUAL_PARENT_ID ? `"${matchedParent.name}" היא קטגוריה קיימת. מה לעשות?` : `שם זה כבר קיים כאב-מערכת (${matchedParent.system_code}). מה לעשות?`}</div>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
                   <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>

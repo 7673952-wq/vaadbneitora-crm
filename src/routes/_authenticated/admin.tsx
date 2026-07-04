@@ -467,15 +467,16 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
   const [mandatory, setMandatory] = useState<boolean>(row.is_mandatory ?? true);
+  const [requiresReason, setRequiresReason] = useState<boolean>(row.requires_reason ?? true);
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || idsDirty;
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty;
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <tr className="border-b border-border last:border-0 align-top">
@@ -511,6 +512,12 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         </select>
       </td>
       <td className="px-3 py-2">
+        <select value={requiresReason ? "1" : "0"} onChange={(e) => setRequiresReason(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
+          <option value="1">חייב סיבה</option>
+          <option value="0">ללא סיבה</option>
+        </select>
+      </td>
+      <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1 max-w-[260px]">
           {agents.map((a) => {
             const active = agentIds.includes(a.id);
@@ -525,7 +532,7 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         </div>
       </td>
       <td className="px-3 py-2 text-left whitespace-nowrap">
-        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, assigned_agent_ids: agentIds })}
+        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds })}
           className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30">שמור</button>
         {onDelete && (
           <button onClick={onDelete} className="text-destructive hover:bg-destructive/10 rounded p-1.5 mr-1"><Trash2 className="h-4 w-4 inline" /></button>

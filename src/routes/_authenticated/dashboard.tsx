@@ -1709,18 +1709,25 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   // Broadened duplicate detection: exact name match against roots OR parents
   // of matching sub-systems (so a name that exists only as sub-systems still
   // surfaces the "root vs sub" choice).
-  const exactNameMatches = (() => {
+  const { exactNameMatches, hasExactMatch, exactSampleName } = (() => {
     const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
     const target = norm(v);
     const map = new Map<string, any>();
+    let sample = "";
+    let has = false;
     for (const r of (nameResults ?? [])) {
       if (norm(r.name) !== target) continue;
-      if (!r.parent_system_id) map.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
-      else if (r.parent) map.set(r.parent.id, r.parent);
+      has = true;
+      if (!sample) sample = r.name;
+      if (!r.parent_system_id) {
+        if (r.id && r.system_code && r.name) map.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
+      } else if (r.parent && r.parent.id && r.parent.system_code && r.parent.name) {
+        map.set(r.parent.id, r.parent);
+      }
     }
-    return Array.from(map.values());
+    return { exactNameMatches: Array.from(map.values()), hasExactMatch: has, exactSampleName: sample };
   })();
-  const exactNameMatch = exactNameMatches[0];
+
 
   return (
     <div className="bg-card border border-border rounded-xl p-4 shadow-sm">

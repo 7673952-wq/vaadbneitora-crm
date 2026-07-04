@@ -1152,6 +1152,8 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
 
 function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; statusOptions?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const getSystemFn = useServerFn(getSystem);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   function copyToClipboard(value: string, key: string, label: string) {
@@ -1172,12 +1174,21 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
     && !STATUS_HANDLED[r.status]
     && r.updated_at
     && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
+  const prefetchSystem = () => {
+    qc.prefetchQuery({
+      queryKey: ["system", r.id],
+      queryFn: () => getSystemFn({ data: { id: r.id } }),
+      staleTime: 30_000,
+    });
+  };
   const handleCardClick = () => {
     if (selectMode && onToggleSelect) { onToggleSelect(r.id); return; }
     navigate({ to: "/systems/$id", params: { id: r.id } });
   };
   return (
     <div onClick={handleCardClick}
+      onMouseEnter={prefetchSystem}
+      onFocus={prefetchSystem}
       draggable={draggable}
       onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
       className={`relative border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-4 ring-red-600 animate-pulse-stale border-red-600" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}

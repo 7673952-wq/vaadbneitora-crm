@@ -40,63 +40,84 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(0.99 0.003 250);
-  --foreground: oklch(0.18 0.02 250);
+  --radius: 0.75rem;
+  --background: oklch(0.985 0.005 250);
+  --foreground: oklch(0.2 0.025 260);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.18 0.02 250);
+  --card-foreground: oklch(0.2 0.025 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.18 0.02 250);
-  --primary: oklch(0.42 0.16 265);
+  --popover-foreground: oklch(0.2 0.025 260);
+  --primary: oklch(0.48 0.17 262);
   --primary-foreground: oklch(0.99 0 0);
-  --secondary: oklch(0.96 0.01 250);
-  --secondary-foreground: oklch(0.22 0.03 260);
-  --muted: oklch(0.96 0.008 250);
-  --muted-foreground: oklch(0.5 0.02 255);
-  --accent: oklch(0.94 0.03 255);
-  --accent-foreground: oklch(0.25 0.05 260);
+  --secondary: oklch(0.965 0.012 250);
+  --secondary-foreground: oklch(0.24 0.03 260);
+  --muted: oklch(0.965 0.008 250);
+  --muted-foreground: oklch(0.52 0.02 255);
+  --accent: oklch(0.945 0.03 258);
+  --accent-foreground: oklch(0.26 0.05 260);
   --destructive: oklch(0.6 0.22 25);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.92 0.01 250);
+  --border: oklch(0.915 0.012 250);
   --input: oklch(0.94 0.01 250);
-  --ring: oklch(0.55 0.13 265);
+  --ring: oklch(0.58 0.14 265);
   --sidebar: oklch(0.99 0.003 250);
-  --sidebar-foreground: oklch(0.18 0.02 250);
-  --sidebar-primary: oklch(0.42 0.16 265);
+  --sidebar-foreground: oklch(0.2 0.025 260);
+  --sidebar-primary: oklch(0.48 0.17 262);
   --sidebar-primary-foreground: oklch(0.99 0 0);
   --sidebar-accent: oklch(0.96 0.01 250);
-  --sidebar-accent-foreground: oklch(0.22 0.03 260);
+  --sidebar-accent-foreground: oklch(0.24 0.03 260);
   --sidebar-border: oklch(0.92 0.01 250);
-  --sidebar-ring: oklch(0.55 0.13 265);
+  --sidebar-ring: oklch(0.58 0.14 265);
+  --shadow-soft: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-elevated: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 6px -2px rgb(15 23 42 / 0.05);
 }
 
 .dark {
   --background: oklch(0.16 0.015 260);
   --foreground: oklch(0.96 0.005 250);
-  --card: oklch(0.2 0.02 260);
+  --card: oklch(0.21 0.022 260);
   --card-foreground: oklch(0.96 0.005 250);
-  --popover: oklch(0.2 0.02 260);
+  --popover: oklch(0.21 0.022 260);
   --popover-foreground: oklch(0.96 0.005 250);
-  --primary: oklch(0.7 0.16 265);
+  --primary: oklch(0.72 0.16 265);
   --primary-foreground: oklch(0.16 0.02 260);
   --secondary: oklch(0.26 0.02 260);
   --secondary-foreground: oklch(0.96 0.005 250);
   --muted: oklch(0.26 0.02 260);
-  --muted-foreground: oklch(0.7 0.02 255);
+  --muted-foreground: oklch(0.72 0.02 255);
   --accent: oklch(0.3 0.04 265);
   --accent-foreground: oklch(0.96 0.005 250);
   --destructive: oklch(0.65 0.2 25);
   --destructive-foreground: oklch(0.99 0 0);
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.6 0.15 265);
+  --ring: oklch(0.62 0.15 265);
 }
 
 @layer base {
   * { border-color: var(--color-border); }
-  html { font-family: var(--font-sans); }
-  body { background-color: var(--color-background); color: var(--color-foreground); }
+  html { font-family: var(--font-sans); font-feature-settings: "ss01", "cv11"; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 100% -10%, oklch(0.95 0.04 260 / 0.55), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, oklch(0.96 0.03 220 / 0.45), transparent 60%),
+      var(--color-background);
+    color: var(--color-foreground);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .dark body {
+    background:
+      radial-gradient(1200px 600px at 100% -10%, oklch(0.3 0.06 265 / 0.35), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, oklch(0.28 0.05 230 / 0.3), transparent 60%),
+      var(--color-background);
+  }
+  h1, h2, h3, h4 { letter-spacing: -0.01em; }
 }
+
+@utility shadow-soft { box-shadow: var(--shadow-soft); }
+@utility shadow-elevated { box-shadow: var(--shadow-elevated); }
+
 
 @keyframes pulse-stale {
   0%, 100% {

@@ -1753,17 +1753,32 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   const { exactNameMatches, hasExactMatch, exactSampleName } = (() => {
     const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
     const target = norm(v);
+    const rows = nameResults ?? [];
+    const byId = new Map<string, any>();
+    for (const r of rows) {
+      byId.set(r.id, r);
+      if (r.parent && r.parent.id) byId.set(r.parent.id, r.parent);
+    }
+    const resolveRoot = (r: any): any | null => {
+      let node = r;
+      for (let hop = 0; hop < 10 && node; hop++) {
+        if (!node.parent_system_id) return node;
+        const next = byId.get(node.parent_system_id) ?? node.parent ?? null;
+        if (!next || next.id === node.id) return node;
+        node = next;
+      }
+      return node;
+    };
     const map = new Map<string, any>();
     let sample = "";
     let has = false;
-    for (const r of (nameResults ?? [])) {
+    for (const r of rows) {
       if (norm(r.name) !== target) continue;
       has = true;
       if (!sample) sample = r.name;
-      if (!r.parent_system_id) {
-        if (r.id && r.system_code && r.name) map.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
-      } else if (r.parent && r.parent.id && r.parent.system_code && r.parent.name) {
-        map.set(r.parent.id, r.parent);
+      const root = resolveRoot(r);
+      if (root && root.id && root.name) {
+        map.set(root.id, { id: root.id, system_code: root.system_code ?? "", name: root.name });
       }
     }
     return { exactNameMatches: Array.from(map.values()), hasExactMatch: has, exactSampleName: sample };

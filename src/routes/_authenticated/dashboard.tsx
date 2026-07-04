@@ -302,8 +302,14 @@ function Dashboard() {
   }, [systems]);
 
   // Two-bucket split only: handled vs waiting. Pending-check statuses fall into "waiting" via STATUS_HANDLED.
-  const restWaiting = useMemo(() => filtered.filter((r: any) => !STATUS_HANDLED[r.status]), [filtered, statusSettings]);
-  const restHandled = useMemo(() => filtered.filter((r: any) => STATUS_HANDLED[r.status]), [filtered, statusSettings]);
+  const restWaiting = useMemo(() => filtered.filter((r: any) => {
+    const effectiveStatus = secondaryStatus && r.secondary_status === secondaryStatus ? r.secondary_status : r.status;
+    return !statusMaps.handled[effectiveStatus];
+  }), [filtered, secondaryStatus, statusMaps]);
+  const restHandled = useMemo(() => filtered.filter((r: any) => {
+    const effectiveStatus = secondaryStatus && r.secondary_status === secondaryStatus ? r.secondary_status : r.status;
+    return !!statusMaps.handled[effectiveStatus];
+  }), [filtered, secondaryStatus, statusMaps]);
   const rest = filtered;
 
   const updateMutation = useMutation({

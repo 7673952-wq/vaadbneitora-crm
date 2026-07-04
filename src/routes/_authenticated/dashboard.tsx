@@ -19,6 +19,7 @@ import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight,
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
 import { ChartGrid } from "@/components/ChartGrid";
 import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
+import { HandledRatioChart } from "@/components/HandledRatioChart";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
 import {

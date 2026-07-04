@@ -273,9 +273,10 @@ export const addSubSystem = createServerFn({ method: "POST" })
     let parent: { id: string; name: string; assigned_agent_id: string | null; parent_system_id: string | null } | null = null;
     let currentId: string | null = data.parent_id;
     for (let hop = 0; hop < 10 && currentId; hop++) {
-      const { data: node, error: pe } = await context.supabase
-        .from("systems").select("id, name, assigned_agent_id, parent_system_id").eq("id", currentId).maybeSingle<{ id: string; name: string; assigned_agent_id: string | null; parent_system_id: string | null }>();
-      if (pe) throw new Error(pe.message);
+      const res: any = await context.supabase
+        .from("systems").select("id, name, assigned_agent_id, parent_system_id").eq("id", currentId).maybeSingle();
+      if (res.error) throw new Error(res.error.message);
+      const node = res.data as { id: string; name: string; assigned_agent_id: string | null; parent_system_id: string | null } | null;
       if (!node) break;
       parent = node;
       if (!node.parent_system_id) break;

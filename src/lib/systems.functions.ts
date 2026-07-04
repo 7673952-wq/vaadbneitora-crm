@@ -446,8 +446,8 @@ export const createSystem = createServerFn({ method: "POST" })
     if (!allowed) throw new Error("רק נציג ומעלה יכול לפתוח מערכת");
     const normalizedCode = normalizeSystemCode(data.system_code);
     const { data: existing } = await context.supabase
-      .from("systems").select("id").eq("system_code", normalizedCode).maybeSingle();
-    if (existing) throw new Error("מספר המערכת כבר קיים — לא ניתן לפתוח מערכת חדשה על מספר קיים");
+      .from("systems").select("id").eq("system_code", normalizedCode).is("parent_system_id", null).maybeSingle();
+    if (existing) throw new Error("מספר המערכת כבר קיים כמערכת שורש — לא ניתן לפתוח מערכת ראשית נוספת עם אותו מספר");
     // Auto-assign the creator as the handling agent if none was selected.
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
     const cleanNotes = sanitizeOptional(data.notes ?? null);

@@ -89,6 +89,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: true,
     users_manage: false,
     permissions_manage: false,
+    system_name_edit: true,
+    system_code_edit: false,
   },
   super_admin: {
     systems_read: true,
@@ -105,6 +107,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: true,
     users_manage: true,
     permissions_manage: true,
+    system_name_edit: true,
+    system_code_edit: true,
   },
 };
 

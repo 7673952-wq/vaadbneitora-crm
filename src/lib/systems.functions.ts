@@ -27,6 +27,51 @@ const STATUS_VALUES = [
 const statusSchema = z.string().min(1).max(80).regex(/^[a-z0-9_\-]+$/i);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((v) => v?.trim()).filter((v): v is string => !!v)));
+}
+
+function statusLabelVariants(value: string) {
+  const trimmed = value.trim();
+  return uniqueStrings([
+    trimmed,
+    trimmed.replace(/\s+/g, " "),
+    trimmed.replace(/וועדה/g, "ועדה"),
+    trimmed.replace(/לוועדה/g, "לועדה"),
+  ]);
+}
+
+async function buildStatusAliasMap(supabase: any) {
+  const settings = await readStatusSettings(supabase);
+  const aliasToKey = new Map<string, string>();
+  for (const row of settings) {
+    for (const alias of statusLabelVariants(row.status_key)) aliasToKey.set(alias, row.status_key);
+    for (const alias of statusLabelVariants(row.label)) aliasToKey.set(alias, row.status_key);
+  }
+  return { settings, aliasToKey };
+}
+
+async function resolveStatusFilterValues(supabase: any, value?: string | null) {
+  const raw = value?.trim();
+  if (!raw) return [];
+  const { settings } = await buildStatusAliasMap(supabase);
+  const normalizedRaw = raw.replace(/\s+/g, " ");
+  const matchingSettings = settings.filter((row) =>
+    statusLabelVariants(row.status_key).includes(raw)
+      || statusLabelVariants(row.label).includes(raw)
+      || row.label.replace(/\s+/g, " ") === normalizedRaw,
+  );
+  return uniqueStrings([
+    raw,
+    ...matchingSettings.flatMap((row) => [row.status_key, ...statusLabelVariants(row.label)]),
+  ]);
+}
+
+const PRIMARY_STATUS_VALUES = new Set<string>(STATUS_VALUES);
+function primaryStatusFilterValues(values: string[]) {
+  return values.filter((value) => PRIMARY_STATUS_VALUES.has(value));
+}
+
 // All authorization in this file goes through `assertRole` / `hasRole`
 // from @/lib/permissions.server — single source of truth.
 async function userHasRole(userId: string, role: "agent" | "admin" | "super_admin") {
@@ -42,9 +87,10 @@ async function ensureCanWrite(userId: string) {
 
 const periodSchema = z.enum(["day", "week", "month", "year"]);
 const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
+const listStatusFilterSchema = z.string().min(1).max(100);
 const listSystemsInputSchema = z.object({
-  status: statusSchema.nullable().optional(),
-  secondaryStatus: statusSchema.nullable().optional(),
+  status: listStatusFilterSchema.nullable().optional(),
+  secondaryStatus: listStatusFilterSchema.nullable().optional(),
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
   dateFrom: isoDate,
@@ -58,6 +104,13 @@ export const listSystems = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
+    const statusValues = await resolveStatusFilterValues(context.supabase, data.status);
+    const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
+    const primaryStatusValues = primaryStatusFilterValues(statusValues);
+    const primarySecondaryStatusValues = primaryStatusFilterValues(secondaryStatusValues);
+    if (data.status && primaryStatusValues.length === 0 && secondaryStatusValues.length === 0) {
+      return { items: [], total: 0, page: data.page ?? 1, pageSize: data.pageSize ?? 1000 };
+    }
     const page = data.page ?? 1;
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
@@ -85,22 +138,28 @@ export const listSystems = createServerFn({ method: "POST" })
     // Optional/workflow statuses can live either in `secondary_status` or, for
     // older rows, directly in `status`. Fetch both paths separately and merge;
     // this avoids PostgREST edge cases when OR-ing enum and text columns.
-    if (data.secondaryStatus) {
+    if (secondaryStatusValues.length > 0) {
       const fetchByColumn = async (column: "status" | "secondary_status") => {
-        if (data.status && column === "status" && data.status !== data.secondaryStatus) return [];
+        if (column === "status" && primarySecondaryStatusValues.length === 0) return [];
+        if (statusValues.length > 0 && column === "status" && !primaryStatusValues.some((value) => primarySecondaryStatusValues.includes(value))) return [];
         const rows: any[] = [];
         const CHUNK = 1000;
-        for (let from = 0; ; from += CHUNK) {
-          let q = context.supabase
-            .from("systems")
-            .select(baseSelect)
-            .eq(column, data.secondaryStatus as any);
-          if (data.status && column !== "status") q = q.eq("status", data.status as any);
-          q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
-          const { data: got, error } = await q;
-          if (error) throw new Error(error.message);
-          rows.push(...(got ?? []));
-          if (!got || got.length < CHUNK) break;
+        const valuesForColumn = column === "status" && statusValues.length > 0
+          ? primarySecondaryStatusValues.filter((value) => primaryStatusValues.includes(value))
+          : column === "status" ? primarySecondaryStatusValues : secondaryStatusValues;
+        for (const value of valuesForColumn) {
+          for (let from = 0; ; from += CHUNK) {
+            let q = context.supabase
+              .from("systems")
+              .select(baseSelect)
+              .eq(column, value as any);
+            if (primaryStatusValues.length > 0 && column !== "status") q = q.in("status", primaryStatusValues as any);
+            q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
+            const { data: got, error } = await q;
+            if (error) throw new Error(error.message);
+            rows.push(...(got ?? []));
+            if (!got || got.length < CHUNK) break;
+          }
         }
         return rows;
       };
@@ -120,7 +179,7 @@ export const listSystems = createServerFn({ method: "POST" })
       let q = context.supabase
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
-      if (data.status) q = q.eq("status", data.status as any);
+      if (primaryStatusValues.length > 0) q = q.in("status", primaryStatusValues as any);
       return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, to);
     };
 
@@ -158,6 +217,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     }).strict().parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
+    const { aliasToKey } = await buildStatusAliasMap(context.supabase);
+    const canonicalStatus = (value?: string | null) => value ? (aliasToKey.get(value) ?? value) : null;
     let q = context.supabase.from("systems").select("status, secondary_status");
     if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
     if (data.period) {
@@ -183,9 +244,11 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       if (!rows || rows.length === 0) break;
       for (const r of rows as any[]) {
-        if (r.status) primary[r.status] = (primary[r.status] ?? 0) + 1;
-        if (r.secondary_status) secondary[r.secondary_status] = (secondary[r.secondary_status] ?? 0) + 1;
-        for (const key of new Set([r.status, r.secondary_status].filter(Boolean))) {
+        const primaryKey = canonicalStatus(r.status);
+        const secondaryKey = canonicalStatus(r.secondary_status);
+        if (primaryKey) primary[primaryKey] = (primary[primaryKey] ?? 0) + 1;
+        if (secondaryKey) secondary[secondaryKey] = (secondary[secondaryKey] ?? 0) + 1;
+        for (const key of new Set([primaryKey, secondaryKey].filter(Boolean))) {
           any[key as string] = (any[key as string] ?? 0) + 1;
         }
       }

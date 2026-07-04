@@ -362,7 +362,10 @@ function Dashboard() {
     for (const id of selectedIds) {
       try {
         const patch: any = { id };
-        if (bulkStatus) patch.status = bulkStatus;
+        if (bulkStatus) {
+          if (statusMaps.mandatory[bulkStatus] === false) patch.secondary_status = bulkStatus;
+          else patch.status = bulkStatus;
+        }
         if (bulkAgent) patch.assigned_agent_id = bulkAgent === "__unassigned" ? null : bulkAgent;
         if (reason) patch.reason = reason;
         await updateMutation.mutateAsync({ data: patch });
@@ -378,14 +381,16 @@ function Dashboard() {
 
   async function handleKanbanDrop(id: string, newStatus: string) {
     const sys = (systems ?? []).find((s: any) => s.id === id);
-    if (!sys || sys.status === newStatus) return;
+    if (!sys) return;
+    const isWorkflow = statusMaps.mandatory[newStatus] === false;
+    if ((isWorkflow ? sys.secondary_status : sys.status) === newStatus) return;
     let reason = "";
     if (statusRequiresReason(newStatus)) {
       const r = window.prompt(`סיבת שינוי סטטוס ל"${STATUS_LABEL[newStatus] || newStatus}":`, "");
       if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
       reason = r.trim();
     }
-    updateMutation.mutate({ data: { id, status: newStatus, ...(reason ? { reason } : {}) } });
+    updateMutation.mutate({ data: { id, [isWorkflow ? "secondary_status" : "status"]: newStatus, ...(reason ? { reason } : {}) } });
   }
 
 

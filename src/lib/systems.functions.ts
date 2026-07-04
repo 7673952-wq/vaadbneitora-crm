@@ -391,7 +391,7 @@ export const createSystem = createServerFn({ method: "POST" })
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: normalizedCode,
       name: sanitizeText(data.name),
-      status: data.status,
+      status: data.status as any,
       assigned_agent_id: assignedAgentId,
       notes: cleanNotes,
       phone: sanitizeOptional(data.phone || null),

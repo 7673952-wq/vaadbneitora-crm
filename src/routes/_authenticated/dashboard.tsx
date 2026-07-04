@@ -770,7 +770,7 @@ function Dashboard() {
                 </h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {restWaiting.map((r: any) => (
-                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} statusOptions={regularStatusOptions} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
                       selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
                   ))}
                 </div>
@@ -784,7 +784,7 @@ function Dashboard() {
                 </h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {restHandled.map((r: any) => (
-                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} statusOptions={regularStatusOptions} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
                       selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
                   ))}
                 </div>
@@ -823,7 +823,7 @@ function Dashboard() {
 
 
       {showCreate && me?.isAgent && (
-        <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
+        <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} statusOptions={regularStatusOptions} onDone={() => {
           qc.invalidateQueries({ queryKey: ["systems"] });
           setShowCreate(false);
           setCreateInitial({});
@@ -1134,7 +1134,7 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
+function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; statusOptions?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -1216,7 +1216,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
             onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
-            {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <select value={r.assigned_agent_id || ""} onChange={(e) => onUpdate?.({ id: r.id, assigned_agent_id: e.target.value || null })}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
@@ -1276,7 +1276,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 }
 
 
-function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
+function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
@@ -1474,7 +1474,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             <select required value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
               <option value="">— בחר סטטוס —</option>
-              {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">

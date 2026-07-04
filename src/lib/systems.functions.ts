@@ -27,6 +27,24 @@ const STATUS_VALUES = [
 const statusSchema = z.string().min(1).max(80).regex(/^[a-z0-9_\-]+$/i);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
+function uniqueStrings(values: Array<string | null | undefined>) {
+  return Array.from(new Set(values.map((v) => v?.trim()).filter((v): v is string => !!v)));
+}
+
+async function resolveStatusFilterValues(supabase: any, value?: string | null) {
+  const raw = value?.trim();
+  if (!raw) return [];
+  const settings = await readStatusSettings(supabase);
+  const normalizedRaw = raw.replace(/\s+/g, " ");
+  const matchingSettings = settings.filter((row) =>
+    row.status_key === raw || row.label === raw || row.label.replace(/\s+/g, " ") === normalizedRaw,
+  );
+  return uniqueStrings([
+    raw,
+    ...matchingSettings.flatMap((row) => [row.status_key, row.label]),
+  ]);
+}
+
 // All authorization in this file goes through `assertRole` / `hasRole`
 // from @/lib/permissions.server — single source of truth.
 async function userHasRole(userId: string, role: "agent" | "admin" | "super_admin") {
@@ -58,6 +76,8 @@ export const listSystems = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
+    const statusValues = await resolveStatusFilterValues(context.supabase, data.status);
+    const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
     const page = data.page ?? 1;
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
@@ -85,22 +105,27 @@ export const listSystems = createServerFn({ method: "POST" })
     // Optional/workflow statuses can live either in `secondary_status` or, for
     // older rows, directly in `status`. Fetch both paths separately and merge;
     // this avoids PostgREST edge cases when OR-ing enum and text columns.
-    if (data.secondaryStatus) {
+    if (secondaryStatusValues.length > 0) {
       const fetchByColumn = async (column: "status" | "secondary_status") => {
-        if (data.status && column === "status" && data.status !== data.secondaryStatus) return [];
+        if (statusValues.length > 0 && column === "status" && !statusValues.some((value) => secondaryStatusValues.includes(value))) return [];
         const rows: any[] = [];
         const CHUNK = 1000;
-        for (let from = 0; ; from += CHUNK) {
-          let q = context.supabase
-            .from("systems")
-            .select(baseSelect)
-            .eq(column, data.secondaryStatus as any);
-          if (data.status && column !== "status") q = q.eq("status", data.status as any);
-          q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
-          const { data: got, error } = await q;
-          if (error) throw new Error(error.message);
-          rows.push(...(got ?? []));
-          if (!got || got.length < CHUNK) break;
+        const valuesForColumn = column === "status" && statusValues.length > 0
+          ? secondaryStatusValues.filter((value) => statusValues.includes(value))
+          : secondaryStatusValues;
+        for (const value of valuesForColumn) {
+          for (let from = 0; ; from += CHUNK) {
+            let q = context.supabase
+              .from("systems")
+              .select(baseSelect)
+              .eq(column, value as any);
+            if (statusValues.length > 0 && column !== "status") q = q.in("status", statusValues as any);
+            q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
+            const { data: got, error } = await q;
+            if (error) throw new Error(error.message);
+            rows.push(...(got ?? []));
+            if (!got || got.length < CHUNK) break;
+          }
         }
         return rows;
       };
@@ -120,7 +145,7 @@ export const listSystems = createServerFn({ method: "POST" })
       let q = context.supabase
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
-      if (data.status) q = q.eq("status", data.status as any);
+      if (statusValues.length > 0) q = q.in("status", statusValues as any);
       return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, to);
     };
 

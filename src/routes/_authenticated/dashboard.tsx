@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
-  importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems,
+  importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";

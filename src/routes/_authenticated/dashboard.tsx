@@ -9,9 +9,9 @@ import {
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, STATUS_MANDATORY, toneClasses,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
-  CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus,
+  CALLER_SOURCES, buildDialNumber, buildStatusMaps,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -161,6 +161,7 @@ function Dashboard() {
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn() });
   const staleHours = staleSetting?.hours ?? 0;
+  const statusMaps = useMemo(() => buildStatusMaps(statusSettings as any), [statusSettings]);
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");
@@ -224,8 +225,8 @@ function Dashboard() {
     } }),
   });
   // Split by admin-configured mandatory flag (defaults to non-workflow=mandatory in STATUS_MANDATORY).
-  const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false), [statusSettings]);
-  const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] === false), [statusSettings]);
+  const regularStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] !== false), [statusMaps]);
+  const workflowStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] === false), [statusMaps]);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -301,8 +302,14 @@ function Dashboard() {
   }, [systems]);
 
   // Two-bucket split only: handled vs waiting. Pending-check statuses fall into "waiting" via STATUS_HANDLED.
-  const restWaiting = useMemo(() => filtered.filter((r: any) => !STATUS_HANDLED[r.status]), [filtered, statusSettings]);
-  const restHandled = useMemo(() => filtered.filter((r: any) => STATUS_HANDLED[r.status]), [filtered, statusSettings]);
+  const restWaiting = useMemo(() => filtered.filter((r: any) => {
+    const effectiveStatus = secondaryStatus && r.secondary_status === secondaryStatus ? r.secondary_status : r.status;
+    return !statusMaps.handled[effectiveStatus];
+  }), [filtered, secondaryStatus, statusMaps]);
+  const restHandled = useMemo(() => filtered.filter((r: any) => {
+    const effectiveStatus = secondaryStatus && r.secondary_status === secondaryStatus ? r.secondary_status : r.status;
+    return !!statusMaps.handled[effectiveStatus];
+  }), [filtered, secondaryStatus, statusMaps]);
   const rest = filtered;
 
   const updateMutation = useMutation({
@@ -361,7 +368,10 @@ function Dashboard() {
     for (const id of selectedIds) {
       try {
         const patch: any = { id };
-        if (bulkStatus) patch.status = bulkStatus;
+        if (bulkStatus) {
+          if (statusMaps.mandatory[bulkStatus] === false) patch.secondary_status = bulkStatus;
+          else patch.status = bulkStatus;
+        }
         if (bulkAgent) patch.assigned_agent_id = bulkAgent === "__unassigned" ? null : bulkAgent;
         if (reason) patch.reason = reason;
         await updateMutation.mutateAsync({ data: patch });
@@ -377,14 +387,16 @@ function Dashboard() {
 
   async function handleKanbanDrop(id: string, newStatus: string) {
     const sys = (systems ?? []).find((s: any) => s.id === id);
-    if (!sys || sys.status === newStatus) return;
+    if (!sys) return;
+    const isWorkflow = statusMaps.mandatory[newStatus] === false;
+    if ((isWorkflow ? sys.secondary_status : sys.status) === newStatus) return;
     let reason = "";
     if (statusRequiresReason(newStatus)) {
       const r = window.prompt(`סיבת שינוי סטטוס ל"${STATUS_LABEL[newStatus] || newStatus}":`, "");
       if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
       reason = r.trim();
     }
-    updateMutation.mutate({ data: { id, status: newStatus, ...(reason ? { reason } : {}) } });
+    updateMutation.mutate({ data: { id, [isWorkflow ? "secondary_status" : "status"]: newStatus, ...(reason ? { reason } : {}) } });
   }
 
 
@@ -657,7 +669,7 @@ function Dashboard() {
           if (!value) {
             setStatus("");
             setSecondaryStatus("");
-          } else if (STATUS_MANDATORY[value] === false) {
+          } else if (statusMaps.mandatory[value] === false) {
             setSecondaryStatus(value);
             setStatus("");
           } else {
@@ -667,7 +679,7 @@ function Dashboard() {
           setPage(1);
         }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הסטטוסים</option>
-          {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {statusMaps.options.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
         <select value={agentId} onChange={(e) => { setAgentId(e.target.value); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הנציגים</option>
@@ -753,6 +765,7 @@ function Dashboard() {
               agents={agents ?? []}
               canWrite={!me?.isViewer}
               staleHours={staleHours}
+              statusOptions={statusMaps.options}
               onUpdate={(d) => updateMutation.mutate({ data: d })}
               onDropStatus={handleKanbanDrop}
               selectMode={selectMode}
@@ -769,7 +782,7 @@ function Dashboard() {
                 </h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {restWaiting.map((r: any) => (
-                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} statusOptions={regularStatusOptions} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
                       selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
                   ))}
                 </div>
@@ -783,7 +796,7 @@ function Dashboard() {
                 </h2>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {restHandled.map((r: any) => (
-                    <SystemCard key={r.id} r={r} agents={agents ?? []} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
+                    <SystemCard key={r.id} r={r} agents={agents ?? []} statusOptions={regularStatusOptions} canWrite={!me?.isViewer} staleHours={staleHours} onUpdate={(d) => updateMutation.mutate({ data: d })}
                       selectMode={selectMode} selected={selectedIds.has(r.id)} onToggleSelect={toggleSelect} />
                   ))}
                 </div>
@@ -822,7 +835,7 @@ function Dashboard() {
 
 
       {showCreate && me?.isAgent && (
-        <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} onDone={() => {
+        <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} statusOptions={regularStatusOptions} onDone={() => {
           qc.invalidateQueries({ queryKey: ["systems"] });
           setShowCreate(false);
           setCreateInitial({});
@@ -1133,7 +1146,7 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
   );
 }
 
-function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
+function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; statusOptions?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -1215,7 +1228,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
             onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
-            {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
           </select>
           <select value={r.assigned_agent_id || ""} onChange={(e) => onUpdate?.({ id: r.id, assigned_agent_id: e.target.value || null })}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
@@ -1275,7 +1288,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
 }
 
 
-function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; onDone: () => void }) {
+function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
@@ -1473,7 +1486,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             <select required value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
               <option value="">— בחר סטטוס —</option>
-              {STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false).map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+              {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
@@ -2178,11 +2191,12 @@ function ImportExportMenu({ canExport, onExport, onImport }: { canExport: boolea
   );
 }
 
-function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatus, selectMode, selectedIds, onToggleSelect }: {
+function KanbanBoard({ rows, agents, canWrite, staleHours, statusOptions, onUpdate, onDropStatus, selectMode, selectedIds, onToggleSelect }: {
   rows: any[];
   agents: any[];
   canWrite: boolean;
   staleHours: number;
+  statusOptions: Array<{ value: string; label: string }>;
   onUpdate: (d: any) => void;
   onDropStatus: (id: string, newStatus: string) => void;
   selectMode: boolean;
@@ -2192,13 +2206,13 @@ function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatu
   const [dragOver, setDragOver] = useState<string | null>(null);
   const grouped = useMemo(() => {
     const map: Record<string, any[]> = {};
-    for (const opt of STATUS_OPTIONS) map[opt.value] = [];
+    for (const opt of statusOptions) map[opt.value] = [];
     for (const r of rows) {
       if (!map[r.status]) map[r.status] = [];
       map[r.status].push(r);
     }
     return map;
-  }, [rows]);
+  }, [rows, statusOptions]);
 
   function onDragStart(e: React.DragEvent, id: string) {
     e.dataTransfer.setData("text/plain", id);
@@ -2214,7 +2228,7 @@ function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatu
   return (
     <div className="overflow-x-auto pb-2">
       <div className="flex gap-3 min-w-max">
-        {STATUS_OPTIONS.map((opt) => {
+        {statusOptions.map((opt) => {
           const items = grouped[opt.value] ?? [];
           const isOver = dragOver === opt.value;
           return (

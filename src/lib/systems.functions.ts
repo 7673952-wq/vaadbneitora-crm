@@ -24,7 +24,7 @@ const STATUS_VALUES = [
   "sent_to_yosela", "blocked_from_root", "send_to_committee",
   "sent_to_committee", "blocked_in_committee",
 ] as const;
-const statusSchema = z.enum(STATUS_VALUES);
+const statusSchema = z.string().min(1).max(80).regex(/^[a-z0-9_\-]+$/i);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
 // All authorization in this file goes through `assertRole` / `hasRole`
@@ -329,7 +329,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
     const { data: inserted, error } = await context.supabase.from("systems").insert({
       system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
-      status: data.status ?? "open",
+      status: (data.status ?? "open") as any,
       assigned_agent_id: parent.assigned_agent_id,
       notes: cleanSubNotes,
       phone: sanitizeOptional(data.phone ?? null),
@@ -391,7 +391,7 @@ export const createSystem = createServerFn({ method: "POST" })
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: normalizedCode,
       name: sanitizeText(data.name),
-      status: data.status,
+      status: data.status as any,
       assigned_agent_id: assignedAgentId,
       notes: cleanNotes,
       phone: sanitizeOptional(data.phone || null),
@@ -479,7 +479,7 @@ export const updateSystem = createServerFn({ method: "POST" })
           .from("systems")
           .select("id, status")
           .eq("parent_system_id", data.id)
-          .neq("status", data.status);
+          .neq("status", data.status as any);
         statusLogTargets.push(...(children ?? []).map((child: any) => ({
           id: child.id,
           oldStatus: child.status,
@@ -924,7 +924,7 @@ export const createMissingSystems = createServerFn({ method: "POST" })
       return {
         system_code: normalized,
         name: sanitizeText(`${data.namePrefix} ${normalized}`.trim()),
-        status: data.status,
+        status: data.status as any,
         assigned_agent_id: context.userId,
         notes: "נוצר אוטומטית מהשלמת סדרת מזהים",
       };

@@ -45,6 +45,11 @@ async function resolveStatusFilterValues(supabase: any, value?: string | null) {
   ]);
 }
 
+const PRIMARY_STATUS_VALUES = new Set<string>(STATUS_VALUES);
+function primaryStatusFilterValues(values: string[]) {
+  return values.filter((value) => PRIMARY_STATUS_VALUES.has(value));
+}
+
 // All authorization in this file goes through `assertRole` / `hasRole`
 // from @/lib/permissions.server — single source of truth.
 async function userHasRole(userId: string, role: "agent" | "admin" | "super_admin") {
@@ -78,6 +83,8 @@ export const listSystems = createServerFn({ method: "POST" })
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const statusValues = await resolveStatusFilterValues(context.supabase, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
+    const primaryStatusValues = primaryStatusFilterValues(statusValues);
+    const primarySecondaryStatusValues = primaryStatusFilterValues(secondaryStatusValues);
     const page = data.page ?? 1;
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
@@ -107,19 +114,20 @@ export const listSystems = createServerFn({ method: "POST" })
     // this avoids PostgREST edge cases when OR-ing enum and text columns.
     if (secondaryStatusValues.length > 0) {
       const fetchByColumn = async (column: "status" | "secondary_status") => {
-        if (statusValues.length > 0 && column === "status" && !statusValues.some((value) => secondaryStatusValues.includes(value))) return [];
+        if (column === "status" && primarySecondaryStatusValues.length === 0) return [];
+        if (statusValues.length > 0 && column === "status" && !primaryStatusValues.some((value) => primarySecondaryStatusValues.includes(value))) return [];
         const rows: any[] = [];
         const CHUNK = 1000;
         const valuesForColumn = column === "status" && statusValues.length > 0
-          ? secondaryStatusValues.filter((value) => statusValues.includes(value))
-          : secondaryStatusValues;
+          ? primarySecondaryStatusValues.filter((value) => primaryStatusValues.includes(value))
+          : column === "status" ? primarySecondaryStatusValues : secondaryStatusValues;
         for (const value of valuesForColumn) {
           for (let from = 0; ; from += CHUNK) {
             let q = context.supabase
               .from("systems")
               .select(baseSelect)
               .eq(column, value as any);
-            if (statusValues.length > 0 && column !== "status") q = q.in("status", statusValues as any);
+            if (primaryStatusValues.length > 0 && column !== "status") q = q.in("status", primaryStatusValues as any);
             q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
             const { data: got, error } = await q;
             if (error) throw new Error(error.message);
@@ -145,7 +153,7 @@ export const listSystems = createServerFn({ method: "POST" })
       let q = context.supabase
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
-      if (statusValues.length > 0) q = q.in("status", statusValues as any);
+      if (primaryStatusValues.length > 0) q = q.in("status", primaryStatusValues as any);
       return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, to);
     };
 

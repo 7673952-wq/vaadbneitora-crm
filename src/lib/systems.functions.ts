@@ -1080,6 +1080,77 @@ export const ensureCategoryRoot = createServerFn({ method: "POST" })
     return row;
   });
 
+// Handling-speed trend: for each time bucket in the selected period, returns
+// how many systems reached a "handled" status (throughput) and the average
+// hours from system creation to that first handled transition (avgHours).
+export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { period: string }) =>
+    z.object({ period: z.enum(["day", "3days", "week", "month", "year"]) }).parse(d))
+  .handler(async ({ data, context }) => {
+    // Bucketing config per period.
+    const cfg: Record<string, { hours: number; bucketMs: number; label: (d: Date) => string }> = {
+      day:    { hours: 24,        bucketMs: 60 * 60 * 1000,             label: (d) => d.toISOString().slice(11, 13) + ":00" },
+      "3days":{ hours: 72,        bucketMs: 3 * 60 * 60 * 1000,         label: (d) => `${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,"0")}:00` },
+      week:   { hours: 24 * 7,    bucketMs: 24 * 60 * 60 * 1000,        label: (d) => `${d.getDate()}/${d.getMonth()+1}` },
+      month:  { hours: 24 * 30,   bucketMs: 24 * 60 * 60 * 1000,        label: (d) => `${d.getDate()}/${d.getMonth()+1}` },
+      year:   { hours: 24 * 365,  bucketMs: 7 * 24 * 60 * 60 * 1000,    label: (d) => `${d.getDate()}/${d.getMonth()+1}` },
+    };
+    const c = cfg[data.period];
+    const now = Date.now();
+    const from = new Date(now - c.hours * 60 * 60 * 1000);
+
+    // Discover which status keys are "handled".
+    const { data: statusRows } = await context.supabase
+      .from("status_settings").select("status_key, is_handled");
+    const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
+    // Fallback defaults if table is empty.
+    if (handledKeys.size === 0) {
+      ["closed", "close_in_simahedrin", "block_from_root"].forEach((k) => handledKeys.add(k));
+    }
+
+    // First status-change to a handled value per system in the window.
+    const { data: logs } = await context.supabase
+      .from("system_activity_log")
+      .select("system_id, new_value, created_at")
+      .eq("field", "status")
+      .gte("created_at", from.toISOString())
+      .order("created_at", { ascending: true })
+      .limit(10000);
+    const firstHandledBySystem = new Map<string, string>();
+    for (const l of (logs ?? [])) {
+      if (!handledKeys.has(l.new_value as string)) continue;
+      if (firstHandledBySystem.has(l.system_id as string)) continue;
+      firstHandledBySystem.set(l.system_id as string, l.created_at as string);
+    }
+    const systemIds = Array.from(firstHandledBySystem.keys());
+    let createdMap = new Map<string, string>();
+    if (systemIds.length > 0) {
+      const { data: sys } = await context.supabase
+        .from("systems").select("id, created_at").in("id", systemIds);
+      for (const s of (sys ?? [])) createdMap.set(s.id as string, s.created_at as string);
+    }
+
+    // Bucket
+    const buckets = new Map<number, { count: number; totalHours: number }>();
+    const startBucket = Math.floor(from.getTime() / c.bucketMs) * c.bucketMs;
+    for (let t = startBucket; t <= now; t += c.bucketMs) buckets.set(t, { count: 0, totalHours: 0 });
+    for (const [sid, handledAtStr] of firstHandledBySystem.entries()) {
+      const handledAt = new Date(handledAtStr).getTime();
+      const bkt = Math.floor(handledAt / c.bucketMs) * c.bucketMs;
+      const b = buckets.get(bkt); if (!b) continue;
+      const createdAt = createdMap.get(sid);
+      const hours = createdAt ? Math.max(0, (handledAt - new Date(createdAt).getTime()) / 3600_000) : 0;
+      b.count += 1;
+      b.totalHours += hours;
+    }
+    return Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]).map(([t, v]) => ({
+      bucket: c.label(new Date(t)),
+      throughput: v.count,
+      avgHours: v.count > 0 ? Number((v.totalHours / v.count).toFixed(1)) : 0,
+    }));
+  });
+
 
 
 

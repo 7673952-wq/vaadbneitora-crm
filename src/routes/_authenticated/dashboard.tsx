@@ -1859,8 +1859,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
       )}
 
       {codeResult && (
-        <button onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
-          className={`mt-2 w-full text-right border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
+        <div className={`mt-2 border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="text-xs font-mono opacity-80">{codeResult.system_code}</div>
@@ -1870,23 +1869,55 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
               {STATUS_LABEL[codeResult.status as SystemStatus]}
             </span>
           </div>
-          <div className="text-[11px] mt-1 opacity-75">לחץ למעבר למערכת</div>
-        </button>
+          <div className="mt-2 flex gap-1.5">
+            <button type="button"
+              onMouseEnter={() => prefetchSystem(codeResult.id)}
+              onFocus={() => prefetchSystem(codeResult.id)}
+              onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
+              className="flex-1 text-xs px-2 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
+              פתח כרטיסייה
+            </button>
+            {dialHref(codeResult.system_code) && (
+              <a href={dialHref(codeResult.system_code)!}
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs px-2 py-1.5 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-medium inline-flex items-center gap-1">
+                <Phone className="h-3 w-3" />חייג
+              </a>
+            )}
+          </div>
+        </div>
       )}
 
       {nameResults && nameResults.length > 0 && (
         <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto">
           {nameResults.map((r: any) => (
-            <button key={r.id} onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
-              className="w-full text-right border border-border rounded-lg p-2 hover:bg-accent transition flex items-center justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
-                <div className="text-sm font-medium truncate">{r.name}</div>
+            <div key={r.id}
+              className="border border-border rounded-lg p-2 hover:bg-accent transition">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
+                  <div className="text-sm font-medium truncate">{r.name}</div>
+                </div>
+                {r.parent_system_id && (
+                  <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
+                )}
               </div>
-              {r.parent_system_id && (
-                <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
-              )}
-            </button>
+              <div className="mt-1.5 flex gap-1.5">
+                <button type="button"
+                  onMouseEnter={() => prefetchSystem(r.id)}
+                  onFocus={() => prefetchSystem(r.id)}
+                  onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
+                  className="flex-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
+                  פתח כרטיסייה
+                </button>
+                {dialHref(r.system_code) && (
+                  <a href={dialHref(r.system_code)!}
+                    className="text-xs px-2 py-1 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-medium inline-flex items-center gap-1">
+                    <Phone className="h-3 w-3" />חייג
+                  </a>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}

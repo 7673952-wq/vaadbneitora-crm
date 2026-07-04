@@ -1754,11 +1754,24 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
 
 function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: CreateInitial) => void; canCreate: boolean }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);
+  const getSystemFn = useServerFn(getSystem);
   const [query, setQuery] = useState("");
   const [codeResult, setCodeResult] = useState<any | null | undefined>(undefined);
   const [nameResults, setNameResults] = useState<any[] | undefined>(undefined);
+  const prefetchSystem = (id: string) => {
+    qc.prefetchQuery({
+      queryKey: ["system", id],
+      queryFn: () => getSystemFn({ data: { id } }),
+      staleTime: 30_000,
+    });
+  };
+  const dialHref = (code: string | null | undefined) => {
+    const digits = (code ?? "").replace(/\D+/g, "");
+    return digits ? `tel:${digits}` : null;
+  };
 
   // Run both lookups in parallel: code lookup for the numeric portion, name
   // lookup for any text. This keeps a single input box but covers both flows.

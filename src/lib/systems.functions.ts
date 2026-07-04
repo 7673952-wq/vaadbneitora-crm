@@ -65,9 +65,10 @@ async function ensureCanWrite(userId: string) {
 
 const periodSchema = z.enum(["day", "week", "month", "year"]);
 const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
+const listStatusFilterSchema = z.string().min(1).max(100);
 const listSystemsInputSchema = z.object({
-  status: statusSchema.nullable().optional(),
-  secondaryStatus: statusSchema.nullable().optional(),
+  status: listStatusFilterSchema.nullable().optional(),
+  secondaryStatus: listStatusFilterSchema.nullable().optional(),
   agentId: z.string().uuid().nullable().optional(),
   period: periodSchema.nullable().optional(),
   dateFrom: isoDate,
@@ -85,6 +86,9 @@ export const listSystems = createServerFn({ method: "POST" })
     const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
     const primaryStatusValues = primaryStatusFilterValues(statusValues);
     const primarySecondaryStatusValues = primaryStatusFilterValues(secondaryStatusValues);
+    if (data.status && primaryStatusValues.length === 0 && secondaryStatusValues.length === 0) {
+      return { items: [], total: 0, page: data.page ?? 1, pageSize: data.pageSize ?? 1000 };
+    }
     const page = data.page ?? 1;
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;

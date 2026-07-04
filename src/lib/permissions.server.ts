@@ -16,6 +16,8 @@ export const PERMISSION_DEFINITIONS = [
   { key: "systems_read", label: "צפייה במערכות", description: "כניסה לדשבורד וצפייה בכרטיסי מערכת" },
   { key: "systems_write", label: "עריכת מערכות", description: "יצירה ועריכה כללית של מערכות" },
   { key: "systems_delete", label: "מחיקת מערכות", description: "מחיקת מערכת ראשית או תת־מערכת" },
+  { key: "system_name_edit", label: "עריכת שם מערכת", description: "שינוי שם של מערכת קיימת" },
+  { key: "system_code_edit", label: "עריכת מספר מערכת", description: "שינוי מזהה/מספר לחיוג של מערכת קיימת" },
   { key: "status_change", label: "שינוי סטטוס", description: "החלפת סטטוס למערכת" },
   { key: "agent_transfer", label: "העברת נציג", description: "שיוך מערכת לנציג אחר" },
   { key: "notes_write", label: "הוספת הערות", description: "כתיבת הערות בכרטיס מערכת" },

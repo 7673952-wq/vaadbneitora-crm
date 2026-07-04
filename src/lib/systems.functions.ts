@@ -303,7 +303,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     const { data: row, error: parentError } = await context.supabase
       .from("systems")
-      .update({ parent_system_id: data.parent_id })
+      .update({ parent_system_id: parent.id })
       .eq("id", inserted.id)
       .select()
       .single();

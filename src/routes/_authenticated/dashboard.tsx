@@ -1391,7 +1391,7 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
         }
 
         await subFn({ data: {
-          parent_id: matchedParent.id,
+          parent_id: parentId,
           system_code: form.system_code,
           name: form.name.trim() || undefined,
           status: form.status,

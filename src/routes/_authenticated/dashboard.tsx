@@ -1300,22 +1300,29 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
         const target = norm(v);
         const exactMatches = (rows ?? []).filter((r: any) => norm(r.name) === target);
-        // Parent options: roots that match by name PLUS parents of matching
-        // sub-systems. Only accept entries with valid id + name + code so a
-        // broken/dangling FK never surfaces an unnamed "phantom" parent.
+        // Parent options: prefer root systems whose name matches, then the
+        // parents of matching sub-systems, and finally the matching
+        // sub-systems themselves (addSubSystem walks up to the root at write
+        // time, so a sub id is a safe fallback when the FK embed is missing
+        // or dangling). Requiring only id + name here means dangling parents
+        // and legacy rows without a system_code still surface as options.
         const isValidParent = (p: any) =>
           !!p && typeof p.id === "string" && p.id.trim()
-            && typeof p.name === "string" && p.name.trim()
-            && typeof p.system_code === "string" && p.system_code.trim();
+            && typeof p.name === "string" && p.name.trim();
         const optsMap = new Map<string, any>();
+        const addOpt = (p: any) => {
+          if (!isValidParent(p)) return;
+          if (optsMap.has(p.id)) return;
+          optsMap.set(p.id, { id: p.id, system_code: p.system_code ?? "", name: p.name });
+        };
         for (const r of exactMatches) {
-          if (!r.parent_system_id) {
-            const cand = { id: r.id, system_code: r.system_code, name: r.name };
-            if (isValidParent(cand)) optsMap.set(cand.id, cand);
-          } else if (isValidParent(r.parent)) {
-            const p = r.parent as { id: string; system_code: string; name: string };
-            optsMap.set(p.id, p);
-          }
+          if (!r.parent_system_id) addOpt(r);
+          else addOpt(r.parent);
+        }
+        // Fallback: no valid root parent surfaced — use the matching
+        // sub-systems themselves so the user still gets the choice.
+        if (optsMap.size === 0) {
+          for (const r of exactMatches) addOpt(r);
         }
         const opts = Array.from(optsMap.values());
         const initialParent = isValidParent(initial?.parent) ? initial!.parent : null;

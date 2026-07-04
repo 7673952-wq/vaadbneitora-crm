@@ -459,16 +459,17 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים לעדכן");
     }
-    let isSuper: boolean | null = null;
-    const checkSuper = async () => {
-      if (isSuper === null) isSuper = await userHasRole(context.userId, "super_admin");
-      return isSuper;
-    };
-    if (data.system_code !== undefined && !(await checkSuper())) {
-      throw new Error("רק מנהל ראשי יכול לשנות את מזהה המערכת");
+    if (data.system_code !== undefined) {
+      const { hasPermission } = await import("@/lib/permissions.server");
+      if (!(await hasPermission(context.userId, "system_code_edit"))) {
+        throw new Error("אין הרשאה לשנות את מזהה המערכת");
+      }
     }
-    if (data.name !== undefined && !isAdmin && !(await checkSuper())) {
-  throw new Error("רק מנהל יכול לשנות את שם המערכת");
+    if (data.name !== undefined) {
+      const { hasPermission } = await import("@/lib/permissions.server");
+      if (!(await hasPermission(context.userId, "system_name_edit"))) {
+        throw new Error("אין הרשאה לשנות את שם המערכת");
+      }
     }
     const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
     if (data.status && data.status !== sys.status) {

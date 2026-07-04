@@ -16,6 +16,8 @@ export const PERMISSION_DEFINITIONS = [
   { key: "systems_read", label: "צפייה במערכות", description: "כניסה לדשבורד וצפייה בכרטיסי מערכת" },
   { key: "systems_write", label: "עריכת מערכות", description: "יצירה ועריכה כללית של מערכות" },
   { key: "systems_delete", label: "מחיקת מערכות", description: "מחיקת מערכת ראשית או תת־מערכת" },
+  { key: "system_name_edit", label: "עריכת שם מערכת", description: "שינוי שם של מערכת קיימת" },
+  { key: "system_code_edit", label: "עריכת מספר מערכת", description: "שינוי מזהה/מספר לחיוג של מערכת קיימת" },
   { key: "status_change", label: "שינוי סטטוס", description: "החלפת סטטוס למערכת" },
   { key: "agent_transfer", label: "העברת נציג", description: "שיוך מערכת לנציג אחר" },
   { key: "notes_write", label: "הוספת הערות", description: "כתיבת הערות בכרטיס מערכת" },
@@ -51,6 +53,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: false,
     users_manage: false,
     permissions_manage: false,
+    system_name_edit: false,
+    system_code_edit: false,
   },
   agent: {
     systems_read: true,
@@ -67,6 +71,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: false,
     users_manage: false,
     permissions_manage: false,
+    system_name_edit: false,
+    system_code_edit: false,
   },
   admin: {
     systems_read: true,
@@ -83,6 +89,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: true,
     users_manage: false,
     permissions_manage: false,
+    system_name_edit: true,
+    system_code_edit: false,
   },
   super_admin: {
     systems_read: true,
@@ -99,6 +107,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: true,
     users_manage: true,
     permissions_manage: true,
+    system_name_edit: true,
+    system_code_edit: true,
   },
 };
 

@@ -1325,7 +1325,8 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
     if (!form.status) { toast.error("יש לבחור סטטוס"); return; }
     setBusy(true);
     try {
-      if (willCreateAsSub && matchedParent) {
+      if (willCreateAsSub && matchedParent?.id) {
+
         await subFn({ data: {
           parent_id: matchedParent.id,
           system_code: form.system_code,

@@ -13,7 +13,7 @@ import {
 } from "@/lib/system-files.functions";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_MANDATORY, toneClasses, statusCardClasses,
-  NO_REASON_STATUSES, type SystemStatus, buildDialNumber,
+  statusRequiresReason, type SystemStatus, buildDialNumber,
 } from "@/lib/status";
 import { useState, useEffect, useRef, useMemo, type ReactNode } from "react";
 import { toast } from "sonner";
@@ -349,7 +349,7 @@ function SystemDetail() {
             <select value={s.status} onChange={(e) => {
               const newStatus = e.target.value;
               if (newStatus === s.status) return;
-              if (NO_REASON_STATUSES.has(newStatus)) {
+              if (!statusRequiresReason(newStatus)) {
                 updateMut.mutate({ data: { id, status: newStatus } });
                 return;
               }

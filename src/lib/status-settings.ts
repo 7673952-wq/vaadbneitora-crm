@@ -10,10 +10,15 @@ export type StatusSettingRow = {
   is_custom: boolean;
   is_handled: boolean;
   is_mandatory: boolean;
+  requires_reason: boolean;
   assigned_agent_ids: string[];
 };
 
 const STATUS_SETTINGS_CONFIG_KEY = "status_settings_config";
+const DEFAULT_NO_REASON = new Set(["open", "closed", "open_only_bimot"]);
+function isDefaultRequiresReason(key: string) {
+  return !DEFAULT_NO_REASON.has(key);
+}
 const WORKFLOW_STATUS_KEYS = new Set([
   "block_from_root",
   "send_to_yosela",
@@ -62,6 +67,7 @@ export function defaultStatusRows(): StatusSettingRow[] {
     is_custom: false,
     is_handled,
     is_mandatory: isDefaultMandatory(status_key),
+    requires_reason: isDefaultRequiresReason(status_key),
     assigned_agent_ids: [],
   }));
 }
@@ -80,6 +86,7 @@ function normalizeRows(rows: unknown): StatusSettingRow[] {
         is_custom: row.is_custom === true,
         is_handled: row.is_handled === true,
         is_mandatory: typeof row.is_mandatory === "boolean" ? row.is_mandatory : isDefaultMandatory(statusKey),
+        requires_reason: typeof row.requires_reason === "boolean" ? row.requires_reason : isDefaultRequiresReason(statusKey),
         assigned_agent_ids: normalizeAgentIds(row.assigned_agent_ids),
       };
     })
@@ -151,17 +158,21 @@ export async function writeStatusSettingsConfig(supabaseAdmin: SupabaseLike, row
 }
 
 async function bestEffortMirrorStatusTable(supabaseAdmin: SupabaseLike, rows: StatusSettingRow[]) {
+  // The mirror table does not have a `requires_reason` column — always strip
+  // it before writing. Source of truth is the app_settings JSON blob.
+  const forTable = rows.map(({ requires_reason: _rr, ...row }) => row);
   try {
-    const { error } = await supabaseAdmin.from("status_settings").upsert(rows, { onConflict: "status_key" } as any);
+    const { error } = await supabaseAdmin.from("status_settings").upsert(forTable, { onConflict: "status_key" } as any);
     if (!error) return;
     if (!isMissingMandatoryColumn(error)) return;
 
-    const withoutMandatory = rows.map(({ is_mandatory: _isMandatory, ...row }) => row);
+    const withoutMandatory = forTable.map(({ is_mandatory: _isMandatory, ...row }) => row);
     await supabaseAdmin.from("status_settings").upsert(withoutMandatory, { onConflict: "status_key" } as any);
   } catch {
     // The app_settings JSON copy is the source of truth; the table mirror is best-effort only.
   }
 }
+
 
 export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
   const rows = await readStatusSettings(supabaseAdmin);
@@ -176,6 +187,7 @@ export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, pat
         is_custom: true,
         is_handled: false,
         is_mandatory: isDefaultMandatory(patch.status_key),
+        requires_reason: isDefaultRequiresReason(patch.status_key),
         assigned_agent_ids: [],
       };
   const [merged] = normalizeRows([{ ...existing, ...patch }]);

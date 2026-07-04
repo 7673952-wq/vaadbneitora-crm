@@ -283,7 +283,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; assigned_agent_ids?: string[] }) =>
+  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[] }) =>
     z.object({
       status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
       label: z.string().min(1).max(100),
@@ -292,6 +292,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       is_custom: z.boolean().optional(),
       is_handled: z.boolean().optional(),
       is_mandatory: z.boolean().optional(),
+      requires_reason: z.boolean().optional(),
       assigned_agent_ids: z.array(z.string().uuid()).max(50).optional(),
     }).parse(d),
   )
@@ -307,6 +308,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.sort_order !== undefined) patch.sort_order = data.sort_order;
     if (data.is_handled !== undefined) patch.is_handled = data.is_handled;
     if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
+    if (data.requires_reason !== undefined) patch.requires_reason = data.requires_reason;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
     await upsertStatusSettingStable(supabaseAdmin, patch, context.userId);
     return { ok: true };

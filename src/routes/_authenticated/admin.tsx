@@ -366,7 +366,7 @@ function StatusSettingsPanel() {
   const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); }, onError: (e: any) => toast.error(e.message) });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true });
 
   const fallbackRows = STATUS_OPTIONS.map((s, idx) => ({
     status_key: s.value,
@@ -376,6 +376,7 @@ function StatusSettingsPanel() {
     is_custom: false,
     is_handled: !!s.is_handled,
     is_mandatory: s.is_mandatory ?? true,
+    requires_reason: s.requires_reason ?? true,
     assigned_agent_ids: s.assigned_agent_ids ?? [],
   }));
   const sorted = [...(((rows as any[] | undefined)?.length ? rows : fallbackRows) as any[])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
@@ -406,7 +407,7 @@ function StatusSettingsPanel() {
       {rowsError && <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-sm text-destructive">לא ניתן לטעון סטטוסים שמורים: {rowsError.message}. מוצגת רשימת ברירת־המחדל.</div>}
 
       {showAdd && (
-        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-6 gap-2 items-end">
+        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-7 gap-2 items-end">
           <Field label="מפתח (אנגלית)"><input value={newRow.status_key} onChange={(e) => setNewRow({ ...newRow, status_key: e.target.value })} placeholder="my_custom_status" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="תווית"><input value={newRow.label} onChange={(e) => setNewRow({ ...newRow, label: e.target.value })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="צבע">
@@ -426,6 +427,12 @@ function StatusSettingsPanel() {
               <option value="0">אופציונלי (שורה נפרדת)</option>
             </select>
           </Field>
+          <Field label="סיבה בשינוי">
+            <select value={newRow.requires_reason ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, requires_reason: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="1">חייב סיבה</option>
+              <option value="0">ללא סיבה</option>
+            </select>
+          </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>
         </div>
       )}
@@ -440,13 +447,14 @@ function StatusSettingsPanel() {
               <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שורה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">סיבה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r: any, idx: number) => (
-              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.requires_reason}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
                 onMove={(delta) => move(idx, delta)}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
@@ -459,15 +467,16 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
   const [mandatory, setMandatory] = useState<boolean>(row.is_mandatory ?? true);
+  const [requiresReason, setRequiresReason] = useState<boolean>(row.requires_reason ?? true);
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || idsDirty;
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty;
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <tr className="border-b border-border last:border-0 align-top">
@@ -503,6 +512,12 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         </select>
       </td>
       <td className="px-3 py-2">
+        <select value={requiresReason ? "1" : "0"} onChange={(e) => setRequiresReason(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
+          <option value="1">חייב סיבה</option>
+          <option value="0">ללא סיבה</option>
+        </select>
+      </td>
+      <td className="px-3 py-2">
         <div className="flex flex-wrap gap-1 max-w-[260px]">
           {agents.map((a) => {
             const active = agentIds.includes(a.id);
@@ -517,7 +532,7 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         </div>
       </td>
       <td className="px-3 py-2 text-left whitespace-nowrap">
-        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, assigned_agent_ids: agentIds })}
+        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds })}
           className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30">שמור</button>
         {onDelete && (
           <button onClick={onDelete} className="text-destructive hover:bg-destructive/10 rounded p-1.5 mr-1"><Trash2 className="h-4 w-4 inline" /></button>

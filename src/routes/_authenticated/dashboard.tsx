@@ -10,7 +10,7 @@ import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, STATUS_MANDATORY, toneClasses,
-  statusCardClasses, applyStatusSettings, NO_REASON_STATUSES, type SystemStatus,
+  statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
   CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
@@ -351,7 +351,7 @@ function Dashboard() {
     if (selectedIds.size === 0) return;
     if (!bulkStatus && !bulkAgent) { toast.info("בחר סטטוס או נציג לעדכון"); return; }
     let reason = "";
-    if (bulkStatus && !NO_REASON_STATUSES.has(bulkStatus)) {
+    if (bulkStatus && statusRequiresReason(bulkStatus)) {
       const r = window.prompt("סיבת שינוי סטטוס (חובה):", "");
       if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
       reason = r.trim();
@@ -379,7 +379,7 @@ function Dashboard() {
     const sys = (systems ?? []).find((s: any) => s.id === id);
     if (!sys || sys.status === newStatus) return;
     let reason = "";
-    if (!NO_REASON_STATUSES.has(newStatus)) {
+    if (statusRequiresReason(newStatus)) {
       const r = window.prompt(`סיבת שינוי סטטוס ל"${STATUS_LABEL[newStatus] || newStatus}":`, "");
       if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
       reason = r.trim();
@@ -1194,7 +1194,7 @@ function SystemCard({ r, agents, onUpdate, compact, canWrite = true, staleHours 
             const newStatus = e.target.value;
             if (newStatus === r.status) return;
             let reason: string | undefined;
-            if (!NO_REASON_STATUSES.has(newStatus)) {
+            if (statusRequiresReason(newStatus)) {
               const r2 = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
               if (!r2 || !r2.trim()) { toast.error("יש להזין סיבה"); return; }
               reason = r2.trim();

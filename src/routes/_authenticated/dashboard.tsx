@@ -211,6 +211,8 @@ function Dashboard() {
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
       page, pageSize: serverPageSize,
     } }),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;

@@ -183,6 +183,7 @@ export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, pat
         is_custom: true,
         is_handled: false,
         is_mandatory: isDefaultMandatory(patch.status_key),
+        requires_reason: isDefaultRequiresReason(patch.status_key),
         assigned_agent_ids: [],
       };
   const [merged] = normalizeRows([{ ...existing, ...patch }]);

@@ -24,7 +24,7 @@ const STATUS_VALUES = [
   "sent_to_yosela", "blocked_from_root", "send_to_committee",
   "sent_to_committee", "blocked_in_committee",
 ] as const;
-const statusSchema = z.enum(STATUS_VALUES);
+const statusSchema = z.string().min(1).max(80).regex(/^[a-z0-9_\-]+$/i);
 const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as const;
 
 // All authorization in this file goes through `assertRole` / `hasRole`

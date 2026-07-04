@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
   listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
-  importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems,
+  importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -211,6 +211,8 @@ function Dashboard() {
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
       page, pageSize: serverPageSize,
     } }),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
@@ -223,6 +225,8 @@ function Dashboard() {
       dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
     } }),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
   // Split by admin-configured mandatory flag (defaults to non-workflow=mandatory in STATUS_MANDATORY).
   const regularStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] !== false), [statusMaps]);
@@ -1148,6 +1152,8 @@ function PendingGroup({ title, items, agents, onUpdate }: { title: string; items
 
 function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compact, canWrite = true, staleHours = 0, selectMode = false, selected = false, onToggleSelect, draggable = false, onDragStart }: { r: any; agents?: any[]; statusOptions?: any[]; onUpdate?: (d: any) => void; compact?: boolean; canWrite?: boolean; staleHours?: number; selectMode?: boolean; selected?: boolean; onToggleSelect?: (id: string) => void; draggable?: boolean; onDragStart?: (e: React.DragEvent, id: string) => void }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
+  const getSystemFn = useServerFn(getSystem);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   function copyToClipboard(value: string, key: string, label: string) {
@@ -1168,12 +1174,21 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
     && !STATUS_HANDLED[r.status]
     && r.updated_at
     && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
+  const prefetchSystem = () => {
+    qc.prefetchQuery({
+      queryKey: ["system", r.id],
+      queryFn: () => getSystemFn({ data: { id: r.id } }),
+      staleTime: 30_000,
+    });
+  };
   const handleCardClick = () => {
     if (selectMode && onToggleSelect) { onToggleSelect(r.id); return; }
     navigate({ to: "/systems/$id", params: { id: r.id } });
   };
   return (
     <div onClick={handleCardClick}
+      onMouseEnter={prefetchSystem}
+      onFocus={prefetchSystem}
       draggable={draggable}
       onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
       className={`relative border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-4 ring-red-600 animate-pulse-stale border-red-600" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}
@@ -1739,11 +1754,24 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
 
 function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: CreateInitial) => void; canCreate: boolean }) {
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const codeFn = useServerFn(findSystemByCode);
   const nameFn = useServerFn(findSystemByName);
+  const getSystemFn = useServerFn(getSystem);
   const [query, setQuery] = useState("");
   const [codeResult, setCodeResult] = useState<any | null | undefined>(undefined);
   const [nameResults, setNameResults] = useState<any[] | undefined>(undefined);
+  const prefetchSystem = (id: string) => {
+    qc.prefetchQuery({
+      queryKey: ["system", id],
+      queryFn: () => getSystemFn({ data: { id } }),
+      staleTime: 30_000,
+    });
+  };
+  const dialHref = (code: string | null | undefined) => {
+    const digits = (code ?? "").replace(/\D+/g, "");
+    return digits ? `tel:${digits}` : null;
+  };
 
   // Run both lookups in parallel: code lookup for the numeric portion, name
   // lookup for any text. This keeps a single input box but covers both flows.
@@ -1831,8 +1859,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
       )}
 
       {codeResult && (
-        <button onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
-          className={`mt-2 w-full text-right border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
+        <div className={`mt-2 border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="text-xs font-mono opacity-80">{codeResult.system_code}</div>
@@ -1842,23 +1869,55 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
               {STATUS_LABEL[codeResult.status as SystemStatus]}
             </span>
           </div>
-          <div className="text-[11px] mt-1 opacity-75">לחץ למעבר למערכת</div>
-        </button>
+          <div className="mt-2 flex gap-1.5">
+            <button type="button"
+              onMouseEnter={() => prefetchSystem(codeResult.id)}
+              onFocus={() => prefetchSystem(codeResult.id)}
+              onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
+              className="flex-1 text-xs px-2 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
+              פתח כרטיסייה
+            </button>
+            {dialHref(codeResult.system_code) && (
+              <a href={dialHref(codeResult.system_code)!}
+                onClick={(e) => e.stopPropagation()}
+                className="text-xs px-2 py-1.5 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-medium inline-flex items-center gap-1">
+                <Phone className="h-3 w-3" />חייג
+              </a>
+            )}
+          </div>
+        </div>
       )}
 
       {nameResults && nameResults.length > 0 && (
         <div className="mt-2 space-y-1.5 max-h-60 overflow-y-auto">
           {nameResults.map((r: any) => (
-            <button key={r.id} onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
-              className="w-full text-right border border-border rounded-lg p-2 hover:bg-accent transition flex items-center justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
-                <div className="text-sm font-medium truncate">{r.name}</div>
+            <div key={r.id}
+              className="border border-border rounded-lg p-2 hover:bg-accent transition">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-mono text-muted-foreground">{r.system_code}</div>
+                  <div className="text-sm font-medium truncate">{r.name}</div>
+                </div>
+                {r.parent_system_id && (
+                  <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
+                )}
               </div>
-              {r.parent_system_id && (
-                <CornerUpRight className="h-3 w-3 text-amber-600 shrink-0" />
-              )}
-            </button>
+              <div className="mt-1.5 flex gap-1.5">
+                <button type="button"
+                  onMouseEnter={() => prefetchSystem(r.id)}
+                  onFocus={() => prefetchSystem(r.id)}
+                  onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
+                  className="flex-1 text-xs px-2 py-1 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
+                  פתח כרטיסייה
+                </button>
+                {dialHref(r.system_code) && (
+                  <a href={dialHref(r.system_code)!}
+                    className="text-xs px-2 py-1 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-medium inline-flex items-center gap-1">
+                    <Phone className="h-3 w-3" />חייג
+                  </a>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}

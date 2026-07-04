@@ -71,6 +71,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     settings_manage: false,
     users_manage: false,
     permissions_manage: false,
+    system_name_edit: false,
+    system_code_edit: false,
   },
   admin: {
     systems_read: true,

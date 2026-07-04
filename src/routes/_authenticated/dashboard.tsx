@@ -636,19 +636,24 @@ function Dashboard() {
         <StatusCards title="יוסלה / ועדה" options={workflowStatusOptions} activeStatus={secondaryStatus} stats={secondaryStats} onSelect={(value) => { setSecondaryStatus(secondaryStatus === value ? "" : value); setStatus(""); setPage(1); }} compact columns={3} />
       </div>
 
-      {showCharts && (chartData.length > 0 || agentChartData.length > 0) && (
-        <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
+      {showCharts && (
+        <>
+          <HandlingSpeedChart />
+          {(chartData.length > 0 || agentChartData.length > 0) && (
+            <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2 text-sm font-semibold">
+                  <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
+                </div>
+                <a href="/charts" target="_blank" rel="noreferrer"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
+                  <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
+                </a>
+              </div>
+              <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
             </div>
-            <a href="/charts" target="_blank" rel="noreferrer"
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
-              <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
-            </a>
-          </div>
-          <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
-        </div>
+          )}
+        </>
       )}
 
 

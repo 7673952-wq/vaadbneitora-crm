@@ -1300,7 +1300,8 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
             const cand = { id: r.id, system_code: r.system_code, name: r.name };
             if (isValidParent(cand)) optsMap.set(cand.id, cand);
           } else if (isValidParent(r.parent)) {
-            optsMap.set(r.parent.id, r.parent);
+            const p = r.parent as { id: string; system_code: string; name: string };
+            optsMap.set(p.id, p);
           }
         }
         const opts = Array.from(optsMap.values());

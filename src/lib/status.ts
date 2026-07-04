@@ -88,7 +88,7 @@ rebuildMaps();
 
 export type SystemStatus = string;
 
-export function applyStatusSettings(rows: { status_key: string; label: string; tone: string; sort_order?: number; is_handled?: boolean; is_mandatory?: boolean; assigned_agent_ids?: string[] | null }[]) {
+export function applyStatusSettings(rows: { status_key: string; label: string; tone: string; sort_order?: number; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[] | null }[]) {
   if (!rows?.length) return;
   const sorted = [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   STATUS_OPTIONS.length = 0;
@@ -98,6 +98,7 @@ export function applyStatusSettings(rows: { status_key: string; label: string; t
     tone: r.tone,
     is_handled: r.is_handled ?? DEFAULT_HANDLED.has(r.status_key),
     is_mandatory: r.is_mandatory ?? isDefaultMandatory(r.status_key),
+    requires_reason: r.requires_reason ?? isDefaultRequiresReason(r.status_key),
     assigned_agent_ids: r.assigned_agent_ids ?? [],
   });
   rebuildMaps();

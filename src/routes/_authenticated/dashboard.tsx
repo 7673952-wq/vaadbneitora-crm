@@ -1277,7 +1277,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
 
   useEffect(() => {
     const v = form.name.trim();
-    if (v.length < 2) { setSuggestions([]); setMatchedParent(null); return; }
+    if (v.length < 2) { setSuggestions([]); setMatchedParent(null); setMatchedParentOptions([]); return; }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
@@ -1288,16 +1288,26 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
         const target = norm(v);
         const exactMatches = (rows ?? []).filter((r: any) => norm(r.name) === target);
         // Parent options: roots that match by name PLUS parents of matching
-        // sub-systems (so "קו ההגנה" that exists only as sub-systems still
-        // offers a valid parent to nest under).
+        // sub-systems. Only accept entries with valid id + name + code so a
+        // broken/dangling FK never surfaces an unnamed "phantom" parent.
+        const isValidParent = (p: any) =>
+          !!p && typeof p.id === "string" && p.id.trim()
+            && typeof p.name === "string" && p.name.trim()
+            && typeof p.system_code === "string" && p.system_code.trim();
         const optsMap = new Map<string, any>();
         for (const r of exactMatches) {
-          if (!r.parent_system_id) optsMap.set(r.id, { id: r.id, system_code: r.system_code, name: r.name });
-          else if (r.parent) optsMap.set(r.parent.id, r.parent);
+          if (!r.parent_system_id) {
+            const cand = { id: r.id, system_code: r.system_code, name: r.name };
+            if (isValidParent(cand)) optsMap.set(cand.id, cand);
+          } else if (isValidParent(r.parent)) {
+            const p = r.parent as { id: string; system_code: string; name: string };
+            optsMap.set(p.id, p);
+          }
         }
         const opts = Array.from(optsMap.values());
+        const initialParent = isValidParent(initial?.parent) ? initial!.parent : null;
         const initialPick = initial?.parent_id
-          ? (opts.find((p: any) => p.id === initial.parent_id) ?? initial.parent ?? null)
+          ? (opts.find((p: any) => p.id === initial.parent_id) ?? initialParent ?? null)
           : (opts[0] ?? null);
         setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
         setMatchedParent(initialPick);
@@ -1307,6 +1317,7 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.name, findFn, initial?.parent_id, initial?.createMode]);
 
+
   const willCreateAsSub = !!matchedParent && createMode === "sub";
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1314,7 +1325,8 @@ function CreateModal({ initial, onClose, agents: _agents, onDone }: { initial?: 
     if (!form.status) { toast.error("יש לבחור סטטוס"); return; }
     setBusy(true);
     try {
-      if (willCreateAsSub && matchedParent) {
+      if (willCreateAsSub && matchedParent?.id) {
+
         await subFn({ data: {
           parent_id: matchedParent.id,
           system_code: form.system_code,

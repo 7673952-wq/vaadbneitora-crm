@@ -34,7 +34,8 @@ async function assertAnyPermission(context: { userId: string }, permissions: imp
 
 const ROLES = ["viewer", "agent", "admin", "super_admin"] as const;
 const PERMISSION_KEYS = [
-  "systems_read", "systems_write", "systems_delete", "status_change", "agent_transfer", "notes_write", "files_manage",
+  "systems_read", "systems_write", "systems_delete", "system_name_edit", "system_code_edit",
+  "status_change", "agent_transfer", "notes_write", "files_manage",
   "import_export", "series_manage", "backup_manage", "audit_view", "settings_manage", "users_manage", "permissions_manage",
 ] as const;
 

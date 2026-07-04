@@ -329,7 +329,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
     const { data: inserted, error } = await context.supabase.from("systems").insert({
       system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
-      status: data.status ?? "open",
+      status: (data.status ?? "open") as any,
       assigned_agent_id: parent.assigned_agent_id,
       notes: cleanSubNotes,
       phone: sanitizeOptional(data.phone ?? null),
@@ -479,7 +479,7 @@ export const updateSystem = createServerFn({ method: "POST" })
           .from("systems")
           .select("id, status")
           .eq("parent_system_id", data.id)
-          .neq("status", data.status);
+          .neq("status", data.status as any);
         statusLogTargets.push(...(children ?? []).map((child: any) => ({
           id: child.id,
           oldStatus: child.status,
@@ -924,7 +924,7 @@ export const createMissingSystems = createServerFn({ method: "POST" })
       return {
         system_code: normalized,
         name: sanitizeText(`${data.namePrefix} ${normalized}`.trim()),
-        status: data.status,
+        status: data.status as any,
         assigned_agent_id: context.userId,
         notes: "נוצר אוטומטית מהשלמת סדרת מזהים",
       };

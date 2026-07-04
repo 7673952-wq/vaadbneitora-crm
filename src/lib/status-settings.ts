@@ -10,10 +10,15 @@ export type StatusSettingRow = {
   is_custom: boolean;
   is_handled: boolean;
   is_mandatory: boolean;
+  requires_reason: boolean;
   assigned_agent_ids: string[];
 };
 
 const STATUS_SETTINGS_CONFIG_KEY = "status_settings_config";
+const DEFAULT_NO_REASON = new Set(["open", "closed", "open_only_bimot"]);
+function isDefaultRequiresReason(key: string) {
+  return !DEFAULT_NO_REASON.has(key);
+}
 const WORKFLOW_STATUS_KEYS = new Set([
   "block_from_root",
   "send_to_yosela",

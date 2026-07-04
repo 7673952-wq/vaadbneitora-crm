@@ -903,14 +903,33 @@ export const findSystemByName = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: rows, error } = await context.supabase
-      .from("systems")
-      .select("id, system_code, name, parent_system_id, parent:systems!parent_system_id(id, system_code, name)")
-      .ilike("name", `%${data.name}%`)
-      .order("name", { ascending: true })
-      .limit(20);
-    if (error) throw new Error(error.message);
-    return rows ?? [];
+    // Two passes so a name shared by many sub-systems never buries the true
+    // root parent below the row limit: first fetch any exact-name matches
+    // (roots and subs), then top up with fuzzy ilike matches.
+    const trimmed = data.name.trim();
+    const [exactRes, fuzzyRes] = await Promise.all([
+      context.supabase
+        .from("systems")
+        .select("id, system_code, name, parent_system_id, parent:systems!parent_system_id(id, system_code, name, parent_system_id)")
+        .ilike("name", trimmed)
+        .limit(50),
+      context.supabase
+        .from("systems")
+        .select("id, system_code, name, parent_system_id, parent:systems!parent_system_id(id, system_code, name, parent_system_id)")
+        .ilike("name", `%${trimmed}%`)
+        .order("name", { ascending: true })
+        .limit(20),
+    ]);
+    if (exactRes.error) throw new Error(exactRes.error.message);
+    if (fuzzyRes.error) throw new Error(fuzzyRes.error.message);
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    for (const r of [...(exactRes.data ?? []), ...(fuzzyRes.data ?? [])]) {
+      if (seen.has(r.id)) continue;
+      seen.add(r.id);
+      merged.push(r);
+    }
+    return merged;
   });
 
 export const findSystemByCode = createServerFn({ method: "POST" })

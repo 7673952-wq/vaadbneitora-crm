@@ -447,13 +447,14 @@ function StatusSettingsPanel() {
               <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שורה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">סיבה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r: any, idx: number) => (
-              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.requires_reason}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
                 onMove={(delta) => move(idx, delta)}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}

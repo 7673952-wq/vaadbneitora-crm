@@ -366,7 +366,7 @@ function StatusSettingsPanel() {
   const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); }, onError: (e: any) => toast.error(e.message) });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true });
 
   const fallbackRows = STATUS_OPTIONS.map((s, idx) => ({
     status_key: s.value,
@@ -376,6 +376,7 @@ function StatusSettingsPanel() {
     is_custom: false,
     is_handled: !!s.is_handled,
     is_mandatory: s.is_mandatory ?? true,
+    requires_reason: s.requires_reason ?? true,
     assigned_agent_ids: s.assigned_agent_ids ?? [],
   }));
   const sorted = [...(((rows as any[] | undefined)?.length ? rows : fallbackRows) as any[])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));

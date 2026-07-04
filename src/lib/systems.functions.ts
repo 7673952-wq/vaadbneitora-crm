@@ -31,17 +31,39 @@ function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((v) => v?.trim()).filter((v): v is string => !!v)));
 }
 
+function statusLabelVariants(value: string) {
+  const trimmed = value.trim();
+  return uniqueStrings([
+    trimmed,
+    trimmed.replace(/\s+/g, " "),
+    trimmed.replace(/וועדה/g, "ועדה"),
+    trimmed.replace(/לוועדה/g, "לועדה"),
+  ]);
+}
+
+async function buildStatusAliasMap(supabase: any) {
+  const settings = await readStatusSettings(supabase);
+  const aliasToKey = new Map<string, string>();
+  for (const row of settings) {
+    for (const alias of statusLabelVariants(row.status_key)) aliasToKey.set(alias, row.status_key);
+    for (const alias of statusLabelVariants(row.label)) aliasToKey.set(alias, row.status_key);
+  }
+  return { settings, aliasToKey };
+}
+
 async function resolveStatusFilterValues(supabase: any, value?: string | null) {
   const raw = value?.trim();
   if (!raw) return [];
-  const settings = await readStatusSettings(supabase);
+  const { settings } = await buildStatusAliasMap(supabase);
   const normalizedRaw = raw.replace(/\s+/g, " ");
   const matchingSettings = settings.filter((row) =>
-    row.status_key === raw || row.label === raw || row.label.replace(/\s+/g, " ") === normalizedRaw,
+    statusLabelVariants(row.status_key).includes(raw)
+      || statusLabelVariants(row.label).includes(raw)
+      || row.label.replace(/\s+/g, " ") === normalizedRaw,
   );
   return uniqueStrings([
     raw,
-    ...matchingSettings.flatMap((row) => [row.status_key, row.label]),
+    ...matchingSettings.flatMap((row) => [row.status_key, ...statusLabelVariants(row.label)]),
   ]);
 }
 
@@ -195,6 +217,8 @@ export const getStatusCounts = createServerFn({ method: "POST" })
     }).strict().parse(d ?? {}),
   )
   .handler(async ({ data, context }) => {
+    const { aliasToKey } = await buildStatusAliasMap(context.supabase);
+    const canonicalStatus = (value?: string | null) => value ? (aliasToKey.get(value) ?? value) : null;
     let q = context.supabase.from("systems").select("status, secondary_status");
     if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
     if (data.period) {
@@ -220,9 +244,11 @@ export const getStatusCounts = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       if (!rows || rows.length === 0) break;
       for (const r of rows as any[]) {
-        if (r.status) primary[r.status] = (primary[r.status] ?? 0) + 1;
-        if (r.secondary_status) secondary[r.secondary_status] = (secondary[r.secondary_status] ?? 0) + 1;
-        for (const key of new Set([r.status, r.secondary_status].filter(Boolean))) {
+        const primaryKey = canonicalStatus(r.status);
+        const secondaryKey = canonicalStatus(r.secondary_status);
+        if (primaryKey) primary[primaryKey] = (primary[primaryKey] ?? 0) + 1;
+        if (secondaryKey) secondary[secondaryKey] = (secondary[secondaryKey] ?? 0) + 1;
+        for (const key of new Set([primaryKey, secondaryKey].filter(Boolean))) {
           any[key as string] = (any[key as string] ?? 0) + 1;
         }
       }

@@ -330,18 +330,26 @@ export const createSystem = createServerFn({ method: "POST" })
     if (existing) throw new Error("מספר המערכת כבר קיים — לא ניתן לפתוח מערכת חדשה על מספר קיים");
     // Auto-assign the creator as the handling agent if none was selected.
     const assignedAgentId = data.assigned_agent_id ?? context.userId;
+    const cleanNotes = sanitizeOptional(data.notes ?? null);
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: normalizedCode,
       name: sanitizeText(data.name),
       status: data.status,
       assigned_agent_id: assignedAgentId,
-      notes: sanitizeOptional(data.notes ?? null),
+      notes: cleanNotes,
       phone: sanitizeOptional(data.phone || null),
       source: sanitizeOptional(data.source ?? null),
       caller_phone: sanitizeOptional(data.caller_phone ?? null),
       email: data.email || null,
     } as any).select().single();
     if (error) throw new Error(error.message);
+    if (cleanNotes && row?.id) {
+      try {
+        await context.supabase.from("system_notes").insert({
+          system_id: row.id, body: cleanNotes, author_id: context.userId,
+        });
+      } catch { /* non-fatal — the mirror in system_notes is best-effort */ }
+    }
     return row;
   });
 

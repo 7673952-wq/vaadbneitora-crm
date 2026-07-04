@@ -61,16 +61,12 @@ export const listSystems = createServerFn({ method: "POST" })
     const page = data.page ?? 1;
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
+    const endTo = offset + pageSize - 1;
 
     const baseSelect =
       "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
 
-    const buildQuery = (from: number, to: number, withCount: boolean) => {
-      let q = context.supabase
-        .from("systems")
-        .select(baseSelect, withCount ? { count: "exact" } : {});
-      if (data.status) q = q.eq("status", data.status as any);
-      if (data.secondaryStatus) q = q.or(`secondary_status.eq.${data.secondaryStatus},status.eq.${data.secondaryStatus}`);
+    const applySharedFilters = (q: any) => {
       if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
       if (data.period) {
         const now = new Date();
@@ -83,14 +79,55 @@ export const listSystems = createServerFn({ method: "POST" })
       }
       if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
       if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
-      return q.order("updated_at", { ascending: false }).range(from, to);
+      return q;
+    };
+
+    // Optional/workflow statuses can live either in `secondary_status` or, for
+    // older rows, directly in `status`. Fetch both paths separately and merge;
+    // this avoids PostgREST edge cases when OR-ing enum and text columns.
+    if (data.secondaryStatus) {
+      const fetchByColumn = async (column: "status" | "secondary_status") => {
+        if (data.status && column === "status" && data.status !== data.secondaryStatus) return [];
+        const rows: any[] = [];
+        const CHUNK = 1000;
+        for (let from = 0; ; from += CHUNK) {
+          let q = context.supabase
+            .from("systems")
+            .select(baseSelect)
+            .eq(column, data.secondaryStatus as any);
+          if (data.status && column !== "status") q = q.eq("status", data.status as any);
+          q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
+          const { data: got, error } = await q;
+          if (error) throw new Error(error.message);
+          rows.push(...(got ?? []));
+          if (!got || got.length < CHUNK) break;
+        }
+        return rows;
+      };
+
+      const merged = new Map<string, any>();
+      for (const row of [...await fetchByColumn("secondary_status"), ...await fetchByColumn("status")]) {
+        merged.set(row.id, row);
+      }
+      const allRows = Array.from(merged.values()).sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
+      );
+      const items = await enrichSystemRows(context.supabase, allRows.slice(offset, endTo + 1));
+      return { items, total: allRows.length, page, pageSize };
+    }
+
+    const buildQuery = (from: number, to: number, withCount: boolean) => {
+      let q = context.supabase
+        .from("systems")
+        .select(baseSelect, withCount ? { count: "exact" } : {});
+      if (data.status) q = q.eq("status", data.status as any);
+      return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, to);
     };
 
     // PostgREST caps a single response at ~1000 rows. When the caller asks
     // for more (e.g. "All" in the dashboard, or a full export), fetch the
     // window in 1000-row chunks so we return everything requested.
     const CHUNK = 1000;
-    const endTo = offset + pageSize - 1;
     const allRows: any[] = [];
     let total = 0;
     let first = true;

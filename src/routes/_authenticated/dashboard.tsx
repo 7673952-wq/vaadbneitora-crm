@@ -652,7 +652,20 @@ function Dashboard() {
             </button>
           )}
         </div>
-        <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
+        <select value={status || secondaryStatus} onChange={(e) => {
+          const value = e.target.value;
+          if (!value) {
+            setStatus("");
+            setSecondaryStatus("");
+          } else if (STATUS_MANDATORY[value] === false) {
+            setSecondaryStatus(value);
+            setStatus("");
+          } else {
+            setStatus(value);
+            setSecondaryStatus("");
+          }
+          setPage(1);
+        }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הסטטוסים</option>
           {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
@@ -671,8 +684,8 @@ function Dashboard() {
             setPage(1);
           }}
         />
-        {(status || agentId || period || search || dateFrom || dateTo) && (
-          <button onClick={() => { setStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}
+        {(status || secondaryStatus || agentId || period || search || dateFrom || dateTo) && (
+          <button onClick={() => { setStatus(""); setSecondaryStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <X className="h-3 w-3" />נקה סינון
           </button>

@@ -225,6 +225,8 @@ function Dashboard() {
       dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
     } }),
+    staleTime: 30_000,
+    placeholderData: (prev) => prev,
   });
   // Split by admin-configured mandatory flag (defaults to non-workflow=mandatory in STATUS_MANDATORY).
   const regularStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] !== false), [statusMaps]);

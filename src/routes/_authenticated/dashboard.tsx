@@ -1361,6 +1361,14 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
         setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
         setMatchedParent(initialPick);
         setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
+        // Category-name fallback: even when no root match was found, present the
+        // sub/root choice so users can always attach a new sub under the category.
+        if (!initialPick && isCategoryName(v)) {
+          const virtual = { id: VIRTUAL_PARENT_ID, name: v.trim(), system_code: "" };
+          setMatchedParent(virtual);
+          setMatchedParentOptions([virtual]);
+          setCreateMode((current) => initial?.createMode ?? current);
+        }
       } catch { /* ignore */ }
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
@@ -1375,6 +1383,12 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
     setBusy(true);
     try {
       if (willCreateAsSub && matchedParent?.id) {
+        let parentId = matchedParent.id;
+        if (parentId === VIRTUAL_PARENT_ID) {
+          const root = await ensureCategoryRootFn({ data: { name: matchedParent.name } });
+          if (!root?.id) throw new Error("לא הצלחתי לוודא את מערכת האב");
+          parentId = root.id;
+        }
 
         await subFn({ data: {
           parent_id: matchedParent.id,

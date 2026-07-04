@@ -276,12 +276,13 @@ export const addSubSystem = createServerFn({ method: "POST" })
     if (!isAdmin && parent.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
     }
+    const cleanSubNotes = sanitizeOptional(data.notes ?? null);
     const { data: inserted, error } = await context.supabase.from("systems").insert({
       system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
       status: data.status ?? "open",
       assigned_agent_id: parent.assigned_agent_id,
-      notes: sanitizeOptional(data.notes ?? null),
+      notes: cleanSubNotes,
       phone: sanitizeOptional(data.phone ?? null),
       source: sanitizeOptional(data.source ?? null),
       caller_phone: sanitizeOptional(data.caller_phone ?? null),
@@ -297,6 +298,13 @@ export const addSubSystem = createServerFn({ method: "POST" })
     if (parentError) {
       await context.supabase.from("systems").delete().eq("id", inserted.id);
       throw new Error(parentError.message);
+    }
+    if (cleanSubNotes && row?.id) {
+      try {
+        await context.supabase.from("system_notes").insert({
+          system_id: row.id, body: cleanSubNotes, author_id: context.userId,
+        });
+      } catch { /* non-fatal */ }
     }
     return row;
   });

@@ -5,11 +5,22 @@
 // see the latest values on next render. Trigger a re-render by invalidating
 // affected queries after admin saves.
 
-export type StatusOption = { value: string; label: string; tone: string; is_handled?: boolean; is_mandatory?: boolean; assigned_agent_ids?: string[] };
+export type StatusOption = { value: string; label: string; tone: string; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[] };
 
 const DEFAULT_HANDLED = new Set(["open", "closed", "open_only_bimot", "sent_to_yosela", "blocked_from_root", "sent_to_committee", "blocked_in_committee"]);
-// Status changes that DON'T require a "reason" prompt.
-export const NO_REASON_STATUSES = new Set(["open", "closed", "open_only_bimot"]);
+// Default set of statuses that do NOT require a "reason" prompt on change.
+// Admins can override per-status via the requires_reason flag in status settings.
+const DEFAULT_NO_REASON = new Set(["open", "closed", "open_only_bimot"]);
+export function isDefaultRequiresReason(key: string): boolean {
+  return !DEFAULT_NO_REASON.has(key);
+}
+// Back-compat export — prefer statusRequiresReason(status) which honors admin overrides.
+export const NO_REASON_STATUSES = DEFAULT_NO_REASON;
+export function statusRequiresReason(status: string): boolean {
+  const v = STATUS_REQUIRES_REASON[status];
+  if (typeof v === "boolean") return v;
+  return isDefaultRequiresReason(status);
+}
 
 const DEFAULT_STATUS_OPTIONS: StatusOption[] = [
   { value: "pending_check_close", label: "לבדיקה לחסימה", tone: "amber" },

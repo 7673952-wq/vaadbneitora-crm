@@ -67,6 +67,7 @@ export function defaultStatusRows(): StatusSettingRow[] {
     is_custom: false,
     is_handled,
     is_mandatory: isDefaultMandatory(status_key),
+    requires_reason: isDefaultRequiresReason(status_key),
     assigned_agent_ids: [],
   }));
 }
@@ -85,6 +86,7 @@ function normalizeRows(rows: unknown): StatusSettingRow[] {
         is_custom: row.is_custom === true,
         is_handled: row.is_handled === true,
         is_mandatory: typeof row.is_mandatory === "boolean" ? row.is_mandatory : isDefaultMandatory(statusKey),
+        requires_reason: typeof row.requires_reason === "boolean" ? row.requires_reason : isDefaultRequiresReason(statusKey),
         assigned_agent_ids: normalizeAgentIds(row.assigned_agent_ids),
       };
     })

@@ -9,9 +9,9 @@ import {
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
-  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, STATUS_MANDATORY, toneClasses,
+  STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
-  CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus,
+  CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus, buildStatusMaps,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -161,6 +161,7 @@ function Dashboard() {
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn() });
   const staleHours = staleSetting?.hours ?? 0;
+  const statusMaps = useMemo(() => buildStatusMaps(statusSettings as any), [statusSettings]);
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   const [status, setStatus] = useState<string>("");
@@ -224,8 +225,8 @@ function Dashboard() {
     } }),
   });
   // Split by admin-configured mandatory flag (defaults to non-workflow=mandatory in STATUS_MANDATORY).
-  const regularStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] !== false), [statusSettings]);
-  const workflowStatusOptions = useMemo(() => STATUS_OPTIONS.filter((s) => STATUS_MANDATORY[s.value] === false), [statusSettings]);
+  const regularStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] !== false), [statusMaps]);
+  const workflowStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] === false), [statusMaps]);
   const { data: dueReminders } = useQuery({
     queryKey: ["dueReminders"],
     queryFn: () => dueFn(),
@@ -657,7 +658,7 @@ function Dashboard() {
           if (!value) {
             setStatus("");
             setSecondaryStatus("");
-          } else if (STATUS_MANDATORY[value] === false) {
+          } else if (statusMaps.mandatory[value] === false) {
             setSecondaryStatus(value);
             setStatus("");
           } else {
@@ -667,7 +668,7 @@ function Dashboard() {
           setPage(1);
         }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הסטטוסים</option>
-          {STATUS_OPTIONS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+          {statusMaps.options.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
         </select>
         <select value={agentId} onChange={(e) => { setAgentId(e.target.value); setPage(1); }} className="px-3 py-2 text-sm rounded-lg border border-input bg-background">
           <option value="">כל הנציגים</option>

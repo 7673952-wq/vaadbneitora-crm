@@ -113,11 +113,13 @@ export type StatusMaps = {
   label: Record<string, string>;
   tone: Record<string, string>;
   handled: Record<string, boolean>;
+  mandatory: Record<string, boolean>;
+  requiresReason: Record<string, boolean>;
   agents: Record<string, string[]>;
 };
 
 export function buildStatusMaps(
-  rows?: { status_key: string; label: string; tone: string; sort_order?: number; is_handled?: boolean; assigned_agent_ids?: string[] | null }[] | null,
+  rows?: { status_key: string; label: string; tone: string; sort_order?: number; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[] | null }[] | null,
 ): StatusMaps {
   const source: StatusOption[] = rows && rows.length
     ? [...rows]
@@ -127,6 +129,8 @@ export function buildStatusMaps(
           label: r.label,
           tone: r.tone,
           is_handled: r.is_handled ?? DEFAULT_HANDLED.has(r.status_key),
+          is_mandatory: r.is_mandatory ?? isDefaultMandatory(r.status_key),
+          requires_reason: r.requires_reason ?? isDefaultRequiresReason(r.status_key),
           assigned_agent_ids: r.assigned_agent_ids ?? [],
         }))
     : DEFAULT_STATUS_OPTIONS.map((s) => ({ ...s }));
@@ -134,14 +138,18 @@ export function buildStatusMaps(
   const label: Record<string, string> = {};
   const tone: Record<string, string> = {};
   const handled: Record<string, boolean> = {};
+  const mandatory: Record<string, boolean> = {};
+  const requiresReason: Record<string, boolean> = {};
   const agents: Record<string, string[]> = {};
   for (const s of source) {
     label[s.value] = s.label;
     tone[s.value] = s.tone;
     handled[s.value] = !!s.is_handled;
+    mandatory[s.value] = s.is_mandatory ?? isDefaultMandatory(s.value);
+    requiresReason[s.value] = s.requires_reason ?? isDefaultRequiresReason(s.value);
     agents[s.value] = s.assigned_agent_ids ?? [];
   }
-  return { options: source, label, tone, handled, agents };
+  return { options: source, label, tone, handled, mandatory, requiresReason, agents };
 }
 
 export const AVAILABLE_TONES = [

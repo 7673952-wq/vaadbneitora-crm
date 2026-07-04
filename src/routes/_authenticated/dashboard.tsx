@@ -1300,6 +1300,14 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
   const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
   const subFn = useServerFn(addSubSystem);
+  const ensureCategoryRootFn = useServerFn(ensureCategoryRoot);
+  // Names that must ALWAYS present the "open as sub / open as new root" choice,
+  // even when no matching root exists yet in the DB. If sub is chosen the root
+  // is created on-the-fly by ensureCategoryRoot before the sub is attached.
+  const CATEGORY_NAMES = ["קו ההגנה"];
+  const normalizeName = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const isCategoryName = (s: string) => CATEGORY_NAMES.some((c) => normalizeName(c) === normalizeName(s));
+  const VIRTUAL_PARENT_ID = "__virtual_category_root__";
 
   useEffect(() => {
     const v = form.name.trim();

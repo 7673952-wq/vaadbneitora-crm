@@ -407,7 +407,7 @@ function StatusSettingsPanel() {
       {rowsError && <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-sm text-destructive">לא ניתן לטעון סטטוסים שמורים: {rowsError.message}. מוצגת רשימת ברירת־המחדל.</div>}
 
       {showAdd && (
-        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-6 gap-2 items-end">
+        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-7 gap-2 items-end">
           <Field label="מפתח (אנגלית)"><input value={newRow.status_key} onChange={(e) => setNewRow({ ...newRow, status_key: e.target.value })} placeholder="my_custom_status" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="תווית"><input value={newRow.label} onChange={(e) => setNewRow({ ...newRow, label: e.target.value })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="צבע">
@@ -425,6 +425,12 @@ function StatusSettingsPanel() {
             <select value={newRow.is_mandatory ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, is_mandatory: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
               <option value="1">חובה (שורה ראשית)</option>
               <option value="0">אופציונלי (שורה נפרדת)</option>
+            </select>
+          </Field>
+          <Field label="סיבה בשינוי">
+            <select value={newRow.requires_reason ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, requires_reason: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="1">חייב סיבה</option>
+              <option value="0">ללא סיבה</option>
             </select>
           </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>

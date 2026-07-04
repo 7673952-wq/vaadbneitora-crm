@@ -11,7 +11,7 @@ import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
-  CALLER_SOURCES, buildDialNumber, isSpecialWorkflowStatus, buildStatusMaps,
+  CALLER_SOURCES, buildDialNumber, buildStatusMaps,
 } from "@/lib/status";
 import { useMemo, useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -765,6 +765,7 @@ function Dashboard() {
               agents={agents ?? []}
               canWrite={!me?.isViewer}
               staleHours={staleHours}
+              statusOptions={statusMaps.options}
               onUpdate={(d) => updateMutation.mutate({ data: d })}
               onDropStatus={handleKanbanDrop}
               selectMode={selectMode}
@@ -2190,11 +2191,12 @@ function ImportExportMenu({ canExport, onExport, onImport }: { canExport: boolea
   );
 }
 
-function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatus, selectMode, selectedIds, onToggleSelect }: {
+function KanbanBoard({ rows, agents, canWrite, staleHours, statusOptions, onUpdate, onDropStatus, selectMode, selectedIds, onToggleSelect }: {
   rows: any[];
   agents: any[];
   canWrite: boolean;
   staleHours: number;
+  statusOptions: Array<{ value: string; label: string }>;
   onUpdate: (d: any) => void;
   onDropStatus: (id: string, newStatus: string) => void;
   selectMode: boolean;
@@ -2204,13 +2206,13 @@ function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatu
   const [dragOver, setDragOver] = useState<string | null>(null);
   const grouped = useMemo(() => {
     const map: Record<string, any[]> = {};
-    for (const opt of STATUS_OPTIONS) map[opt.value] = [];
+    for (const opt of statusOptions) map[opt.value] = [];
     for (const r of rows) {
       if (!map[r.status]) map[r.status] = [];
       map[r.status].push(r);
     }
     return map;
-  }, [rows]);
+  }, [rows, statusOptions]);
 
   function onDragStart(e: React.DragEvent, id: string) {
     e.dataTransfer.setData("text/plain", id);
@@ -2226,7 +2228,7 @@ function KanbanBoard({ rows, agents, canWrite, staleHours, onUpdate, onDropStatu
   return (
     <div className="overflow-x-auto pb-2">
       <div className="flex gap-3 min-w-max">
-        {STATUS_OPTIONS.map((opt) => {
+        {statusOptions.map((opt) => {
           const items = grouped[opt.value] ?? [];
           const isOver = dragOver === opt.value;
           return (

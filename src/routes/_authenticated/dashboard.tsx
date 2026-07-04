@@ -1785,10 +1785,10 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
         </div>
       )}
 
-      {/* Choice when typed name matches an existing root */}
-      {canCreate && exactNameMatch && (
+      {/* Choice when typed name matches an existing root or sub-system */}
+      {canCreate && hasExactMatch && (
         <div className="mt-2 border-2 border-amber-300 bg-amber-50 rounded-lg p-2.5 space-y-2">
-          <div className="text-sm text-amber-900 font-medium">השם "{exactNameMatch.name}" כבר קיים. מה לפתוח?</div>
+          <div className="text-sm text-amber-900 font-medium">השם "{exactSampleName || v}" כבר קיים. מה לפתוח?</div>
           <div className="flex flex-wrap gap-2">
             <button onClick={() => onOpenCreate({ name: v, createMode: "root" })}
               className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
@@ -1803,6 +1803,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
           </div>
         </div>
       )}
+
 
       {nothingFound && (
         <div className="mt-2 border-2 border-dashed border-emerald-300 bg-emerald-50 rounded-lg p-2.5">

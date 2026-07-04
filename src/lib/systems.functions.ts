@@ -266,11 +266,22 @@ export const addSubSystem = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const { data: parent, error: pe } = await context.supabase
-      .from("systems").select("id, name, assigned_agent_id, parent_system_id").eq("id", data.parent_id).maybeSingle();
-    if (pe) throw new Error(pe.message);
+    // Walk up the chain to the top-most root: if the caller passed a
+    // sub-system id (legacy/broken data or a stale parent picked from the
+    // duplicate-name suggestion), silently resolve to its root instead of
+    // failing. Guarded against cycles by a depth cap.
+    let parent: { id: string; name: string; assigned_agent_id: string | null; parent_system_id: string | null } | null = null;
+    let currentId: string | null = data.parent_id;
+    for (let hop = 0; hop < 10 && currentId; hop++) {
+      const { data: node, error: pe } = await context.supabase
+        .from("systems").select("id, name, assigned_agent_id, parent_system_id").eq("id", currentId).maybeSingle();
+      if (pe) throw new Error(pe.message);
+      if (!node) break;
+      parent = node as any;
+      if (!node.parent_system_id) break;
+      currentId = node.parent_system_id;
+    }
     if (!parent) throw new Error("מערכת אב לא נמצאה");
-    if (parent.parent_system_id) throw new Error("לא ניתן להוסיף תת-מערכת בתוך תת-מערכת");
 
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin && parent.assigned_agent_id !== context.userId) {

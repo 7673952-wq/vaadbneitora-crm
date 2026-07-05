@@ -214,6 +214,9 @@ function SystemDetail() {
   const s = data.system;
   const isSub = !!s.parent_system_id;
   const headerCard = statusCardClasses(s.status);
+  const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
+  const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
+  const voiceAlreadySent = !!s.voice_message_sent_at;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

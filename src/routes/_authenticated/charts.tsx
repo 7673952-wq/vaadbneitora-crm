@@ -61,6 +61,10 @@ function ChartsPage() {
         <h1 className="text-3xl font-bold tracking-tight">תרשימים וניתוח נתונים</h1>
         <p className="text-muted-foreground text-sm mt-1">סה"כ {systems?.length ?? 0} מערכות</p>
       </div>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <HandlingSpeedChart />
+        <HandledRatioChart />
+      </div>
       <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} large />
     </div>
   );

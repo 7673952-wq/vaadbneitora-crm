@@ -329,7 +329,7 @@ function SystemDetail() {
                     !voiceEnabled
                       ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
                       : voiceAlreadySent
-                        ? `נשלח: ${new Date(s.voice_message_sent_at).toLocaleString("he-IL")}`
+                        ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
                         : "שליחת הודעה קולית לפונה דרך ימות המשיח"
                   }
                   className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition ${

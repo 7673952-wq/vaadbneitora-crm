@@ -5,6 +5,8 @@ import { useMemo } from "react";
 import { listSystems } from "@/lib/systems.functions";
 import { STATUS_OPTIONS } from "@/lib/status";
 import { ChartGrid } from "@/components/ChartGrid";
+import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
+import { HandledRatioChart } from "@/components/HandledRatioChart";
 import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/charts")({

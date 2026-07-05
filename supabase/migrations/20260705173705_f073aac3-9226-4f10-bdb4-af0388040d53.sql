@@ -1,0 +1,1 @@
+ALTER TABLE public.systems ADD COLUMN IF NOT EXISTS voice_message_sent_at timestamptz;

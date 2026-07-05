@@ -293,6 +293,7 @@ export type Database = {
           status: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at: string
+          voice_message_sent_at: string | null
         }
         Insert: {
           assigned_agent_id?: string | null
@@ -315,6 +316,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at?: string
+          voice_message_sent_at?: string | null
         }
         Update: {
           assigned_agent_id?: string | null
@@ -337,6 +339,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["system_status"]
           system_code?: string
           updated_at?: string
+          voice_message_sent_at?: string | null
         }
         Relationships: [
           {

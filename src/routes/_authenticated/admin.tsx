@@ -449,12 +449,13 @@ function StatusSettingsPanel() {
               <th className="px-3 py-2 font-medium text-muted-foreground">שורה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">סיבה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground">הודעה קולית</th>
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r: any, idx: number) => (
-              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.requires_reason}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.requires_reason}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}:${r.enables_voice_message ? 1 : 0}:${(r.voice_message_template ?? "").length}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
                 onMove={(delta) => move(idx, delta)}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
@@ -467,16 +468,18 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[] }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean; voice_message_template: string }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
   const [mandatory, setMandatory] = useState<boolean>(row.is_mandatory ?? true);
   const [requiresReason, setRequiresReason] = useState<boolean>(row.requires_reason ?? true);
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
+  const [enablesVoice, setEnablesVoice] = useState<boolean>(!!row.enables_voice_message);
+  const [voiceTpl, setVoiceTpl] = useState<string>(row.voice_message_template ?? "");
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty;
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message || voiceTpl !== (row.voice_message_template ?? "");
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <tr className="border-b border-border last:border-0 align-top">
@@ -531,8 +534,19 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
           {agents.length === 0 && <span className="text-xs text-muted-foreground">אין נציגים</span>}
         </div>
       </td>
+      <td className="px-3 py-2 min-w-[240px]">
+        <label className="flex items-center gap-1.5 text-[11px] mb-1">
+          <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
+          מפעיל כפתור שליחת הודעה קולית
+        </label>
+        <textarea value={voiceTpl} onChange={(e) => setVoiceTpl(e.target.value)} rows={2}
+          placeholder="נוסח ההודעה שתישלח (למשל: שלום, מערכת {name} טופלה)"
+          disabled={!enablesVoice}
+          className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] disabled:opacity-50" />
+        <div className="text-[10px] text-muted-foreground mt-0.5">משתני תבנית: {"{name}"} {"{system_code}"} {"{phone}"}</div>
+      </td>
       <td className="px-3 py-2 text-left whitespace-nowrap">
-        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds })}
+        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTpl })}
           className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30">שמור</button>
         {onDelete && (
           <button onClick={onDelete} className="text-destructive hover:bg-destructive/10 rounded p-1.5 mr-1"><Trash2 className="h-4 w-4 inline" /></button>

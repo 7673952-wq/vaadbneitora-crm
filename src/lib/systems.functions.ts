@@ -1151,36 +1151,142 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
     }));
   });
 
-// Handled vs not-handled ratio for systems created within the selected period.
+// % of systems that were HANDLED within `withinDays` of being opened, among
+// systems opened in `openedPeriod`. Handled-time is derived from the first
+// status transition to a "handled" status in the activity log (falls back to
+// updated_at when no log entry exists).
 export const getHandledRatio = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { period: string }) =>
-    z.object({ period: z.enum(["day", "3days", "week", "month", "year"]) }).parse(d))
+  .inputValidator((d: { openedPeriod: string; withinDays: number }) =>
+    z.object({
+      openedPeriod: z.enum(["day", "3days", "week", "month", "year"]),
+      withinDays: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(30)]),
+    }).parse(d))
   .handler(async ({ data, context }) => {
     const hoursByPeriod: Record<string, number> = {
       day: 24, "3days": 72, week: 24 * 7, month: 24 * 30, year: 24 * 365,
     };
-    const from = new Date(Date.now() - hoursByPeriod[data.period] * 3600_000);
+    const fromOpened = new Date(Date.now() - hoursByPeriod[data.openedPeriod] * 3600_000);
 
     const { data: statusRows } = await context.supabase
       .from("status_settings").select("status_key, is_handled");
     const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
     if (handledKeys.size === 0) {
-      ["closed", "close_in_simahedrin", "block_from_root"].forEach((k) => handledKeys.add(k));
+      ["closed", "close_in_simahedrin", "block_from_root", "blocked_from_root", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
     }
 
     const { data: sys } = await context.supabase
       .from("systems")
-      .select("status")
-      .gte("created_at", from.toISOString())
-      .limit(20000);
+      .select("id, status, created_at, updated_at")
+      .gte("created_at", fromOpened.toISOString())
+      .limit(50000);
 
-    let handled = 0, notHandled = 0;
-    for (const s of (sys ?? [])) {
-      if (handledKeys.has((s as any).status)) handled++; else notHandled++;
+    const rows = (sys ?? []) as any[];
+    if (rows.length === 0) {
+      return { handledInTime: 0, notHandledInTime: 0, total: 0, withinDays: data.withinDays };
     }
-    return { handled, notHandled, total: handled + notHandled };
+
+    // Find first handled transition per system from activity log.
+    const ids = rows.map((r) => r.id);
+    const firstHandled = new Map<string, string>();
+    // Batch in chunks to avoid IN-list limits.
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      const { data: logs } = await context.supabase
+        .from("system_activity_log")
+        .select("system_id, new_value, created_at")
+        .eq("field", "status")
+        .in("system_id", chunk)
+        .order("created_at", { ascending: true })
+        .limit(20000);
+      for (const l of (logs ?? []) as any[]) {
+        if (!handledKeys.has(l.new_value)) continue;
+        if (firstHandled.has(l.system_id)) continue;
+        firstHandled.set(l.system_id, l.created_at);
+      }
+    }
+
+    const withinMs = data.withinDays * 24 * 3600_000;
+    let handledInTime = 0, notHandledInTime = 0;
+    for (const r of rows) {
+      const isHandledNow = handledKeys.has(r.status);
+      const handledAt = firstHandled.get(r.id) ?? (isHandledNow ? r.updated_at : null);
+      if (!handledAt) { notHandledInTime++; continue; }
+      const delta = new Date(handledAt).getTime() - new Date(r.created_at).getTime();
+      if (delta >= 0 && delta <= withinMs) handledInTime++;
+      else notHandledInTime++;
+    }
+    return { handledInTime, notHandledInTime, total: rows.length, withinDays: data.withinDays };
   });
+
+// --- Yemot HaMashiach: send TTS voice message to a system's caller phone ---
+export const sendVoiceMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { systemId: string }) =>
+    z.object({ systemId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const YEMOT_USERNAME = process.env.YEMOT_USERNAME;
+    const YEMOT_PASSWORD = process.env.YEMOT_PASSWORD;
+    if (!YEMOT_USERNAME || !YEMOT_PASSWORD) {
+      throw new Error("פרטי חיבור לימות המשיח לא הוגדרו (YEMOT_USERNAME / YEMOT_PASSWORD).");
+    }
+
+    const { data: sys, error: sysErr } = await context.supabase
+      .from("systems")
+      .select("id, status, caller_phone, phone, voice_message_sent_at, name, system_code")
+      .eq("id", data.systemId)
+      .maybeSingle();
+    if (sysErr) throw sysErr;
+    if (!sys) throw new Error("המערכת לא נמצאה");
+
+    const phone = String(sys.caller_phone || sys.phone || "").replace(/[^\d]/g, "");
+    if (!phone) throw new Error("אין מספר טלפון לפונה");
+
+    // Read status settings to find the template + confirm status enables voice.
+    const settings = await readStatusSettings(context.supabase);
+    const cur = settings.find((r: any) => r.status_key === sys.status) as any;
+    if (!cur?.enables_voice_message) {
+      throw new Error("הסטטוס הנוכחי לא מוגדר להפעיל שליחת הודעה קולית");
+    }
+    const template: string = (cur.voice_message_template && cur.voice_message_template.trim())
+      || `שלום, זו הודעה בנוגע למערכת ${sys.name || sys.system_code || ""}`;
+    const ttsMessage = template
+      .replace(/\{name\}/g, sys.name || "")
+      .replace(/\{system_code\}/g, sys.system_code || "")
+      .replace(/\{phone\}/g, phone);
+
+    const token = `${YEMOT_USERNAME}:${YEMOT_PASSWORD}`;
+    const url = "https://www.call2all.co.il/ym/api/SendTTS";
+    const form = new URLSearchParams();
+    form.set("token", token);
+    form.set("phones", phone);
+    form.set("ttsMessage", ttsMessage);
+
+    let res: Response;
+    try {
+      res = await fetch(url, { method: "POST", body: form });
+    } catch (e: any) {
+      throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
+    }
+    let json: any = null;
+    try { json = await res.json(); } catch { json = null; }
+    if (!res.ok || !json || json.responseStatus !== "OK") {
+      const msg = json?.message || `שליחה נכשלה (סטטוס ${res.status})`;
+      throw new Error(`ימות המשיח: ${msg}`);
+    }
+
+    const nowIso = new Date().toISOString();
+    await context.supabase.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", data.systemId);
+
+    return {
+      ok: true,
+      campaignId: json.CampaignId ?? null,
+      okCalls: json.OKCalls ?? null,
+      sentAt: nowIso,
+    };
+  });
+
 
 
 

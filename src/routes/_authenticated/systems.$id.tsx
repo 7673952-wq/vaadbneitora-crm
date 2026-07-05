@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getSystem, listAgents, listMainSystems,
   updateSystem, addNote, deleteSystem, addSubSystem,
-  setReminder, dismissReminder, setParent,
+  setReminder, dismissReminder, setParent, sendVoiceMessage,
 } from "@/lib/systems.functions";
-import { getMyRole } from "@/lib/admin.functions";
+import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
@@ -91,11 +91,14 @@ function SystemDetail() {
   const reminderFn = useServerFn(setReminder);
   const dismissFn = useServerFn(dismissReminder);
   const parentFn = useServerFn(setParent);
+  const voiceFn = useServerFn(sendVoiceMessage);
+  const statusSettingsFn = useServerFn(listStatusSettings);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn() });
+  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   const [noteText, setNoteText] = useState("");
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
@@ -195,6 +198,11 @@ function SystemDetail() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const voiceMut = useMutation({
+    mutationFn: (systemId: string) => voiceFn({ data: { systemId } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
+    onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
+  });
 
   useEffect(() => {
     const ids: string[] = (data?.system as any)?.reminder_agent_ids ?? [];
@@ -206,6 +214,9 @@ function SystemDetail() {
   const s = data.system;
   const isSub = !!s.parent_system_id;
   const headerCard = statusCardClasses(s.status);
+  const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
+  const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
+  const voiceAlreadySent = !!s.voice_message_sent_at;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -303,6 +314,33 @@ function SystemDetail() {
                   {copiedKey === "caller"
                     ? <Check className="h-4 w-4 text-emerald-600" />
                     : <Copy className="h-4 w-4" />}
+                </button>
+                <button
+                  type="button"
+                  disabled={!voiceEnabled || voiceMut.isPending}
+                  onClick={() => {
+                    const confirmMsg = voiceAlreadySent
+                      ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
+                      : "לשלוח הודעה קולית לפונה כעת?";
+                    if (!window.confirm(confirmMsg)) return;
+                    voiceMut.mutate(id);
+                  }}
+                  title={
+                    !voiceEnabled
+                      ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
+                      : voiceAlreadySent
+                        ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
+                        : "שליחת הודעה קולית לפונה דרך ימות המשיח"
+                  }
+                  className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition ${
+                    !voiceEnabled
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : voiceAlreadySent
+                        ? "bg-amber-500 text-white hover:bg-amber-600"
+                        : "bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                  }`}>
+                  <Volume2 className="h-4 w-4" />
+                  {voiceMut.isPending ? "שולח…" : voiceAlreadySent ? "שלח שוב הודעה קולית" : "שלח הודעה קולית"}
                 </button>
               </div>
             )}

@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getSystem, listAgents, listMainSystems,
   updateSystem, addNote, deleteSystem, addSubSystem,
-  setReminder, dismissReminder, setParent,
+  setReminder, dismissReminder, setParent, sendVoiceMessage,
 } from "@/lib/systems.functions";
-import { getMyRole } from "@/lib/admin.functions";
+import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
@@ -20,7 +20,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
@@ -91,11 +91,14 @@ function SystemDetail() {
   const reminderFn = useServerFn(setReminder);
   const dismissFn = useServerFn(dismissReminder);
   const parentFn = useServerFn(setParent);
+  const voiceFn = useServerFn(sendVoiceMessage);
+  const statusSettingsFn = useServerFn(listStatusSettings);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn() });
+  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   const [noteText, setNoteText] = useState("");
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
@@ -194,6 +197,11 @@ function SystemDetail() {
       toast.success("המבנה עודכן");
     },
     onError: (e: any) => toast.error(e.message),
+  });
+  const voiceMut = useMutation({
+    mutationFn: (systemId: string) => voiceFn({ data: { systemId } }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
+    onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
   });
 
   useEffect(() => {

@@ -12,6 +12,8 @@ export type StatusSettingRow = {
   is_mandatory: boolean;
   requires_reason: boolean;
   assigned_agent_ids: string[];
+  enables_voice_message: boolean;
+  voice_message_template: string;
 };
 
 const STATUS_SETTINGS_CONFIG_KEY = "status_settings_config";
@@ -69,6 +71,8 @@ export function defaultStatusRows(): StatusSettingRow[] {
     is_mandatory: isDefaultMandatory(status_key),
     requires_reason: isDefaultRequiresReason(status_key),
     assigned_agent_ids: [],
+    enables_voice_message: false,
+    voice_message_template: "",
   }));
 }
 
@@ -88,6 +92,8 @@ function normalizeRows(rows: unknown): StatusSettingRow[] {
         is_mandatory: typeof row.is_mandatory === "boolean" ? row.is_mandatory : isDefaultMandatory(statusKey),
         requires_reason: typeof row.requires_reason === "boolean" ? row.requires_reason : isDefaultRequiresReason(statusKey),
         assigned_agent_ids: normalizeAgentIds(row.assigned_agent_ids),
+        enables_voice_message: row.enables_voice_message === true,
+        voice_message_template: typeof row.voice_message_template === "string" ? row.voice_message_template : "",
       };
     })
     .sort((a, b) => a.sort_order - b.sort_order);
@@ -158,9 +164,10 @@ export async function writeStatusSettingsConfig(supabaseAdmin: SupabaseLike, row
 }
 
 async function bestEffortMirrorStatusTable(supabaseAdmin: SupabaseLike, rows: StatusSettingRow[]) {
-  // The mirror table does not have a `requires_reason` column — always strip
-  // it before writing. Source of truth is the app_settings JSON blob.
-  const forTable = rows.map(({ requires_reason: _rr, ...row }) => row);
+  // The mirror table does not have `requires_reason`, `enables_voice_message`,
+  // or `voice_message_template` columns — always strip before writing. Source
+  // of truth is the app_settings JSON blob.
+  const forTable = rows.map(({ requires_reason: _rr, enables_voice_message: _evm, voice_message_template: _vmt, ...row }) => row);
   try {
     const { error } = await supabaseAdmin.from("status_settings").upsert(forTable, { onConflict: "status_key" } as any);
     if (!error) return;
@@ -189,6 +196,8 @@ export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, pat
         is_mandatory: isDefaultMandatory(patch.status_key),
         requires_reason: isDefaultRequiresReason(patch.status_key),
         assigned_agent_ids: [],
+        enables_voice_message: false,
+        voice_message_template: "",
       };
   const [merged] = normalizeRows([{ ...existing, ...patch }]);
   if (!merged) return rows;

@@ -315,6 +315,33 @@ function SystemDetail() {
                     ? <Check className="h-4 w-4 text-emerald-600" />
                     : <Copy className="h-4 w-4" />}
                 </button>
+                <button
+                  type="button"
+                  disabled={!voiceEnabled || voiceMut.isPending}
+                  onClick={() => {
+                    const confirmMsg = voiceAlreadySent
+                      ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
+                      : "לשלוח הודעה קולית לפונה כעת?";
+                    if (!window.confirm(confirmMsg)) return;
+                    voiceMut.mutate(id);
+                  }}
+                  title={
+                    !voiceEnabled
+                      ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
+                      : voiceAlreadySent
+                        ? `נשלח: ${new Date(s.voice_message_sent_at).toLocaleString("he-IL")}`
+                        : "שליחת הודעה קולית לפונה דרך ימות המשיח"
+                  }
+                  className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition ${
+                    !voiceEnabled
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : voiceAlreadySent
+                        ? "bg-amber-500 text-white hover:bg-amber-600"
+                        : "bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                  }`}>
+                  <Volume2 className="h-4 w-4" />
+                  {voiceMut.isPending ? "שולח…" : voiceAlreadySent ? "שלח שוב הודעה קולית" : "שלח הודעה קולית"}
+                </button>
               </div>
             )}
             {s.phone && (

@@ -284,7 +284,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[] }) =>
+  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[]; enables_voice_message?: boolean; voice_message_template?: string }) =>
     z.object({
       status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
       label: z.string().min(1).max(100),
@@ -295,6 +295,8 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       is_mandatory: z.boolean().optional(),
       requires_reason: z.boolean().optional(),
       assigned_agent_ids: z.array(z.string().uuid()).max(50).optional(),
+      enables_voice_message: z.boolean().optional(),
+      voice_message_template: z.string().max(2000).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -311,6 +313,8 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.is_mandatory !== undefined) patch.is_mandatory = data.is_mandatory;
     if (data.requires_reason !== undefined) patch.requires_reason = data.requires_reason;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
+    if (data.enables_voice_message !== undefined) patch.enables_voice_message = data.enables_voice_message;
+    if (data.voice_message_template !== undefined) patch.voice_message_template = data.voice_message_template;
     await upsertStatusSettingStable(supabaseAdmin, patch, context.userId);
     return { ok: true };
   });

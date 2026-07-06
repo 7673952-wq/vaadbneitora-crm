@@ -1226,13 +1226,6 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     z.object({ systemId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    // Yemot API "token" per official docs: either an API key generated in the
-    // Yemot management UI, or the classic `<system_number>:<password>` string.
-    // We accept whatever the user pastes into YEMOT_TOKEN and forward it as-is.
-    const YEMOT_TOKEN = process.env.YEMOT_TOKEN;
-    if (!YEMOT_TOKEN) {
-      throw new Error("מפתח API של ימות המשיח לא הוגדר (YEMOT_TOKEN).");
-    }
 
     const { data: sys, error: sysErr } = await context.supabase
       .from("systems")
@@ -1245,11 +1238,15 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     const phone = String(sys.caller_phone || sys.phone || "").replace(/[^\d]/g, "");
     if (!phone) throw new Error("אין מספר טלפון לפונה");
 
-    // Read status settings to find the template + confirm status enables voice.
+    // Read status settings to find the API key + template for this status.
     const settings = await readStatusSettings(context.supabase);
     const cur = settings.find((r: any) => r.status_key === sys.status) as any;
     if (!cur?.enables_voice_message) {
       throw new Error("הסטטוס הנוכחי לא מוגדר להפעיל שליחת הודעה קולית");
+    }
+    const token: string = (cur.voice_message_api_key || "").trim();
+    if (!token) {
+      throw new Error("לא הוגדר מפתח API של ימות המשיח עבור הסטטוס הזה — יש להזין בניהול > סטטוסים");
     }
     const template: string = (cur.voice_message_template && cur.voice_message_template.trim())
       || `שלום, זו הודעה בנוגע למערכת ${sys.name || sys.system_code || ""}`;
@@ -1258,7 +1255,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
       .replace(/\{system_code\}/g, sys.system_code || "")
       .replace(/\{phone\}/g, phone);
 
-    const token = YEMOT_TOKEN;
+
     const url = "https://www.call2all.co.il/ym/api/SendTTS";
     const form = new URLSearchParams();
     form.set("token", token);

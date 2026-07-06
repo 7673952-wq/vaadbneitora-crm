@@ -1226,10 +1226,12 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     z.object({ systemId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const YEMOT_USERNAME = process.env.YEMOT_USERNAME;
-    const YEMOT_PASSWORD = process.env.YEMOT_PASSWORD;
-    if (!YEMOT_USERNAME || !YEMOT_PASSWORD) {
-      throw new Error("פרטי חיבור לימות המשיח לא הוגדרו (YEMOT_USERNAME / YEMOT_PASSWORD).");
+    // Yemot API "token" per official docs: either an API key generated in the
+    // Yemot management UI, or the classic `<system_number>:<password>` string.
+    // We accept whatever the user pastes into YEMOT_TOKEN and forward it as-is.
+    const YEMOT_TOKEN = process.env.YEMOT_TOKEN;
+    if (!YEMOT_TOKEN) {
+      throw new Error("מפתח API של ימות המשיח לא הוגדר (YEMOT_TOKEN).");
     }
 
     const { data: sys, error: sysErr } = await context.supabase
@@ -1256,7 +1258,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
       .replace(/\{system_code\}/g, sys.system_code || "")
       .replace(/\{phone\}/g, phone);
 
-    const token = `${YEMOT_USERNAME}:${YEMOT_PASSWORD}`;
+    const token = YEMOT_TOKEN;
     const url = "https://www.call2all.co.il/ym/api/SendTTS";
     const form = new URLSearchParams();
     form.set("token", token);

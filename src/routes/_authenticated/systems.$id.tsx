@@ -332,15 +332,17 @@ function SystemDetail() {
                         ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
                         : "שליחת הודעה קולית לפונה דרך ימות המשיח"
                   }
-                  className={`flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg transition ${
+                  aria-label="שלח הודעה קולית"
+                  className={`p-2 border rounded-lg transition ${
                     !voiceEnabled
-                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      ? "border-border bg-background text-muted-foreground/50 cursor-not-allowed"
                       : voiceAlreadySent
-                        ? "bg-amber-500 text-white hover:bg-amber-600"
-                        : "bg-fuchsia-600 text-white hover:bg-fuchsia-700"
+                        ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
+                        : "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
                   }`}>
-                  <Volume2 className="h-4 w-4" />
-                  {voiceMut.isPending ? "שולח…" : voiceAlreadySent ? "שלח שוב הודעה קולית" : "שלח הודעה קולית"}
+                  {voiceMut.isPending
+                    ? <span className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                    : <Volume2 className="h-4 w-4" />}
                 </button>
               </div>
             )}

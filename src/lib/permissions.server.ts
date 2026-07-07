@@ -149,11 +149,19 @@ function defaultRolePermissionRows() {
 
 function normalizePermissionSettings(value: unknown): StoredPermissionSettings {
   const v = (value ?? {}) as Partial<StoredPermissionSettings>;
-  const rolePermissions = Array.isArray(v.rolePermissions) && v.rolePermissions.length
+  // Merge stored rows with defaults so that newly-added permissions (e.g.
+  // system_name_edit, system_code_edit) always get their correct default
+  // values even when the stored blob pre-dates their addition.
+  // Stored rows win; defaults fill any gap.
+  const storedRows = Array.isArray(v.rolePermissions)
     ? v.rolePermissions
         .filter((r: any) => ROLE_HIERARCHY.includes(r?.role) && isPermissionKey(r?.permission) && typeof r?.allowed === "boolean")
-        .map((r: any) => ({ role: r.role, permission: r.permission, allowed: r.allowed }))
-    : defaultRolePermissionRows();
+        .map((r: any) => ({ role: r.role as Role, permission: r.permission as PermissionKey, allowed: r.allowed as boolean }))
+    : [];
+  const storedSet = new Set(storedRows.map((r) => `${r.role}:${r.permission}`));
+  const filledDefaults = defaultRolePermissionRows().filter((r) => !storedSet.has(`${r.role}:${r.permission}`));
+  const rolePermissions = [...storedRows, ...filledDefaults];
+
   const userPermissions = Array.isArray(v.userPermissions)
     ? v.userPermissions
         .filter((r: any) => typeof r?.user_id === "string" && isPermissionKey(r?.permission) && typeof r?.allowed === "boolean")

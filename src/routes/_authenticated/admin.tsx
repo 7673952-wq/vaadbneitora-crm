@@ -438,19 +438,20 @@ function StatusSettingsPanel() {
       )}
 
       <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+        <div className="overflow-x-auto">
+        <table className="w-full text-sm" style={{ minWidth: "1100px" }}>
           <thead className="bg-muted/50 border-b border-border">
             <tr className="text-right">
               <th className="px-3 py-2 font-medium text-muted-foreground w-16">#</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">תצוגה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">תווית</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">שורה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">סיבה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-36">תצוגה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-48">תווית</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-28">צבע</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-24">מצב</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-28">שורה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-28">סיבה</th>
               <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">הודעה קולית</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-52">הודעה קולית</th>
+              <th className="px-3 py-2 w-20"></th>
             </tr>
           </thead>
           <tbody>
@@ -463,6 +464,7 @@ function StatusSettingsPanel() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -485,11 +487,17 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   return (
     <tr className="border-b border-border last:border-0 align-top">
       <td className="px-3 py-2">
-        <div className="flex items-center gap-1">
-          <span className="text-sm font-mono w-6">{index + 1}</span>
-          <div className="flex flex-col">
-            <button onClick={() => onMove(-1)} disabled={index === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowUp className="h-3 w-3" /></button>
-            <button onClick={() => onMove(1)} disabled={index === total - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowDown className="h-3 w-3" /></button>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-mono w-6 shrink-0">{index + 1}</span>
+          <div className="flex flex-col gap-0.5">
+            <button onClick={() => onMove(-1)} disabled={index === 0}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+              <ArrowUp className="h-4 w-4" />
+            </button>
+            <button onClick={() => onMove(1)} disabled={index === total - 1}
+              className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed transition-colors">
+              <ArrowDown className="h-4 w-4" />
+            </button>
           </div>
         </div>
       </td>
@@ -497,7 +505,7 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(tone)}`}>{label || row.status_key}</span>
         <div className="text-[10px] font-mono text-muted-foreground mt-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
       </td>
-      <td className="px-3 py-2"><input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm" /></td>
+      <td className="px-3 py-2 min-w-[180px]"><input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full min-w-[160px] rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></td>
       <td className="px-3 py-2">
         <select value={tone} onChange={(e) => setTone(e.target.value)} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
           {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}

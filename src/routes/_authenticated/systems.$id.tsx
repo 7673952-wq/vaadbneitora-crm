@@ -213,7 +213,7 @@ function SystemDetail() {
   if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
   const s = data.system;
   const isSub = !!s.parent_system_id;
-  void statusCardClasses;
+  
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
   const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
   const voiceAlreadySent = !!s.voice_message_sent_at;

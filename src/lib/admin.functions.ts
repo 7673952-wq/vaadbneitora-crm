@@ -65,19 +65,11 @@ type PermissionSettingsValue = {
 
 function normalizePermissionSettings(value: unknown): PermissionSettingsValue {
   const v = (value ?? {}) as Partial<PermissionSettingsValue>;
-  // Merge stored rows with defaults so that newly-added permissions (e.g.
-  // system_name_edit, system_code_edit) always get their correct default
-  // values even when the stored blob pre-dates their addition.
-  // Stored rows win; defaults fill any gap.
-  const storedRows = Array.isArray(v.rolePermissions)
+  const rolePermissions = Array.isArray(v.rolePermissions) && v.rolePermissions.length
     ? v.rolePermissions
         .filter((r: any) => ROLES.includes(r?.role) && PERMISSION_KEYS.includes(r?.permission) && typeof r?.allowed === "boolean")
-        .map((r: any) => ({ role: r.role, permission: r.permission, allowed: r.allowed, updated_at: r.updated_at as string | undefined, updated_by: r.updated_by ?? null }))
-    : [];
-  const storedSet = new Set(storedRows.map((r) => `${r.role}:${r.permission}`));
-  const filledDefaults = DEFAULT_ROLE_PERMISSION_ROWS.filter((r) => !storedSet.has(`${r.role}:${r.permission}`));
-  const rolePermissions = [...storedRows, ...filledDefaults];
-
+        .map((r: any) => ({ role: r.role, permission: r.permission, allowed: r.allowed, updated_at: r.updated_at, updated_by: r.updated_by ?? null }))
+    : DEFAULT_ROLE_PERMISSION_ROWS;
   const userPermissions = Array.isArray(v.userPermissions)
     ? v.userPermissions
         .filter((r: any) => typeof r?.user_id === "string" && PERMISSION_KEYS.includes(r?.permission) && typeof r?.allowed === "boolean")
@@ -110,7 +102,7 @@ async function seedMissingRolePermissions() {
   const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
     viewer: { systems_read: true },
     agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true },
-    admin: { systems_read: true, systems_write: true, system_name_edit: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true },
+    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true },
     super_admin: Object.fromEntries(PERMISSION_KEYS.map((p) => [p, true])) as Record<(typeof PERMISSION_KEYS)[number], boolean>,
   };
   const rows = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({

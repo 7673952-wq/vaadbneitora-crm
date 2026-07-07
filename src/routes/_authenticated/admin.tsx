@@ -535,20 +535,25 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
           {agents.length === 0 && <span className="text-xs text-muted-foreground">אין נציגים</span>}
         </div>
       </td>
-      <td className="px-3 py-2 min-w-[260px]">
+      <td className="px-3 py-2 min-w-[220px]">
         <label className="flex items-center gap-1.5 text-[11px] mb-1">
           <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
           מפעיל כפתור שליחת הודעה קולית
         </label>
-        <input type="password" value={voiceKey} onChange={(e) => setVoiceKey(e.target.value)}
-          placeholder="מפתח API של ימות המשיח"
-          disabled={!enablesVoice} autoComplete="off"
-          className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] disabled:opacity-50 mb-1 font-mono" />
-        <textarea value={voiceTpl} onChange={(e) => setVoiceTpl(e.target.value)} rows={2}
-          placeholder="נוסח ההודעה שתישלח (למשל: שלום, מערכת {name} טופלה)"
+        <input
+          type="text"
+          inputMode="numeric"
+          value={voiceKey}
+          onChange={(e) => setVoiceKey(e.target.value.replace(/[^\d]/g, ""))}
+          placeholder="מזהה קמפיין (templateId)"
           disabled={!enablesVoice}
-          className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] disabled:opacity-50" />
-        <div className="text-[10px] text-muted-foreground mt-0.5">משתני תבנית: {"{name}"} {"{system_code}"} {"{phone}"}</div>
+          autoComplete="off"
+          className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] disabled:opacity-50 font-mono"
+        />
+        <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
+          מזהה קמפיין שהוגדר במערכת ימות המשיח.<br/>
+          נוסח ההודעה מוגדר בתוך הקמפיין עצמו.
+        </div>
       </td>
       <td className="px-3 py-2 text-left whitespace-nowrap">
         <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTpl, voice_message_api_key: voiceKey })}

@@ -1219,13 +1219,21 @@ export const getHandledRatio = createServerFn({ method: "POST" })
     return { handledInTime, notHandledInTime, total: rows.length, withinDays: data.withinDays };
   });
 
-// --- Yemot HaMashiach: send TTS voice message to a system's caller phone ---
+// --- Yemot HaMashiach: run a pre-configured campaign for the system's caller phone ---
+// Uses the RunCampaign API — the message text lives inside Yemot as a
+// campaign template; we only pass templateId + phones.
+// Docs: https://f2.freeivr.co.il/topic/55
 export const sendVoiceMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { systemId: string }) =>
     z.object({ systemId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
+
+    const apiKey = (process.env.YEMOT_API_KEY || "").trim();
+    if (!apiKey) {
+      throw new Error("מפתח ה־API של ימות המשיח לא מוגדר בשרת (YEMOT_API_KEY)");
+    }
 
     const { data: sys, error: sysErr } = await context.supabase
       .from("systems")
@@ -1238,40 +1246,39 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     const phone = String(sys.caller_phone || sys.phone || "").replace(/[^\d]/g, "");
     if (!phone) throw new Error("אין מספר טלפון לפונה");
 
-    // Read status settings to find the API key + template for this status.
+    // Read status settings to find the templateId for this status.
+    // We reuse the existing `voice_message_api_key` column as the templateId
+    // storage (backwards-compatible; the column just holds a numeric string).
     const settings = await readStatusSettings(context.supabase);
     const cur = settings.find((r: any) => r.status_key === sys.status) as any;
     if (!cur?.enables_voice_message) {
       throw new Error("הסטטוס הנוכחי לא מוגדר להפעיל שליחת הודעה קולית");
     }
-    const token: string = (cur.voice_message_api_key || "").trim();
-    if (!token) {
-      throw new Error("לא הוגדר מפתח API של ימות המשיח עבור הסטטוס הזה — יש להזין בניהול > סטטוסים");
+    const templateIdRaw: string = String(cur.voice_message_api_key || "").trim();
+    const templateId = Number(templateIdRaw);
+    if (!templateIdRaw || !Number.isFinite(templateId) || templateId <= 0) {
+      throw new Error("לא הוגדר מזהה קמפיין (templateId) עבור הסטטוס הזה — יש להזין בניהול > סטטוסים");
     }
-    const template: string = (cur.voice_message_template && cur.voice_message_template.trim())
-      || `שלום, זו הודעה בנוגע למערכת ${sys.name || sys.system_code || ""}`;
-    const ttsMessage = template
-      .replace(/\{name\}/g, sys.name || "")
-      .replace(/\{system_code\}/g, sys.system_code || "")
-      .replace(/\{phone\}/g, phone);
 
-
-    const url = "https://www.call2all.co.il/ym/api/SendTTS";
-    const form = new URLSearchParams();
-    form.set("token", token);
-    form.set("phones", phone);
-    form.set("ttsMessage", ttsMessage);
-
+    const url = "https://www.call2all.co.il/ym/api/RunCampaign";
     let res: Response;
     try {
-      res = await fetch(url, { method: "POST", body: form });
+      res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "authorization": apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ templateId, phones: phone }),
+      });
     } catch (e: any) {
       throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
     }
     let json: any = null;
     try { json = await res.json(); } catch { json = null; }
-    if (!res.ok || !json || json.responseStatus !== "OK") {
-      const msg = json?.message || `שליחה נכשלה (סטטוס ${res.status})`;
+    const ok = res.ok && json && (json.responseStatus === "OK" || json.success === true);
+    if (!ok) {
+      const msg = json?.message || json?.responseMessage || `שליחה נכשלה (סטטוס ${res.status})`;
       throw new Error(`ימות המשיח: ${msg}`);
     }
 
@@ -1280,8 +1287,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
 
     return {
       ok: true,
-      campaignId: json.CampaignId ?? null,
-      okCalls: json.OKCalls ?? null,
+      campaignId: json?.CampaignId ?? json?.campaignId ?? null,
       sentAt: nowIso,
     };
   });

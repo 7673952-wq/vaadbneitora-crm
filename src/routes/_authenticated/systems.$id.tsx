@@ -251,134 +251,148 @@ function SystemDetail() {
         </div>
       )}
 
-      <div className={`border-2 rounded-2xl p-6 transition ${headerCard}`}>
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            {me?.isSuperAdmin ? (
-              <input
-                defaultValue={s.system_code || ""}
-                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
-                className="text-base font-mono font-semibold opacity-90 bg-white/40 rounded px-2 py-1 border border-current/20 w-48"
-                title="מזהה מערכת (ניתן לעריכה ע״י מנהל ראשי)"
-              />
-            ) : (
-              <div className="text-base font-mono font-semibold opacity-90">{s.system_code}</div>
-            )}
-            {me?.isSuperAdmin ? (
-              <input
-                defaultValue={s.name || ""}
-                onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
-                className="text-3xl font-bold tracking-tight mt-1 bg-transparent border-b border-current/20 focus:outline-none focus:border-current w-full"
-              />
-            ) : (
-              <h1 className="text-3xl font-bold tracking-tight mt-1">{s.name}</h1>
-            )}
-            <div className="mt-3 flex items-center gap-3 flex-wrap">
-              <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
-                {STATUS_LABEL[s.status as SystemStatus]}
-              </span>
-              <span className="text-sm opacity-80">נציג: <span className="font-medium">{s.agent_name || "לא משויך"}</span></span>
-              {isSub && <span className="text-xs bg-white/60 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
-              {s.created_at && (
-                <span className="text-xs opacity-75">
-                  נפתחה: <span className="font-medium">{new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-                </span>
-              )}
+      {(() => {
+        const cardTone = statusCardClasses(s.status);
+        const accentBorder = cardTone.split(" ").find((c) => /^border-[a-z]+-\d+$/.test(c)) ?? "border-border";
+        const btnBase = "inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md transition";
+        const iconBtn = "inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent transition";
+        return (
+          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-stretch">
+              {/* Title zone with status accent on the right (RTL start) */}
+              <div className={`flex-1 min-w-0 border-r-4 ${accentBorder} p-5`}>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className={`text-[11px] rounded-full px-2.5 py-0.5 font-medium ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
+                    {STATUS_LABEL[s.status as SystemStatus]}
+                  </span>
+                  {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
+                  {me?.isSuperAdmin ? (
+                    <input
+                      defaultValue={s.system_code || ""}
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
+                      className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5 border border-border w-36 focus:outline-none focus:border-primary"
+                      title="מזהה מערכת"
+                    />
+                  ) : (
+                    <span className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5">{s.system_code}</span>
+                  )}
+                </div>
+                {me?.isSuperAdmin ? (
+                  <input
+                    defaultValue={s.name || ""}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
+                    className="text-2xl md:text-3xl font-bold tracking-tight mt-2 bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none w-full"
+                  />
+                ) : (
+                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight mt-2 truncate">{s.name}</h1>
+                )}
+                <div className="mt-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-muted-foreground">
+                  <span>נציג: <span className="font-medium text-foreground">{s.agent_name || "לא משויך"}</span></span>
+                  {s.created_at && (
+                    <span>
+                      נפתחה: <span className="font-medium text-foreground">{new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Actions zone */}
+              <div className="p-5 lg:border-r lg:border-border bg-muted/20 flex flex-wrap gap-2 lg:min-w-[320px] lg:justify-end items-start content-start">
+                {s.system_code && (
+                  <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                    <a href={`tel:${buildDialNumber(s.system_code)}`}
+                      className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>חיוג מערכת</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(s.system_code, "code", "מזהה המערכת")}
+                      title="העתק מזהה מערכת"
+                      className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
+                      {copiedKey === "code" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                )}
+                {s.caller_phone && (
+                  <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                    <a href={`tel:${buildDialNumber(s.caller_phone)}`}
+                      className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>חיוג פונה</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
+                      title="העתק מספר פונה"
+                      className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
+                      {copiedKey === "caller" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!voiceEnabled || voiceMut.isPending}
+                      onClick={() => {
+                        const confirmMsg = voiceAlreadySent
+                          ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
+                          : "לשלוח הודעה קולית לפונה כעת?";
+                        if (!window.confirm(confirmMsg)) return;
+                        voiceMut.mutate(id);
+                      }}
+                      title={
+                        !voiceEnabled
+                          ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
+                          : voiceAlreadySent
+                            ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
+                            : "שליחת הודעה קולית לפונה דרך ימות המשיח"
+                      }
+                      aria-label="שלח הודעה קולית"
+                      className={`inline-flex items-center justify-center h-9 w-9 border-r border-border transition ${
+                        !voiceEnabled
+                          ? "bg-background text-muted-foreground/40 cursor-not-allowed"
+                          : voiceAlreadySent
+                            ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
+                      }`}>
+                      {voiceMut.isPending
+                        ? <span className="inline-block h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        : <Volume2 className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                )}
+                {s.phone && (
+                  <a href={`tel:${s.phone}`}
+                    className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm`}>
+                    <Phone className="h-3.5 w-3.5" />
+                    חיוג {s.phone}
+                  </a>
+                )}
+                {me?.isSuperAdmin && (
+                  <button onClick={() => {
+                    const childCount = data.children?.length ?? 0;
+                    if (childCount === 0) {
+                      if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } });
+                      return;
+                    }
+                    const choice = window.prompt(
+                      `למערכת זו יש ${childCount} תתי-מערכות.\n\n` +
+                      `הקלד "הכל" כדי למחוק את המערכת ואת כל תתי-המערכות.\n` +
+                      `הקלד "קדם" כדי למחוק רק את המערכת הראשית — תת-מערכת אחת תהפוך לראשית ותכלול את השאר.\n` +
+                      `השאר ריק כדי לבטל.`,
+                      "",
+                    )?.trim();
+                    if (choice === "הכל") {
+                      deleteMut.mutate({ data: { id, mode: "cascade" } });
+                    } else if (choice === "קדם") {
+                      deleteMut.mutate({ data: { id, mode: "promote" } });
+                    }
+                  }}
+                    title="מחק מערכת"
+                    aria-label="מחק מערכת"
+                    className={`${iconBtn} hover:!text-destructive hover:!bg-destructive/10 hover:!border-destructive/30`}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {s.system_code && (
-              <div className="flex items-center gap-1">
-                <a href={`tel:${buildDialNumber(s.system_code)}`}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
-                  <Phone className="h-4 w-4" />חיוג {s.system_code}
-                </a>
-                <button onClick={() => copyToClipboard(s.system_code, "code", "מזהה המערכת")}
-                  title="העתק מזהה מערכת"
-                  className="p-2 border border-border rounded-lg hover:bg-accent text-muted-foreground">
-                  {copiedKey === "code"
-                    ? <Check className="h-4 w-4 text-emerald-600" />
-                    : <Copy className="h-4 w-4" />}
-                </button>
-              </div>
-            )}
-            {s.caller_phone && (
-              <div className="flex items-center gap-1">
-                <a href={`tel:${buildDialNumber(s.caller_phone)}`}
-                  className="flex items-center gap-2 px-3 py-2 text-sm bg-sky-600 text-white rounded-lg hover:bg-sky-700">
-                  <Phone className="h-4 w-4" />חיוג פונה {s.caller_phone}
-                </a>
-                <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
-                  title="העתק מספר פונה"
-                  className="p-2 border border-border rounded-lg hover:bg-accent text-muted-foreground">
-                  {copiedKey === "caller"
-                    ? <Check className="h-4 w-4 text-emerald-600" />
-                    : <Copy className="h-4 w-4" />}
-                </button>
-                <button
-                  type="button"
-                  disabled={!voiceEnabled || voiceMut.isPending}
-                  onClick={() => {
-                    const confirmMsg = voiceAlreadySent
-                      ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
-                      : "לשלוח הודעה קולית לפונה כעת?";
-                    if (!window.confirm(confirmMsg)) return;
-                    voiceMut.mutate(id);
-                  }}
-                  title={
-                    !voiceEnabled
-                      ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
-                      : voiceAlreadySent
-                        ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
-                        : "שליחת הודעה קולית לפונה דרך ימות המשיח"
-                  }
-                  aria-label="שלח הודעה קולית"
-                  className={`p-2 border rounded-lg transition ${
-                    !voiceEnabled
-                      ? "border-border bg-background text-muted-foreground/50 cursor-not-allowed"
-                      : voiceAlreadySent
-                        ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100"
-                        : "border-fuchsia-300 bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
-                  }`}>
-                  {voiceMut.isPending
-                    ? <span className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                    : <Volume2 className="h-4 w-4" />}
-                </button>
-              </div>
-            )}
-            {s.phone && (
-              <a href={`tel:${s.phone}`}
-                className="flex items-center gap-2 px-3 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
-                <Phone className="h-4 w-4" />חיוג {s.phone}
-              </a>
-            )}
-            {me?.isSuperAdmin && (
-              <button onClick={() => {
-                const childCount = data.children?.length ?? 0;
-                if (childCount === 0) {
-                  if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } });
-                  return;
-                }
-                const choice = window.prompt(
-                  `למערכת זו יש ${childCount} תתי-מערכות.\n\n` +
-                  `הקלד "הכל" כדי למחוק את המערכת ואת כל תתי-המערכות.\n` +
-                  `הקלד "קדם" כדי למחוק רק את המערכת הראשית — תת-מערכת אחת תהפוך לראשית ותכלול את השאר.\n` +
-                  `השאר ריק כדי לבטל.`,
-                  "",
-                )?.trim();
-                if (choice === "הכל") {
-                  deleteMut.mutate({ data: { id, mode: "cascade" } });
-                } else if (choice === "קדם") {
-                  deleteMut.mutate({ data: { id, mode: "promote" } });
-                }
-              }}
-                className="flex items-center gap-2 px-3 py-2 text-sm text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 bg-white/70">
-                <Trash2 className="h-4 w-4" />מחק
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* ===== פרטים ===== */}
       <div className="bg-card border border-border rounded-2xl p-6">

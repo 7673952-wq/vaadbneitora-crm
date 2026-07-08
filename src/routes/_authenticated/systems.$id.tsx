@@ -338,7 +338,7 @@ function SystemDetail() {
                       }}
                       title={
                         !voiceEnabled
-                          ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
+                          ? "לא ניתן לשלוח הודעה בסטטוס זה"
                           : voiceAlreadySent
                             ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
                             : "שליחת הודעה קולית לפונה דרך ימות המשיח"

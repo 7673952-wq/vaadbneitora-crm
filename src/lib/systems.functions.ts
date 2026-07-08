@@ -1036,12 +1036,31 @@ export const findSystemByCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { code: string }) => z.object({ code: z.string().min(1).max(60) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: row } = await context.supabase
+    // Try exact match first.
+    const exact = await context.supabase
       .from("systems")
       .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
       .eq("system_code", data.code)
       .maybeSingle();
-    return row ?? null;
+    if (exact.data) return exact.data;
+
+    // Fallback: try the reversed digits (without prefix). e.g. user typed
+    // "072123456" but system stored as reverse: strip 0/972 prefix, reverse,
+    // then look up all systems whose stripped code equals the reversed form.
+    const digits = String(data.code).replace(/\D/g, "");
+    const stripped = digits.replace(/^972/, "").replace(/^0+/, "");
+    if (stripped.length < 2) return null;
+    const reversed = stripped.split("").reverse().join("");
+    if (reversed === stripped) return null;
+
+    // Match by any variant that resolves to the reversed stripped form.
+    const candidates = [reversed, "0" + reversed, "972" + reversed];
+    const { data: rows } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
+      .in("system_code", candidates as any)
+      .limit(1);
+    return (rows && rows[0]) || null;
   });
 
 // Ensures a persistent ROOT system with the given name exists (used for

@@ -484,8 +484,8 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   return (
     <tr className="border-b border-border last:border-0 align-top">
       <td className="px-3 py-2">
-        <div className="flex items-center gap-1">
-          <span className="text-sm font-mono w-6">{index + 1}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-mono w-6 text-muted-foreground">{index + 1}</span>
           <div className="flex flex-col">
             <button onClick={() => onMove(-1)} disabled={index === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowUp className="h-3 w-3" /></button>
             <button onClick={() => onMove(1)} disabled={index === total - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowDown className="h-3 w-3" /></button>
@@ -493,10 +493,14 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         </div>
       </td>
       <td className="px-3 py-2">
-        <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(tone)}`}>{label || row.status_key}</span>
-        <div className="text-[10px] font-mono text-muted-foreground mt-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(tone)}`}>{(label || row.status_key).slice(0,2)}</span>
+          <input value={label} onChange={(e) => setLabel(e.target.value)}
+            placeholder="שם הסטטוס"
+            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium" />
+        </div>
+        <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
       </td>
-      <td className="px-3 py-2"><input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm" /></td>
       <td className="px-3 py-2">
         <select value={tone} onChange={(e) => setTone(e.target.value)} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
           {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}

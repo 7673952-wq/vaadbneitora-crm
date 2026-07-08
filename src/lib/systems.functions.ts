@@ -1258,18 +1258,20 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
       throw new Error("מפתח ה־API של ימות המשיח לא מוגדר בשרת (YEMOT_API_KEY)");
     }
 
-    const { data: sys, error: sysErr } = await context.supabase
+    const { data: sysRow, error: sysErr } = await context.supabase
       .from("systems")
-      .select("id, status, caller_phone, phone, voice_message_sent_at, additional_caller_phones, name, system_code")
+      .select("*")
       .eq("id", data.systemId)
       .maybeSingle();
     if (sysErr) throw sysErr;
-    if (!sys) throw new Error("המערכת לא נמצאה");
+    if (!sysRow) throw new Error("המערכת לא נמצאה");
+    const sys = sysRow as any;
 
     const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
-    const additional = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
+    const additional = Array.isArray(sys.additional_caller_phones)
+      ? (sys.additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
       : [];
+
 
     let rawPhone = "";
     if (idx < 0) {

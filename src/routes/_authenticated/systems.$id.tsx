@@ -201,10 +201,16 @@ function SystemDetail() {
     onError: (e: any) => toast.error(e.message),
   });
   const voiceMut = useMutation({
-    mutationFn: (systemId: string) => voiceFn({ data: { systemId } }),
+    mutationFn: (v: { systemId: string; phoneIndex?: number }) => voiceFn({ data: v }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
     onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
   });
+  const addPhoneFn = useServerFn(addAdditionalCallerPhone);
+  const updPhoneFn = useServerFn(updateAdditionalCallerPhone);
+  const rmPhoneFn = useServerFn(removeAdditionalCallerPhone);
+  const addPhoneMut = useMutation({ mutationFn: (v: { systemId: string; phone: string }) => addPhoneFn({ data: v }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("נוסף מספר פונה"); }, onError: (e: any) => toast.error(e.message) });
+  const updPhoneMut = useMutation({ mutationFn: (v: { systemId: string; index: number; phone: string }) => updPhoneFn({ data: v }), onSuccess: () => qc.invalidateQueries({ queryKey: ["system", id] }), onError: (e: any) => toast.error(e.message) });
+  const rmPhoneMut = useMutation({ mutationFn: (v: { systemId: string; index: number }) => rmPhoneFn({ data: v }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("המספר הוסר"); }, onError: (e: any) => toast.error(e.message) });
 
   useEffect(() => {
     const ids: string[] = (data?.system as any)?.reminder_agent_ids ?? [];

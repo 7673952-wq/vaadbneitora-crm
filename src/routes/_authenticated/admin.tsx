@@ -363,8 +363,7 @@ function StatusSettingsPanel() {
   const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
   const upsertMut = useMutation({ mutationFn: (vars: any) => withAuth(upsertFn, vars), onSuccess: async () => { await refresh(); toast.success("נשמר"); }, onError: (e: any) => toast.error(e.message) });
   const delMut = useMutation({ mutationFn: (vars: any) => withAuth(delFn, vars), onSuccess: async () => { await refresh(); toast.success("נמחק"); }, onError: (e: any) => toast.error(e.message) });
-  const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); }, onError: (e: any) => toast.error(e.message) });
-
+const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); toast.success("סדר עודכן"); }, onError: (e: any) => toast.error(e?.message || e?.toString() || "שגיאה בשינוי סדר") });
   const [showAdd, setShowAdd] = useState(false);
   const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true });
 

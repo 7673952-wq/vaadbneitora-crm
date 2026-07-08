@@ -1036,12 +1036,31 @@ export const findSystemByCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { code: string }) => z.object({ code: z.string().min(1).max(60) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { data: row } = await context.supabase
+    // Try exact match first.
+    const exact = await context.supabase
       .from("systems")
       .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
       .eq("system_code", data.code)
       .maybeSingle();
-    return row ?? null;
+    if (exact.data) return exact.data;
+
+    // Fallback: try the reversed digits (without prefix). e.g. user typed
+    // "072123456" but system stored as reverse: strip 0/972 prefix, reverse,
+    // then look up all systems whose stripped code equals the reversed form.
+    const digits = String(data.code).replace(/\D/g, "");
+    const stripped = digits.replace(/^972/, "").replace(/^0+/, "");
+    if (stripped.length < 2) return null;
+    const reversed = stripped.split("").reverse().join("");
+    if (reversed === stripped) return null;
+
+    // Match by any variant that resolves to the reversed stripped form.
+    const candidates = [reversed, "0" + reversed, "972" + reversed];
+    const { data: rows } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
+      .in("system_code", candidates as any)
+      .limit(1);
+    return (rows && rows[0]) || null;
   });
 
 // Ensures a persistent ROOT system with the given name exists (used for
@@ -1225,8 +1244,12 @@ export const getHandledRatio = createServerFn({ method: "POST" })
 // Docs: https://f2.freeivr.co.il/topic/55
 export const sendVoiceMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { systemId: string }) =>
-    z.object({ systemId: z.string().uuid() }).parse(d))
+  .inputValidator((d: { systemId: string; phoneIndex?: number }) =>
+    z.object({
+      systemId: z.string().uuid(),
+      // -1 (or omitted) = primary caller_phone; 0..N = index in additional_caller_phones.
+      phoneIndex: z.number().int().min(-1).max(50).optional(),
+    }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
 
@@ -1235,24 +1258,36 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
       throw new Error("מפתח ה־API של ימות המשיח לא מוגדר בשרת (YEMOT_API_KEY)");
     }
 
-    const { data: sys, error: sysErr } = await context.supabase
+    const { data: sysRow, error: sysErr } = await context.supabase
       .from("systems")
-      .select("id, status, caller_phone, phone, voice_message_sent_at, name, system_code")
+      .select("*")
       .eq("id", data.systemId)
       .maybeSingle();
     if (sysErr) throw sysErr;
-    if (!sys) throw new Error("המערכת לא נמצאה");
+    if (!sysRow) throw new Error("המערכת לא נמצאה");
+    const sys = sysRow as any;
 
-    const phone = String(sys.caller_phone || sys.phone || "").replace(/[^\d]/g, "");
+    const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
+    const additional = Array.isArray(sys.additional_caller_phones)
+      ? (sys.additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
+      : [];
+
+
+    let rawPhone = "";
+    if (idx < 0) {
+      rawPhone = String(sys.caller_phone || sys.phone || "");
+    } else {
+      const entry = additional[idx];
+      if (!entry) throw new Error("מספר פונה נוסף לא נמצא");
+      rawPhone = String(entry.phone || "");
+    }
+    const phone = rawPhone.replace(/[^\d]/g, "");
     if (!phone) throw new Error("אין מספר טלפון לפונה");
 
-    // Read status settings to find the templateId for this status.
-    // We reuse the existing `voice_message_api_key` column as the templateId
-    // storage (backwards-compatible; the column just holds a numeric string).
     const settings = await readStatusSettings(context.supabase);
     const cur = settings.find((r: any) => r.status_key === sys.status) as any;
     if (!cur?.enables_voice_message) {
-      throw new Error("הסטטוס הנוכחי לא מוגדר להפעיל שליחת הודעה קולית");
+      throw new Error("לא ניתן לשלוח הודעה בסטטוס זה");
     }
     const templateIdRaw: string = String(cur.voice_message_api_key || "").trim();
     const templateId = Number(templateIdRaw);
@@ -1265,10 +1300,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     try {
       res = await fetch(url, {
         method: "POST",
-        headers: {
-          "authorization": apiKey,
-          "Content-Type": "application/json",
-        },
+        headers: { "authorization": apiKey, "Content-Type": "application/json" },
         body: JSON.stringify({ templateId, phones: phone }),
       });
     } catch (e: any) {
@@ -1283,7 +1315,13 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     }
 
     const nowIso = new Date().toISOString();
-    await context.supabase.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", data.systemId);
+    if (idx < 0) {
+      await context.supabase.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", data.systemId);
+    } else {
+      const next = additional.slice();
+      next[idx] = { ...(next[idx] ?? {}), phone: rawPhone, sent_at: nowIso };
+      await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    }
 
     return {
       ok: true,
@@ -1291,6 +1329,70 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
       sentAt: nowIso,
     };
   });
+
+// ============= Additional caller phones =============
+
+async function loadAdditional(context: any, systemId: string) {
+  const { data: sys, error } = await context.supabase
+    .from("systems")
+    .select("*")
+    .eq("id", systemId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!sys) throw new Error("המערכת לא נמצאה");
+  const arr = Array.isArray((sys as any).additional_caller_phones)
+    ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
+    : [];
+  return arr;
+}
+
+
+export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { systemId: string; phone: string }) =>
+    z.object({ systemId: z.string().uuid(), phone: z.string().min(1).max(40) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const arr = await loadAdditional(context, data.systemId);
+    if (arr.length >= 20) throw new Error("ניתן להוסיף עד 20 מספרי פונה נוספים");
+    const phone = sanitizeText(data.phone).trim();
+    if (!phone) throw new Error("מספר ריק");
+    const next = [...arr, { phone }];
+    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { systemId: string; index: number; phone: string }) =>
+    z.object({ systemId: z.string().uuid(), index: z.number().int().min(0).max(50), phone: z.string().min(1).max(40) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const arr = await loadAdditional(context, data.systemId);
+    if (!arr[data.index]) throw new Error("מספר לא נמצא");
+    const next = arr.slice();
+    next[data.index] = { ...next[data.index], phone: sanitizeText(data.phone).trim() };
+    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { systemId: string; index: number }) =>
+    z.object({ systemId: z.string().uuid(), index: z.number().int().min(0).max(50) }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const arr = await loadAdditional(context, data.systemId);
+    if (!arr[data.index]) return { ok: true };
+    const next = arr.slice();
+    next.splice(data.index, 1);
+    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
 
 
 

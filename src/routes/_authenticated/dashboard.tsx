@@ -1854,7 +1854,21 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
       <div className="relative">
         <input value={query} onChange={(e) => setQuery(e.target.value)}
           placeholder="הזן מספר מערכת או שם מערכת..."
-          className="w-full rounded-lg border border-input bg-background px-3 py-2 pl-8 text-sm" />
+          className="w-full rounded-lg border border-input bg-background px-3 py-2 pl-8 pr-10 text-sm" />
+        {/^\d/.test(query.trim()) && query.trim().replace(/\D/g,"").length >= 2 && (
+          <button type="button"
+            onClick={() => {
+              const digits = query.replace(/\D/g, "");
+              const stripped = digits.replace(/^972/, "").replace(/^0+/, "");
+              const reversed = stripped.split("").reverse().join("");
+              setQuery(reversed);
+            }}
+            aria-label="הפוך מספר"
+            title="הפוך את סדר הספרות (לחיפוש מספר הפוך)"
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+            ⇄
+          </button>
+        )}
         {query && (
           <button type="button" onClick={() => setQuery("")}
             aria-label="נקה"

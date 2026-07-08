@@ -5,7 +5,9 @@ import {
   getSystem, listAgents, listMainSystems,
   updateSystem, addNote, deleteSystem, addSubSystem,
   setReminder, dismissReminder, setParent, sendVoiceMessage,
+  addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
 } from "@/lib/systems.functions";
+
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
@@ -199,10 +201,16 @@ function SystemDetail() {
     onError: (e: any) => toast.error(e.message),
   });
   const voiceMut = useMutation({
-    mutationFn: (systemId: string) => voiceFn({ data: { systemId } }),
+    mutationFn: (v: { systemId: string; phoneIndex?: number }) => voiceFn({ data: v }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
     onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
   });
+  const addPhoneFn = useServerFn(addAdditionalCallerPhone);
+  const updPhoneFn = useServerFn(updateAdditionalCallerPhone);
+  const rmPhoneFn = useServerFn(removeAdditionalCallerPhone);
+  const addPhoneMut = useMutation({ mutationFn: (v: { systemId: string; phone: string }) => addPhoneFn({ data: v }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("נוסף מספר פונה"); }, onError: (e: any) => toast.error(e.message) });
+  const updPhoneMut = useMutation({ mutationFn: (v: { systemId: string; index: number; phone: string }) => updPhoneFn({ data: v }), onSuccess: () => qc.invalidateQueries({ queryKey: ["system", id] }), onError: (e: any) => toast.error(e.message) });
+  const rmPhoneMut = useMutation({ mutationFn: (v: { systemId: string; index: number }) => rmPhoneFn({ data: v }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("המספר הוסר"); }, onError: (e: any) => toast.error(e.message) });
 
   useEffect(() => {
     const ids: string[] = (data?.system as any)?.reminder_agent_ids ?? [];
@@ -266,7 +274,7 @@ function SystemDetail() {
                     {STATUS_LABEL[s.status as SystemStatus]}
                   </span>
                   {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
-                  {me?.isSuperAdmin ? (
+                  {(me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) ? (
                     <input
                       defaultValue={s.system_code || ""}
                       onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
@@ -277,7 +285,7 @@ function SystemDetail() {
                     <span className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5">{s.system_code}</span>
                   )}
                 </div>
-                {me?.isSuperAdmin ? (
+                {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input
                     defaultValue={s.name || ""}
                     onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
@@ -332,11 +340,11 @@ function SystemDetail() {
                           ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
                           : "לשלוח הודעה קולית לפונה כעת?";
                         if (!window.confirm(confirmMsg)) return;
-                        voiceMut.mutate(id);
+                        voiceMut.mutate({ systemId: id, phoneIndex: -1 });
                       }}
                       title={
                         !voiceEnabled
-                          ? "הסטטוס הנוכחי אינו מפעיל שליחת הודעה קולית — ניתן להגדיר בניהול > סטטוסים"
+                          ? "לא ניתן לשלוח הודעה בסטטוס זה"
                           : voiceAlreadySent
                             ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
                             : "שליחת הודעה קולית לפונה דרך ימות המשיח"
@@ -444,14 +452,24 @@ function SystemDetail() {
               placeholder="מספר טלפון"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
           </div>
-          <div>
-            <label className="text-sm font-medium block mb-2">מספר פונה</label>
-            <input
-              defaultValue={s.caller_phone || ""}
-              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.caller_phone || "")) updateMut.mutate({ data: { id, caller_phone: v || null } }); }}
-              placeholder="מספר טלפון של הפונה"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+          <div className="md:col-span-2">
+            <CallerPhonesEditor
+              systemId={id}
+              primary={s.caller_phone || ""}
+              primarySentAt={(s as any).voice_message_sent_at || null}
+              additional={((s as any).additional_caller_phones ?? []) as Array<{ phone: string; sent_at?: string }>}
+              voiceEnabled={voiceEnabled}
+              onSavePrimary={(v: string) => updateMut.mutate({ data: { id, caller_phone: v || null } })}
+              onSendPrimary={() => voiceMut.mutate({ systemId: id, phoneIndex: -1 })}
+              onAddAdditional={(phone: string) => addPhoneMut.mutate({ systemId: id, phone })}
+              onUpdateAdditional={(index: number, phone: string) => updPhoneMut.mutate({ systemId: id, index, phone })}
+              onRemoveAdditional={(index: number) => rmPhoneMut.mutate({ systemId: id, index })}
+              onSendAdditional={(index: number) => voiceMut.mutate({ systemId: id, phoneIndex: index })}
+              sending={voiceMut.isPending}
+            />
           </div>
+
+
           <div>
             <label className="text-sm font-medium block mb-2">דוא"ל</label>
             <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
@@ -902,5 +920,159 @@ function ParentPicker({
     </div>
   );
 }
+
+function CallerPhoneRow({
+  initial, sentAt, voiceEnabled, sending, onSave, onSend, onRemove, showRemove,
+}: {
+  initial: string;
+  sentAt: string | null | undefined;
+  voiceEnabled: boolean;
+  sending: boolean;
+  onSave: (v: string) => void;
+  onSend: () => void;
+  onRemove?: () => void;
+  showRemove: boolean;
+}) {
+  const [val, setVal] = useState(initial);
+  useEffect(() => { setVal(initial); }, [initial]);
+  const digits = (val || "").replace(/\D/g, "");
+  const sendTitle = !voiceEnabled
+    ? "לא ניתן לשלוח הודעה בסטטוס זה"
+    : sentAt ? `נשלח: ${new Date(sentAt).toLocaleString("he-IL")}` : "שליחת הודעה קולית לפונה";
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onBlur={() => { if (val.trim() !== (initial || "").trim()) onSave(val.trim()); }}
+          placeholder="מספר טלפון של הפונה"
+          className="flex-1 min-w-[160px] rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
+        />
+        {digits && (
+          <a href={`tel:${digits}`}
+            title="חייג"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-sky-600 text-white hover:bg-sky-700">
+            <Phone className="h-4 w-4" />
+          </a>
+        )}
+        {digits && (
+          <button type="button"
+            onClick={() => navigator.clipboard.writeText(digits).then(() => toast.success("המספר הועתק"))}
+            title="העתק"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background text-muted-foreground hover:bg-accent">
+            <Copy className="h-4 w-4" />
+          </button>
+        )}
+        <button type="button"
+          disabled={!voiceEnabled || sending || !digits}
+          onClick={() => { if (window.confirm(sentAt ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?" : "לשלוח הודעה קולית לפונה כעת?")) onSend(); }}
+          title={sendTitle}
+          aria-label="שלח הודעה קולית"
+          className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-xs font-medium border transition ${
+            !voiceEnabled
+              ? "bg-background text-muted-foreground/50 border-border cursor-not-allowed"
+              : sentAt
+                ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                : "bg-fuchsia-600 text-white border-fuchsia-600 hover:bg-fuchsia-700"
+          }`}>
+          <Volume2 className="h-3.5 w-3.5" />
+          <span>שלח הודעה</span>
+        </button>
+        {showRemove && onRemove && (
+          <button type="button" onClick={() => { if (window.confirm("להסיר מספר פונה זה?")) onRemove(); }}
+            title="הסר מספר"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border text-destructive hover:bg-destructive/10">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {sentAt ? (
+        <div className="text-[11px] text-emerald-700 pr-1">
+          ✓ הודעה נשלחה בתאריך {new Date(sentAt).toLocaleString("he-IL")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CallerPhonesEditor({
+  primary, primarySentAt, additional, voiceEnabled, sending,
+  onSavePrimary, onSendPrimary, onAddAdditional, onUpdateAdditional, onRemoveAdditional, onSendAdditional,
+}: {
+  systemId: string;
+  primary: string;
+  primarySentAt: string | null;
+  additional: Array<{ phone: string; sent_at?: string }>;
+  voiceEnabled: boolean;
+  sending: boolean;
+  onSavePrimary: (v: string) => void;
+  onSendPrimary: () => void;
+  onAddAdditional: (phone: string) => void;
+  onUpdateAdditional: (index: number, phone: string) => void;
+  onRemoveAdditional: (index: number) => void;
+  onSendAdditional: (index: number) => void;
+}) {
+  const [showAdd, setShowAdd] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium">מספר פונה</label>
+        <button type="button" onClick={() => setShowAdd((v) => !v)}
+          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-input bg-background hover:bg-accent text-foreground"
+          title="הוסף מספר פונה נוסף">
+          <Plus className="h-3.5 w-3.5" /> הוסף מספר פונה
+        </button>
+      </div>
+      <div className="space-y-2">
+        <CallerPhoneRow
+          initial={primary}
+          sentAt={primarySentAt}
+          voiceEnabled={voiceEnabled}
+          sending={sending}
+          onSave={onSavePrimary}
+          onSend={onSendPrimary}
+          showRemove={false}
+        />
+        {additional.map((entry, i) => (
+          <CallerPhoneRow
+            key={i}
+            initial={entry.phone || ""}
+            sentAt={entry.sent_at ?? null}
+            voiceEnabled={voiceEnabled}
+            sending={sending}
+            onSave={(v) => onUpdateAdditional(i, v)}
+            onSend={() => onSendAdditional(i)}
+            onRemove={() => onRemoveAdditional(i)}
+            showRemove={true}
+          />
+        ))}
+      </div>
+      {showAdd && (
+        <div className="mt-2 flex items-center gap-2 p-2 border border-dashed border-input rounded-lg bg-muted/20">
+          <input
+            autoFocus
+            value={newPhone}
+            onChange={(e) => setNewPhone(e.target.value)}
+            placeholder="מספר טלפון חדש"
+            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+          />
+          <button type="button"
+            disabled={!newPhone.trim()}
+            onClick={() => { onAddAdditional(newPhone.trim()); setNewPhone(""); setShowAdd(false); }}
+            className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">
+            הוסף
+          </button>
+          <button type="button" onClick={() => { setShowAdd(false); setNewPhone(""); }}
+            className="px-3 py-2 rounded-md border border-input text-xs">
+            ביטול
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 

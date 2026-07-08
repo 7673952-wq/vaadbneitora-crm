@@ -1,0 +1,1 @@
+ALTER TABLE public.systems ADD COLUMN IF NOT EXISTS additional_caller_phones jsonb NOT NULL DEFAULT '[]'::jsonb;

@@ -437,25 +437,24 @@ function StatusSettingsPanel() {
         </div>
       )}
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
+      <div className="bg-card border border-border rounded-xl overflow-x-auto">
+        <table className="w-full text-sm min-w-[1200px]">
           <thead className="bg-muted/50 border-b border-border">
             <tr className="text-right">
-              <th className="px-3 py-2 font-medium text-muted-foreground w-16">#</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">תצוגה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">תווית</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">צבע</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">מצב</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">שורה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">סיבה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">שיוך אוטומטי</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground">הודעה קולית</th>
-              <th className="px-3 py-2"></th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-20">סדר</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground min-w-[240px]">שם הסטטוס</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-32">צבע</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-28">מצב</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-32">שורה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground w-32">סיבה</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground min-w-[220px]">שיוך אוטומטי</th>
+              <th className="px-3 py-2 font-medium text-muted-foreground min-w-[240px]">הודעה קולית</th>
+              <th className="px-3 py-2 w-32"></th>
             </tr>
           </thead>
           <tbody>
             {sorted.map((r: any, idx: number) => (
-              <StatusEditRow key={`${r.status_key}:${r.sort_order}:${r.is_mandatory}:${r.is_handled}:${r.requires_reason}:${r.label}:${r.tone}:${(r.assigned_agent_ids ?? []).join(",")}:${r.enables_voice_message ? 1 : 0}:${(r.voice_message_template ?? "").length}:${(r.voice_message_api_key ?? "").length}`} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+              <StatusEditRow key={r.status_key} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
                 onMove={(delta) => move(idx, delta)}
                 onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
                 onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
@@ -485,8 +484,8 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   return (
     <tr className="border-b border-border last:border-0 align-top">
       <td className="px-3 py-2">
-        <div className="flex items-center gap-1">
-          <span className="text-sm font-mono w-6">{index + 1}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-mono w-6 text-muted-foreground">{index + 1}</span>
           <div className="flex flex-col">
             <button onClick={() => onMove(-1)} disabled={index === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowUp className="h-3 w-3" /></button>
             <button onClick={() => onMove(1)} disabled={index === total - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowDown className="h-3 w-3" /></button>
@@ -494,10 +493,14 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         </div>
       </td>
       <td className="px-3 py-2">
-        <span className={`text-xs rounded-full px-3 py-1 font-medium ${toneClasses(tone)}`}>{label || row.status_key}</span>
-        <div className="text-[10px] font-mono text-muted-foreground mt-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(tone)}`}>{(label || row.status_key).slice(0,2)}</span>
+          <input value={label} onChange={(e) => setLabel(e.target.value)}
+            placeholder="שם הסטטוס"
+            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium" />
+        </div>
+        <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
       </td>
-      <td className="px-3 py-2"><input value={label} onChange={(e) => setLabel(e.target.value)} className="w-full rounded-md border border-input bg-background px-2 py-1 text-sm" /></td>
       <td className="px-3 py-2">
         <select value={tone} onChange={(e) => setTone(e.target.value)} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
           {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}

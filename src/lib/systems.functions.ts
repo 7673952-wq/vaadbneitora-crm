@@ -1335,7 +1335,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
 async function loadAdditional(context: any, systemId: string) {
   const { data: sys, error } = await context.supabase
     .from("systems")
-    .select("id, additional_caller_phones")
+    .select("*")
     .eq("id", systemId)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -1345,6 +1345,7 @@ async function loadAdditional(context: any, systemId: string) {
     : [];
   return arr;
 }
+
 
 export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

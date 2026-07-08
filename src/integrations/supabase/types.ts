@@ -273,6 +273,7 @@ export type Database = {
       }
       systems: {
         Row: {
+          additional_caller_phones: Json
           assigned_agent_id: string | null
           audio_url: string | null
           caller_phone: string | null
@@ -296,6 +297,7 @@ export type Database = {
           voice_message_sent_at: string | null
         }
         Insert: {
+          additional_caller_phones?: Json
           assigned_agent_id?: string | null
           audio_url?: string | null
           caller_phone?: string | null
@@ -319,6 +321,7 @@ export type Database = {
           voice_message_sent_at?: string | null
         }
         Update: {
+          additional_caller_phones?: Json
           assigned_agent_id?: string | null
           audio_url?: string | null
           caller_phone?: string | null

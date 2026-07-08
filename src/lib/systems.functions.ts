@@ -1320,7 +1320,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     } else {
       const next = additional.slice();
       next[idx] = { ...(next[idx] ?? {}), phone: rawPhone, sent_at: nowIso };
-      await context.supabase.from("systems").update({ additional_caller_phones: next as any }).eq("id", data.systemId);
+      await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     }
 
     return {
@@ -1357,7 +1357,7 @@ export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
     const next = [...arr, { phone }];
-    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next as any }).eq("id", data.systemId);
+    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -1372,7 +1372,7 @@ export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
     if (!arr[data.index]) throw new Error("מספר לא נמצא");
     const next = arr.slice();
     next[data.index] = { ...next[data.index], phone: sanitizeText(data.phone).trim() };
-    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next as any }).eq("id", data.systemId);
+    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -1387,7 +1387,7 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
     if (!arr[data.index]) return { ok: true };
     const next = arr.slice();
     next.splice(data.index, 1);
-    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next as any }).eq("id", data.systemId);
+    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

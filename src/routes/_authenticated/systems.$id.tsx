@@ -340,7 +340,7 @@ function SystemDetail() {
                           ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
                           : "לשלוח הודעה קולית לפונה כעת?";
                         if (!window.confirm(confirmMsg)) return;
-                        voiceMut.mutate(id);
+                        voiceMut.mutate({ systemId: id, phoneIndex: -1 });
                       }}
                       title={
                         !voiceEnabled

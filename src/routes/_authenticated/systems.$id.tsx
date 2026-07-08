@@ -459,11 +459,16 @@ function SystemDetail() {
               primarySentAt={(s as any).voice_message_sent_at || null}
               additional={((s as any).additional_caller_phones ?? []) as Array<{ phone: string; sent_at?: string }>}
               voiceEnabled={voiceEnabled}
-              onSavePrimary={(v) => updateMut.mutate({ data: { id, caller_phone: v || null } })}
+              onSavePrimary={(v: string) => updateMut.mutate({ data: { id, caller_phone: v || null } })}
               onSendPrimary={() => voiceMut.mutate({ systemId: id, phoneIndex: -1 })}
+              onAddAdditional={(phone: string) => addPhoneMut.mutate({ systemId: id, phone })}
+              onUpdateAdditional={(index: number, phone: string) => updPhoneMut.mutate({ systemId: id, index, phone })}
+              onRemoveAdditional={(index: number) => rmPhoneMut.mutate({ systemId: id, index })}
+              onSendAdditional={(index: number) => voiceMut.mutate({ systemId: id, phoneIndex: index })}
               sending={voiceMut.isPending}
             />
           </div>
+
 
           <div>
             <label className="text-sm font-medium block mb-2">דוא"ל</label>

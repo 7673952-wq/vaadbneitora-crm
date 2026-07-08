@@ -446,14 +446,19 @@ function SystemDetail() {
               placeholder="מספר טלפון"
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
           </div>
-          <div>
-            <label className="text-sm font-medium block mb-2">מספר פונה</label>
-            <input
-              defaultValue={s.caller_phone || ""}
-              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.caller_phone || "")) updateMut.mutate({ data: { id, caller_phone: v || null } }); }}
-              placeholder="מספר טלפון של הפונה"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+          <div className="md:col-span-2">
+            <CallerPhonesEditor
+              systemId={id}
+              primary={s.caller_phone || ""}
+              primarySentAt={(s as any).voice_message_sent_at || null}
+              additional={((s as any).additional_caller_phones ?? []) as Array<{ phone: string; sent_at?: string }>}
+              voiceEnabled={voiceEnabled}
+              onSavePrimary={(v) => updateMut.mutate({ data: { id, caller_phone: v || null } })}
+              onSendPrimary={() => voiceMut.mutate({ systemId: id, phoneIndex: -1 })}
+              sending={voiceMut.isPending}
+            />
           </div>
+
           <div>
             <label className="text-sm font-medium block mb-2">דוא"ל</label>
             <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />

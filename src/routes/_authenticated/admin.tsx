@@ -485,9 +485,9 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
       <td className="px-3 py-2">
         <div className="flex items-center gap-1.5">
           <span className="text-sm font-mono w-6 text-muted-foreground">{index + 1}</span>
-          <div className="flex flex-col">
-            <button onClick={() => onMove(-1)} disabled={index === 0} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowUp className="h-3 w-3" /></button>
-            <button onClick={() => onMove(1)} disabled={index === total - 1} className="text-muted-foreground hover:text-foreground disabled:opacity-20"><ArrowDown className="h-3 w-3" /></button>
+          <div className="flex flex-col gap-0.5">
+            <button onClick={() => onMove(-1)} disabled={index === 0} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed"><ArrowUp className="h-4 w-4" /></button>
+            <button onClick={() => onMove(1)} disabled={index === total - 1} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed"><ArrowDown className="h-4 w-4" /></button>
           </div>
         </div>
       </td>

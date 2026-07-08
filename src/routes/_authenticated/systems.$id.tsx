@@ -268,7 +268,7 @@ function SystemDetail() {
                     {STATUS_LABEL[s.status as SystemStatus]}
                   </span>
                   {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
-                  {me?.isSuperAdmin ? (
+                  {(me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) ? (
                     <input
                       defaultValue={s.system_code || ""}
                       onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
@@ -279,7 +279,7 @@ function SystemDetail() {
                     <span className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5">{s.system_code}</span>
                   )}
                 </div>
-                {me?.isSuperAdmin ? (
+                {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input
                     defaultValue={s.name || ""}
                     onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}

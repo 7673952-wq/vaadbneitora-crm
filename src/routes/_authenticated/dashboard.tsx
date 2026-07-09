@@ -402,7 +402,13 @@ function Dashboard() {
       if (!r || !r.trim()) { toast.error("חובה להזין סיבה"); return; }
       reason = r.trim();
     }
-    updateMutation.mutate({ data: { id, [isWorkflow ? "secondary_status" : "status"]: newStatus, ...(reason ? { reason } : {}) } });
+    let apply_to_children: boolean | undefined;
+    if (!isWorkflow && !sys.parent_system_id) {
+      apply_to_children = window.confirm(
+        "להחיל את שינוי הסטטוס גם על תתי-המערכות של המערכת הזו?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית"
+      );
+    }
+    updateMutation.mutate({ data: { id, [isWorkflow ? "secondary_status" : "status"]: newStatus, ...(reason ? { reason } : {}), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
   }
 
 
@@ -1250,7 +1256,13 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
               if (!r2 || !r2.trim()) { toast.error("יש להזין סיבה"); return; }
               reason = r2.trim();
             }
-            onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}) });
+            let apply_to_children: boolean | undefined;
+            if (!r.parent_system_id) {
+              apply_to_children = window.confirm(
+                "להחיל את שינוי הסטטוס גם על תתי-המערכות של המערכת הזו?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית"
+              );
+            }
+            onUpdate?.({ id: r.id, status: newStatus, ...(reason ? { reason } : {}), ...(apply_to_children !== undefined ? { apply_to_children } : {}) });
           }}
             className="text-[11px] rounded-md border border-input bg-background/90 px-1.5 py-1 text-foreground">
             {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
@@ -1791,9 +1803,9 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
-        const isCodeLike = /^\d+$/.test(v);
+        const digitCount = v.replace(/\D/g, "").length;
         const [c, n] = await Promise.all([
-          isCodeLike ? codeFn({ data: { code: v } }) : Promise.resolve(undefined),
+          digitCount >= 2 ? codeFn({ data: { code: v } }) : Promise.resolve(undefined),
           nameFn({ data: { name: v } }),
         ]);
         if (cancelled) return;
@@ -1858,13 +1870,17 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
         {/^\d/.test(query.trim()) && query.trim().replace(/\D/g,"").length >= 2 && (
           <button type="button"
             onClick={() => {
-              const digits = query.replace(/\D/g, "");
-              const stripped = digits.replace(/^972/, "").replace(/^0+/, "");
-              const reversed = stripped.split("").reverse().join("");
-              setQuery(reversed);
+              // Reverse the digits and ensure a single leading 0. On the first
+              // click this adds "0" (from a number that had no prefix); on the
+              // next click the leading 0 gets stripped and re-added exactly
+              // once, so it never accumulates.
+              const digits = query.replace(/\D/g, "").replace(/^0+/, "").replace(/^972/, "");
+              if (digits.length < 2) return;
+              const reversed = digits.split("").reverse().join("");
+              setQuery("0" + reversed);
             }}
             aria-label="הפוך מספר"
-            title="הפוך את סדר הספרות (לחיפוש מספר הפוך)"
+            title="הפוך את סדר הספרות (מוסיף 0 פעם אחת בהתחלה)"
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
             ⇄
           </button>

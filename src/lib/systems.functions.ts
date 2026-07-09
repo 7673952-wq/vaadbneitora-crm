@@ -482,6 +482,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
     email?: string | null;
     reason?: string;
+    apply_to_children?: boolean;
   }) =>
     z.object({
       id: z.string().uuid(),
@@ -499,6 +500,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       reminder_agent_ids: z.array(z.string().uuid()).nullable().optional(),
       email: z.string().email().max(200).nullable().optional().or(z.literal("")),
       reason: z.string().max(500).optional(),
+      apply_to_children: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -534,15 +536,22 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
     const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
+    const shouldCascadeStatus =
+      data.status !== undefined
+      && data.status !== sys.status
+      && !sys.parent_system_id
+      && data.apply_to_children === true;
+    let cascadeChildren: Array<{ id: string; status: string }> = [];
     if (data.status && data.status !== sys.status) {
       statusLogTargets.push({ id: data.id, oldStatus: sys.status, newStatus: data.status });
-      if (!sys.parent_system_id) {
+      if (shouldCascadeStatus) {
         const { data: children } = await context.supabase
           .from("systems")
           .select("id, status")
           .eq("parent_system_id", data.id)
           .neq("status", data.status as any);
-        statusLogTargets.push(...(children ?? []).map((child: any) => ({
+        cascadeChildren = (children ?? []) as Array<{ id: string; status: string }>;
+        statusLogTargets.push(...cascadeChildren.map((child) => ({
           id: child.id,
           oldStatus: child.status,
           newStatus: data.status!,
@@ -560,10 +569,18 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
 
-    const { id, reason: _r, email, ...patch } = data as any;
+    const { id, reason: _r, email, apply_to_children: _ac, ...patch } = data as any;
     if (email !== undefined) (patch as any).email = email || null;
     const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
     if (error) throw new Error(error.message);
+    // Explicit sub-system status cascade (opt-in via apply_to_children).
+    if (shouldCascadeStatus && cascadeChildren.length) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await supabaseAdmin
+        .from("systems")
+        .update({ status: data.status as any })
+        .in("id", cascadeChildren.map((c) => c.id));
+    }
     // Attach the supplied status-change reason directly to the exact status log
     // rows created by the trigger, including child systems updated by propagation.
     if (data.reason && data.reason.trim() && statusLogTargets.length) {
@@ -1036,31 +1053,40 @@ export const findSystemByCode = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { code: string }) => z.object({ code: z.string().min(1).max(60) }).parse(d))
   .handler(async ({ data, context }) => {
-    // Try exact match first.
-    const exact = await context.supabase
-      .from("systems")
-      .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
-      .eq("system_code", data.code)
-      .maybeSingle();
-    if (exact.data) return exact.data;
-
-    // Fallback: try the reversed digits (without prefix). e.g. user typed
-    // "072123456" but system stored as reverse: strip 0/972 prefix, reverse,
-    // then look up all systems whose stripped code equals the reversed form.
-    const digits = String(data.code).replace(/\D/g, "");
+    // Build all reasonable variants of the input: forward + reversed,
+    // with/without the 0 and 972 prefixes. This lets users find a system
+    // whether they typed the number directly, without prefix, or in
+    // reverse digit order.
+    const raw = String(data.code).trim();
+    const digits = raw.replace(/\D/g, "");
     const stripped = digits.replace(/^972/, "").replace(/^0+/, "");
-    if (stripped.length < 2) return null;
-    const reversed = stripped.split("").reverse().join("");
-    if (reversed === stripped) return null;
+    if (stripped.length < 2 && !raw) return null;
 
-    // Match by any variant that resolves to the reversed stripped form.
-    const candidates = [reversed, "0" + reversed, "972" + reversed];
+    const variants = new Set<string>();
+    const push = (v: string) => { if (v && v.length >= 2) variants.add(v); };
+    push(raw);
+    if (digits) push(digits);
+    if (stripped) {
+      push(stripped);
+      push("0" + stripped);
+      push("972" + stripped);
+      const reversed = stripped.split("").reverse().join("");
+      if (reversed && reversed !== stripped) {
+        push(reversed);
+        push("0" + reversed);
+        push("972" + reversed);
+      }
+    }
+    if (!variants.size) return null;
+
     const { data: rows } = await context.supabase
       .from("systems")
       .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
-      .in("system_code", candidates as any)
-      .limit(1);
-    return (rows && rows[0]) || null;
+      .in("system_code", Array.from(variants) as any)
+      .limit(5);
+    if (!rows || rows.length === 0) return null;
+    // Prefer an exact match against the raw input, otherwise the first row.
+    return rows.find((r: any) => r.system_code === raw) ?? rows[0];
   });
 
 // Ensures a persistent ROOT system with the given name exists (used for
@@ -1332,18 +1358,21 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
 
 // ============= Additional caller phones =============
 
-async function loadAdditional(context: any, systemId: string) {
-  const { data: sys, error } = await context.supabase
+// Additional caller phones live in `additional_caller_phones` (jsonb array).
+// These mutations use the admin client after gating on `systems_write` so
+// they never silently drop the update when the caller isn't the assigned
+// agent but does have the write permission (viewer-safe via ensureCanWrite).
+async function loadAdditional(supabaseAdmin: any, systemId: string): Promise<Array<{ phone?: string; sent_at?: string }>> {
+  const { data: sys, error } = await supabaseAdmin
     .from("systems")
-    .select("*")
+    .select("additional_caller_phones")
     .eq("id", systemId)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!sys) throw new Error("המערכת לא נמצאה");
-  const arr = Array.isArray((sys as any).additional_caller_phones)
+  return Array.isArray((sys as any).additional_caller_phones)
     ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
     : [];
-  return arr;
 }
 
 
@@ -1353,14 +1382,21 @@ export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
     z.object({ systemId: z.string().uuid(), phone: z.string().min(1).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const arr = await loadAdditional(context, data.systemId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const arr = await loadAdditional(supabaseAdmin, data.systemId);
     if (arr.length >= 20) throw new Error("ניתן להוסיף עד 20 מספרי פונה נוספים");
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
     const next = [...arr, { phone }];
-    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    const { data: updated, error } = await supabaseAdmin
+      .from("systems")
+      .update({ additional_caller_phones: next } as any)
+      .eq("id", data.systemId)
+      .select("additional_caller_phones")
+      .maybeSingle();
     if (error) throw new Error(error.message);
-    return { ok: true };
+    if (!updated) throw new Error("שמירת המספר נכשלה");
+    return { ok: true, additional_caller_phones: (updated as any).additional_caller_phones };
   });
 
 export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
@@ -1369,11 +1405,12 @@ export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
     z.object({ systemId: z.string().uuid(), index: z.number().int().min(0).max(50), phone: z.string().min(1).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const arr = await loadAdditional(context, data.systemId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const arr = await loadAdditional(supabaseAdmin, data.systemId);
     if (!arr[data.index]) throw new Error("מספר לא נמצא");
     const next = arr.slice();
     next[data.index] = { ...next[data.index], phone: sanitizeText(data.phone).trim() };
-    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -1384,11 +1421,12 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
     z.object({ systemId: z.string().uuid(), index: z.number().int().min(0).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const arr = await loadAdditional(context, data.systemId);
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const arr = await loadAdditional(supabaseAdmin, data.systemId);
     if (!arr[data.index]) return { ok: true };
     const next = arr.slice();
     next.splice(data.index, 1);
-    const { error } = await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+    const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

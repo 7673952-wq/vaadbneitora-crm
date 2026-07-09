@@ -437,31 +437,14 @@ function StatusSettingsPanel() {
         </div>
       )}
 
-      <div className="bg-card border border-border rounded-xl overflow-x-auto">
-        <table className="w-full text-sm min-w-[1200px]">
-          <thead className="bg-muted/50 border-b border-border">
-            <tr className="text-right">
-              <th className="px-3 py-2 font-medium text-muted-foreground w-20">סדר</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground min-w-[240px]">שם הסטטוס</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground w-32">צבע</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground w-28">מצב</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground w-32">שורה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground w-32">סיבה</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground min-w-[220px]">שיוך אוטומטי</th>
-              <th className="px-3 py-2 font-medium text-muted-foreground min-w-[240px]">הודעה קולית</th>
-              <th className="px-3 py-2 w-32"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((r: any, idx: number) => (
-              <StatusEditRow key={r.status_key} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
-                onMove={(delta) => move(idx, delta)}
-                onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
-                onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
-              />
-            ))}
-          </tbody>
-        </table>
+      <div className="bg-card border border-border rounded-xl divide-y divide-border">
+        {sorted.map((r: any, idx: number) => (
+          <StatusEditRow key={r.status_key} row={r} index={idx} total={sorted.length} agents={(agents ?? []) as any[]}
+            onMove={(delta) => move(idx, delta)}
+            onSave={(patch) => upsertMut.mutate({ data: { status_key: r.status_key, ...patch, is_custom: r.is_custom } })}
+            onDelete={() => { if (confirm("למחוק סטטוס זה?")) delMut.mutate({ data: { status_key: r.status_key } }); }}
+          />
+        ))}
       </div>
     </div>
   );

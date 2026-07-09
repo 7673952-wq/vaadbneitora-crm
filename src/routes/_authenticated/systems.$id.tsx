@@ -411,13 +411,20 @@ function SystemDetail() {
             <select value={s.status} onChange={(e) => {
               const newStatus = e.target.value;
               if (newStatus === s.status) return;
+              const isRootWithChildren = !s.parent_system_id && (data?.children?.length ?? 0) > 0;
+              let apply_to_children: boolean | undefined;
+              if (isRootWithChildren) {
+                apply_to_children = window.confirm(
+                  `להחיל את שינוי הסטטוס גם על ${data!.children.length} תתי-המערכות?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית`
+                );
+              }
               if (!statusRequiresReason(newStatus)) {
-                updateMut.mutate({ data: { id, status: newStatus } });
+                updateMut.mutate({ data: { id, status: newStatus, ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
                 return;
               }
               const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
               if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
-              updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim() } });
+              updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim(), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
             }}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
               {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -1055,7 +1062,17 @@ function CallerPhonesEditor({
             autoFocus
             value={newPhone}
             onChange={(e) => setNewPhone(e.target.value)}
-            placeholder="מספר טלפון חדש"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newPhone.trim()) {
+                e.preventDefault();
+                onAddAdditional(newPhone.trim());
+                setNewPhone("");
+                setShowAdd(false);
+              } else if (e.key === "Escape") {
+                setShowAdd(false); setNewPhone("");
+              }
+            }}
+            placeholder="מספר טלפון חדש (Enter לשמירה)"
             className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
           />
           <button type="button"

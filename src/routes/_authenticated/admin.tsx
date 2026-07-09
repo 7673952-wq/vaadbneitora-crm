@@ -465,90 +465,99 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message || voiceTpl !== (row.voice_message_template ?? "") || voiceKey !== (row.voice_message_api_key ?? "");
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
-    <tr className="border-b border-border last:border-0 align-top">
-      <td className="px-3 py-2">
-        <div className="flex items-center gap-1.5">
-          <span className="text-sm font-mono w-6 text-muted-foreground">{index + 1}</span>
+    <div className="p-3 flex flex-col gap-3">
+      {/* Top row: order + label + save/delete — always visible without scroll */}
+      <div className="flex items-start gap-3 flex-wrap">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-sm font-mono w-6 text-center text-muted-foreground">{index + 1}</span>
           <div className="flex flex-col gap-0.5">
             <button onClick={() => onMove(-1)} disabled={index === 0} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed"><ArrowUp className="h-4 w-4" /></button>
             <button onClick={() => onMove(1)} disabled={index === total - 1} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground disabled:opacity-20 disabled:cursor-not-allowed"><ArrowDown className="h-4 w-4" /></button>
           </div>
         </div>
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex items-center gap-2">
-          <span className={`text-xs rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(tone)}`}>{(label || row.status_key).slice(0,2)}</span>
-          <input value={label} onChange={(e) => setLabel(e.target.value)}
-            placeholder="שם הסטטוס"
-            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium" />
+        <div className="flex-1 min-w-[240px]">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(tone)}`}>{(label || row.status_key).slice(0,2)}</span>
+            <input value={label} onChange={(e) => setLabel(e.target.value)}
+              placeholder="שם הסטטוס"
+              className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium" />
+          </div>
+          <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
         </div>
-        <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
-      </td>
-      <td className="px-3 py-2">
-        <select value={tone} onChange={(e) => setTone(e.target.value)} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
-          {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <select value={handled ? "1" : "0"} onChange={(e) => setHandled(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
-          <option value="0">ממתין</option>
-          <option value="1">טופל</option>
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <select value={mandatory ? "1" : "0"} onChange={(e) => setMandatory(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
-          <option value="1">חובה</option>
-          <option value="0">אופציונלי</option>
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <select value={requiresReason ? "1" : "0"} onChange={(e) => setRequiresReason(e.target.value === "1")} className="rounded-md border border-input bg-background px-2 py-1 text-sm">
-          <option value="1">חייב סיבה</option>
-          <option value="0">ללא סיבה</option>
-        </select>
-      </td>
-      <td className="px-3 py-2">
-        <div className="flex flex-wrap gap-1 max-w-[260px]">
-          {agents.map((a) => {
-            const active = agentIds.includes(a.id);
-            return (
-              <button key={a.id} type="button" onClick={() => toggleAgent(a.id)}
-                className={`text-[11px] px-2 py-0.5 rounded-full border ${active ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input text-muted-foreground hover:bg-accent"}`}>
-                {a.display_name}
-              </button>
-            );
-          })}
-          {agents.length === 0 && <span className="text-xs text-muted-foreground">אין נציגים</span>}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTpl, voice_message_api_key: voiceKey })}
+            className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30 font-medium">שמור</button>
+          {onDelete && (
+            <button onClick={onDelete} title="מחק סטטוס" className="text-destructive hover:bg-destructive/10 rounded p-2"><Trash2 className="h-4 w-4" /></button>
+          )}
         </div>
-      </td>
-      <td className="px-3 py-2 min-w-[220px]">
-        <label className="flex items-center gap-1.5 text-[11px] mb-1">
-          <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
-          מפעיל כפתור שליחת הודעה קולית
-        </label>
-        <input
-          type="text"
-          inputMode="numeric"
-          value={voiceKey}
-          onChange={(e) => setVoiceKey(e.target.value.replace(/[^\d]/g, ""))}
-          placeholder="מזהה קמפיין (templateId)"
-          disabled={!enablesVoice}
-          autoComplete="off"
-          className="w-full rounded-md border border-input bg-background px-2 py-1 text-[11px] disabled:opacity-50 font-mono"
-        />
-        <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
-          מזהה קמפיין שהוגדר במערכת ימות המשיח.<br/>
-          נוסח ההודעה מוגדר בתוך הקמפיין עצמו.
+      </div>
+
+      {/* Attributes grid — wraps naturally on narrow screens */}
+      <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
+        <Field label="צבע">
+          <select value={tone} onChange={(e) => setTone(e.target.value)} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            {AVAILABLE_TONES.map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </Field>
+        <Field label="מצב">
+          <select value={handled ? "1" : "0"} onChange={(e) => setHandled(e.target.value === "1")} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            <option value="0">ממתין</option>
+            <option value="1">טופל</option>
+          </select>
+        </Field>
+        <Field label="שורה">
+          <select value={mandatory ? "1" : "0"} onChange={(e) => setMandatory(e.target.value === "1")} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            <option value="1">חובה</option>
+            <option value="0">אופציונלי</option>
+          </select>
+        </Field>
+        <Field label="סיבה בשינוי">
+          <select value={requiresReason ? "1" : "0"} onChange={(e) => setRequiresReason(e.target.value === "1")} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            <option value="1">חייב סיבה</option>
+            <option value="0">ללא סיבה</option>
+          </select>
+        </Field>
+      </div>
+
+      {/* Agents + voice — side by side on desktop, stacked on mobile */}
+      <div className="grid gap-3 md:grid-cols-2">
+        <div>
+          <div className="text-[11px] text-muted-foreground mb-1">שיוך אוטומטי לנציג</div>
+          <div className="flex flex-wrap gap-1">
+            {agents.map((a) => {
+              const active = agentIds.includes(a.id);
+              return (
+                <button key={a.id} type="button" onClick={() => toggleAgent(a.id)}
+                  className={`text-[11px] px-2 py-0.5 rounded-full border ${active ? "bg-primary text-primary-foreground border-primary" : "bg-background border-input text-muted-foreground hover:bg-accent"}`}>
+                  {a.display_name}
+                </button>
+              );
+            })}
+            {agents.length === 0 && <span className="text-xs text-muted-foreground">אין נציגים</span>}
+          </div>
         </div>
-      </td>
-      <td className="px-3 py-2 text-left whitespace-nowrap">
-        <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTpl, voice_message_api_key: voiceKey })}
-          className="px-3 py-1 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30">שמור</button>
-        {onDelete && (
-          <button onClick={onDelete} className="text-destructive hover:bg-destructive/10 rounded p-1.5 mr-1"><Trash2 className="h-4 w-4 inline" /></button>
-        )}
-      </td>
-    </tr>
+        <div>
+          <label className="flex items-center gap-1.5 text-[11px] mb-1">
+            <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
+            מפעיל כפתור שליחת הודעה קולית
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={voiceKey}
+            onChange={(e) => setVoiceKey(e.target.value.replace(/[^\d]/g, ""))}
+            placeholder="מזהה קמפיין (templateId)"
+            disabled={!enablesVoice}
+            autoComplete="off"
+            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-[12px] disabled:opacity-50 font-mono"
+          />
+          <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
+            מזהה הקמפיין שהוגדר בימות המשיח. נוסח ההודעה מוגדר בתוך הקמפיין עצמו.
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 

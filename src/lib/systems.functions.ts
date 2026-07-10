@@ -536,26 +536,30 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
     const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
-    const shouldCascadeStatus =
+    const isRootStatusChange =
       data.status !== undefined
       && data.status !== sys.status
-      && !sys.parent_system_id
-      && data.apply_to_children === true;
+      && !sys.parent_system_id;
+    const shouldCascadeStatus = isRootStatusChange && data.apply_to_children === true;
     let cascadeChildren: Array<{ id: string; status: string }> = [];
     if (data.status && data.status !== sys.status) {
       statusLogTargets.push({ id: data.id, oldStatus: sys.status, newStatus: data.status });
-      if (shouldCascadeStatus) {
+      if (isRootStatusChange) {
         const { data: children } = await context.supabase
           .from("systems")
           .select("id, status")
-          .eq("parent_system_id", data.id)
-          .neq("status", data.status as any);
-        cascadeChildren = (children ?? []) as Array<{ id: string; status: string }>;
-        statusLogTargets.push(...cascadeChildren.map((child) => ({
-          id: child.id,
-          oldStatus: child.status,
-          newStatus: data.status!,
-        })));
+          .eq("parent_system_id", data.id);
+        const allChildren = (children ?? []) as Array<{ id: string; status: string }>;
+        cascadeChildren = shouldCascadeStatus
+          ? allChildren.filter((child) => child.status !== data.status)
+          : allChildren;
+        if (shouldCascadeStatus) {
+          statusLogTargets.push(...cascadeChildren.map((child) => ({
+            id: child.id,
+            oldStatus: child.status,
+            newStatus: data.status!,
+          })));
+        }
       }
     }
 
@@ -580,6 +584,17 @@ export const updateSystem = createServerFn({ method: "POST" })
         .from("systems")
         .update({ status: data.status as any })
         .in("id", cascadeChildren.map((c) => c.id));
+    }
+    // Defensive guard: older deployments/triggers may still propagate parent
+    // statuses. When the user chose "no", restore each child to its prior
+    // status so the dialog answer is authoritative.
+    if (isRootStatusChange && data.apply_to_children !== true && cascadeChildren.length) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await Promise.all(cascadeChildren.map((child) => supabaseAdmin
+        .from("systems")
+        .update({ status: child.status as any })
+        .eq("id", child.id)
+        .neq("status", child.status as any)));
     }
     // Attach the supplied status-change reason directly to the exact status log
     // rows created by the trigger, including child systems updated by propagation.
@@ -1264,10 +1279,7 @@ export const getHandledRatio = createServerFn({ method: "POST" })
     return { handledInTime, notHandledInTime, total: rows.length, withinDays: data.withinDays };
   });
 
-// --- Yemot HaMashiach: run a pre-configured campaign for the system's caller phone ---
-// Uses the RunCampaign API — the message text lives inside Yemot as a
-// campaign template; we only pass templateId + phones.
-// Docs: https://f2.freeivr.co.il/topic/55
+// --- Yemot HaMashiach: prepare a per-phone extension and call it ---
 export const sendVoiceMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { systemId: string; phoneIndex?: number }) =>
@@ -1315,43 +1327,82 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     if (!cur?.enables_voice_message) {
       throw new Error("לא ניתן לשלוח הודעה בסטטוס זה");
     }
-    const templateIdRaw: string = String(cur.voice_message_api_key || "").trim();
-    const templateId = Number(templateIdRaw);
-    if (!templateIdRaw || !Number.isFinite(templateId) || templateId <= 0) {
-      throw new Error("לא הוגדר מזהה קמפיין (templateId) עבור הסטטוס הזה — יש להזין בניהול > סטטוסים");
+    const label = String(cur.label || sys.status || "");
+    const statusKey = String(sys.status || "");
+    const messageFile = (() => {
+      const key = statusKey.toLowerCase();
+      if (key.includes("problem")) return "3";
+      if (key.includes("closed") || key.includes("close") || key.includes("block")) return "1";
+      if (key.includes("open")) return "2";
+      const combined = `${statusKey} ${label}`;
+      if (combined.includes("בעיה")) return "3";
+      if (combined.includes("חסום") || combined.includes("לחסום") || combined.includes("חסימה") || combined.includes("נחסם")) return "1";
+      if (combined.includes("פתוח") || combined.includes("לפתוח") || combined.includes("פתיחה")) return "2";
+      return null;
+    })();
+    if (!messageFile) {
+      throw new Error("לא הוגדר קובץ הודעה עבור הסטטוס הזה (חסום=1, פתוח=2, בעיה=3)");
     }
 
-    const url = "https://www.call2all.co.il/ym/api/RunCampaign";
-    let res: Response;
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "authorization": apiKey, "Content-Type": "application/json" },
-        body: JSON.stringify({ templateId, phones: phone }),
-      });
-    } catch (e: any) {
-      throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
-    }
-    let json: any = null;
-    try { json = await res.json(); } catch { json = null; }
-    const ok = res.ok && json && (json.responseStatus === "OK" || json.success === true);
-    if (!ok) {
-      const msg = json?.message || json?.responseMessage || `שליחה נכשלה (סטטוס ${res.status})`;
-      throw new Error(`ימות המשיח: ${msg}`);
-    }
+    const systemCode = String(sys.system_code || "").trim();
+    if (!systemCode) throw new Error("אין מספר מערכת לשליחה");
+
+    const ymBase = "https://www.call2all.co.il/ym/api";
+    const extensionPath = `ivr2:0CRM/Phone/${phone}`;
+    const formHeaders = { authorization: apiKey, "Content-Type": "application/x-www-form-urlencoded" };
+    const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
+      let res: Response;
+      try {
+        const body = new URLSearchParams({ token: apiKey, ...params });
+        res = await fetch(`${ymBase}/${endpoint}`, {
+          method: "POST",
+          headers: formHeaders,
+          body,
+        });
+      } catch (e: any) {
+        throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
+      }
+      let json: any = null;
+      try { json = await res.json(); } catch { json = null; }
+      if (!res.ok || !json || !accept(json)) {
+        const msg = json?.message || json?.responseMessage || `הפעולה נכשלה (סטטוס ${res.status})`;
+        throw new Error(`ימות המשיח (${endpoint}): ${msg}`);
+      }
+      return json;
+    };
+
+    await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
+    await callYemot("FileAction", {
+      action: "copy",
+      what: `ivr2:0CRM/files/${messageFile}.wav`,
+      target: extensionPath,
+    }, (json) => json.responseStatus === "OK" && (json.success !== false));
+    await callYemot("UploadTextFile", {
+      what: `${extensionPath}/000-Title.tts`,
+      contents: systemCode,
+    }, (json) => json.responseStatus === "OK");
+    const callJson = await callYemot("CallExtensionBridging", {
+      phones: phone,
+      ivrPath: extensionPath,
+    }, (json) => json.responseStatus === "OK");
 
     const nowIso = new Date().toISOString();
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let sentAtError: any = null;
     if (idx < 0) {
-      await context.supabase.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", data.systemId);
+      const { error } = await supabaseAdmin.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", data.systemId);
+      sentAtError = error;
     } else {
       const next = additional.slice();
       next[idx] = { ...(next[idx] ?? {}), phone: rawPhone, sent_at: nowIso };
-      await context.supabase.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+      const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
+      sentAtError = error;
     }
+    if (sentAtError) throw new Error(sentAtError.message);
 
     return {
       ok: true,
-      campaignId: json?.CampaignId ?? json?.campaignId ?? null,
+      campaignId: callJson?.CampaignId ?? callJson?.campaignId ?? null,
       sentAt: nowIso,
     };
   });
@@ -1359,22 +1410,9 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
 // ============= Additional caller phones =============
 
 // Additional caller phones live in `additional_caller_phones` (jsonb array).
-// These mutations use the admin client after gating on `systems_write` so
-// they never silently drop the update when the caller isn't the assigned
-// agent but does have the write permission (viewer-safe via ensureCanWrite).
-async function loadAdditional(supabaseAdmin: any, systemId: string): Promise<Array<{ phone?: string; sent_at?: string }>> {
-  const { data: sys, error } = await supabaseAdmin
-    .from("systems")
-    .select("additional_caller_phones")
-    .eq("id", systemId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  if (!sys) throw new Error("המערכת לא נמצאה");
-  return Array.isArray((sys as any).additional_caller_phones)
-    ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-    : [];
-}
-
+// These mutations use the admin client after gating on writes so they never
+// silently drop the update when the caller isn't the assigned agent but is
+// allowed to edit systems.
 
 export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -1383,7 +1421,16 @@ export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const arr = await loadAdditional(supabaseAdmin, data.systemId);
+    const { data: sys, error: loadError } = await supabaseAdmin
+      .from("systems")
+      .select("additional_caller_phones")
+      .eq("id", data.systemId)
+      .maybeSingle();
+    if (loadError) throw new Error(loadError.message);
+    if (!sys) throw new Error("המערכת לא נמצאה");
+    const arr = Array.isArray((sys as any).additional_caller_phones)
+      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
+      : [];
     if (arr.length >= 20) throw new Error("ניתן להוסיף עד 20 מספרי פונה נוספים");
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
@@ -1406,10 +1453,21 @@ export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const arr = await loadAdditional(supabaseAdmin, data.systemId);
+    const { data: sys, error: loadError } = await supabaseAdmin
+      .from("systems")
+      .select("additional_caller_phones")
+      .eq("id", data.systemId)
+      .maybeSingle();
+    if (loadError) throw new Error(loadError.message);
+    if (!sys) throw new Error("המערכת לא נמצאה");
+    const arr = Array.isArray((sys as any).additional_caller_phones)
+      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
+      : [];
     if (!arr[data.index]) throw new Error("מספר לא נמצא");
+    const phone = sanitizeText(data.phone).trim();
+    if (!phone) throw new Error("מספר ריק");
     const next = arr.slice();
-    next[data.index] = { ...next[data.index], phone: sanitizeText(data.phone).trim() };
+    next[data.index] = { ...next[data.index], phone };
     const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -1422,7 +1480,16 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const arr = await loadAdditional(supabaseAdmin, data.systemId);
+    const { data: sys, error: loadError } = await supabaseAdmin
+      .from("systems")
+      .select("additional_caller_phones")
+      .eq("id", data.systemId)
+      .maybeSingle();
+    if (loadError) throw new Error(loadError.message);
+    if (!sys) throw new Error("המערכת לא נמצאה");
+    const arr = Array.isArray((sys as any).additional_caller_phones)
+      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
+      : [];
     if (!arr[data.index]) return { ok: true };
     const next = arr.slice();
     next.splice(data.index, 1);
@@ -1430,13 +1497,6 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
-
-
-
-
-
-
 
 export const importSystems = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

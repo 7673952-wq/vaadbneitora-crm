@@ -450,7 +450,7 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean; voice_message_template: string; voice_message_api_key: string }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
@@ -458,11 +458,9 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   const [requiresReason, setRequiresReason] = useState<boolean>(row.requires_reason ?? true);
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
   const [enablesVoice, setEnablesVoice] = useState<boolean>(!!row.enables_voice_message);
-  const [voiceTpl, setVoiceTpl] = useState<string>(row.voice_message_template ?? "");
-  const [voiceKey, setVoiceKey] = useState<string>(row.voice_message_api_key ?? "");
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message || voiceTpl !== (row.voice_message_template ?? "") || voiceKey !== (row.voice_message_api_key ?? "");
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message;
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <div className="p-3 flex flex-col gap-3">
@@ -485,7 +483,7 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
           <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTpl, voice_message_api_key: voiceKey })}
+          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice })}
             className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30 font-medium">שמור</button>
           {onDelete && (
             <button onClick={onDelete} title="מחק סטטוס" className="text-destructive hover:bg-destructive/10 rounded p-2"><Trash2 className="h-4 w-4" /></button>
@@ -542,18 +540,8 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
             <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
             מפעיל כפתור שליחת הודעה קולית
           </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={voiceKey}
-            onChange={(e) => setVoiceKey(e.target.value.replace(/[^\d]/g, ""))}
-            placeholder="מזהה קמפיין (templateId)"
-            disabled={!enablesVoice}
-            autoComplete="off"
-            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-[12px] disabled:opacity-50 font-mono"
-          />
-          <div className="text-[10px] text-muted-foreground mt-1 leading-tight">
-            מזהה הקמפיין שהוגדר בימות המשיח. נוסח ההודעה מוגדר בתוך הקמפיין עצמו.
+          <div className="rounded-md border border-input bg-muted/30 px-2 py-2 text-[11px] text-muted-foreground leading-tight">
+            השליחה משתמשת בקבצי ימות מוכנים לפי הסטטוס: חסום = 1.wav, פתוח = 2.wav, בעיה = 3.wav. אין צורך במזהה קמפיין.
           </div>
         </div>
       </div>

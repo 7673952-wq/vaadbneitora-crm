@@ -208,9 +208,40 @@ function SystemDetail() {
   const addPhoneFn = useServerFn(addAdditionalCallerPhone);
   const updPhoneFn = useServerFn(updateAdditionalCallerPhone);
   const rmPhoneFn = useServerFn(removeAdditionalCallerPhone);
-  const addPhoneMut = useMutation({ mutationFn: (v: { systemId: string; phone: string }) => addPhoneFn({ data: v }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("נוסף מספר פונה"); }, onError: (e: any) => toast.error(e.message) });
-  const updPhoneMut = useMutation({ mutationFn: (v: { systemId: string; index: number; phone: string }) => updPhoneFn({ data: v }), onSuccess: () => qc.invalidateQueries({ queryKey: ["system", id] }), onError: (e: any) => toast.error(e.message) });
-  const rmPhoneMut = useMutation({ mutationFn: (v: { systemId: string; index: number }) => rmPhoneFn({ data: v }), onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("המספר הוסר"); }, onError: (e: any) => toast.error(e.message) });
+  const setCachedAdditionalPhones = (updater: (phones: Array<{ phone: string; sent_at?: string }>) => Array<{ phone: string; sent_at?: string }>) => {
+    qc.setQueryData(["system", id], (old: any) => {
+      if (!old?.system) return old;
+      const current = Array.isArray(old.system.additional_caller_phones) ? old.system.additional_caller_phones : [];
+      return { ...old, system: { ...old.system, additional_caller_phones: updater(current) } };
+    });
+  };
+  const addPhoneMut = useMutation({
+    mutationFn: (v: { systemId: string; phone: string }) => addPhoneFn({ data: v }),
+    onSuccess: (res: any, vars) => {
+      if (Array.isArray(res?.additional_caller_phones)) setCachedAdditionalPhones(() => res.additional_caller_phones);
+      else setCachedAdditionalPhones((phones) => [...phones, { phone: vars.phone }]);
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      toast.success("נוסף מספר פונה");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updPhoneMut = useMutation({
+    mutationFn: (v: { systemId: string; index: number; phone: string }) => updPhoneFn({ data: v }),
+    onSuccess: (_res, vars) => {
+      setCachedAdditionalPhones((phones) => phones.map((entry, i) => i === vars.index ? { ...entry, phone: vars.phone } : entry));
+      qc.invalidateQueries({ queryKey: ["system", id] });
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const rmPhoneMut = useMutation({
+    mutationFn: (v: { systemId: string; index: number }) => rmPhoneFn({ data: v }),
+    onSuccess: (_res, vars) => {
+      setCachedAdditionalPhones((phones) => phones.filter((_entry, i) => i !== vars.index));
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      toast.success("המספר הוסר");
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   useEffect(() => {
     const ids: string[] = (data?.system as any)?.reminder_agent_ids ?? [];
@@ -722,7 +753,7 @@ function SystemDetail() {
             <Network className="h-4 w-4" />תתי-מערכות ({data.children.length})
           </h2>
           <p className="text-xs text-muted-foreground mb-4">
-            תתי-מערכות יורשות אוטומטית את הסטטוס והנציג של המערכת הראשית.
+            בשינוי סטטוס של מערכת ראשית תישאל האם להחיל את השינוי גם על תתי-המערכות. שינוי נציג עדיין עובר אליהן אוטומטית.
           </p>
           {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
             <form

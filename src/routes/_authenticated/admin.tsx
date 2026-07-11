@@ -366,7 +366,7 @@ function StatusSettingsPanel() {
   const delMut = useMutation({ mutationFn: (vars: any) => withAuth(delFn, vars), onSuccess: async () => { await refresh(); toast.success("נמחק"); }, onError: (e: any) => toast.error(e.message) });
   const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); toast.success("סדר עודכן"); }, onError: (e: any) => toast.error(e?.message || e?.toString() || "שגיאה בשינוי סדר") });
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true, enables_voice_message: false, voice_message_template: "" });
 
   const fallbackRows = STATUS_OPTIONS.map((s, idx) => ({
     status_key: s.value,
@@ -378,6 +378,8 @@ function StatusSettingsPanel() {
     is_mandatory: s.is_mandatory ?? true,
     requires_reason: s.requires_reason ?? true,
     assigned_agent_ids: s.assigned_agent_ids ?? [],
+    enables_voice_message: (s as any).enables_voice_message ?? false,
+    voice_message_template: (s as any).voice_message_template ?? "",
   }));
   const sorted = [...(((rows as any[] | undefined)?.length ? rows : fallbackRows) as any[])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const move = (idx: number, delta: number) => {
@@ -407,7 +409,7 @@ function StatusSettingsPanel() {
       {rowsError && <div className="bg-destructive/10 border border-destructive/30 rounded-xl p-4 text-sm text-destructive">לא ניתן לטעון סטטוסים שמורים: {rowsError.message}. מוצגת רשימת ברירת־המחדל.</div>}
 
       {showAdd && (
-        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-7 gap-2 items-end">
+        <div className="bg-card border border-border rounded-xl p-4 grid sm:grid-cols-2 lg:grid-cols-8 gap-2 items-end">
           <Field label="מפתח (אנגלית)"><input value={newRow.status_key} onChange={(e) => setNewRow({ ...newRow, status_key: e.target.value })} placeholder="my_custom_status" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="תווית"><input value={newRow.label} onChange={(e) => setNewRow({ ...newRow, label: e.target.value })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" /></Field>
           <Field label="צבע">
@@ -433,6 +435,15 @@ function StatusSettingsPanel() {
               <option value="0">ללא סיבה</option>
             </select>
           </Field>
+          <Field label="הודעה קולית">
+            <select value={newRow.enables_voice_message ? "1" : "0"} onChange={(e) => setNewRow({ ...newRow, enables_voice_message: e.target.value === "1" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="0">כבוי</option>
+              <option value="1">פעיל</option>
+            </select>
+          </Field>
+          <Field label="מספר הודעה">
+            <input inputMode="numeric" pattern="[0-9]*" value={newRow.voice_message_template} onChange={(e) => setNewRow({ ...newRow, voice_message_template: e.target.value.replace(/\D/g, "") })} placeholder="1 / 2 / 3" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+          </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>
         </div>
       )}
@@ -450,7 +461,7 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean; voice_message_template: string }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
@@ -458,9 +469,10 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   const [requiresReason, setRequiresReason] = useState<boolean>(row.requires_reason ?? true);
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
   const [enablesVoice, setEnablesVoice] = useState<boolean>(!!row.enables_voice_message);
+  const [voiceTemplate, setVoiceTemplate] = useState<string>(row.voice_message_template ?? "");
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message;
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message || voiceTemplate !== (row.voice_message_template ?? "");
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <div className="p-3 flex flex-col gap-3">
@@ -483,7 +495,7 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
           <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice })}
+          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTemplate.trim() })}
             className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30 font-medium">שמור</button>
           {onDelete && (
             <button onClick={onDelete} title="מחק סטטוס" className="text-destructive hover:bg-destructive/10 rounded p-2"><Trash2 className="h-4 w-4" /></button>
@@ -540,8 +552,14 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
             <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
             מפעיל כפתור שליחת הודעה קולית
           </label>
-          <div className="rounded-md border border-input bg-muted/30 px-2 py-2 text-[11px] text-muted-foreground leading-tight">
-            השליחה משתמשת בקבצי ימות מוכנים לפי הסטטוס: חסום = 1.wav, פתוח = 2.wav, בעיה = 3.wav. אין צורך במזהה קמפיין.
+          <div className="flex items-end gap-2">
+            <Field label="מספר הודעה בימות">
+              <input inputMode="numeric" pattern="[0-9]*" value={voiceTemplate} onChange={(e) => setVoiceTemplate(e.target.value.replace(/\D/g, ""))}
+                placeholder="לדוגמה: 1 / 2 / 3" className="w-36 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+            </Field>
+            <div className="rounded-md border border-input bg-muted/30 px-2 py-2 text-[11px] text-muted-foreground leading-tight flex-1">
+              המספר משמש לקובץ ‎ivr2:0CRM/files/מספר.wav בשלב ההעתקה.
+            </div>
           </div>
         </div>
       </div>

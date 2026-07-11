@@ -1366,8 +1366,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
       what: `ivr2:0CRM/files/${messageFile}.wav`,
       target: extensionPath,
     }, (json) => json.responseStatus === "OK" && (json.success !== false));
-    const copiedTarget = String(fileActionJson?.target || "");
-    const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
+const copiedTarget = String(fileActionJson?.reports?.[0]?.target || fileActionJson?.target || "");    const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
     const fileId = targetMatch?.[1];
     if (!fileId) {
       throw new Error("ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה");

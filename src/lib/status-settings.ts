@@ -32,6 +32,23 @@ const WORKFLOW_STATUS_KEYS = new Set([
   "blocked_in_committee",
 ]);
 
+function defaultVoiceMessageTemplate(statusKey: string, label = "") {
+  const key = statusKey.toLowerCase();
+  const combined = `${statusKey} ${label}`;
+  if (key.includes("problem") || combined.includes("בעיה")) return "3";
+  if (
+    key.includes("closed")
+    || key.includes("close")
+    || key.includes("block")
+    || combined.includes("חסום")
+    || combined.includes("לחסום")
+    || combined.includes("חסימה")
+    || combined.includes("נחסם")
+  ) return "1";
+  if (key.includes("open") || combined.includes("פתוח") || combined.includes("לפתוח") || combined.includes("פתיחה")) return "2";
+  return "";
+}
+
 const DEFAULT_STATUS_SETTINGS = [
   ["pending_check_close", "לבדיקה לחסימה", "amber", 1, false],
   ["pending_check_open", "לבדיקה לפתיחה", "teal", 2, false],
@@ -74,6 +91,7 @@ export function defaultStatusRows(): StatusSettingRow[] {
     assigned_agent_ids: [],
     enables_voice_message: false,
     voice_message_template: "",
+    voice_message_template: defaultVoiceMessageTemplate(status_key, label),
     voice_message_api_key: "",
   }));
 }
@@ -95,7 +113,9 @@ function normalizeRows(rows: unknown): StatusSettingRow[] {
         requires_reason: typeof row.requires_reason === "boolean" ? row.requires_reason : isDefaultRequiresReason(statusKey),
         assigned_agent_ids: normalizeAgentIds(row.assigned_agent_ids),
         enables_voice_message: row.enables_voice_message === true,
-        voice_message_template: typeof row.voice_message_template === "string" ? row.voice_message_template : "",
+        voice_message_template: typeof row.voice_message_template === "string" && row.voice_message_template.trim()
+          ? row.voice_message_template.trim()
+          : defaultVoiceMessageTemplate(statusKey, typeof row.label === "string" ? row.label : ""),
         voice_message_api_key: typeof row.voice_message_api_key === "string" ? row.voice_message_api_key : "",
       };
     })

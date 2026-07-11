@@ -90,7 +90,6 @@ export function defaultStatusRows(): StatusSettingRow[] {
     requires_reason: isDefaultRequiresReason(status_key),
     assigned_agent_ids: [],
     enables_voice_message: false,
-    voice_message_template: "",
     voice_message_template: defaultVoiceMessageTemplate(status_key, label),
     voice_message_api_key: "",
   }));

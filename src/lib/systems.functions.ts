@@ -1327,21 +1327,9 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     if (!cur?.enables_voice_message) {
       throw new Error("לא ניתן לשלוח הודעה בסטטוס זה");
     }
-    const label = String(cur.label || sys.status || "");
-    const statusKey = String(sys.status || "");
-    const messageFile = (() => {
-      const key = statusKey.toLowerCase();
-      if (key.includes("problem")) return "3";
-      if (key.includes("closed") || key.includes("close") || key.includes("block")) return "1";
-      if (key.includes("open")) return "2";
-      const combined = `${statusKey} ${label}`;
-      if (combined.includes("בעיה")) return "3";
-      if (combined.includes("חסום") || combined.includes("לחסום") || combined.includes("חסימה") || combined.includes("נחסם")) return "1";
-      if (combined.includes("פתוח") || combined.includes("לפתוח") || combined.includes("פתיחה")) return "2";
-      return null;
-    })();
+    const messageFile = String(cur.voice_message_template || "").trim();
     if (!messageFile) {
-      throw new Error("לא הוגדר קובץ הודעה עבור הסטטוס הזה (חסום=1, פתוח=2, בעיה=3)");
+      throw new Error("לא הוגדר מספר הודעה עבור הסטטוס הזה");
     }
 
     const systemCode = String(sys.system_code || "").trim();
@@ -1349,15 +1337,14 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
 
     const ymBase = "https://www.call2all.co.il/ym/api";
     const extensionPath = `ivr2:0CRM/Phone/${phone}`;
-    const formHeaders = { authorization: apiKey, "Content-Type": "application/x-www-form-urlencoded" };
+    const jsonHeaders = { authorization: apiKey, "Content-Type": "application/json" };
     const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
       let res: Response;
       try {
-        const body = new URLSearchParams({ token: apiKey, ...params });
         res = await fetch(`${ymBase}/${endpoint}`, {
           method: "POST",
-          headers: formHeaders,
-          body,
+          headers: jsonHeaders,
+          body: JSON.stringify(params),
         });
       } catch (e: any) {
         throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
@@ -1372,18 +1359,22 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     };
 
     await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
-    await callYemot("FileAction", {
-      action: "copy",
+    const fileActionJson = await callYemot("FileAction", {
       what: `ivr2:0CRM/files/${messageFile}.wav`,
       target: extensionPath,
     }, (json) => json.responseStatus === "OK" && (json.success !== false));
+    const copiedTarget = String(fileActionJson?.target || "");
+    const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
+    const fileId = targetMatch?.[1];
+    if (!fileId) {
+      throw new Error("ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה");
+    }
     await callYemot("UploadTextFile", {
-      what: `${extensionPath}/000-Title.tts`,
+      what: `${extensionPath}/${fileId}-Title.tts`,
       contents: systemCode,
     }, (json) => json.responseStatus === "OK");
     const callJson = await callYemot("CallExtensionBridging", {
       phones: phone,
-      ivrPath: extensionPath,
     }, (json) => json.responseStatus === "OK");
 
     const nowIso = new Date().toISOString();

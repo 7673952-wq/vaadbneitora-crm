@@ -1331,6 +1331,9 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     if (!messageFile) {
       throw new Error("לא הוגדר מספר הודעה עבור הסטטוס הזה");
     }
+    if (!/^\d+$/.test(messageFile)) {
+      throw new Error("מספר ההודעה של הסטטוס חייב להכיל ספרות בלבד");
+    }
 
     const systemCode = String(sys.system_code || "").trim();
     if (!systemCode) throw new Error("אין מספר מערכת לשליחה");

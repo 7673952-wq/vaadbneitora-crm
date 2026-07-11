@@ -296,7 +296,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       requires_reason: z.boolean().optional(),
       assigned_agent_ids: z.array(z.string().uuid()).max(50).optional(),
       enables_voice_message: z.boolean().optional(),
-      voice_message_template: z.string().max(2000).optional(),
+      voice_message_template: z.string().max(20).regex(/^\d*$/, "מספר ההודעה חייב להכיל ספרות בלבד").optional(),
       voice_message_api_key: z.string().max(500).optional(),
     }).parse(d),
   )
@@ -315,7 +315,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.requires_reason !== undefined) patch.requires_reason = data.requires_reason;
     if (data.assigned_agent_ids !== undefined) patch.assigned_agent_ids = data.assigned_agent_ids;
     if (data.enables_voice_message !== undefined) patch.enables_voice_message = data.enables_voice_message;
-    if (data.voice_message_template !== undefined) patch.voice_message_template = data.voice_message_template;
+    if (data.voice_message_template !== undefined) patch.voice_message_template = data.voice_message_template.trim();
     if (data.voice_message_api_key !== undefined) patch.voice_message_api_key = data.voice_message_api_key.trim();
     await upsertStatusSettingStable(supabaseAdmin, patch, context.userId);
     return { ok: true };

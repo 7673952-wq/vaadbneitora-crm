@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getSystem, listAgents, listMainSystems,
-  updateSystem, addNote, deleteSystem, addSubSystem,
+  updateSystem, addconst addPhoneFn = useServerFn(addAdditionalCallerPhone);Note, deleteSystem, addSubSystem,
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
 } from "@/lib/systems.functions";
@@ -212,7 +212,7 @@ function SystemDetail() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
     onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
   });
-  const addPhoneFn = useServerFn(addAdditionalCallerPhone);
+  const sendToPrimary = () => {   setShowSendChoice(false);   voiceMut.mutate({ systemId: id, phoneIndex: -1 }); }; const sendToAllCallers = async () => {   setShowSendChoice(false);   const additionalPhones = ((data?.system as any)?.additional_caller_phones ?? []) as Array<{ phone?: string }>;   const targets: number[] = [];   if (data?.system?.caller_phone) targets.push(-1);   additionalPhones.forEach((p, i) => { if (p?.phone) targets.push(i); });   if (targets.length === 0) { toast.error("אין מספרי פונה לשליחה"); return; }   setBulkSending(true);   let ok = 0, fail = 0;   for (const phoneIndex of targets) {     try {       await voiceFn({ data: { systemId: id, phoneIndex } });       ok++;     } catch (e) {       fail++;     }   }   setBulkSending(false);   qc.invalidateQueries({ queryKey: ["system", id] });   if (fail === 0) toast.success(`נשלחו ${ok} הודעות בהצלחה לכל הפונים`);   else toast.error(`נשלחו ${ok} מתוך ${targets.length} הודעות — ${fail} נכשלו`); }; const addPhoneFn = useServerFn(addAdditionalCallerPhone);
   const updPhoneFn = useServerFn(updateAdditionalCallerPhone);
   const rmPhoneFn = useServerFn(removeAdditionalCallerPhone);
   const setCachedAdditionalPhones = (updater: (phones: Array<{ phone: string; sent_at?: string }>) => Array<{ phone: string; sent_at?: string }>) => {

@@ -106,7 +106,7 @@ function SystemDetail() {
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
   const [customDate, setCustomDate] = useState<string>("");
-  const [showParentPick, setShowParentPick] = useState(false);
+  const [showParentPick, setShowParentPick] = useState(false); const [showSendChoice, setShowSendChoice] = useState(false); const [bulkSending, setBulkSending] = useState(false);
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");

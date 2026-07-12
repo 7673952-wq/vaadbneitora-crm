@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { readStatusSettings } from "@/lib/status-settings";
+import { normalizeAdditionalCallerPhones } from "@/lib/caller-phones";
 
 // If a system_code doesn't already start with "0" or "972", and has
 // fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->
@@ -29,20 +30,6 @@ const REPEAT_VALUES = ["day", "week", "month", "2months", "year", "custom"] as c
 
 function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((v) => v?.trim()).filter((v): v is string => !!v)));
-}
-
-function normalizeAdditionalCallerPhones(value: unknown): Array<{ phone: string; sent_at?: string }> {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry: any) => {
-    let parsed = entry;
-    if (typeof entry === "string") {
-      try { parsed = JSON.parse(entry); } catch { parsed = { phone: entry }; }
-    }
-    const phone = sanitizeText(String(parsed?.phone ?? "")).trim();
-    if (!phone) return [];
-    const sentAt = typeof parsed?.sent_at === "string" ? parsed.sent_at : undefined;
-    return [{ phone, ...(sentAt ? { sent_at: sentAt } : {}) }];
-  });
 }
 
 function statusLabelVariants(value: string) {

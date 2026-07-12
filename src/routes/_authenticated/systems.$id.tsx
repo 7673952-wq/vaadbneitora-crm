@@ -256,13 +256,6 @@ function SystemDetail() {
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
 
-  if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
-  const s = data.system;
-  const isSub = !!s.parent_system_id;
-  
-  const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
-  const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
-  const voiceAlreadySent = !!s.voice_message_sent_at;
   const mentionOptions = useMemo(() => [
     { id: "__all", label: "כולם", token: "@כולם" },
     ...(agents ?? []).map((a: any) => ({ id: a.id, label: a.display_name, token: `@${a.display_name}` })),
@@ -276,6 +269,14 @@ function SystemDetail() {
     });
     setMentionOpen(false);
   }
+
+  if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
+  const s = data.system;
+  const isSub = !!s.parent_system_id;
+  
+  const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
+  const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
+  const voiceAlreadySent = !!s.voice_message_sent_at;
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">

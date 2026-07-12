@@ -31,6 +31,20 @@ function uniqueStrings(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((v) => v?.trim()).filter((v): v is string => !!v)));
 }
 
+function normalizeAdditionalCallerPhones(value: unknown): Array<{ phone: string; sent_at?: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry: any) => {
+    let parsed = entry;
+    if (typeof entry === "string") {
+      try { parsed = JSON.parse(entry); } catch { parsed = { phone: entry }; }
+    }
+    const phone = sanitizeText(String(parsed?.phone ?? "")).trim();
+    if (!phone) return [];
+    const sentAt = typeof parsed?.sent_at === "string" ? parsed.sent_at : undefined;
+    return [{ phone, ...(sentAt ? { sent_at: sentAt } : {}) }];
+  });
+}
+
 function statusLabelVariants(value: string) {
   const trimmed = value.trim();
   return uniqueStrings([
@@ -1319,9 +1333,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     const sys = sysRow as any;
 
     const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
-    const additional = Array.isArray(sys.additional_caller_phones)
-      ? (sys.additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
 
 
     let rawPhone = "";
@@ -1434,9 +1446,7 @@ export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
       .maybeSingle();
     if (loadError) throw new Error(loadError.message);
     if (!sys) throw new Error("המערכת לא נמצאה");
-    const arr = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const arr = normalizeAdditionalCallerPhones((sys as any).additional_caller_phones);
     if (arr.length >= 20) throw new Error("ניתן להוסיף עד 20 מספרי פונה נוספים");
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
@@ -1466,9 +1476,7 @@ export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
       .maybeSingle();
     if (loadError) throw new Error(loadError.message);
     if (!sys) throw new Error("המערכת לא נמצאה");
-    const arr = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const arr = normalizeAdditionalCallerPhones((sys as any).additional_caller_phones);
     if (!arr[data.index]) throw new Error("מספר לא נמצא");
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
@@ -1493,9 +1501,7 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
       .maybeSingle();
     if (loadError) throw new Error(loadError.message);
     if (!sys) throw new Error("המערכת לא נמצאה");
-    const arr = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const arr = normalizeAdditionalCallerPhones((sys as any).additional_caller_phones);
     if (!arr[data.index]) return { ok: true };
     const next = arr.slice();
     next.splice(data.index, 1);

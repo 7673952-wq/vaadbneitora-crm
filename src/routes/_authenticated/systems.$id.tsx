@@ -189,12 +189,12 @@ function SystemDetail() {
   });
   const reminderMut = useMutation({
     mutationFn: reminderFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("התזכורת נקבעה"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); toast.success("התזכורת נקבעה"); },
     onError: (e: any) => toast.error(e.message),
   });
   const dismissMut = useMutation({
     mutationFn: dismissFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("התזכורת בוטלה"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); toast.success("התזכורת בוטלה"); },
     onError: (e: any) => toast.error(e.message),
   });
   const parentMut = useMutation({

@@ -241,11 +241,11 @@ function Dashboard() {
 
   const dismissMut = useMutation({
     mutationFn: dismissFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["systems"] }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); qc.invalidateQueries({ queryKey: ["systems"] }); },
   });
   const snoozeMut = useMutation({
     mutationFn: snoozeFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); toast.success("נדחה"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); toast.success("נדחה"); },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -345,6 +345,7 @@ function Dashboard() {
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["systems"] });
       qc.invalidateQueries({ queryKey: ["dueReminders"] });
+      qc.invalidateQueries({ queryKey: ["my_due_reminders"] });
     },
   });
 

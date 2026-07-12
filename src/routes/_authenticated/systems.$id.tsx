@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getSystem, listAgents, listMainSystems,
-  updateSystem, addconst addPhoneFn = useServerFn(addAdditionalCallerPhone);Note, deleteSystem, addSubSystem,
+  updateSystem, addNote, deleteSystem, addSubSystem,
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
 } from "@/lib/systems.functions";
@@ -106,7 +106,7 @@ function SystemDetail() {
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
   const [customDate, setCustomDate] = useState<string>("");
-  const [showParentPick, setShowParentPick] = useState(false); const [showSendChoice, setShowSendChoice] = useState(false); const [bulkSending, setBulkSending] = useState(false);
+  const [showParentPick, setShowParentPick] = useState(false);
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
@@ -212,7 +212,7 @@ function SystemDetail() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
     onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
   });
-  const sendToPrimary = () => {   setShowSendChoice(false);   voiceMut.mutate({ systemId: id, phoneIndex: -1 }); }; const sendToAllCallers = async () => {   setShowSendChoice(false);   const additionalPhones = ((data?.system as any)?.additional_caller_phones ?? []) as Array<{ phone?: string }>;   const targets: number[] = [];   if (data?.system?.caller_phone) targets.push(-1);   additionalPhones.forEach((p, i) => { if (p?.phone) targets.push(i); });   if (targets.length === 0) { toast.error("אין מספרי פונה לשליחה"); return; }   setBulkSending(true);   let ok = 0, fail = 0;   for (const phoneIndex of targets) {     try {       await voiceFn({ data: { systemId: id, phoneIndex } });       ok++;     } catch (e) {       fail++;     }   }   setBulkSending(false);   qc.invalidateQueries({ queryKey: ["system", id] });   if (fail === 0) toast.success(`נשלחו ${ok} הודעות בהצלחה לכל הפונים`);   else toast.error(`נשלחו ${ok} מתוך ${targets.length} הודעות — ${fail} נכשלו`); }; const addPhoneFn = useServerFn(addAdditionalCallerPhone);
+  const addPhoneFn = useServerFn(addAdditionalCallerPhone);
   const updPhoneFn = useServerFn(updateAdditionalCallerPhone);
   const rmPhoneFn = useServerFn(removeAdditionalCallerPhone);
   const setCachedAdditionalPhones = (updater: (phones: Array<{ phone: string; sent_at?: string }>) => Array<{ phone: string; sent_at?: string }>) => {
@@ -384,10 +384,16 @@ function SystemDetail() {
                       className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
                       {copiedKey === "caller" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
-                   <button
+                    <button
                       type="button"
-                      disabled={!voiceEnabled || voiceMut.isPending || bulkSending}
-                      onClick={() => setShowSendChoice(true)}
+                      disabled={!voiceEnabled || voiceMut.isPending}
+                      onClick={() => {
+                        const confirmMsg = voiceAlreadySent
+                          ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
+                          : "לשלוח הודעה קולית לפונה כעת?";
+                        if (!window.confirm(confirmMsg)) return;
+                        voiceMut.mutate({ systemId: id, phoneIndex: -1 });
+                      }}
                       title={
                         !voiceEnabled
                           ? "לא ניתן לשלוח הודעה בסטטוס זה"
@@ -403,35 +409,10 @@ function SystemDetail() {
                             ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
                             : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
                       }`}>
-                      {voiceMut.isPending || bulkSending
+                      {voiceMut.isPending
                         ? <span className="inline-block h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         : <Volume2 className="h-3.5 w-3.5" />}
                     </button>
-                  </div>
-                )}
-                {showSendChoice && (
-                  <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowSendChoice(false)}>
-                    <div className="bg-card border border-border rounded-2xl max-w-sm w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-                      <h2 className="text-lg font-bold mb-1">שליחת הודעה קולית</h2>
-                      <p className="text-sm text-muted-foreground mb-4">למי לשלוח את ההודעה?</p>
-                      <div className="flex flex-col gap-2">
-                        <button
-                          onClick={sendToAllCallers}
-                          className="w-full text-sm font-medium px-4 py-2.5 rounded-lg bg-fuchsia-600 text-white hover:bg-fuchsia-700 transition">
-                          לכל הפונים
-                        </button>
-                        <button
-                          onClick={sendToPrimary}
-                          className="w-full text-sm font-medium px-4 py-2.5 rounded-lg border border-input bg-background hover:bg-accent transition">
-                          רק לפונה הראשי
-                        </button>
-                        <button
-                          onClick={() => setShowSendChoice(false)}
-                          className="w-full text-sm px-4 py-2 rounded-lg text-muted-foreground hover:bg-accent transition">
-                          ביטול
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 )}
                 {s.phone && (
@@ -1173,6 +1154,5 @@ function CallerPhonesEditor({
     </div>
   );
 }
-
 
 

@@ -102,6 +102,7 @@ function SystemDetail() {
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn() });
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
   const [noteText, setNoteText] = useState("");
+  const [mentionOpen, setMentionOpen] = useState(false);
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
   const [customDate, setCustomDate] = useState<string>("");
@@ -163,7 +164,13 @@ function SystemDetail() {
   });
   const noteMut = useMutation({
     mutationFn: noteFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); setNoteText(""); toast.success("ההערה נוספה"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      qc.invalidateQueries({ queryKey: ["my_notifications"] });
+      setNoteText("");
+      setMentionOpen(false);
+      toast.success("ההערה נוספה");
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const deleteMut = useMutation({
@@ -182,12 +189,12 @@ function SystemDetail() {
   });
   const reminderMut = useMutation({
     mutationFn: reminderFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("התזכורת נקבעה"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); toast.success("התזכורת נקבעה"); },
     onError: (e: any) => toast.error(e.message),
   });
   const dismissMut = useMutation({
     mutationFn: dismissFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("התזכורת בוטלה"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); toast.success("התזכורת בוטלה"); },
     onError: (e: any) => toast.error(e.message),
   });
   const parentMut = useMutation({
@@ -248,6 +255,20 @@ function SystemDetail() {
     setReminderAgentIds(ids);
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
+
+  const mentionOptions = useMemo(() => [
+    { id: "__all", label: "כולם", token: "@כולם" },
+    ...(agents ?? []).map((a: any) => ({ id: a.id, label: a.display_name, token: `@${a.display_name}` })),
+  ], [agents]);
+  function applyMention(token: string) {
+    setNoteText((prev) => {
+      const at = prev.lastIndexOf("@");
+      const base = at >= 0 ? prev.slice(0, at) : prev;
+      const suffix = prev.endsWith(" ") ? "" : " ";
+      return `${base}${token}${suffix}`;
+    });
+    setMentionOpen(false);
+  }
 
   if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
   const s = data.system;
@@ -627,9 +648,21 @@ function SystemDetail() {
           <div>
             <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
             <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
-              className="flex gap-2 mb-4">
-              <input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="הוסף הערה..."
-                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              className="flex gap-2 mb-4 relative">
+              <div className="relative flex-1">
+                <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+                {mentionOpen && (
+                  <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
+                    {mentionOptions.map((opt) => (
+                      <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
+                        className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                        <span className="text-primary">@</span>{opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <button type="submit" className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
                 <Send className="h-4 w-4" />
               </button>

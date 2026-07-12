@@ -612,12 +612,20 @@ export const listMyNotifications = createServerFn({ method: "GET" })
     const me = context.userId;
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-    const { data: mySystems } = await context.supabase
-      .from("systems").select("id, system_code, name").eq("assigned_agent_id", me);
+    const [{ data: mySystems }, { data: allProfiles }] = await Promise.all([
+      context.supabase.from("systems").select("id, system_code, name").eq("assigned_agent_id", me),
+      context.supabase.from("profiles").select("id, display_name"),
+    ]);
     const myIds = (mySystems ?? []).map((s: any) => s.id);
     const sysMap = new Map<string, { code: string; name: string }>(
       (mySystems ?? []).map((s: any) => [s.id, { code: s.system_code, name: s.name }]),
     );
+    const pmap = new Map((allProfiles ?? []).map((p: any) => [p.id, p.display_name]));
+    const myName = String(pmap.get(me) ?? "").trim();
+    const isMentioned = (body: string) => {
+      const text = String(body ?? "");
+      return text.includes("@כולם") || (!!myName && text.includes(`@${myName}`));
+    };
 
     const { data: transfers } = await context.supabase
       .from("system_transfers")
@@ -646,16 +654,24 @@ export const listMyNotifications = createServerFn({ method: "GET" })
       activity = actRes.data ?? [];
     }
 
-    const extraIds = Array.from(new Set(
-      (transfers ?? []).map((t: any) => t.system_id).filter((id: string) => id && !sysMap.has(id)),
-    ));
+    const { data: mentionRows } = await context.supabase
+      .from("system_notes")
+      .select("id, system_id, body, author_id, created_at")
+      .neq("author_id", me)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    const mentionNotes = (mentionRows ?? []).filter((n: any) => isMentioned(n.body));
+
+    const extraIds = Array.from(new Set([
+      ...(transfers ?? []).map((t: any) => t.system_id),
+      ...mentionNotes.map((n: any) => n.system_id),
+    ].filter((id: string) => id && !sysMap.has(id))));
     if (extraIds.length) {
       const { data: extra } = await context.supabase
         .from("systems").select("id, system_code, name").in("id", extraIds);
       for (const s of (extra ?? []) as any[]) sysMap.set(s.id, { code: s.system_code, name: s.name });
     }
-    const { data: profiles } = await context.supabase.from("profiles").select("id, display_name");
-    const pmap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
 
     const items: any[] = [];
     for (const t of (transfers ?? []) as any[]) {
@@ -671,11 +687,22 @@ export const listMyNotifications = createServerFn({ method: "GET" })
       });
     }
     for (const n of notes) {
+      if (mentionNotes.some((m: any) => m.id === n.id)) continue;
       const sys = sysMap.get(n.system_id);
       items.push({
         id: `n:${n.id}`, kind: "note", system_id: n.system_id,
         system_code: sys?.code, system_name: sys?.name, created_at: n.created_at,
         title: "הערה חדשה",
+        detail: pmap.get(n.author_id) ?? "לא ידוע",
+        reason: (n.body ?? "").slice(0, 120),
+      });
+    }
+    for (const n of mentionNotes) {
+      const sys = sysMap.get(n.system_id);
+      items.push({
+        id: `m:${n.id}`, kind: "mention", system_id: n.system_id,
+        system_code: sys?.code, system_name: sys?.name, created_at: n.created_at,
+        title: String(n.body ?? "").includes("@כולם") ? "תיוג לכל הנציגים" : "תויגת בהערה",
         detail: pmap.get(n.author_id) ?? "לא ידוע",
         reason: (n.body ?? "").slice(0, 120),
       });

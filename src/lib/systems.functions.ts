@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { readStatusSettings } from "@/lib/status-settings";
+import { normalizeAdditionalCallerPhones } from "@/lib/caller-phones";
 
 // If a system_code doesn't already start with "0" or "972", and has
 // fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->
@@ -388,11 +389,13 @@ export const addSubSystem = createServerFn({ method: "POST" })
       throw new Error("רק מנהל או הנציג המטפל יכולים להוסיף תת-מערכת");
     }
     const cleanSubNotes = sanitizeOptional(data.notes ?? null);
-    const { data: inserted, error } = await context.supabase.from("systems").insert({
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: row, error } = await supabaseAdmin.from("systems").insert({
       system_code: normalizeSystemCode(data.system_code),
       name: sanitizeText(data.name?.trim() || parent.name || ""),
       status: (data.status ?? "open") as any,
       assigned_agent_id: parent.assigned_agent_id,
+      parent_system_id: parent.id,
       notes: cleanSubNotes,
       phone: sanitizeOptional(data.phone ?? null),
       source: sanitizeOptional(data.source ?? null),
@@ -400,16 +403,6 @@ export const addSubSystem = createServerFn({ method: "POST" })
       email: data.email || null,
     }).select().single();
     if (error) throw new Error(error.message);
-    const { data: row, error: parentError } = await context.supabase
-      .from("systems")
-      .update({ parent_system_id: parent.id })
-      .eq("id", inserted.id)
-      .select()
-      .single();
-    if (parentError) {
-      await context.supabase.from("systems").delete().eq("id", inserted.id);
-      throw new Error(parentError.message);
-    }
     if (cleanSubNotes && row?.id) {
       try {
         await context.supabase.from("system_notes").insert({
@@ -844,13 +837,30 @@ export const listDueReminders = createServerFn({ method: "GET" })
     if (myWaitingStatuses.length) {
       const { data: rows, error: e3 } = await context.supabase
         .from("systems")
-        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at")
+        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at, assigned_agent_id")
         .in("status", myWaitingStatuses as any)
         .eq("reminder_handled", false)
         .order("updated_at", { ascending: false })
         .limit(500);
       if (e3) throw new Error(e3.message);
       derived = rows ?? [];
+    }
+
+    // Waiting for the currently assigned representative: every untreated
+    // non-handled status assigned to me should appear in the bell immediately,
+    // not only after the stale threshold passes.
+    let assignedWaiting: any[] = [];
+    if (pendingStatusKeys.length) {
+      const { data: rows, error: eAssigned } = await context.supabase
+        .from("systems")
+        .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at, assigned_agent_id")
+        .eq("assigned_agent_id", context.userId)
+        .in("status", pendingStatusKeys as any)
+        .eq("reminder_handled", false)
+        .order("updated_at", { ascending: false })
+        .limit(500);
+      if (eAssigned) throw new Error(eAssigned.message);
+      assignedWaiting = rows ?? [];
     }
 
     // Stale: systems assigned to me, pending, untreated for >= threshold days
@@ -888,6 +898,10 @@ export const listDueReminders = createServerFn({ method: "GET" })
     for (const r of derived) {
       if (!notSnoozed(r)) continue;
       if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "status" }); }
+    }
+    for (const r of assignedWaiting) {
+      if (!notSnoozed(r)) continue;
+      if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "assigned" }); }
     }
     for (const r of stale) {
       if (!notSnoozed(r)) continue;
@@ -1306,9 +1320,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     const sys = sysRow as any;
 
     const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
-    const additional = Array.isArray(sys.additional_caller_phones)
-      ? (sys.additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
 
 
     let rawPhone = "";
@@ -1421,9 +1433,7 @@ export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
       .maybeSingle();
     if (loadError) throw new Error(loadError.message);
     if (!sys) throw new Error("המערכת לא נמצאה");
-    const arr = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const arr = normalizeAdditionalCallerPhones((sys as any).additional_caller_phones);
     if (arr.length >= 20) throw new Error("ניתן להוסיף עד 20 מספרי פונה נוספים");
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
@@ -1453,9 +1463,7 @@ export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
       .maybeSingle();
     if (loadError) throw new Error(loadError.message);
     if (!sys) throw new Error("המערכת לא נמצאה");
-    const arr = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const arr = normalizeAdditionalCallerPhones((sys as any).additional_caller_phones);
     if (!arr[data.index]) throw new Error("מספר לא נמצא");
     const phone = sanitizeText(data.phone).trim();
     if (!phone) throw new Error("מספר ריק");
@@ -1480,9 +1488,7 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
       .maybeSingle();
     if (loadError) throw new Error(loadError.message);
     if (!sys) throw new Error("המערכת לא נמצאה");
-    const arr = Array.isArray((sys as any).additional_caller_phones)
-      ? ((sys as any).additional_caller_phones as Array<{ phone?: string; sent_at?: string }>)
-      : [];
+    const arr = normalizeAdditionalCallerPhones((sys as any).additional_caller_phones);
     if (!arr[data.index]) return { ok: true };
     const next = arr.slice();
     next.splice(data.index, 1);

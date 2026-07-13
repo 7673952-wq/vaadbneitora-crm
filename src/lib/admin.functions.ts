@@ -102,7 +102,7 @@ async function seedMissingRolePermissions() {
   const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
     viewer: { systems_read: true },
     agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true },
-    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true },
+    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true, audit_view: true },
     super_admin: Object.fromEntries(PERMISSION_KEYS.map((p) => [p, true])) as Record<(typeof PERMISSION_KEYS)[number], boolean>,
   };
   const rows = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({
@@ -280,6 +280,52 @@ export const listStatusSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     return readStatusSettings(supabaseAdmin);
+  });
+
+export const listPendingVoiceSends = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertPermission(context, "settings_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    
+    // Get all systems with pending voice sends or already sent
+    const { data: systems, error } = await supabaseAdmin
+      .from("systems")
+      .select("id, system_code, status, pending_voice_send_at, voice_message_sent_at, caller_phone, phone, additional_caller_phones, created_at");
+    
+    if (error) throw new Error(error.message);
+    
+    // Enrich with status settings
+    const settings = await readStatusSettings(supabaseAdmin);
+    const settingsByKey = new Map(settings.map((s) => [s.status_key, s]));
+    
+    const pending = (systems ?? []).map((sys: any) => {
+      const setting = settingsByKey.get(sys.status);
+      const isPending = !!sys.pending_voice_send_at && !sys.voice_message_sent_at;
+      const isSent = !!sys.voice_message_sent_at;
+      
+      return {
+        id: sys.id,
+        system_code: sys.system_code,
+        status: sys.status,
+        status_label: setting?.label || sys.status,
+        pending_voice_send_at: sys.pending_voice_send_at,
+        voice_message_sent_at: sys.voice_message_sent_at,
+        caller_phone: sys.caller_phone || sys.phone,
+        additional_phones: sys.additional_caller_phones || [],
+        created_at: sys.created_at,
+        isPending,
+        isSent,
+        voice_enabled: setting?.enables_voice_message || false,
+      };
+    });
+    
+    return { 
+      total: pending.length,
+      pending: pending.filter((p: any) => p.isPending && p.voice_enabled),
+      sent_today: pending.filter((p: any) => p.isSent && p.voice_enabled && new Date(p.voice_message_sent_at).toDateString() === new Date().toDateString()),
+      sent_all: pending.filter((p: any) => p.isSent && p.voice_enabled),
+    };
   });
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
@@ -726,6 +772,4 @@ export const listMyNotifications = createServerFn({ method: "GET" })
     items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return items.slice(0, 50);
   });
-
-
 

@@ -7,7 +7,6 @@
   "regions": ["fra1"],
   "crons": [
     { "path": "/api/public/hooks/daily-backup", "schedule": "0 0 * * *" },
-    { "path": "/api/public/hooks/weekly-backup", "schedule": "0 5 * * 4" },
-    { "path": "/api/public/hooks/process-voice-queue", "schedule": "*/15 * * * *" }
+    { "path": "/api/public/hooks/weekly-backup", "schedule": "0 5 * * 4" }
   ]
 }

@@ -611,6 +611,12 @@ export const updateSystem = createServerFn({ method: "POST" })
           .in("id", logIds);
       }
     }
+    // Automatic voice-message send/queue when the status changes to one
+    // configured for auto-sending (admin > statuses).
+    if (data.status && data.status !== sys.status) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await maybeScheduleOrSendAutoVoice(supabaseAdmin, id, data.status);
+    }
     return row;
   });
 
@@ -1294,6 +1300,230 @@ export const getHandledRatio = createServerFn({ method: "POST" })
   });
 
 // --- Yemot HaMashiach: prepare a per-phone extension and call it ---
+function getIsraelHour(date: Date): number {
+  const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "numeric", hour12: false });
+  const hourPart = fmt.formatToParts(date).find((p) => p.type === "hour")?.value ?? "0";
+  return parseInt(hourPart, 10) % 24;
+}
+
+function isWithinIsraelWindow(date: Date, startHour: number, endHour: number): boolean {
+  const h = getIsraelHour(date);
+  // endHour is exclusive; a window like 8-20 covers hours 8..19.
+  if (startHour === endHour) return true; // 24/7 window
+  if (startHour < endHour) return h >= startHour && h < endHour;
+  // Overnight window (e.g. 20 -> 6)
+  return h >= startHour || h < endHour;
+}
+
+function nextIsraelWindowStart(from: Date, startHour: number): Date {
+  const d = new Date(from.getTime());
+  d.setUTCMinutes(0, 0, 0);
+  for (let i = 0; i < 48; i++) {
+    d.setUTCHours(d.getUTCHours() + 1);
+    if (getIsraelHour(d) === startHour) return d;
+  }
+  return new Date(from.getTime() + 24 * 60 * 60 * 1000);
+}
+
+// Core Yemot HaMashiach voice-send flow, usable both from the authenticated
+// manual "send" button and from the automatic/queued sender (no user context).
+async function runYemotVoiceSend(supabaseAdmin: any, systemId: string, phoneIndex: number) {
+  const apiKey = (process.env.YEMOT_API_KEY || "").trim();
+  if (!apiKey) {
+    throw new Error("מפתח ה־API של ימות המשיח לא מוגדר בשרת (YEMOT_API_KEY)");
+  }
+
+  const { data: sysRow, error: sysErr } = await supabaseAdmin
+    .from("systems")
+    .select("*")
+    .eq("id", systemId)
+    .maybeSingle();
+  if (sysErr) throw sysErr;
+  if (!sysRow) throw new Error("המערכת לא נמצאה");
+  const sys = sysRow as any;
+
+  const idx = phoneIndex;
+  const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
+
+  let rawPhone = "";
+  if (idx < 0) {
+    rawPhone = String(sys.caller_phone || sys.phone || "");
+  } else {
+    const entry = additional[idx];
+    if (!entry) throw new Error("מספר פונה נוסף לא נמצא");
+    rawPhone = String(entry.phone || "");
+  }
+  const phone = rawPhone.replace(/[^\d]/g, "");
+  if (!phone) throw new Error("אין מספר טלפון לפונה");
+
+  const settings = await readStatusSettings(supabaseAdmin);
+  const cur = settings.find((r: any) => r.status_key === sys.status) as any;
+  if (!cur?.enables_voice_message) {
+    throw new Error("לא ניתן לשלוח הודעה בסטטוס זה");
+  }
+  const messageFile = String(cur.voice_message_template || "").trim();
+  if (!messageFile) {
+    throw new Error("לא הוגדר מספר הודעה עבור הסטטוס הזה");
+  }
+  if (!/^\d+$/.test(messageFile)) {
+    throw new Error("מספר ההודעה של הסטטוס חייב להכיל ספרות בלבד");
+  }
+
+  const systemCode = String(sys.system_code || "").trim();
+  if (!systemCode) throw new Error("אין מספר מערכת לשליחה");
+
+  const ymBase = "https://www.call2all.co.il/ym/api";
+  const extensionPath = `ivr2:0CRM/Phone/${phone}`;
+  const jsonHeaders = { authorization: apiKey, "Content-Type": "application/json" };
+  const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
+    let res: Response;
+    try {
+      res = await fetch(`${ymBase}/${endpoint}`, {
+        method: "POST",
+        headers: jsonHeaders,
+        body: JSON.stringify(params),
+      });
+    } catch (e: any) {
+      throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
+    }
+    let json: any = null;
+    try { json = await res.json(); } catch { json = null; }
+    if (!res.ok || !json || !accept(json)) {
+      const msg = json?.message || json?.responseMessage || `הפעולה נכשלה (סטטוס ${res.status})`;
+      throw new Error(`ימות המשיח (${endpoint}): ${msg}`);
+    }
+    return json;
+  };
+
+  await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
+  const fileActionJson = await callYemot("FileAction", {
+    what: `ivr2:0CRM/files/${messageFile}.wav`,
+    target: extensionPath,
+  }, (json) => json.responseStatus === "OK" && (json.success !== false));
+  const copiedTarget = String(fileActionJson?.reports?.[0]?.target || fileActionJson?.target || "");
+  const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
+  const fileId = targetMatch?.[1];
+  if (!fileId) {
+    throw new Error("ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה");
+  }
+  await callYemot("UploadTextFile", {
+    what: `${extensionPath}/${fileId}-Title.tts`,
+    contents: systemCode,
+  }, (json) => json.responseStatus === "OK");
+  const callJson = await callYemot("CallExtensionBridging", {
+    phones: phone,
+  }, (json) => json.responseStatus === "OK");
+
+  const nowIso = new Date().toISOString();
+  let sentAtError: any = null;
+  if (idx < 0) {
+    const { error } = await supabaseAdmin.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", systemId);
+    sentAtError = error;
+  } else {
+    const next = additional.slice();
+    next[idx] = { ...(next[idx] ?? {}), phone: rawPhone, sent_at: nowIso };
+    const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", systemId);
+    sentAtError = error;
+  }
+  if (sentAtError) throw new Error(sentAtError.message);
+
+  return {
+    ok: true,
+    campaignId: callJson?.CampaignId ?? callJson?.campaignId ?? null,
+    sentAt: nowIso,
+  };
+}
+
+// Sends to every caller (primary + additional) who hasn't received the
+// message yet for this system. Used by the automatic status-triggered send
+// and by the queued/cron sender. Never throws — collects per-target results.
+async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string) {
+  const { data: sysRow, error: sysErr } = await supabaseAdmin
+    .from("systems")
+    .select("caller_phone, phone, voice_message_sent_at, additional_caller_phones")
+    .eq("id", systemId)
+    .maybeSingle();
+  if (sysErr || !sysRow) return { ok: 0, fail: 0, targets: 0 };
+  const sys = sysRow as any;
+  const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
+
+  const targets: number[] = [];
+  if ((sys.caller_phone || sys.phone) && !sys.voice_message_sent_at) targets.push(-1);
+  additional.forEach((p, i) => { if (p?.phone && !p.sent_at) targets.push(i); });
+
+  let ok = 0, fail = 0;
+  for (const phoneIndex of targets) {
+    try {
+      await runYemotVoiceSend(supabaseAdmin, systemId, phoneIndex);
+      ok++;
+    } catch {
+      fail++;
+    }
+  }
+  return { ok, fail, targets: targets.length };
+}
+
+// Called right after a status change in updateSystem. If the new status is
+// configured for automatic voice sending, either sends immediately (if
+// within the configured hour window) or schedules it for the next window.
+async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string, statusKey: string) {
+  try {
+    const settings = await readStatusSettings(supabaseAdmin);
+    const cur = settings.find((r) => r.status_key === statusKey);
+    if (!cur?.enables_voice_message || cur.voice_send_mode !== "auto") return;
+
+    const now = new Date();
+    if (isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour)) {
+      await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", systemId);
+      await autoSendUnsentVoiceMessages(supabaseAdmin, systemId);
+    } else {
+      const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
+      await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", systemId);
+    }
+  } catch {
+    // Never let auto-voice-send scheduling break the status update itself.
+  }
+}
+
+// Cron entry point: processes every system whose scheduled auto-send time
+// has arrived. Re-validates the status is still auto+enabled and we're still
+// within its window before actually sending (status may have changed since
+// it was queued).
+export async function processPendingVoiceSends(supabaseAdmin: any) {
+  const nowIso = new Date().toISOString();
+  const { data: due, error } = await supabaseAdmin
+    .from("systems")
+    .select("id, status, pending_voice_send_at")
+    .not("pending_voice_send_at", "is", null)
+    .lte("pending_voice_send_at", nowIso)
+    .limit(200);
+  if (error) throw new Error(error.message);
+
+  const settings = await readStatusSettings(supabaseAdmin);
+  const settingsByKey = new Map(settings.map((s) => [s.status_key, s]));
+  const now = new Date();
+  let sent = 0, skipped = 0, requeued = 0;
+
+  for (const row of (due ?? []) as any[]) {
+    const cur = settingsByKey.get(row.status);
+    if (!cur?.enables_voice_message || cur.voice_send_mode !== "auto") {
+      await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", row.id);
+      skipped++;
+      continue;
+    }
+    if (!isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour)) {
+      const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
+      await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", row.id);
+      requeued++;
+      continue;
+    }
+    await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", row.id);
+    await autoSendUnsentVoiceMessages(supabaseAdmin, row.id);
+    sent++;
+  }
+  return { ok: true, processed: (due ?? []).length, sent, skipped, requeued };
+}
+
 export const sendVoiceMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { systemId: string; phoneIndex?: number }) =>
@@ -1304,112 +1534,9 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-
-    const apiKey = (process.env.YEMOT_API_KEY || "").trim();
-    if (!apiKey) {
-      throw new Error("מפתח ה־API של ימות המשיח לא מוגדר בשרת (YEMOT_API_KEY)");
-    }
-
-    const { data: sysRow, error: sysErr } = await context.supabase
-      .from("systems")
-      .select("*")
-      .eq("id", data.systemId)
-      .maybeSingle();
-    if (sysErr) throw sysErr;
-    if (!sysRow) throw new Error("המערכת לא נמצאה");
-    const sys = sysRow as any;
-
-    const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
-    const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
-
-
-    let rawPhone = "";
-    if (idx < 0) {
-      rawPhone = String(sys.caller_phone || sys.phone || "");
-    } else {
-      const entry = additional[idx];
-      if (!entry) throw new Error("מספר פונה נוסף לא נמצא");
-      rawPhone = String(entry.phone || "");
-    }
-    const phone = rawPhone.replace(/[^\d]/g, "");
-    if (!phone) throw new Error("אין מספר טלפון לפונה");
-
-    const settings = await readStatusSettings(context.supabase);
-    const cur = settings.find((r: any) => r.status_key === sys.status) as any;
-    if (!cur?.enables_voice_message) {
-      throw new Error("לא ניתן לשלוח הודעה בסטטוס זה");
-    }
-    const messageFile = String(cur.voice_message_template || "").trim();
-    if (!messageFile) {
-      throw new Error("לא הוגדר מספר הודעה עבור הסטטוס הזה");
-    }
-    if (!/^\d+$/.test(messageFile)) {
-      throw new Error("מספר ההודעה של הסטטוס חייב להכיל ספרות בלבד");
-    }
-
-    const systemCode = String(sys.system_code || "").trim();
-    if (!systemCode) throw new Error("אין מספר מערכת לשליחה");
-
-    const ymBase = "https://www.call2all.co.il/ym/api";
-    const extensionPath = `ivr2:0CRM/Phone/${phone}`;
-    const jsonHeaders = { authorization: apiKey, "Content-Type": "application/json" };
-    const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
-      let res: Response;
-      try {
-        res = await fetch(`${ymBase}/${endpoint}`, {
-          method: "POST",
-          headers: jsonHeaders,
-          body: JSON.stringify(params),
-        });
-      } catch (e: any) {
-        throw new Error(`שגיאת רשת מול ימות המשיח: ${e?.message ?? e}`);
-      }
-      let json: any = null;
-      try { json = await res.json(); } catch { json = null; }
-      if (!res.ok || !json || !accept(json)) {
-        const msg = json?.message || json?.responseMessage || `הפעולה נכשלה (סטטוס ${res.status})`;
-        throw new Error(`ימות המשיח (${endpoint}): ${msg}`);
-      }
-      return json;
-    };
-
-    await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
-    const fileActionJson = await callYemot("FileAction", {
-      what: `ivr2:0CRM/files/${messageFile}.wav`,
-      target: extensionPath,
-    }, (json) => json.responseStatus === "OK" && (json.success !== false));
-const copiedTarget = String(fileActionJson?.reports?.[0]?.target || fileActionJson?.target || "");    const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
-    const fileId = targetMatch?.[1];
-    if (!fileId) {
-      throw new Error("ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה");
-    }
-    await callYemot("UploadTextFile", {
-      what: `${extensionPath}/${fileId}-Title.tts`,
-      contents: systemCode,
-    }, (json) => json.responseStatus === "OK");
-    const callJson = await callYemot("CallExtensionBridging", {
-      phones: phone,
-    }, (json) => json.responseStatus === "OK");
-
-    const nowIso = new Date().toISOString();
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    let sentAtError: any = null;
-    if (idx < 0) {
-      const { error } = await supabaseAdmin.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", data.systemId);
-      sentAtError = error;
-    } else {
-      const next = additional.slice();
-      next[idx] = { ...(next[idx] ?? {}), phone: rawPhone, sent_at: nowIso };
-      const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", data.systemId);
-      sentAtError = error;
-    }
-    if (sentAtError) throw new Error(sentAtError.message);
-
-    return {
-      ok: true,
-      campaignId: callJson?.CampaignId ?? callJson?.campaignId ?? null,
-      sentAt: nowIso,
-    };
+    const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
+    return runYemotVoiceSend(supabaseAdmin, data.systemId, idx);
   });
 
 // ============= Additional caller phones =============

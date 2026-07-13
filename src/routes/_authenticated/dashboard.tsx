@@ -3,7 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem,
-  listDueReminders, dismissReminder, snoozeReminder, findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
+  findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
   importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
@@ -155,9 +155,6 @@ function Dashboard() {
   const meFn = useServerFn(getMyRole);
   const createFn = useServerFn(createSystem);
   const updateFn = useServerFn(updateSystem);
-  const dueFn = useServerFn(listDueReminders);
-  const dismissFn = useServerFn(dismissReminder);
-  const snoozeFn = useServerFn(snoozeReminder);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const staleHoursFn = useServerFn(getStaleWarningHours);
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
@@ -233,21 +230,7 @@ function Dashboard() {
   // Split by admin-configured mandatory flag (defaults to non-workflow=mandatory in STATUS_MANDATORY).
   const regularStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] !== false), [statusMaps]);
   const workflowStatusOptions = useMemo(() => statusMaps.options.filter((s) => statusMaps.mandatory[s.value] === false), [statusMaps]);
-  const { data: dueReminders } = useQuery({
-    queryKey: ["dueReminders"],
-    queryFn: () => dueFn(),
-    refetchInterval: 60_000,
-  });
 
-  const dismissMut = useMutation({
-    mutationFn: dismissFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); qc.invalidateQueries({ queryKey: ["systems"] }); },
-  });
-  const snoozeMut = useMutation({
-    mutationFn: snoozeFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["dueReminders"] }); qc.invalidateQueries({ queryKey: ["my_due_reminders"] }); toast.success("נדחה"); },
-    onError: (e: any) => toast.error(e.message),
-  });
 
   const filtered = useMemo(() => {
     if (!systems) return [];
@@ -344,7 +327,6 @@ function Dashboard() {
     onSuccess: () => { toast.success("עודכן"); },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: ["systems"] });
-      qc.invalidateQueries({ queryKey: ["dueReminders"] });
       qc.invalidateQueries({ queryKey: ["my_due_reminders"] });
     },
   });
@@ -553,37 +535,6 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Due reminders banner */}
-      {dueReminders && dueReminders.length > 0 && (
-        <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 space-y-2">
-          <div className="flex items-center gap-2 text-amber-900 font-semibold">
-            <Bell className="h-4 w-4" />תזכורות לטיפול ({dueReminders.length})
-          </div>
-          <div className="space-y-1.5">
-            {dueReminders.map((r: any) => (
-              <div key={r.id} className="flex items-center justify-between gap-2 bg-white/70 rounded-lg p-2.5 text-sm">
-                <Link to="/systems/$id" params={{ id: r.id }} className="flex-1 min-w-0 flex items-center gap-2 hover:underline">
-                  <span className="text-xs font-mono text-muted-foreground">{r.system_code}</span>
-                  <span className="font-medium truncate">{r.name}</span>
-                  {r.source === "status" ? (
-                    <span className="text-xs text-amber-800 shrink-0">· {STATUS_LABEL[r.status] || r.status}</span>
-                  ) : (
-                    <span className="text-xs text-muted-foreground shrink-0">· {new Date(r.reminder_at).toLocaleString("he-IL")}</span>
-                  )}
-                </Link>
-                <div className="flex items-center gap-1 shrink-0">
-                  <SnoozeMenu onSnooze={(minutes) => snoozeMut.mutate({ data: { system_id: r.id, minutes } })} />
-                  <button onClick={() => dismissMut.mutate({ data: { system_id: r.id } })}
-                    className="text-xs flex items-center gap-1 px-2 py-1 rounded-md border border-green-400 hover:bg-green-100 text-green-800 bg-white">
-                    <CheckCircle2 className="h-3 w-3" />בוצע
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">דשבורד מערכות</h1>

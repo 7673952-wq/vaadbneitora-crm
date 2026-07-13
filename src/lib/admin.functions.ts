@@ -284,7 +284,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[]; enables_voice_message?: boolean; voice_message_template?: string; voice_message_api_key?: string }) =>
+  .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[]; enables_voice_message?: boolean; voice_message_template?: string; voice_message_api_key?: string; voice_send_mode?: "manual" | "auto"; auto_send_start_hour?: number; auto_send_end_hour?: number }) =>
     z.object({
       status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
       label: z.string().min(1).max(100),
@@ -298,6 +298,9 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
       enables_voice_message: z.boolean().optional(),
       voice_message_template: z.string().max(20).regex(/^\d*$/, "מספר ההודעה חייב להכיל ספרות בלבד").optional(),
       voice_message_api_key: z.string().max(500).optional(),
+      voice_send_mode: z.enum(["manual", "auto"]).optional(),
+      auto_send_start_hour: z.number().int().min(0).max(23).optional(),
+      auto_send_end_hour: z.number().int().min(0).max(23).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -317,6 +320,9 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
     if (data.enables_voice_message !== undefined) patch.enables_voice_message = data.enables_voice_message;
     if (data.voice_message_template !== undefined) patch.voice_message_template = data.voice_message_template.trim();
     if (data.voice_message_api_key !== undefined) patch.voice_message_api_key = data.voice_message_api_key.trim();
+    if (data.voice_send_mode !== undefined) patch.voice_send_mode = data.voice_send_mode;
+    if (data.auto_send_start_hour !== undefined) patch.auto_send_start_hour = data.auto_send_start_hour;
+    if (data.auto_send_end_hour !== undefined) patch.auto_send_end_hour = data.auto_send_end_hour;
     await upsertStatusSettingStable(supabaseAdmin, patch, context.userId);
     return { ok: true };
   });

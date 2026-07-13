@@ -15,6 +15,9 @@ export type StatusSettingRow = {
   enables_voice_message: boolean;
   voice_message_template: string;
   voice_message_api_key: string;
+  voice_send_mode: "manual" | "auto";
+  auto_send_start_hour: number;
+  auto_send_end_hour: number;
 };
 
 const STATUS_SETTINGS_CONFIG_KEY = "status_settings_config";
@@ -92,6 +95,9 @@ export function defaultStatusRows(): StatusSettingRow[] {
     enables_voice_message: false,
     voice_message_template: defaultVoiceMessageTemplate(status_key, label),
     voice_message_api_key: "",
+    voice_send_mode: "manual" as const,
+    auto_send_start_hour: 8,
+    auto_send_end_hour: 20,
   }));
 }
 
@@ -116,6 +122,13 @@ function normalizeRows(rows: unknown): StatusSettingRow[] {
           ? row.voice_message_template.trim()
           : defaultVoiceMessageTemplate(statusKey, typeof row.label === "string" ? row.label : ""),
         voice_message_api_key: typeof row.voice_message_api_key === "string" ? row.voice_message_api_key : "",
+        voice_send_mode: row.voice_send_mode === "auto" ? "auto" : "manual",
+        auto_send_start_hour: Number.isFinite(Number(row.auto_send_start_hour))
+          ? Math.min(23, Math.max(0, Math.round(Number(row.auto_send_start_hour))))
+          : 8,
+        auto_send_end_hour: Number.isFinite(Number(row.auto_send_end_hour))
+          ? Math.min(23, Math.max(0, Math.round(Number(row.auto_send_end_hour))))
+          : 20,
       };
     })
     .sort((a, b) => a.sort_order - b.sort_order);
@@ -189,7 +202,16 @@ async function bestEffortMirrorStatusTable(supabaseAdmin: SupabaseLike, rows: St
   // The mirror table does not have `requires_reason`, `enables_voice_message`,
   // `voice_message_template`, or `voice_message_api_key` columns — always strip
   // before writing. Source of truth is the app_settings JSON blob.
-  const forTable = rows.map(({ requires_reason: _rr, enables_voice_message: _evm, voice_message_template: _vmt, voice_message_api_key: _vak, ...row }) => row);
+  const forTable = rows.map(({
+    requires_reason: _rr,
+    enables_voice_message: _evm,
+    voice_message_template: _vmt,
+    voice_message_api_key: _vak,
+    voice_send_mode: _vsm,
+    auto_send_start_hour: _ash,
+    auto_send_end_hour: _aeh,
+    ...row
+  }) => row);
   try {
     const { error } = await supabaseAdmin.from("status_settings").upsert(forTable, { onConflict: "status_key" } as any);
     if (!error) return;
@@ -221,6 +243,9 @@ export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, pat
         enables_voice_message: false,
         voice_message_template: "",
         voice_message_api_key: "",
+        voice_send_mode: "manual" as const,
+        auto_send_start_hour: 8,
+        auto_send_end_hour: 20,
       };
   const [merged] = normalizeRows([{ ...existing, ...patch }]);
   if (!merged) return rows;

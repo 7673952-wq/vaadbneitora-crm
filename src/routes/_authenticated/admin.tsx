@@ -366,7 +366,7 @@ function StatusSettingsPanel() {
   const delMut = useMutation({ mutationFn: (vars: any) => withAuth(delFn, vars), onSuccess: async () => { await refresh(); toast.success("נמחק"); }, onError: (e: any) => toast.error(e.message) });
   const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); toast.success("סדר עודכן"); }, onError: (e: any) => toast.error(e?.message || e?.toString() || "שגיאה בשינוי סדר") });
   const [showAdd, setShowAdd] = useState(false);
-  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true, enables_voice_message: false, voice_message_template: "" });
+  const [newRow, setNewRow] = useState({ status_key: "", label: "", tone: "green", sort_order: 1000, is_handled: false, is_mandatory: true, requires_reason: true, enables_voice_message: false, voice_message_template: "", voice_send_mode: "manual" as "manual" | "auto", auto_send_start_hour: 8, auto_send_end_hour: 20 });
 
   const fallbackRows = STATUS_OPTIONS.map((s, idx) => ({
     status_key: s.value,
@@ -444,6 +444,12 @@ function StatusSettingsPanel() {
           <Field label="מספר הודעה">
             <input inputMode="numeric" pattern="[0-9]*" value={newRow.voice_message_template} onChange={(e) => setNewRow({ ...newRow, voice_message_template: e.target.value.replace(/\D/g, "") })} placeholder="1 / 2 / 3" className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
           </Field>
+          <Field label="אופן שליחה">
+            <select value={newRow.voice_send_mode} onChange={(e) => setNewRow({ ...newRow, voice_send_mode: e.target.value as "manual" | "auto" })} className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="manual">ידני</option>
+              <option value="auto">אוטומטי</option>
+            </select>
+          </Field>
           <button onClick={() => upsertMut.mutate({ data: { ...newRow, is_custom: true } })} className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm">הוסף</button>
         </div>
       )}
@@ -461,7 +467,7 @@ function StatusSettingsPanel() {
   );
 }
 
-function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean; voice_message_template: string }) => void; onDelete?: () => void }) {
+function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: { row: any; index: number; total: number; agents: any[]; onMove: (delta: number) => void; onSave: (p: { label: string; tone: string; is_handled: boolean; is_mandatory: boolean; requires_reason: boolean; assigned_agent_ids: string[]; enables_voice_message: boolean; voice_message_template: string; voice_send_mode: "manual" | "auto"; auto_send_start_hour: number; auto_send_end_hour: number }) => void; onDelete?: () => void }) {
   const [label, setLabel] = useState(row.label);
   const [tone, setTone] = useState(row.tone);
   const [handled, setHandled] = useState<boolean>(!!row.is_handled);
@@ -470,9 +476,16 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
   const [agentIds, setAgentIds] = useState<string[]>(row.assigned_agent_ids ?? []);
   const [enablesVoice, setEnablesVoice] = useState<boolean>(!!row.enables_voice_message);
   const [voiceTemplate, setVoiceTemplate] = useState<string>(row.voice_message_template ?? "");
+  const [voiceSendMode, setVoiceSendMode] = useState<"manual" | "auto">(row.voice_send_mode === "auto" ? "auto" : "manual");
+  const [autoStartHour, setAutoStartHour] = useState<number>(Number.isFinite(row.auto_send_start_hour) ? row.auto_send_start_hour : 8);
+  const [autoEndHour, setAutoEndHour] = useState<number>(Number.isFinite(row.auto_send_end_hour) ? row.auto_send_end_hour : 20);
   const initialIds = (row.assigned_agent_ids ?? []) as string[];
   const idsDirty = agentIds.length !== initialIds.length || agentIds.some((x) => !initialIds.includes(x));
-  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty || enablesVoice !== !!row.enables_voice_message || voiceTemplate !== (row.voice_message_template ?? "");
+  const dirty = label !== row.label || tone !== row.tone || handled !== !!row.is_handled || mandatory !== (row.is_mandatory ?? true) || requiresReason !== (row.requires_reason ?? true) || idsDirty
+    || enablesVoice !== !!row.enables_voice_message || voiceTemplate !== (row.voice_message_template ?? "")
+    || voiceSendMode !== (row.voice_send_mode === "auto" ? "auto" : "manual")
+    || autoStartHour !== (Number.isFinite(row.auto_send_start_hour) ? row.auto_send_start_hour : 8)
+    || autoEndHour !== (Number.isFinite(row.auto_send_end_hour) ? row.auto_send_end_hour : 20);
   const toggleAgent = (id: string) => setAgentIds((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
   return (
     <div className="p-3 flex flex-col gap-3">
@@ -495,7 +508,7 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
           <div className="text-[10px] font-mono text-muted-foreground mt-1 pr-1">{row.status_key}{row.is_custom && " · מותאם"}</div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTemplate.trim() })}
+          <button disabled={!dirty} onClick={() => onSave({ label, tone, is_handled: handled, is_mandatory: mandatory, requires_reason: requiresReason, assigned_agent_ids: agentIds, enables_voice_message: enablesVoice, voice_message_template: voiceTemplate.trim(), voice_send_mode: voiceSendMode, auto_send_start_hour: autoStartHour, auto_send_end_hour: autoEndHour })}
             className="px-3 py-2 text-xs bg-primary text-primary-foreground rounded disabled:opacity-30 font-medium">שמור</button>
           {onDelete && (
             <button onClick={onDelete} title="מחק סטטוס" className="text-destructive hover:bg-destructive/10 rounded p-2"><Trash2 className="h-4 w-4" /></button>
@@ -550,16 +563,47 @@ function StatusEditRow({ row, index, total, agents, onMove, onSave, onDelete }: 
         <div>
           <label className="flex items-center gap-1.5 text-[11px] mb-1">
             <input type="checkbox" checked={enablesVoice} onChange={(e) => setEnablesVoice(e.target.checked)} />
-            מפעיל כפתור שליחת הודעה קולית
+            מפעיל שליחת הודעה קולית
           </label>
-          <div className="flex items-end gap-2">
+          <div className="flex items-end gap-2 flex-wrap">
             <Field label="מספר הודעה בימות">
               <input inputMode="numeric" pattern="[0-9]*" value={voiceTemplate} onChange={(e) => setVoiceTemplate(e.target.value.replace(/\D/g, ""))}
-                placeholder="לדוגמה: 1 / 2 / 3" className="w-36 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                placeholder="לדוגמה: 1 / 2 / 3" className="w-36 rounded-md border border-input bg-background px-2 py-1.5 text-sm" disabled={!enablesVoice} />
             </Field>
-            <div className="rounded-md border border-input bg-muted/30 px-2 py-2 text-[11px] text-muted-foreground leading-tight flex-1">
-              המספר משמש לקובץ ‎ivr2:0CRM/files/מספר.wav בשלב ההעתקה.
+            <Field label="אופן שליחה">
+              <select value={voiceSendMode} onChange={(e) => setVoiceSendMode(e.target.value as "manual" | "auto")}
+                disabled={!enablesVoice}
+                className="w-32 rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+                <option value="manual">ידני (כפתור)</option>
+                <option value="auto">אוטומטי</option>
+              </select>
+            </Field>
+          </div>
+          {enablesVoice && voiceSendMode === "auto" && (
+            <div className="mt-2 flex items-end gap-2 flex-wrap">
+              <Field label="שולח משעה">
+                <select value={autoStartHour} onChange={(e) => setAutoStartHour(Number(e.target.value))}
+                  className="w-24 rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="עד שעה">
+                <select value={autoEndHour} onChange={(e) => setAutoEndHour(Number(e.target.value))}
+                  className="w-24 rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+                  {Array.from({ length: 24 }, (_, h) => (
+                    <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+                  ))}
+                </select>
+              </Field>
+              <div className="rounded-md border border-input bg-muted/30 px-2 py-2 text-[11px] text-muted-foreground leading-tight flex-1 min-w-[180px]">
+                מחוץ לשעות אלו ההודעה תמתין בתור ותישלח אוטומטית כשהשעות הבאות יתחילו.
+              </div>
             </div>
+          )}
+          <div className="mt-2 rounded-md border border-input bg-muted/30 px-2 py-2 text-[11px] text-muted-foreground leading-tight">
+            המספר משמש לקובץ ‎ivr2:0CRM/files/מספר.wav בשלב ההעתקה.
           </div>
         </div>
       </div>

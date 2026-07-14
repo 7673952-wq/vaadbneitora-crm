@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  listSystems, listAgents, createSystem, updateSystem,
+  listSystems, listAgents, createSystem, updateSystem, pokeVoiceQueue,
   findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
   importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
@@ -155,6 +155,7 @@ function Dashboard() {
   const meFn = useServerFn(getMyRole);
   const createFn = useServerFn(createSystem);
   const updateFn = useServerFn(updateSystem);
+  const pokeVoiceQueueFn = useServerFn(pokeVoiceQueue);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const staleHoursFn = useServerFn(getStaleWarningHours);
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
@@ -162,6 +163,18 @@ function Dashboard() {
   const staleHours = staleSetting?.hours ?? 0;
   const statusMaps = useMemo(() => buildStatusMaps(statusSettings as any), [statusSettings]);
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
+
+  // Free alternative to a frequent Vercel cron (Pro-only): opportunistically
+  // process any queued automatic voice-message sends whenever a staff member
+  // has the dashboard open, at most every 5 minutes.
+  useEffect(() => {
+    let cancelled = false;
+    const poke = () => { pokeVoiceQueueFn().catch(() => {}); };
+    poke();
+    const interval = setInterval(() => { if (!cancelled) poke(); }, 5 * 60_000);
+    return () => { cancelled = true; clearInterval(interval); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const [status, setStatus] = useState<string>("");
   const [secondaryStatus, setSecondaryStatus] = useState<string>("");

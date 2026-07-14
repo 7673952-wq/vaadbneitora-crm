@@ -1470,17 +1470,25 @@ async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string
   try {
     const settings = await readStatusSettings(supabaseAdmin);
     const cur = settings.find((r) => r.status_key === statusKey);
-    if (!cur?.enables_voice_message || cur.voice_send_mode !== "auto") return;
+    if (!cur?.enables_voice_message || cur.voice_send_mode !== "auto") {
+      console.log(`[auto-voice] system=${systemId} status=${statusKey} -> not auto (enables=${cur?.enables_voice_message} mode=${cur?.voice_send_mode})`);
+      return;
+    }
 
     const now = new Date();
-    if (isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour)) {
+    const withinWindow = isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour);
+    console.log(`[auto-voice] system=${systemId} status=${statusKey} nowUTC=${now.toISOString()} israelHour=${getIsraelHour(now)} window=${cur.auto_send_start_hour}-${cur.auto_send_end_hour} within=${withinWindow}`);
+    if (withinWindow) {
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", systemId);
-      await autoSendUnsentVoiceMessages(supabaseAdmin, systemId);
+      const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId);
+      console.log(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
     } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", systemId);
+      console.log(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);
     }
-  } catch {
+  } catch (e: any) {
+    console.log(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${e?.message}`);
     // Never let auto-voice-send scheduling break the status update itself.
   }
 }
@@ -1523,6 +1531,28 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
   }
   return { ok: true, processed: (due ?? []).length, sent, skipped, requeued };
 }
+
+// Lightweight, authenticated, client-callable trigger for the same queue
+// processor above. Used as a free alternative to a frequent Vercel cron
+// (which requires the Pro plan): the dashboard calls this every few minutes
+// while someone has it open, piggy-backing on normal staff activity during
+// business hours. Throttled so many simultaneously-open dashboards don't
+// hammer Yemot with duplicate work.
+export const pokeVoiceQueue = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async () => {
+    try {
+      checkRateLimit("global:pokeVoiceQueue", 1, 4 * 60_000);
+    } catch {
+      return { ok: true, skipped: true };
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    try {
+      return await processPendingVoiceSends(supabaseAdmin);
+    } catch {
+      return { ok: false };
+    }
+  });
 
 export const sendVoiceMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

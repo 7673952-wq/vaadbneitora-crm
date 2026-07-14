@@ -418,7 +418,7 @@ export const createSystem = createServerFn({ method: "POST" })
   .inputValidator((d: {
     system_code: string; name: string; status: string;
     assigned_agent_id?: string | null; notes?: string; phone?: string;
-    source?: string; caller_phone?: string; email?: string;
+    source?: string; caller_phone?: string; email?: string; is_blocking_number?: boolean;
   }) =>
     z.object({
       system_code: z.string().min(1).max(60),
@@ -430,6 +430,7 @@ export const createSystem = createServerFn({ method: "POST" })
       source: z.string().max(40).optional(),
       caller_phone: z.string().max(40).optional(),
       email: z.string().email().max(200).optional().or(z.literal("")),
+      is_blocking_number: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -453,6 +454,7 @@ export const createSystem = createServerFn({ method: "POST" })
       source: sanitizeOptional(data.source ?? null),
       caller_phone: sanitizeOptional(data.caller_phone ?? null),
       email: data.email || null,
+      is_blocking_number: data.is_blocking_number ?? false,
     } as any).select().single();
     if (error) throw new Error(error.message);
     if (cleanNotes && row?.id) {
@@ -476,6 +478,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     email?: string | null;
     reason?: string;
     apply_to_children?: boolean;
+    is_blocking_number?: boolean;
   }) =>
     z.object({
       id: z.string().uuid(),
@@ -494,6 +497,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       email: z.string().email().max(200).nullable().optional().or(z.literal("")),
       reason: z.string().max(500).optional(),
       apply_to_children: z.boolean().optional(),
+      is_blocking_number: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -1095,7 +1099,7 @@ export const findSystemByCode = createServerFn({ method: "POST" })
     const raw = String(data.code).trim();
     const digits = raw.replace(/\D/g, "");
     const stripped = digits.replace(/^972/, "").replace(/^0+/, "");
-    if (stripped.length < 2 && !raw) return null;
+    if (stripped.length < 2 && !raw) return [];
 
     const variants = new Set<string>();
     const push = (v: string) => { if (v && v.length >= 2) variants.add(v); };
@@ -1112,16 +1116,18 @@ export const findSystemByCode = createServerFn({ method: "POST" })
         push("972" + reversed);
       }
     }
-    if (!variants.size) return null;
+    if (!variants.size) return [];
 
     const { data: rows } = await context.supabase
       .from("systems")
       .select("id, system_code, name, status, parent_system_id, assigned_agent_id")
       .in("system_code", Array.from(variants) as any)
-      .limit(5);
-    if (!rows || rows.length === 0) return null;
-    // Prefer an exact match against the raw input, otherwise the first row.
-    return rows.find((r: any) => r.system_code === raw) ?? rows[0];
+      .limit(20);
+    if (!rows || rows.length === 0) return [];
+    // Exact match against the raw input first, then the rest in whatever order they came back.
+    const exact = rows.filter((r: any) => r.system_code === raw);
+    const rest = rows.filter((r: any) => r.system_code !== raw);
+    return [...exact, ...rest];
   });
 
 // Ensures a persistent ROOT system with the given name exists (used for
@@ -1327,7 +1333,7 @@ function nextIsraelWindowStart(from: Date, startHour: number): Date {
 
 // Core Yemot HaMashiach voice-send flow, usable both from the authenticated
 // manual "send" button and from the automatic/queued sender (no user context).
-async function runYemotVoiceSend(supabaseAdmin: any, systemId: string, phoneIndex: number) {
+async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phoneIndex: number) {
   const apiKey = (process.env.YEMOT_API_KEY || "").trim();
   if (!apiKey) {
     throw new Error("מפתח ה־API של ימות המשיח לא מוגדר בשרת (YEMOT_API_KEY)");
@@ -1369,8 +1375,15 @@ async function runYemotVoiceSend(supabaseAdmin: any, systemId: string, phoneInde
     throw new Error("מספר ההודעה של הסטטוס חייב להכיל ספרות בלבד");
   }
 
-  const systemCode = String(sys.system_code || "").trim();
+  let systemCode = String(sys.system_code || "").trim();
   if (!systemCode) throw new Error("אין מספר מערכת לשליחה");
+  if (sys.is_blocking_number) {
+    // "Blocking number" systems: send the ID digits reversed, with any
+    // leading zero(s) dropped first — e.g. 0123456789 -> 987654321.
+    const strippedCode = systemCode.replace(/^0+/, "");
+    systemCode = strippedCode.split("").reverse().join("");
+    if (!systemCode) throw new Error("אין מספר מערכת לשליחה");
+  }
 
   const ymBase = "https://www.call2all.co.il/ym/api";
   const extensionPath = `ivr2:0CRM/Phone/${phone}`;
@@ -1434,10 +1447,71 @@ async function runYemotVoiceSend(supabaseAdmin: any, systemId: string, phoneInde
   };
 }
 
+// Public entry point: runs the core send, and always logs the attempt
+// (success or failure) to voice_message_log for the admin log view.
+async function runYemotVoiceSend(
+  supabaseAdmin: any,
+  systemId: string,
+  phoneIndex: number,
+  sendMode: "manual" | "auto" | "queue" = "manual",
+  userId?: string | null,
+) {
+  let phoneForLog: string | null = null;
+  let statusForLog: string | null = null;
+  let systemCodeForLog: string | null = null;
+  try {
+    const { data: sysRow } = await supabaseAdmin
+      .from("systems")
+      .select("system_code, status, caller_phone, phone, additional_caller_phones")
+      .eq("id", systemId)
+      .maybeSingle();
+    if (sysRow) {
+      systemCodeForLog = (sysRow as any).system_code ?? null;
+      statusForLog = (sysRow as any).status ?? null;
+      if (phoneIndex < 0) {
+        phoneForLog = (sysRow as any).caller_phone || (sysRow as any).phone || null;
+      } else {
+        const additional = normalizeAdditionalCallerPhones((sysRow as any).additional_caller_phones);
+        phoneForLog = additional[phoneIndex]?.phone ?? null;
+      }
+    }
+  } catch {
+    // Best-effort context for the log only; never blocks the actual send.
+  }
+
+  try {
+    const result = await runYemotVoiceSendInner(supabaseAdmin, systemId, phoneIndex);
+    await supabaseAdmin.from("voice_message_log").insert({
+      system_id: systemId,
+      system_code: systemCodeForLog,
+      phone: phoneForLog,
+      phone_index: phoneIndex,
+      status_key: statusForLog,
+      send_mode: sendMode,
+      success: true,
+      created_by: userId ?? null,
+    }).then(() => {}, () => {});
+    return result;
+  } catch (e: any) {
+    await supabaseAdmin.from("voice_message_log").insert({
+      system_id: systemId,
+      system_code: systemCodeForLog,
+      phone: phoneForLog,
+      phone_index: phoneIndex,
+      status_key: statusForLog,
+      send_mode: sendMode,
+      success: false,
+      error_message: String(e?.message ?? e).slice(0, 500),
+      created_by: userId ?? null,
+    }).then(() => {}, () => {});
+    throw e;
+  }
+}
+
 // Sends to every caller (primary + additional) who hasn't received the
 // message yet for this system. Used by the automatic status-triggered send
 // and by the queued/cron sender. Never throws — collects per-target results.
-async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string) {
+async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: "auto" | "queue" | "manual" = "auto", userId?: string | null) {
   const { data: sysRow, error: sysErr } = await supabaseAdmin
     .from("systems")
     .select("caller_phone, phone, voice_message_sent_at, additional_caller_phones")
@@ -1454,7 +1528,7 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string)
   let ok = 0, fail = 0;
   for (const phoneIndex of targets) {
     try {
-      await runYemotVoiceSend(supabaseAdmin, systemId, phoneIndex);
+      await runYemotVoiceSend(supabaseAdmin, systemId, phoneIndex, sendMode, userId);
       ok++;
     } catch {
       fail++;
@@ -1480,7 +1554,7 @@ async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string
     console.log(`[auto-voice] system=${systemId} status=${statusKey} nowUTC=${now.toISOString()} israelHour=${getIsraelHour(now)} window=${cur.auto_send_start_hour}-${cur.auto_send_end_hour} within=${withinWindow}`);
     if (withinWindow) {
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", systemId);
-      const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId);
+      const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId, "auto");
       console.log(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
     } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
@@ -1526,7 +1600,7 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
       continue;
     }
     await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", row.id);
-    await autoSendUnsentVoiceMessages(supabaseAdmin, row.id);
+    await autoSendUnsentVoiceMessages(supabaseAdmin, row.id, "queue");
     sent++;
   }
   return { ok: true, processed: (due ?? []).length, sent, skipped, requeued };
@@ -1554,6 +1628,39 @@ export const pokeVoiceQueue = createServerFn({ method: "POST" })
     }
   });
 
+// Manually send everyone still-unsent on a specific queued system right now,
+// bypassing the configured hour window. Used by the "send now" button on the
+// pending-queue view (manager dashboard).
+// Lets an admin directly override when a queued system's voice message will
+// send (instead of waiting for the status's configured hour window).
+export const rescheduleVoicePending = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { systemId: string; sendAt: string | null }) =>
+    z.object({ systemId: z.string().uuid(), sendAt: z.string().datetime().nullable() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if (!(await hasPermission(context.userId, "settings_manage"))) {
+      throw new Error("אין הרשאה");
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("systems").update({ pending_voice_send_at: data.sendAt }).eq("id", data.systemId);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const manualSendPendingVoice = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { systemId: string }) => z.object({ systemId: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if (!(await hasPermission(context.userId, "settings_manage"))) {
+      throw new Error("אין הרשאה");
+    }
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", data.systemId);
+    return autoSendUnsentVoiceMessages(supabaseAdmin, data.systemId, "manual", context.userId);
+  });
+
 export const sendVoiceMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { systemId: string; phoneIndex?: number }) =>
@@ -1566,7 +1673,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
-    return runYemotVoiceSend(supabaseAdmin, data.systemId, idx);
+    return runYemotVoiceSend(supabaseAdmin, data.systemId, idx, "manual", context.userId);
   });
 
 // ============= Additional caller phones =============

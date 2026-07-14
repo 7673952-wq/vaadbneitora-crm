@@ -10,7 +10,7 @@ import {
   getStaleWarningHours, setStaleWarningHours,
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
-  listPendingVoiceSends, // הפונקציה שקופיילוט הוסיף לך
+  listVoiceMessageLog,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -41,10 +41,10 @@ function AdminPage() {
   const canStatuses = !!perms.settings_manage;
   const canSeries = !!perms.series_manage;
   const canPermissions = !!perms.permissions_manage;
-  const canVoice = !!perms.settings_manage; // הרשאה לצפייה בתור הודעות קוליות
+  const canVoiceLog = !!perms.settings_manage; // הרשאה לצפייה ביומן הודעות קוליות
   
-  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoice;
-  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : "voice";
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog;
+  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : "voice_log";
 
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -74,7 +74,7 @@ function AdminPage() {
           {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
           {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
           {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
-          {canVoice && <TabsTrigger value="voice" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />הודעות קוליות</TabsTrigger>}
+          {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
           {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
           {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
         </TabsList>
@@ -86,7 +86,7 @@ function AdminPage() {
           <StaleHoursPanel />
         </TabsContent>}
         {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
-        {canVoice && <TabsContent value="voice" className="mt-4"><VoiceQueuePanel /></TabsContent>}
+        {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
         {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
         {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
       </Tabs>
@@ -94,40 +94,36 @@ function AdminPage() {
   );
 }
 
-// ============= Voice Messages Queue Panel =============
-function VoiceQueuePanel() {
-  const qc = useQueryClient();
-  const listFn = useServerFn(listPendingVoiceSends);
-
+// ============= Voice Messages Log Panel =============
+function VoiceMessageLogPanel() {
+  const listFn = useServerFn(listVoiceMessageLog);
   const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ["voice_queue"],
+    queryKey: ["voice_message_log"],
     queryFn: async () => listFn({ headers: await getAuthHeaders() }),
-    refetchInterval: 30000, // רענון אוטומטי כל 30 שניות
+    refetchInterval: 30000,
   });
 
-  if (isLoading) return <div className="text-center py-10 text-muted-foreground">טוען תור הודעות...</div>;
+  if (isLoading) return <div className="text-center py-10 text-muted-foreground">טוען יומן הודעות...</div>;
 
-  const pending = data?.pending || [];
-  const sentToday = data?.sent_today || [];
+  const rows = data?.rows ?? [];
+  const modeLabel: Record<string, string> = { manual: "ידני", auto: "אוטומטי", queue: "מהתור" };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <div className="flex items-center justify-between bg-card border border-border p-5 rounded-xl shadow-sm">
         <div>
           <h2 className="text-lg font-bold flex items-center gap-2">
-            <Volume2 className="h-5 w-5 text-primary" /> 
-            תור הודעות קוליות ממתינות ({pending.length})
+            <Volume2 className="h-5 w-5 text-primary" />
+            יומן הודעות קוליות ({rows.length})
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            הודעות שנוצרו מחוץ לשעות השליחה המוגדרות בסטטוסים וממתינות לסבב השליחה הבא.
+            כל ניסיון שליחה (ידני, אוטומטי או מהתור) - כולל הצלחות וכשלונות. את תור ההודעות הממתינות ואת השליחה הידנית ניתן לראות בדשבורד המנהלים.
           </p>
         </div>
-        <button 
-          onClick={() => refetch()} 
-          className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent transition-colors"
-        >
+        <button onClick={() => refetch()}
+          className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent transition-colors">
           <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
-          רענן נתונים
+          רענן
         </button>
       </div>
 
@@ -136,65 +132,42 @@ function VoiceQueuePanel() {
           <thead className="bg-muted/50 border-b border-border">
             <tr className="text-right">
               <th className="px-4 py-3 font-medium text-muted-foreground">קוד מערכת</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">טלפון נמען</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">סטטוס נוכחי</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">זמן המתנה</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">סטטוס תור</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">טלפון</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">אופן שליחה</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">תוצאה</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">זמן</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {pending.length === 0 ? (
-              <tr>
-                <td colSpan={5} className="px-4 py-12 text-center text-muted-foreground italic">
-                  אין הודעות ממתינות בתור כרגע.
-                </td>
-              </tr>
+            {rows.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground italic">אין עדיין רשומות ביומן.</td></tr>
             ) : (
-              pending.map((msg: any) => (
-                <tr key={msg.id} className="hover:bg-accent/30 transition-colors">
-                  <td className="px-4 py-3 font-mono font-bold">{msg.system_code}</td>
-                  <td className="px-4 py-3 font-mono" dir="ltr">{msg.caller_phone}</td>
+              rows.map((r: any) => (
+                <tr key={r.id} className="hover:bg-accent/30 transition-colors">
+                  <td className="px-4 py-3 font-mono font-bold">{r.system_code || "—"}</td>
+                  <td className="px-4 py-3 font-mono" dir="ltr">{r.phone || "—"}</td>
+                  <td className="px-4 py-3 text-xs">{modeLabel[r.send_mode] || r.send_mode}</td>
                   <td className="px-4 py-3">
-                    <span className="text-xs font-medium">{msg.status_label}</span>
+                    {r.success ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase">
+                        <Check className="h-3 w-3" />הצליח
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 uppercase" title={r.error_message || ""}>
+                        <X className="h-3 w-3" />נכשל
+                      </span>
+                    )}
+                    {!r.success && r.error_message && (
+                      <div className="text-[10px] text-red-700 mt-1 max-w-xs truncate" title={r.error_message}>{r.error_message}</div>
+                    )}
                   </td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">
-                    {msg.pending_voice_send_at ? new Date(msg.pending_voice_send_at).toLocaleString("he-IL") : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-left">
-                    <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 uppercase">
-                      ממתין לשעה המוגדרת
-                    </span>
-                  </td>
+                  <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(r.created_at).toLocaleString("he-IL")}</td>
                 </tr>
               ))
             )}
           </tbody>
         </table>
       </div>
-
-      {sentToday.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground px-1">
-            <Check className="h-4 w-4 text-emerald-500" />
-            נשלחו היום ({sentToday.length})
-          </h3>
-          <div className="bg-card border border-border rounded-xl opacity-80 overflow-hidden">
-            <table className="w-full text-xs">
-              <tbody className="divide-y divide-border">
-                {sentToday.map((msg: any) => (
-                  <tr key={msg.id} className="bg-muted/10">
-                    <td className="px-4 py-2 font-mono w-32 font-medium">{msg.system_code}</td>
-                    <td className="px-4 py-2 w-40">{msg.caller_phone}</td>
-                    <td className="px-4 py-2 text-muted-foreground italic">
-                      נשלח ב-{new Date(msg.voice_message_sent_at).toLocaleTimeString("he-IL")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

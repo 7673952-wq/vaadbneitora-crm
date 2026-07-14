@@ -336,6 +336,15 @@ function SystemDetail() {
                   ) : (
                     <span className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5">{s.system_code}</span>
                   )}
+                  {!isSub && (me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) && (
+                    <label className="flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5 cursor-pointer"
+                      title="בהודעה קולית על סיום הפניה יישלח מספר המערכת הפוך וללא קידומת 0">
+                      <input type="checkbox" checked={!!s.is_blocking_number}
+                        onChange={(e) => updateMut.mutate({ data: { id, is_blocking_number: e.target.checked } })}
+                        className="h-3 w-3" />
+                      מספר חסימה
+                    </label>
+                  )}
                 </div>
                 {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input

@@ -328,6 +328,20 @@ export const listPendingVoiceSends = createServerFn({ method: "GET" })
     };
   });
 
+export const listVoiceMessageLog = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertPermission(context, "settings_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("voice_message_log")
+      .select("id, system_id, system_code, phone, phone_index, status_key, send_mode, success, error_message, created_at")
+      .order("created_at", { ascending: false })
+      .limit(300);
+    if (error) throw new Error(error.message);
+    return { rows: data ?? [] };
+  });
+
 export const upsertStatusSetting = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[]; enables_voice_message?: boolean; voice_message_template?: string; voice_message_api_key?: string; voice_send_mode?: "manual" | "auto"; auto_send_start_hour?: number; auto_send_end_hour?: number }) =>
@@ -676,7 +690,14 @@ export const listMyNotifications = createServerFn({ method: "GET" })
     const myName = String(pmap.get(me) ?? "").trim();
     const isMentioned = (body: string) => {
       const text = String(body ?? "");
-      return text.includes("@כולם") || (!!myName && text.includes(`@${myName}`));
+      if (text.includes("@כולם")) return true;
+      const name = myName.trim();
+      if (!name) return false;
+      // Robust match: ignore case and tolerate the mention being followed by
+      // whitespace/punctuation or end-of-string (not just an exact substring).
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(`@${escaped}(?:\\s|$|[,.:;!?])`, "iu");
+      return re.test(text);
     };
 
     const { data: transfers } = await context.supabase

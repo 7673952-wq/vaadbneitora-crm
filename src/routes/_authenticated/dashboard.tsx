@@ -13,7 +13,7 @@ import {
   statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
   CALLER_SOURCES, buildDialNumber, buildStatusMaps,
 } from "@/lib/status";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square, Copy, Check } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-react";
@@ -1291,7 +1291,7 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
 
 
 function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
-  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "" });
+  const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "", is_blocking_number: false });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
   const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);
@@ -1415,6 +1415,7 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
           source: form.source,
           caller_phone: form.caller_phone,
           email: form.email || undefined,
+          is_blocking_number: form.is_blocking_number,
         } });
         toast.success("נוסף בהצלחה");
       }
@@ -1431,8 +1432,20 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
             <label className="text-sm font-medium block mb-1">מזהה מערכת (מספר לחיוג)</label>
-            <input required value={form.system_code} onChange={(e) => setForm({ ...form, system_code: e.target.value })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            <div className="flex items-center gap-2">
+              <input required value={form.system_code} onChange={(e) => setForm({ ...form, system_code: e.target.value })}
+                className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <label className="flex items-center gap-1 text-xs text-muted-foreground shrink-0 whitespace-nowrap" title="בהודעה קולית על סיום הפניה יישלח המספר הפוך וללא קידומת 0">
+                <input type="checkbox" checked={form.is_blocking_number}
+                  onChange={(e) => setForm({ ...form, is_blocking_number: e.target.checked })} />
+                מספר חסימה
+              </label>
+            </div>
+            {!willCreateAsSub && form.is_blocking_number && (
+              <p className="text-[11px] text-amber-700 mt-1">
+                בשליחת הודעה קולית, המספר שיישלח בהודעה יהיה מספר המערכת הפוך (בלי קידומת 0).
+              </p>
+            )}
           </div>
           <div className="relative">
             <label className="text-sm font-medium block mb-1">שם המערכת</label>
@@ -1746,8 +1759,9 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   const nameFn = useServerFn(findSystemByName);
   const getSystemFn = useServerFn(getSystem);
   const [query, setQuery] = useState("");
-  const [codeResult, setCodeResult] = useState<any | null | undefined>(undefined);
+  const [codeResults, setCodeResults] = useState<any[] | undefined>(undefined);
   const [nameResults, setNameResults] = useState<any[] | undefined>(undefined);
+  const reversedFromRef = useRef<string | null>(null);
   const prefetchSystem = (id: string) => {
     qc.prefetchQuery({
       queryKey: ["system", id],
@@ -1764,7 +1778,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   // lookup for any text. This keeps a single input box but covers both flows.
   useEffect(() => {
     const v = query.trim();
-    if (v.length < 2) { setCodeResult(undefined); setNameResults(undefined); return; }
+    if (v.length < 2) { setCodeResults(undefined); setNameResults(undefined); return; }
     let cancelled = false;
     const t = setTimeout(async () => {
       try {
@@ -1774,7 +1788,7 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
           nameFn({ data: { name: v } }),
         ]);
         if (cancelled) return;
-        setCodeResult(c);
+        setCodeResults(c ?? []);
         setNameResults(n ?? []);
       } catch { /* ignore */ }
     }, 250);
@@ -1782,8 +1796,8 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
   }, [query, codeFn, nameFn]);
 
   const v = query.trim();
-  const nothingFound = v.length >= 2 && codeResult !== undefined && nameResults !== undefined
-    && !codeResult && (nameResults?.length ?? 0) === 0;
+  const nothingFound = v.length >= 2 && codeResults !== undefined && nameResults !== undefined
+    && (codeResults?.length ?? 0) === 0 && (nameResults?.length ?? 0) === 0;
   // Broadened duplicate detection: exact name match against roots OR parents
   // of matching sub-systems (so a name that exists only as sub-systems still
   // surfaces the "root vs sub" choice).
@@ -1832,20 +1846,21 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
         <input value={query} onChange={(e) => setQuery(e.target.value)}
           placeholder="הזן מספר מערכת או שם מערכת..."
           className="w-full rounded-lg border border-input bg-background px-3 py-2 pl-8 pr-10 text-sm" />
-        {/^\d/.test(query.trim()) && query.trim().replace(/\D/g,"").length >= 2 && (
+        {/^\d/.test(query.trim()) && query.trim().replace(/\D/g, "").length >= 2 && reversedFromRef.current !== query && (
           <button type="button"
             onClick={() => {
-              // Reverse the digits and ensure a single leading 0. On the first
-              // click this adds "0" (from a number that had no prefix); on the
-              // next click the leading 0 gets stripped and re-added exactly
-              // once, so it never accumulates.
+              // Reverses the digits and adds a single leading "0", but only
+              // ever once per typed value — after that the button hides
+              // until the person types something new.
               const digits = query.replace(/\D/g, "").replace(/^0+/, "").replace(/^972/, "");
               if (digits.length < 2) return;
               const reversed = digits.split("").reverse().join("");
-              setQuery("0" + reversed);
+              const next = "0" + reversed;
+              reversedFromRef.current = next;
+              setQuery(next);
             }}
             aria-label="הפוך מספר"
-            title="הפוך את סדר הספרות (מוסיף 0 פעם אחת בהתחלה)"
+            title="הפוך את סדר הספרות (מוסיף 0 בהתחלה) - פעם אחת בלבד למספר שהוקלד"
             className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
             ⇄
           </button>
@@ -1859,37 +1874,41 @@ function QuickLookup({ onOpenCreate, canCreate }: { onOpenCreate: (initial?: Cre
         )}
       </div>
 
-      {v.length >= 2 && codeResult === undefined && nameResults === undefined && (
+      {v.length >= 2 && codeResults === undefined && nameResults === undefined && (
         <div className="mt-2 text-xs text-muted-foreground">מחפש...</div>
       )}
 
-      {codeResult && (
-        <div className={`mt-2 border-2 rounded-lg p-2.5 transition ${statusCardClasses(codeResult.status)}`}>
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-mono opacity-80">{codeResult.system_code}</div>
-              <div className="text-sm font-semibold truncate">{codeResult.name}</div>
+      {codeResults && codeResults.length > 0 && (
+        <div className="mt-2 space-y-1.5">
+          {codeResults.map((r: any) => (
+            <div key={r.id} className={`border-2 rounded-lg p-2.5 transition ${statusCardClasses(r.status)}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-xs font-mono opacity-80">{r.system_code}</div>
+                  <div className="text-sm font-semibold truncate">{r.name}</div>
+                </div>
+                <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(STATUS_TONE[r.status as SystemStatus])}`}>
+                  {STATUS_LABEL[r.status as SystemStatus]}
+                </span>
+              </div>
+              <div className="mt-2 flex gap-1.5">
+                <button type="button"
+                  onMouseEnter={() => prefetchSystem(r.id)}
+                  onFocus={() => prefetchSystem(r.id)}
+                  onClick={() => navigate({ to: "/systems/$id", params: { id: r.id } })}
+                  className="flex-1 text-xs px-2 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
+                  פתח כרטיסייה
+                </button>
+                {dialHref(r.system_code) && (
+                  <a href={dialHref(r.system_code)!}
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-xs px-2 py-1.5 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-medium inline-flex items-center gap-1">
+                    <Phone className="h-3 w-3" />חייג
+                  </a>
+                )}
+              </div>
             </div>
-            <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium shrink-0 ${toneClasses(STATUS_TONE[codeResult.status as SystemStatus])}`}>
-              {STATUS_LABEL[codeResult.status as SystemStatus]}
-            </span>
-          </div>
-          <div className="mt-2 flex gap-1.5">
-            <button type="button"
-              onMouseEnter={() => prefetchSystem(codeResult.id)}
-              onFocus={() => prefetchSystem(codeResult.id)}
-              onClick={() => navigate({ to: "/systems/$id", params: { id: codeResult.id } })}
-              className="flex-1 text-xs px-2 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 font-medium">
-              פתח כרטיסייה
-            </button>
-            {dialHref(codeResult.system_code) && (
-              <a href={dialHref(codeResult.system_code)!}
-                onClick={(e) => e.stopPropagation()}
-                className="text-xs px-2 py-1.5 rounded-md border border-emerald-500 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 font-medium inline-flex items-center gap-1">
-                <Phone className="h-3 w-3" />חייג
-              </a>
-            )}
-          </div>
+          ))}
         </div>
       )}
 

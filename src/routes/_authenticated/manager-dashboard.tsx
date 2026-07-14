@@ -4,11 +4,11 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
-import { getMyRole } from "@/lib/admin.functions";
-import { scanSystemSeries, createMissingSystems } from "@/lib/systems.functions";
+import { getMyRole, listPendingVoiceSends } from "@/lib/admin.functions";
+import { scanSystemSeries, createMissingSystems, manualSendPendingVoice, rescheduleVoicePending } from "@/lib/systems.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),
@@ -123,8 +123,147 @@ function ManagerDashboard() {
       </div>
 
       {showSeries && <SeriesScannerModal onClose={() => setShowSeries(false)} />}
+
+      {!!(me?.permissions as any)?.settings_manage && <VoiceQueuePanel />}
     </div>
   );
+}
+
+// ============= Voice Messages Queue Panel (pending sends + manual override) =============
+function VoiceQueuePanel() {
+  const qc = useQueryClient();
+  const listFn = useServerFn(listPendingVoiceSends);
+  const sendNowFn = useServerFn(manualSendPendingVoice);
+  const rescheduleFn = useServerFn(rescheduleVoicePending);
+
+  const { data, isLoading, refetch, isRefetching } = useQuery({
+    queryKey: ["voice_queue"],
+    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+    refetchInterval: 30000,
+  });
+
+  const sendNowMut = useMutation({
+    mutationFn: async (systemId: string) => sendNowFn({ data: { systemId }, headers: await getAuthHeaders() }),
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["voice_queue"] });
+      if (res?.fail > 0) toast.error(`נשלחו ${res.ok}, נכשלו ${res.fail}`);
+      else toast.success(`נשלח ל-${res?.ok ?? 0} נמענים`);
+    },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  const rescheduleMut = useMutation({
+    mutationFn: async (v: { systemId: string; sendAt: string | null }) => rescheduleFn({ data: v, headers: await getAuthHeaders() }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["voice_queue"] }); toast.success("זמן השליחה עודכן"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  if (isLoading) return null;
+
+  const pending = data?.pending || [];
+  const sentToday = data?.sent_today || [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between bg-card border border-border p-5 rounded-xl shadow-sm">
+        <div>
+          <h2 className="text-lg font-bold flex items-center gap-2">
+            <Volume2 className="h-5 w-5 text-primary" />
+            תור הודעות קוליות ממתינות ({pending.length})
+          </h2>
+          <p className="text-xs text-muted-foreground mt-1">
+            הודעות שנוצרו מחוץ לשעות השליחה המוגדרות בסטטוסים וממתינות לזמן השליחה שלהן. אפשר לשלוח כל אחת מיידית באופן ידני.
+          </p>
+        </div>
+        <button onClick={() => refetch()}
+          className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent transition-colors">
+          <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
+          רענן
+        </button>
+      </div>
+
+      <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 border-b border-border">
+            <tr className="text-right">
+              <th className="px-4 py-3 font-medium text-muted-foreground">קוד מערכת</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">טלפון נמען</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">סטטוס נוכחי</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">מתוזמן לשעה</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground"></th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {pending.length === 0 ? (
+              <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground italic">אין הודעות ממתינות בתור כרגע.</td></tr>
+            ) : (
+              pending.map((msg: any) => (
+                <tr key={msg.id} className="hover:bg-accent/30 transition-colors">
+                  <td className="px-4 py-3 font-mono font-bold">
+                    <Link to="/systems/$id" params={{ id: msg.id }} className="hover:underline">{msg.system_code}</Link>
+                  </td>
+                  <td className="px-4 py-3 font-mono" dir="ltr">{msg.caller_phone}</td>
+                  <td className="px-4 py-3"><span className="text-xs font-medium">{msg.status_label}</span></td>
+                  <td className="px-4 py-3">
+                    <input
+                      type="datetime-local"
+                      defaultValue={msg.pending_voice_send_at ? toLocalInputValue(msg.pending_voice_send_at) : ""}
+                      onBlur={(e) => {
+                        const v = e.target.value;
+                        const iso = v ? new Date(v).toISOString() : null;
+                        if (iso !== msg.pending_voice_send_at) {
+                          rescheduleMut.mutate({ systemId: msg.id, sendAt: iso });
+                        }
+                      }}
+                      className="rounded-md border border-input bg-background px-2 py-1 text-xs w-40"
+                    />
+                  </td>
+                  <td className="px-4 py-3 text-left">
+                    <button
+                      disabled={sendNowMut.isPending}
+                      onClick={() => sendNowMut.mutate(msg.id)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-50">
+                      <Send className="h-3 w-3" />שלח עכשיו
+                    </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {sentToday.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground px-1">
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+            נשלחו היום ({sentToday.length})
+          </h3>
+          <div className="bg-card border border-border rounded-xl opacity-80 overflow-hidden">
+            <table className="w-full text-xs">
+              <tbody className="divide-y divide-border">
+                {sentToday.map((msg: any) => (
+                  <tr key={msg.id} className="bg-muted/10">
+                    <td className="px-4 py-2 font-mono w-32 font-medium">{msg.system_code}</td>
+                    <td className="px-4 py-2 w-40">{msg.caller_phone}</td>
+                    <td className="px-4 py-2 text-muted-foreground italic">
+                      נשלח ב-{new Date(msg.voice_message_sent_at).toLocaleTimeString("he-IL")}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function toLocalInputValue(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function KpiCard({ label, value, icon, tone }: { label: string; value: number; icon: React.ReactNode; tone: "emerald" | "sky" | "amber" | "red" | "violet" }) {

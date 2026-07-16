@@ -158,8 +158,12 @@ function Dashboard() {
   const pokeVoiceQueueFn = useServerFn(pokeVoiceQueue);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const staleHoursFn = useServerFn(getStaleWarningHours);
-  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
-  const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn() });
+  // Reference/settings data changes rarely — cache it longer than the
+  // 30s default so switching between the dashboard and a system card
+  // (which reads the same query keys) doesn't re-fetch it every time.
+  const REFERENCE_STALE_TIME = 5 * 60_000;
+  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
+  const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn(), staleTime: REFERENCE_STALE_TIME });
   const staleHours = staleSetting?.hours ?? 0;
   const statusMaps = useMemo(() => buildStatusMaps(statusSettings as any), [statusSettings]);
   useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
@@ -212,8 +216,8 @@ function Dashboard() {
     }
   }, [showCharts]);
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
-  const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
+  const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({
     queryKey: ["systems", status, secondaryStatus, agentId, period, dateFrom, dateTo, page, pageSize],
@@ -1303,6 +1307,27 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
   const createFn = useServerFn(createSystem);
   const subFn = useServerFn(addSubSystem);
   const ensureCategoryRootFn = useServerFn(ensureCategoryRoot);
+  const navigate = useNavigate();
+
+  // Duplicate system-code (מזהה מערכת) detection: when the typed code
+  // exactly matches an existing system, block creation and offer to open
+  // that system's card instead — same behavior as "בדיקה מהירה".
+  const codeFn = useServerFn(findSystemByCode);
+  const [existingByCode, setExistingByCode] = useState<any | null>(null);
+  useEffect(() => {
+    const raw = form.system_code.trim();
+    if (raw.length < 2) { setExistingByCode(null); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const rows = await codeFn({ data: { code: raw } });
+        if (cancelled) return;
+        const exact = (rows ?? []).find((r: any) => r.system_code === raw);
+        setExistingByCode(exact ?? null);
+      } catch { /* ignore */ }
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [form.system_code, codeFn]);
   // Names that must ALWAYS present the "open as sub / open as new root" choice,
   // even when no matching root exists yet in the DB. If sub is chosen the root
   // is created on-the-fly by ensureCategoryRoot before the sub is attached.
@@ -1382,6 +1407,7 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.status) { toast.error("יש לבחור סטטוס"); return; }
+    if (existingByCode) { toast.error("מזהה מערכת זה כבר קיים במערכת אחרת"); return; }
     setBusy(true);
     try {
       if (willCreateAsSub && matchedParent?.id) {
@@ -1445,6 +1471,20 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
               <p className="text-[11px] text-amber-700 mt-1">
                 בשליחת הודעה קולית, המספר שיישלח בהודעה יהיה מספר המערכת הפוך (בלי קידומת 0).
               </p>
+            )}
+            {existingByCode && (
+              <div className="mt-2 border-2 border-red-300 bg-red-50 rounded-lg p-2.5 space-y-2">
+                <div className="text-sm text-red-900 font-medium">
+                  מזהה מערכת "{existingByCode.system_code}" כבר קיים במערכת:
+                </div>
+                <div className="text-sm font-semibold text-red-950">{existingByCode.name}</div>
+                <button type="button"
+                  onClick={() => navigate({ to: "/systems/$id", params: { id: existingByCode.id } })}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-medium hover:bg-primary/90">
+                  פתח כרטיסייה
+                </button>
+                <p className="text-[11px] text-red-800">לא ניתן לפתוח מערכת חדשה עם מזהה זהה. שנה את מזהה המערכת כדי להמשיך.</p>
+              </div>
             )}
           </div>
           <div className="relative">
@@ -1544,7 +1584,7 @@ function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone 
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
-            <button type="submit" disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+            <button type="submit" disabled={busy || !!existingByCode} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
               {busy ? "..." : willCreateAsSub ? "הוסף תת-מערכת" : "הוסף"}
             </button>
           </div>

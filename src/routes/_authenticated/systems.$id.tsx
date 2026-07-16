@@ -22,7 +22,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
@@ -71,6 +71,9 @@ function SystemDetail() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showSendChoice, setShowSendChoice] = useState(false);
+  const [showSendPicker, setShowSendPicker] = useState(false);
+  const [batchSending, setBatchSending] = useState(false);
 
   function copyToClipboard(value: string, key: string, label: string) {
     navigator.clipboard.writeText(value)
@@ -97,10 +100,14 @@ function SystemDetail() {
   const statusSettingsFn = useServerFn(listStatusSettings);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
-  const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn() });
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
-  const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn() });
-  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn() });
+  // Reference/settings data changes rarely — cache it longer than the 30s
+  // default so opening a system card and returning to the dashboard (which
+  // reads the same query keys) doesn't re-fetch it every time.
+  const REFERENCE_STALE_TIME = 5 * 60_000;
+  const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
+  const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn(), staleTime: REFERENCE_STALE_TIME });
+  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
   const [noteText, setNoteText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
   const [subCode, setSubCode] = useState("");
@@ -159,8 +166,28 @@ function SystemDetail() {
 
   const updateMut = useMutation({
     mutationFn: updateFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); qc.invalidateQueries({ queryKey: ["systems"] }); toast.success("עודכן"); },
-    onError: (e: any) => toast.error(e.message),
+    // Optimistic update: patch the cached system card immediately so status
+    // changes (and other field edits) reflect in the UI right away instead
+    // of waiting for the full round trip + refetch. Rolled back on error.
+    onMutate: async (vars: any) => {
+      await qc.cancelQueries({ queryKey: ["system", id] });
+      const patch = vars?.data ?? {};
+      const previous = qc.getQueryData(["system", id]);
+      qc.setQueryData(["system", id], (old: any) => {
+        if (!old?.system) return old;
+        return { ...old, system: { ...old.system, ...patch } };
+      });
+      return { previous };
+    },
+    onError: (e: any, _vars, ctx: any) => {
+      if (ctx?.previous) qc.setQueryData(["system", id], ctx.previous);
+      toast.error(e.message);
+    },
+    onSuccess: () => { toast.success("עודכן"); },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      qc.invalidateQueries({ queryKey: ["systems"] });
+    },
   });
   const noteMut = useMutation({
     mutationFn: noteFn,
@@ -207,10 +234,14 @@ function SystemDetail() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const suppressVoiceToastRef = useRef(false);
   const voiceMut = useMutation({
     mutationFn: (v: { systemId: string; phoneIndex?: number }) => voiceFn({ data: v }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההודעה הקולית נשלחה בהצלחה"); },
-    onError: (e: any) => toast.error(e.message ?? "שליחת ההודעה נכשלה"),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      if (!suppressVoiceToastRef.current) toast.success("ההודעה הקולית נשלחה בהצלחה");
+    },
+    onError: (e: any) => { if (!suppressVoiceToastRef.current) toast.error(e.message ?? "שליחת ההודעה נכשלה"); },
   });
   const addPhoneFn = useServerFn(addAdditionalCallerPhone);
   const updPhoneFn = useServerFn(updateAdditionalCallerPhone);
@@ -277,6 +308,41 @@ function SystemDetail() {
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
   const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
   const voiceAlreadySent = !!s.voice_message_sent_at;
+
+  // All recipients for the "send voice message" top button: primary caller
+  // phone (index -1) plus every additional caller phone (index 0..N-1).
+  const additionalPhones: Array<{ phone: string; sent_at?: string }> = Array.isArray((s as any).additional_caller_phones)
+    ? (s as any).additional_caller_phones
+    : [];
+  const voiceRecipients: Array<{ index: number; phone: string; sentAt: string | null; label: string }> = [
+    ...(s.caller_phone ? [{ index: -1, phone: s.caller_phone as string, sentAt: (s.voice_message_sent_at as string) || null, label: "פונה ראשי" }] : []),
+    ...additionalPhones
+      .map((p, i) => ({ index: i, phone: p.phone, sentAt: p.sent_at || null, label: `פונה נוסף ${i + 1}` }))
+      .filter((p) => !!p.phone),
+  ];
+  const unsentRecipients = voiceRecipients.filter((r) => !r.sentAt);
+
+  async function sendVoiceBatch(recipients: Array<{ index: number; phone: string }>) {
+    if (recipients.length === 0) { toast.info("אין נמענים מתאימים לשליחה"); return; }
+    setBatchSending(true);
+    suppressVoiceToastRef.current = true;
+    let ok = 0, fail = 0;
+    try {
+      for (const r of recipients) {
+        try {
+          await voiceMut.mutateAsync({ systemId: id, phoneIndex: r.index });
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+    } finally {
+      setBatchSending(false);
+      suppressVoiceToastRef.current = false;
+    }
+    if (fail > 0) toast.error(`נשלחו ${ok} הודעות, נכשלו ${fail}`);
+    else toast.success(`נשלחו ${ok} הודעות בהצלחה`);
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -382,7 +448,7 @@ function SystemDetail() {
                   </div>
                 )}
                 {s.caller_phone && (
-                  <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                  <div className="relative inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
                     <a href={`tel:${buildDialNumber(s.caller_phone)}`}
                       className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
                       <Phone className="h-3.5 w-3.5" />
@@ -395,21 +461,9 @@ function SystemDetail() {
                     </button>
                     <button
                       type="button"
-                      disabled={!voiceEnabled || voiceMut.isPending}
-                      onClick={() => {
-                        const confirmMsg = voiceAlreadySent
-                          ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?"
-                          : "לשלוח הודעה קולית לפונה כעת?";
-                        if (!window.confirm(confirmMsg)) return;
-                        voiceMut.mutate({ systemId: id, phoneIndex: -1 });
-                      }}
-                      title={
-                        !voiceEnabled
-                          ? "לא ניתן לשלוח הודעה בסטטוס זה"
-                          : voiceAlreadySent
-                            ? `נשלח: ${new Date(s.voice_message_sent_at as string).toLocaleString("he-IL")}`
-                            : "שליחת הודעה קולית לפונה דרך ימות המשיח"
-                      }
+                      disabled={!voiceEnabled || voiceMut.isPending || batchSending}
+                      onClick={() => setShowSendChoice((v) => !v)}
+                      title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שליחת הודעה קולית לפונה/ים דרך ימות המשיח"}
                       aria-label="שלח הודעה קולית"
                       className={`inline-flex items-center justify-center h-9 w-9 border-r border-border transition ${
                         !voiceEnabled
@@ -418,10 +472,72 @@ function SystemDetail() {
                             ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
                             : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
                       }`}>
-                      {voiceMut.isPending
+                      {voiceMut.isPending || batchSending
                         ? <span className="inline-block h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         : <Volume2 className="h-3.5 w-3.5" />}
                     </button>
+
+                    {showSendChoice && (
+                      <div className="absolute z-20 top-full mt-1 left-0 w-64 bg-popover border border-border rounded-lg shadow-lg p-2 space-y-1" dir="rtl">
+                        <div className="text-xs font-semibold text-muted-foreground px-1 pb-1">למי לשלוח הודעה קולית?</div>
+                        <button type="button"
+                          onClick={() => {
+                            setShowSendChoice(false);
+                            if (!window.confirm(`לשלוח הודעה קולית לכל ${voiceRecipients.length} הפונים?`)) return;
+                            sendVoiceBatch(voiceRecipients);
+                          }}
+                          className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent flex items-center justify-between">
+                          <span>שלח לכולם</span>
+                          <span className="text-muted-foreground">{voiceRecipients.length}</span>
+                        </button>
+                        <button type="button"
+                          onClick={() => {
+                            setShowSendChoice(false);
+                            if (unsentRecipients.length === 0) { toast.info("לכולם כבר נשלחה הודעה"); return; }
+                            if (!window.confirm(`לשלוח הודעה קולית ל-${unsentRecipients.length} פונים שעדיין לא נשלחה אליהם הודעה?`)) return;
+                            sendVoiceBatch(unsentRecipients);
+                          }}
+                          className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent flex items-center justify-between">
+                          <span>רק למי שעדיין לא נשלח</span>
+                          <span className="text-muted-foreground">{unsentRecipients.length}</span>
+                        </button>
+                        <button type="button"
+                          onClick={() => { setShowSendChoice(false); setShowSendPicker(true); }}
+                          className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent">
+                          אחד מהפונים...
+                        </button>
+                      </div>
+                    )}
+
+                    {showSendPicker && (
+                      <div className="fixed inset-0 z-30 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowSendPicker(false)}>
+                        <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-4 space-y-2" dir="rtl" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-sm font-bold">בחר פונה לשליחה</h3>
+                            <button onClick={() => setShowSendPicker(false)} className="p-1 hover:bg-accent rounded"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                          {voiceRecipients.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">אין מספרי פונה מוגדרים.</p>
+                          ) : (
+                            <div className="space-y-1 max-h-72 overflow-y-auto">
+                              {voiceRecipients.map((r) => (
+                                <button key={r.index} type="button"
+                                  onClick={() => {
+                                    setShowSendPicker(false);
+                                    const confirmMsg = r.sentAt ? "ההודעה כבר נשלחה לפונה זה בעבר. לשלוח שוב?" : "לשלוח הודעה קולית לפונה זה כעת?";
+                                    if (!window.confirm(confirmMsg)) return;
+                                    voiceMut.mutate({ systemId: id, phoneIndex: r.index });
+                                  }}
+                                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border hover:bg-accent text-xs">
+                                  <span className="font-mono" dir="ltr">{r.phone}</span>
+                                  <span className="text-muted-foreground">{r.label}{r.sentAt ? " · נשלח" : ""}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
                 {s.phone && (

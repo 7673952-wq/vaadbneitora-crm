@@ -8,6 +8,7 @@ import { getMyRole, listPendingVoiceSends } from "@/lib/admin.functions";
 import { scanSystemSeries, createMissingSystems, manualSendPendingVoice, rescheduleVoicePending } from "@/lib/systems.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
+import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
 import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
@@ -19,6 +20,7 @@ function ManagerDashboard() {
   const meFn = useServerFn(getMyRole);
   const fn = useServerFn(getManagerDashboard);
   const [showSeries, setShowSeries] = useState(false);
+  const [showVoiceLog, setShowVoiceLog] = useState(false);
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
   const { data, isLoading } = useQuery({
     queryKey: ["manager-dashboard"],
@@ -47,6 +49,12 @@ function ManagerDashboard() {
             className="flex items-center gap-2 border border-emerald-400 text-emerald-800 bg-emerald-50 px-3 py-2 rounded-lg text-sm font-medium hover:bg-emerald-100">
             <Search className="h-4 w-4" />השלמת סדרות
           </button>
+          {!!(me?.permissions as any)?.settings_manage && (
+            <button onClick={() => setShowVoiceLog(true)}
+              className="flex items-center gap-2 border border-fuchsia-400 text-fuchsia-800 bg-fuchsia-50 px-3 py-2 rounded-lg text-sm font-medium hover:bg-fuchsia-100">
+              <Volume2 className="h-4 w-4" />יומן הודעות קוליות (מסודר)
+            </button>
+          )}
           <Link to="/reports" className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:opacity-90">
             <BarChart3 className="h-4 w-4" />
             דוחות מפורטים
@@ -123,6 +131,7 @@ function ManagerDashboard() {
       </div>
 
       {showSeries && <SeriesScannerModal onClose={() => setShowSeries(false)} />}
+      {showVoiceLog && <VoiceLogModal onClose={() => setShowVoiceLog(false)} />}
 
       {!!(me?.permissions as any)?.settings_manage && <VoiceQueuePanel />}
     </div>
@@ -256,6 +265,30 @@ function VoiceQueuePanel() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Modal wrapper around the shared voice-message log table, opened from the
+// managers' dashboard the same way "השלמת סדרות" opens — a focused modal
+// rather than burying it inside the admin settings tabs.
+function VoiceLogModal({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" dir="rtl">
+      <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-auto">
+        <div className="p-5 border-b border-border flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold">יומן הודעות קוליות — מסודר</h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              כל ההודעות הקוליות שנשלחו, ממוינות מהחדשה לישנה, כולל הסטטוס שבו נשלחה כל הודעה.
+            </p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-accent rounded-lg"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="p-5">
+          <VoiceMessageLogPanel />
+        </div>
+      </div>
     </div>
   );
 }

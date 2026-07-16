@@ -4,9 +4,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
 import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, sendBackupByEmail } from "@/lib/backups.functions";
-import { getMyRole } from "@/lib/admin.functions";
+import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail } from "lucide-react";
+import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail, Settings } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/backups")({
   component: BackupsPage,
@@ -193,7 +193,7 @@ function BackupsPage() {
             <Database className="h-6 w-6" /> גיבויים
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            גיבוי יומי אוטומטי ב-03:00 + גיבוי שבועי בימי חמישי ב-03:00 (נשלח גם למייל). אפשר גם להפעיל גיבוי ידני בכל רגע.
+            גיבוי יומי אוטומטי ב-00:00 UTC + גיבוי שבועי בימי חמישי ב-05:00 UTC (נשלח גם למייל), מתוזמן ישירות מבסיס הנתונים כך שהוא פועל בכל שרת. אפשר גם להפעיל גיבוי ידני בכל רגע.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -215,6 +215,8 @@ function BackupsPage() {
           </button>
         </div>
       </div>
+
+      <AutoBackupConfigPanel />
 
       <div className="rounded-2xl border border-border bg-card overflow-hidden">
         {isLoading ? (
@@ -370,6 +372,78 @@ function BackupsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Lets a super-admin configure the site URL + shared secret that the
+// database-side pg_cron job uses to call the backup webhooks automatically
+// (see supabase/migrations/*_scheduled_backups.sql). Without this filled in,
+// scheduled backups are skipped — only the manual "גבה עכשיו" button works.
+function AutoBackupConfigPanel() {
+  const qc = useQueryClient();
+  const getFn = useServerFn(getBackupWebhookConfig);
+  const setFn = useServerFn(setBackupWebhookConfig);
+  const { data, isLoading } = useQuery({
+    queryKey: ["backup_webhook_config"],
+    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
+  });
+  const [url, setUrl] = useState("");
+  const [secret, setSecret] = useState("");
+  const [open, setOpen] = useState(false);
+
+  const saveMut = useMutation({
+    mutationFn: async () => setFn({ data: { url, secret: secret || undefined }, headers: await getAuthHeaders() }),
+    onSuccess: () => {
+      toast.success("ההגדרות נשמרו");
+      setSecret("");
+      qc.invalidateQueries({ queryKey: ["backup_webhook_config"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
+  });
+
+  const configured = !!data?.url && data?.hasSecret;
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-4">
+      <button type="button" onClick={() => { setOpen((v) => !v); if (!open && data) setUrl(data.url ?? ""); }}
+        className="w-full flex items-center justify-between gap-3 text-sm font-medium">
+        <span className="flex items-center gap-2">
+          <Settings className="h-4 w-4" />
+          תזמון גיבוי אוטומטי (יומי + חמישי)
+          {!isLoading && (
+            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${configured ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+              {configured ? "מוגדר" : "לא מוגדר"}
+            </span>
+          )}
+        </span>
+        <span className="text-xs text-muted-foreground">{open ? "סגור" : "הגדר"}</span>
+      </button>
+      {open && (
+        <div className="mt-4 space-y-3 text-sm">
+          <p className="text-xs text-muted-foreground">
+            הגיבוי האוטומטי מתוזמן ישירות מבסיס הנתונים (pg_cron), ולכן פועל בכל שרת שהאפליקציה רצה עליו.
+            יש להזין כאן את כתובת האתר החיה, ואת אותו הסוד שמוגדר במשתנה הסביבה <code dir="ltr">BACKUP_WEBHOOK_SECRET</code> בשרת.
+          </p>
+          <div>
+            <label className="block text-xs font-medium mb-1">כתובת אתר (למשל https://crm.example.com)</label>
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..."
+              dir="ltr" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">
+              סוד webhook לגיבוי {data?.hasSecret && <span className="text-emerald-700">(כבר הוגדר — השאר ריק כדי לא לשנות)</span>}
+            </label>
+            <input value={secret} onChange={(e) => setSecret(e.target.value)} type="password"
+              placeholder={data?.hasSecret ? "••••••••" : "הדבק את BACKUP_WEBHOOK_SECRET"}
+              dir="ltr" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+          <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending || !url}
+            className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+            {saveMut.isPending ? "שומר..." : "שמור"}
+          </button>
         </div>
       )}
     </div>

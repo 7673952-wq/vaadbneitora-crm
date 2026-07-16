@@ -150,17 +150,22 @@ export const listSystems = createServerFn({ method: "POST" })
     if (statusValues.length > 0 || secondaryStatusValues.length > 0) {
       const statusSet = new Set(statusValues);
       const secondaryStatusSet = new Set(secondaryStatusValues);
-      const allRows: any[] = [];
       const CHUNK = 1000;
-      for (let from = 0; ; from += CHUNK) {
-        let q = context.supabase
-          .from("systems")
-          .select(baseSelect);
-        q = applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
-        const { data: rows, error } = await q;
-        if (error) throw new Error(error.message);
-        allRows.push(...(rows ?? []));
-        if (!rows || rows.length < CHUNK) break;
+      const pageQuery = (from: number, withCount: boolean) => {
+        let q = context.supabase.from("systems").select(baseSelect, withCount ? { count: "exact" } : {});
+        return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
+      };
+      const { data: firstRows, error: firstErr, count } = await pageQuery(0, true);
+      if (firstErr) throw new Error(firstErr.message);
+      const allRows: any[] = [...(firstRows ?? [])];
+      const totalRows = typeof count === "number" ? count : allRows.length;
+      if (totalRows > CHUNK) {
+        const rest: any[] = [];
+        for (let from = CHUNK; from < totalRows; from += CHUNK) rest.push(pageQuery(from, false));
+        for (const res of await Promise.all(rest)) {
+          if (res.error) throw new Error(res.error.message);
+          allRows.push(...(res.data ?? []));
+        }
       }
 
       const filteredRows = allRows.filter((row) => {
@@ -185,20 +190,25 @@ export const listSystems = createServerFn({ method: "POST" })
 
     // PostgREST caps a single response at ~1000 rows. When the caller asks
     // for more (e.g. "All" in the dashboard, or a full export), fetch the
-    // window in 1000-row chunks so we return everything requested.
+    // window in 1000-row chunks — the first page tells us whether more are
+    // needed, and any remaining pages are fetched concurrently rather than
+    // one-at-a-time.
     const CHUNK = 1000;
-    const allRows: any[] = [];
-    let total = 0;
-    let first = true;
-    for (let from = offset; from <= endTo; from += CHUNK) {
-      const to = Math.min(from + CHUNK - 1, endTo);
-      const { data: rows, error, count } = await buildQuery(from, to, first);
-      if (error) throw new Error(error.message);
-      if (first && typeof count === "number") total = count;
-      first = false;
-      const got = rows ?? [];
-      allRows.push(...got);
-      if (got.length < to - from + 1) break;
+    const firstTo = Math.min(offset + CHUNK - 1, endTo);
+    const { data: firstPageRows, error: firstPageErr, count: firstCount } = await buildQuery(offset, firstTo, true);
+    if (firstPageErr) throw new Error(firstPageErr.message);
+    const allRows: any[] = [...(firstPageRows ?? [])];
+    const total = typeof firstCount === "number" ? firstCount : allRows.length;
+    if (firstTo < endTo && allRows.length === firstTo - offset + 1) {
+      const remaining: Promise<any>[] = [];
+      for (let from = firstTo + 1; from <= endTo; from += CHUNK) {
+        const to = Math.min(from + CHUNK - 1, endTo);
+        remaining.push(buildQuery(from, to, false));
+      }
+      for (const res of await Promise.all(remaining)) {
+        if (res.error) throw new Error(res.error.message);
+        allRows.push(...(res.data ?? []));
+      }
     }
     const items = await enrichSystemRows(context.supabase, allRows);
     return { items, total: total || items.length, page, pageSize };
@@ -219,31 +229,34 @@ export const getStatusCounts = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { aliasToKey } = await buildStatusAliasMap(context.supabase);
     const canonicalStatus = (value?: string | null) => value ? (aliasToKey.get(value) ?? value) : null;
-    let q = context.supabase.from("systems").select("status, secondary_status");
-    if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
-    if (data.period) {
-      const now = new Date();
-      const start = new Date(now);
-      if (data.period === "day") start.setDate(now.getDate() - 1);
-      else if (data.period === "week") start.setDate(now.getDate() - 7);
-      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-      q = q.gte("updated_at", start.toISOString());
-    }
-    if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
-    if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
-    // Paginate through everything to bypass the 1000-row default.
+    // Paginate through everything to bypass the 1000-row default — fetch
+    // the first page to learn the total row count, then fetch any
+    // remaining pages concurrently instead of one-at-a-time (previously
+    // this awaited each 1000-row page sequentially, which visibly added
+    // up on every dashboard load since this query fires on every filter
+    // change alongside listSystems).
     const primary: Record<string, number> = {};
     const secondary: Record<string, number> = {};
     const any: Record<string, number> = {};
     const pageSize = 1000;
-    let from = 0;
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { data: rows, error } = await q.range(from, from + pageSize - 1);
-      if (error) throw new Error(error.message);
-      if (!rows || rows.length === 0) break;
-      for (const r of rows as any[]) {
+    const countQuery = (from: number, to: number, withCount: boolean) => {
+      let pq = context.supabase.from("systems").select("status, secondary_status", withCount ? { count: "exact" } : {});
+      if (data.agentId) pq = pq.eq("assigned_agent_id", data.agentId);
+      if (data.period) {
+        const now = new Date();
+        const start = new Date(now);
+        if (data.period === "day") start.setDate(now.getDate() - 1);
+        else if (data.period === "week") start.setDate(now.getDate() - 7);
+        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+        pq = pq.gte("updated_at", start.toISOString());
+      }
+      if (data.dateFrom) pq = pq.gte("updated_at", new Date(data.dateFrom).toISOString());
+      if (data.dateTo) pq = pq.lte("updated_at", new Date(data.dateTo).toISOString());
+      return pq.range(from, to);
+    };
+    const tally = (rows: any[]) => {
+      for (const r of rows) {
         const primaryKey = canonicalStatus(r.status);
         const secondaryKey = canonicalStatus(r.secondary_status);
         if (primaryKey) primary[primaryKey] = (primary[primaryKey] ?? 0) + 1;
@@ -252,8 +265,21 @@ export const getStatusCounts = createServerFn({ method: "POST" })
           any[key as string] = (any[key as string] ?? 0) + 1;
         }
       }
-      if (rows.length < pageSize) break;
-      from += pageSize;
+    };
+    const { data: firstRows, error: firstErr, count } = await countQuery(0, pageSize - 1, true);
+    if (firstErr) throw new Error(firstErr.message);
+    tally((firstRows ?? []) as any[]);
+    const total = typeof count === "number" ? count : (firstRows?.length ?? 0);
+    if (total > pageSize) {
+      const remainingPages: any[] = [];
+      for (let from = pageSize; from < total; from += pageSize) {
+        remainingPages.push(countQuery(from, from + pageSize - 1, false));
+      }
+      const results = await Promise.all(remainingPages);
+      for (const res of results) {
+        if (res.error) throw new Error(res.error.message);
+        tally((res.data ?? []) as any[]);
+      }
     }
     // Back-compat: spread primary at top-level so old callers keep working.
     return { ...primary, primary, secondary, any };

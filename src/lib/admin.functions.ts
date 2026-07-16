@@ -634,6 +634,55 @@ export const setBackupEmail = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ============= Backup webhook config (used by the DB-side pg_cron =============
+// job so scheduled backups fire regardless of which platform hosts the app —
+// see supabase/migrations/*_scheduled_backups.sql). The secret entered here
+// must match the BACKUP_WEBHOOK_SECRET env var configured on the server.
+
+const BACKUP_WEBHOOK_URL_KEY = "backup_webhook_url";
+const BACKUP_WEBHOOK_SECRET_KEY = "backup_webhook_secret";
+
+export const getBackupWebhookConfig = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
+    const { data } = await context.supabase
+      .from("app_settings").select("key, value").in("key", [BACKUP_WEBHOOK_URL_KEY, BACKUP_WEBHOOK_SECRET_KEY]);
+    const url = ((data ?? []).find((r: any) => r.key === BACKUP_WEBHOOK_URL_KEY)?.value as { url?: string } | undefined)?.url ?? "";
+    const hasSecret = !!((data ?? []).find((r: any) => r.key === BACKUP_WEBHOOK_SECRET_KEY)?.value as { secret?: string } | undefined)?.secret;
+    return { url, hasSecret };
+  });
+
+export const setBackupWebhookConfig = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { url: string; secret?: string }) =>
+    z.object({ url: z.string().max(300).refine((v) => v === "" || /^https?:\/\//.test(v), "כתובת חייבת להתחיל ב-http/https"), secret: z.string().max(300).optional() }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "backup_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const now = new Date().toISOString();
+    const { error: urlErr } = await supabaseAdmin.from("app_settings").upsert({
+      key: BACKUP_WEBHOOK_URL_KEY,
+      value: { url: data.url.replace(/\/$/, "") },
+      updated_at: now,
+      updated_by: context.userId,
+    });
+    if (urlErr) throw fromSupabase(urlErr);
+    // Only overwrite the stored secret if a new one was actually typed —
+    // an empty/omitted value means "keep the existing secret".
+    if (data.secret) {
+      const { error: secretErr } = await supabaseAdmin.from("app_settings").upsert({
+        key: BACKUP_WEBHOOK_SECRET_KEY,
+        value: { secret: data.secret },
+        updated_at: now,
+        updated_by: context.userId,
+      });
+      if (secretErr) throw fromSupabase(secretErr);
+    }
+    return { ok: true };
+  });
+
 // ============= Stale-warning hours (for conditional card coloring) =============
 
 const STALE_HOURS_KEY = "stale_warning_hours";

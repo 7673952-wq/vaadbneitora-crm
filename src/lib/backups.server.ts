@@ -1,4 +1,6 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import * as XLSX from "xlsx";
+import { STATUS_LABEL } from "@/lib/status";
 
 function csvEscape(v: any): string {
   if (v === null || v === undefined) return "";
@@ -57,6 +59,32 @@ export async function runBackup(): Promise<BackupResult> {
     });
     if (error) throw new Error(`upload ${t}: ${error.message}`);
     files.push({ name: `${t}.csv`, path, rows: rows.length });
+
+    // Alongside the raw systems.csv, also build a friendlier Excel summary
+    // with just the columns managers actually want to skim: number, name,
+    // status (label, not the internal key), caller phone, and notes.
+    if (t === "systems") {
+      const sheetRows = rows.map((r: any) => ({
+        "מספר": r.system_code ?? "",
+        "שם": r.name ?? "",
+        "סטטוס": STATUS_LABEL[r.status as keyof typeof STATUS_LABEL] ?? r.status ?? "",
+        "מספר פונה": r.caller_phone ?? "",
+        "הערות": r.notes ?? "",
+      }));
+      const worksheet = XLSX.utils.json_to_sheet(sheetRows);
+      worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");
+      const xlsxBuf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+      const xlsxPath = `${folder}/systems.xlsx`;
+      const { error: xlsxErr } = await supabaseAdmin.storage.from("backups").upload(
+        xlsxPath,
+        new Blob([new Uint8Array(xlsxBuf)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+        { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: true },
+      );
+      if (xlsxErr) throw new Error(`upload systems.xlsx: ${xlsxErr.message}`);
+      files.push({ name: "systems.xlsx", path: xlsxPath, rows: sheetRows.length });
+    }
   }
 
   return { folder, files };

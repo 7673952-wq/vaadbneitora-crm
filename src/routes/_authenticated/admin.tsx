@@ -10,17 +10,17 @@ import {
   getStaleWarningHours, setStaleWarningHours,
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
-  listVoiceMessageLog,
 } from "@/lib/admin.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
+import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { 
   UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, 
   Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks, 
-  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, RefreshCw 
+  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2 
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -90,84 +90,6 @@ function AdminPage() {
         {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
         {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
       </Tabs>
-    </div>
-  );
-}
-
-// ============= Voice Messages Log Panel =============
-function VoiceMessageLogPanel() {
-  const listFn = useServerFn(listVoiceMessageLog);
-  const { data, isLoading, refetch, isRefetching } = useQuery({
-    queryKey: ["voice_message_log"],
-    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
-    refetchInterval: 30000,
-  });
-
-  if (isLoading) return <div className="text-center py-10 text-muted-foreground">טוען יומן הודעות...</div>;
-
-  const rows = data?.rows ?? [];
-  const modeLabel: Record<string, string> = { manual: "ידני", auto: "אוטומטי", queue: "מהתור" };
-
-  return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between bg-card border border-border p-5 rounded-xl shadow-sm">
-        <div>
-          <h2 className="text-lg font-bold flex items-center gap-2">
-            <Volume2 className="h-5 w-5 text-primary" />
-            יומן הודעות קוליות ({rows.length})
-          </h2>
-          <p className="text-xs text-muted-foreground mt-1">
-            כל ניסיון שליחה (ידני, אוטומטי או מהתור) - כולל הצלחות וכשלונות. את תור ההודעות הממתינות ואת השליחה הידנית ניתן לראות בדשבורד המנהלים.
-          </p>
-        </div>
-        <button onClick={() => refetch()}
-          className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent transition-colors">
-          <RefreshCw className={`h-4 w-4 ${isRefetching ? "animate-spin" : ""}`} />
-          רענן
-        </button>
-      </div>
-
-      <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/50 border-b border-border">
-            <tr className="text-right">
-              <th className="px-4 py-3 font-medium text-muted-foreground">קוד מערכת</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">טלפון</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">אופן שליחה</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">תוצאה</th>
-              <th className="px-4 py-3 font-medium text-muted-foreground">זמן</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {rows.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground italic">אין עדיין רשומות ביומן.</td></tr>
-            ) : (
-              rows.map((r: any) => (
-                <tr key={r.id} className="hover:bg-accent/30 transition-colors">
-                  <td className="px-4 py-3 font-mono font-bold">{r.system_code || "—"}</td>
-                  <td className="px-4 py-3 font-mono" dir="ltr">{r.phone || "—"}</td>
-                  <td className="px-4 py-3 text-xs">{modeLabel[r.send_mode] || r.send_mode}</td>
-                  <td className="px-4 py-3">
-                    {r.success ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 uppercase">
-                        <Check className="h-3 w-3" />הצליח
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 uppercase" title={r.error_message || ""}>
-                        <X className="h-3 w-3" />נכשל
-                      </span>
-                    )}
-                    {!r.success && r.error_message && (
-                      <div className="text-[10px] text-red-700 mt-1 max-w-xs truncate" title={r.error_message}>{r.error_message}</div>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(r.created_at).toLocaleString("he-IL")}</td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
     </div>
   );
 }

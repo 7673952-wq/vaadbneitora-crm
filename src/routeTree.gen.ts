@@ -23,6 +23,7 @@ import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/publi
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
+import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
 
 const AuthRoute = AuthRouteImport.update({
@@ -97,6 +98,12 @@ const ApiPublicHooksWeeklyBackupRoute =
     path: '/api/public/hooks/weekly-backup',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksProcessVoiceQueueRoute =
+  ApiPublicHooksProcessVoiceQueueRouteImport.update({
+    id: '/api/public/hooks/process-voice-queue',
+    path: '/api/public/hooks/process-voice-queue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksDailyBackupRoute =
   ApiPublicHooksDailyBackupRouteImport.update({
     id: '/api/public/hooks/daily-backup',
@@ -118,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
+  '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRoutesByTo {
@@ -134,6 +142,7 @@ export interface FileRoutesByTo {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
+  '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRoutesById {
@@ -152,6 +161,7 @@ export interface FileRoutesById {
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
+  '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRouteTypes {
@@ -170,6 +180,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
+    | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/weekly-backup'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -186,6 +197,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
+    | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/weekly-backup'
   id:
     | '__root__'
@@ -203,6 +215,7 @@ export interface FileRouteTypes {
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
     | '/api/public/hooks/daily-backup'
+    | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/weekly-backup'
   fileRoutesById: FileRoutesById
 }
@@ -213,6 +226,7 @@ export interface RootRouteChildren {
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicWeeklyCrmReportRoute: typeof ApiPublicWeeklyCrmReportRoute
   ApiPublicHooksDailyBackupRoute: typeof ApiPublicHooksDailyBackupRoute
+  ApiPublicHooksProcessVoiceQueueRoute: typeof ApiPublicHooksProcessVoiceQueueRoute
   ApiPublicHooksWeeklyBackupRoute: typeof ApiPublicHooksWeeklyBackupRoute
 }
 
@@ -316,6 +330,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksWeeklyBackupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/process-voice-queue': {
+      id: '/api/public/hooks/process-voice-queue'
+      path: '/api/public/hooks/process-voice-queue'
+      fullPath: '/api/public/hooks/process-voice-queue'
+      preLoaderRoute: typeof ApiPublicHooksProcessVoiceQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/daily-backup': {
       id: '/api/public/hooks/daily-backup'
       path: '/api/public/hooks/daily-backup'
@@ -358,8 +379,19 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicWeeklyCrmReportRoute: ApiPublicWeeklyCrmReportRoute,
   ApiPublicHooksDailyBackupRoute: ApiPublicHooksDailyBackupRoute,
+  ApiPublicHooksProcessVoiceQueueRoute: ApiPublicHooksProcessVoiceQueueRoute,
   ApiPublicHooksWeeklyBackupRoute: ApiPublicHooksWeeklyBackupRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

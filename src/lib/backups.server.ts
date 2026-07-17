@@ -44,7 +44,14 @@ export type BackupResult = {
 };
 
 export async function runBackup(): Promise<BackupResult> {
-  const tables = ["systems", "system_notes", "system_activity_log", "system_transfers", "profiles", "user_roles", "status_settings"];
+  // Every table in the schema must be listed here, or a restore from backup
+  // will silently lose that data. Keep this in sync with the Database type
+  // in src/integrations/supabase/types.ts.
+  const tables = [
+    "systems", "system_notes", "system_activity_log", "system_transfers", "system_files",
+    "profiles", "user_roles", "role_permissions", "user_permissions",
+    "status_settings", "app_settings",
+  ];
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const folder = ts;
   const files: BackupResult["files"] = [];
@@ -141,10 +148,15 @@ function parseCSV(text: string): Record<string, any>[] {
 export type RestoreInput = { table: string; csv: string }[];
 export type RestoreResult = { table: string; inserted: number; skipped: number; error?: string; details?: string[] }[];
 
-// Primary-key column per backup table — most are `id`, but status_settings
-// uses `status_key`. Used as the upsert conflict target.
+// Primary-key column(s) per backup table — most are `id`, but a few use a
+// different single column or a composite key. Used as the upsert conflict
+// target (Postgrest/supabase-js accepts a comma-separated column list for
+// composite keys).
 const PK_COLUMN: Record<string, string> = {
   status_settings: "status_key",
+  app_settings: "key",
+  role_permissions: "role,permission",
+  user_permissions: "user_id,permission",
 };
 const pkOf = (t: string) => PK_COLUMN[t] ?? "id";
 
@@ -167,7 +179,7 @@ async function upsertResilient(table: string, rows: any[]): Promise<{ inserted: 
         .upsert([row], { onConflict, ignoreDuplicates: false });
       if (rowErr) {
         skipped++;
-        const key = row[onConflict] ?? "?";
+        const key = onConflict.split(",").map((c) => row[c] ?? "?").join("/");
         if (details.length < 10) details.push(`${key}: ${rowErr.message}`);
       } else {
         inserted++;
@@ -178,7 +190,11 @@ async function upsertResilient(table: string, rows: any[]): Promise<{ inserted: 
 }
 
 export async function runRestore(files: RestoreInput, mode: "merge" | "replace" = "merge"): Promise<RestoreResult> {
-  const order = ["profiles", "user_roles", "status_settings", "systems", "system_notes", "system_transfers", "system_activity_log"];
+  const order = [
+    "profiles", "user_roles", "role_permissions", "user_permissions",
+    "status_settings", "app_settings", "systems", "system_files",
+    "system_notes", "system_transfers", "system_activity_log",
+  ];
   const sorted = [...files].sort((a, b) => order.indexOf(a.table) - order.indexOf(b.table));
   const results: RestoreResult = [];
 
@@ -186,7 +202,13 @@ export async function runRestore(files: RestoreInput, mode: "merge" | "replace" 
     try {
       const rows = parseCSV(f.csv);
       if (mode === "replace") {
-        await (supabaseAdmin as any).from(f.table).delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        // Delete every existing row before re-inserting. Use "IS NOT NULL" on
+        // the table's own primary-key column (rather than a hardcoded `id`,
+        // which several tables — status_settings, app_settings,
+        // role_permissions, user_permissions — don't have) so this works for
+        // every backup table regardless of its key's name or type.
+        const pkCol = pkOf(f.table).split(",")[0];
+        await (supabaseAdmin as any).from(f.table).delete().not(pkCol, "is", null);
       }
 
       // `systems` has a self-FK on parent_system_id. Insert all rows with the

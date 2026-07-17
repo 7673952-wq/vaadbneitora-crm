@@ -31,7 +31,7 @@ function formatFolder(name: string) {
   }).format(d);
 }
 
-function BackupsPage() {
+export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const qc = useQueryClient();
   const meFn = useServerFn(getMyRole);
   const listFn = useServerFn(listBackups);
@@ -52,7 +52,7 @@ function BackupsPage() {
 
   async function handleRestoreFilesSelected(fileList: FileList | null) {
     if (!fileList || !fileList.length) return;
-    const allowed = new Set(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]);
+    const allowed = new Set(["systems","system_notes","system_activity_log","system_transfers","system_files","profiles","user_roles","role_permissions","user_permissions","status_settings","app_settings"]);
     const files: { table: string; csv: string }[] = [];
     for (const f of Array.from(fileList)) {
       if (/\.zip$/i.test(f.name)) {
@@ -189,9 +189,11 @@ function BackupsPage() {
     <div dir="rtl" className="space-y-6">
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-            <Database className="h-6 w-6" /> גיבויים
-          </h1>
+          {!embedded && (
+            <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+              <Database className="h-6 w-6" /> גיבויים
+            </h1>
+          )}
           <p className="text-sm text-muted-foreground mt-1">
             גיבוי יומי אוטומטי ב-00:00 UTC + גיבוי שבועי בימי חמישי ב-05:00 UTC (נשלח גם למייל), מתוזמן ישירות מבסיס הנתונים כך שהוא פועל בכל שרת. אפשר גם להפעיל גיבוי ידני בכל רגע.
           </p>
@@ -285,9 +287,11 @@ function BackupsPage() {
         )}
       </div>
 
-      <div className="text-xs text-muted-foreground">
-        <Link to="/manager-dashboard" className="underline hover:text-foreground">← חזרה לדשבורד מנהלים</Link>
-      </div>
+      {!embedded && (
+        <div className="text-xs text-muted-foreground">
+          <Link to="/manager-dashboard" className="underline hover:text-foreground">← חזרה לדשבורד מנהלים</Link>
+        </div>
+      )}
 
       {restorePrompt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4" dir="rtl">
@@ -322,7 +326,7 @@ function BackupsPage() {
                       onChange={() => setRestorePrompt({ ...restorePrompt, mode: "merge" })}
                     />
                     <span className="font-medium">מיזוג (בטוח)</span>
-                    <div className="text-xs text-muted-foreground mt-1">עדכון/הוספה לפי id; לא מוחק רשומות קיימות.</div>
+                    <div className="text-xs text-muted-foreground mt-1">עדכון/הוספה לפי מפתח ראשי; לא מוחק רשומות קיימות.</div>
                   </label>
                   <label className={`flex-1 cursor-pointer rounded-lg border p-3 ${restorePrompt.mode === "replace" ? "border-destructive bg-destructive/5" : "border-border"}`}>
                     <input type="radio" name="restore-mode" className="ml-2"

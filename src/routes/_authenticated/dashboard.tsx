@@ -232,6 +232,16 @@ function Dashboard() {
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
+  // Export must always operate on ALL matching systems, not just the current
+  // dashboard page — fetched fresh whenever the export modal is opened so
+  // the "יישלחו לייצוא" preview count matches what actually gets exported.
+  const { data: exportAllData } = useQuery({
+    queryKey: ["systems-export-all"],
+    queryFn: async () => listFn({ data: { status: null, agentId: null, period: null, page: 1, pageSize: 100000 } }),
+    enabled: showExport,
+    staleTime: 30_000,
+  });
+  const exportAllRows = (exportAllData as any)?.items ?? systems;
   const totalPages = pageSize === 0 ? 1 : Math.max(1, Math.ceil(total / pageSize));
   const statusCountsFn = useServerFn(getStatusCounts);
   const { data: globalStatusCounts } = useQuery({
@@ -496,7 +506,7 @@ function Dashboard() {
     const HEADERS = ["number", "note", "active", "call_type", "status"];
     const buildRow = (r: any, statusText: "OPEN" | "BLOCKED") => [
       buildDialNumber(r.system_code),
-      (r.notes ?? "").replace(/\n/g, " "),
+      (r.name ?? "").replace(/\n/g, " "),
       1,
       "ALL",
       statusText,
@@ -833,20 +843,15 @@ function Dashboard() {
 
       {showExport && (
         <ExportModal
-          allRows={systems ?? []}
+          allRows={exportAllRows}
           agents={agents ?? []}
           onClose={() => setShowExport(false)}
           onExport={async (format, fromIso, toIso, label, statusFilter, agentFilter, crmMode) => {
-            // For exports we ALWAYS pull the full dataset from the server —
-            // the dashboard cache is limited to the current page and would
-            // otherwise silently truncate "all" exports.
-            let source: any[] = systems ?? [];
-            try {
-              const full: any = await listFn({ data: { status: null, agentId: null, period: null, page: 1, pageSize: 100000 } });
-              if (Array.isArray(full?.items)) source = full.items;
-            } catch {
-              // fall back to whatever is already cached
-            }
+            // For exports we ALWAYS operate on the full dataset (exportAllRows,
+            // fetched above with pageSize 100000) — the dashboard's own
+            // `systems` list is limited to the current page and would
+            // otherwise silently truncate "all" exports to what's on screen.
+            const source: any[] = exportAllRows ?? systems ?? [];
             let rows = filterByRange(source, fromIso, toIso);
             if (statusFilter.length > 0) rows = rows.filter((r: any) => statusFilter.includes(r.status));
             if (agentFilter.length > 0) rows = rows.filter((r: any) => agentFilter.includes(r.assigned_agent_id || "__unassigned"));

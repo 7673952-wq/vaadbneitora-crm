@@ -11,8 +11,19 @@
 -- BACKUP_WEBHOOK_SECRET (or CRON_SECRET) environment variable configured
 -- on the server.
 
-CREATE SCHEMA IF NOT EXISTS cron;
-CREATE EXTENSION IF NOT EXISTS pg_cron WITH SCHEMA cron;
+-- On Supabase the "cron" schema commonly exists already even when the
+-- pg_cron extension itself hasn't been enabled yet, so a plain
+-- "CREATE SCHEMA IF NOT EXISTS cron" + "CREATE EXTENSION ... WITH SCHEMA
+-- cron" can fail with "schema cron already exists" (pg_cron's install
+-- script creates the schema unconditionally as part of extension setup).
+-- Only create the extension if it isn't already enabled.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_cron') THEN
+    EXECUTE 'CREATE EXTENSION pg_cron WITH SCHEMA cron';
+  END IF;
+END $$;
+
 GRANT USAGE ON SCHEMA cron TO postgres;
 
 -- Placeholder settings rows (admin fills in the real values from the UI).
@@ -56,7 +67,8 @@ BEGIN
       'apikey', v_secret,
       'Authorization', 'Bearer ' || v_secret
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    timeout_milliseconds := 60000
   ) INTO v_request_id;
 END;
 $$;

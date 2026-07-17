@@ -448,7 +448,8 @@ function SystemDetail() {
                   </div>
                 )}
                 {s.caller_phone && (
-                  <div className="relative inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                  <div className="relative inline-flex items-stretch">
+                    <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
                     <a href={`tel:${buildDialNumber(s.caller_phone)}`}
                       className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
                       <Phone className="h-3.5 w-3.5" />
@@ -476,6 +477,7 @@ function SystemDetail() {
                         ? <span className="inline-block h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                         : <Volume2 className="h-3.5 w-3.5" />}
                     </button>
+                    </div>
 
                     {showSendChoice && (
                       <div className="absolute z-20 top-full mt-1 left-0 w-64 bg-popover border border-border rounded-lg shadow-lg p-2 space-y-1" dir="rtl">

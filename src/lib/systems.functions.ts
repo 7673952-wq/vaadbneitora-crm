@@ -1238,6 +1238,27 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
       if (firstHandledBySystem.has(l.system_id as string)) continue;
       firstHandledBySystem.set(l.system_id as string, l.created_at as string);
     }
+
+    // Fallback: a system can be sitting in a "handled" status today without
+    // ever having a logged status-CHANGE row for it — e.g. it was imported
+    // or created directly in that final status, so the UPDATE trigger that
+    // writes to system_activity_log never fired for it. Without this such
+    // systems are invisible to the log-based query above even though they
+    // are, in fact, handled. Mirrors the same fallback getHandledRatio uses.
+    const handledArr = Array.from(handledKeys);
+    if (handledArr.length > 0) {
+      const { data: curHandled } = await context.supabase
+        .from("systems")
+        .select("id, updated_at")
+        .in("status", handledArr as any)
+        .gte("updated_at", from.toISOString())
+        .limit(10000);
+      for (const s of (curHandled ?? []) as any[]) {
+        if (firstHandledBySystem.has(s.id)) continue;
+        firstHandledBySystem.set(s.id, s.updated_at);
+      }
+    }
+
     const systemIds = Array.from(firstHandledBySystem.keys());
     let createdMap = new Map<string, string>();
     if (systemIds.length > 0) {

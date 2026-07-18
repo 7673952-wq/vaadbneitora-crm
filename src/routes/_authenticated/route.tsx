@@ -13,9 +13,9 @@ import { NotificationBell } from "@/components/NotificationBell";
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
   beforeLoad: async () => {
-    const { data, error } = await supabase.auth.getUser();
-    if (error || !data.user) throw redirect({ to: "/auth" });
-    return { user: data.user };
+    const { data, error } = await supabase.auth.getSession();
+    if (error || !data.session) throw redirect({ to: "/auth" });
+    return { user: data.session.user };
   },
   component: () => (
     <GlobalErrorBoundary>
@@ -77,8 +77,15 @@ function AuthedLayout() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       if (event === "SIGNED_OUT") {
-        setSessionReady(false);
-        navigate({ to: "/auth", replace: true });
+        // Confirm before redirecting — a transient/spurious SIGNED_OUT can
+        // fire (e.g. while multiple tabs coordinate token refresh) even
+        // though the user is still genuinely logged in.
+        supabase.auth.getSession().then(({ data: confirm }) => {
+          if (!active) return;
+          if (confirm.session) { setSessionReady(true); return; }
+          setSessionReady(false);
+          navigate({ to: "/auth", replace: true });
+        });
         return;
       }
       if (session) setSessionReady(true);

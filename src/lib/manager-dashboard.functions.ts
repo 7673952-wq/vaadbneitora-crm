@@ -11,8 +11,13 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
     const monthAgo = new Date(now);
     monthAgo.setMonth(now.getMonth() - 1);
 
-    // KPIs
-    const [openedWeekRes, closedWeekLogRes, pendingRes, overdueRes, openedMonthRes] = await Promise.all([
+    // All of these are independent of one another — fetch in one round-trip
+    // instead of 3 sequential stages (this was a big chunk of why opening the
+    // manager dashboard felt slow).
+    const [
+      openedWeekRes, closedWeekLogRes, pendingRes, overdueRes, openedMonthRes,
+      logsRes, profilesRes, overdueListRes,
+    ] = await Promise.all([
       sb.from("systems").select("id", { count: "exact", head: true }).gte("created_at", weekAgo.toISOString()),
       sb.from("system_activity_log").select("id", { count: "exact", head: true })
         .eq("field", "status").eq("new_value", "closed").gte("created_at", weekAgo.toISOString()),
@@ -21,13 +26,24 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
       sb.from("systems").select("id", { count: "exact", head: true })
         .lt("reminder_at", now.toISOString()).not("reminder_at", "is", null),
       sb.from("systems").select("id", { count: "exact", head: true }).gte("created_at", monthAgo.toISOString()),
+      // Per-agent performance — activity log entries last 7 days
+      sb.from("system_activity_log")
+        .select("actor_id, action, created_at")
+        .gte("created_at", weekAgo.toISOString())
+        .not("actor_id", "is", null),
+      sb.from("profiles").select("id, display_name"),
+      // Overdue reminders list
+      sb.from("systems")
+        .select("id, system_code, name, reminder_at, assigned_agent_id")
+        .lt("reminder_at", now.toISOString())
+        .not("reminder_at", "is", null)
+        .order("reminder_at", { ascending: true })
+        .limit(20),
     ]);
 
-    // Per-agent performance — activity log entries last 7 days
-    const { data: logs } = await sb.from("system_activity_log")
-      .select("actor_id, action, created_at")
-      .gte("created_at", weekAgo.toISOString())
-      .not("actor_id", "is", null);
+    const logs = logsRes.data;
+    const profiles = profilesRes.data;
+    const overdueList = overdueListRes.data;
 
     const perAgent = new Map<string, number>();
     for (const l of logs ?? []) {
@@ -35,7 +51,6 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
       perAgent.set(l.actor_id, (perAgent.get(l.actor_id) ?? 0) + 1);
     }
 
-    const { data: profiles } = await sb.from("profiles").select("id, display_name");
     const pmap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
 
     const agentPerformance = Array.from(perAgent.entries()).map(([id, count]) => ({
@@ -43,14 +58,6 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
       agent_name: pmap.get(id) ?? "לא ידוע",
       actions: count,
     })).sort((a, b) => b.actions - a.actions);
-
-    // Overdue reminders list
-    const { data: overdueList } = await sb.from("systems")
-      .select("id, system_code, name, reminder_at, assigned_agent_id")
-      .lt("reminder_at", now.toISOString())
-      .not("reminder_at", "is", null)
-      .order("reminder_at", { ascending: true })
-      .limit(20);
 
     return {
       kpis: {

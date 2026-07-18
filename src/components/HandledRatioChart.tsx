@@ -52,6 +52,7 @@ function OutsideLabel(props: any) {
 export function HandledRatioChart() {
   const [openedPeriod, setOpenedPeriod] = useState<Period>("week");
   const [withinDays, setWithinDays] = useState<Within>(3);
+  const [hovering, setHovering] = useState(false);
   const fn = useServerFn(getHandledRatio);
   const { data, isLoading } = useQuery({
     queryKey: ["handledRatio", openedPeriod, withinDays],
@@ -131,6 +132,7 @@ export function HandledRatioChart() {
                 <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%"
                   innerRadius={60} outerRadius={92} paddingAngle={3} cornerRadius={4}
                   stroke="#fff" strokeWidth={2}
+                  onMouseEnter={() => setHovering(true)} onMouseLeave={() => setHovering(false)}
                   label={OutsideLabel} labelLine={false}>
                   {chartData.map((entry, i) => <Cell key={i} fill={`url(#ratio-grad-${i})`} />)}
                 </Pie>
@@ -138,11 +140,15 @@ export function HandledRatioChart() {
                 <Legend wrapperStyle={{ fontSize: 12 }} />
               </PieChart>
             </ResponsiveContainer>
-            {/* Center label: overall handled % */}
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center -mt-6">
-              <div className="text-2xl font-bold text-foreground">{pct}%</div>
-              <div className="text-[10px] text-muted-foreground">תוך {withinLabel}</div>
-            </div>
+            {/* Center label: overall handled % — hidden while hovering a slice so
+               it doesn't visually collide with the tooltip's own number, which
+               recharts renders right around the same spot for a donut this size. */}
+            {!hovering && (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center -mt-6">
+                <div className="text-2xl font-bold text-foreground">{pct}%</div>
+                <div className="text-[10px] text-muted-foreground">תוך {withinLabel}</div>
+              </div>
+            )}
           </>
         )}
       </div>

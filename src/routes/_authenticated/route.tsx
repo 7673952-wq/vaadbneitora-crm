@@ -35,6 +35,7 @@ function AuthedLayout() {
     enabled: sessionReady,
     retry: false,
     throwOnError: false,
+    staleTime: 5 * 60_000,
   });
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [displayName, setDisplayName] = useState<string>("");
@@ -73,14 +74,14 @@ function AuthedLayout() {
       }
       setSessionReady(true);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
-      if (!session) {
+      if (event === "SIGNED_OUT") {
         setSessionReady(false);
         navigate({ to: "/auth", replace: true });
         return;
       }
-      setSessionReady(true);
+      if (session) setSessionReady(true);
     });
     return () => { active = false; subscription.unsubscribe(); };
   }, [navigate]);

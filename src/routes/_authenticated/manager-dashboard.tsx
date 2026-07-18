@@ -20,11 +20,12 @@ function ManagerDashboard() {
   const fn = useServerFn(getManagerDashboard);
   const [showSeries, setShowSeries] = useState(false);
   const [showPendingMessages, setShowPendingMessages] = useState(false);
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: 5 * 60_000 });
   const { data, isLoading } = useQuery({
     queryKey: ["manager-dashboard"],
     queryFn: async () => fn({ headers: await getAuthHeaders() }),
     enabled: me?.isAdmin === true,
+    staleTime: 30_000,
   });
 
   if (me && !me.isAdmin) {

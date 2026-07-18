@@ -1216,9 +1216,12 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
     const { data: statusRows } = await context.supabase
       .from("status_settings").select("status_key, is_handled");
     const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
-    // Fallback defaults if table is empty.
+    // Fallback defaults if table is empty — must be actual completed/terminal
+    // statuses, not "to do" instruction statuses (e.g. "block_from_root" means
+    // "TO block from root", not "blocked"; the completed counterpart is
+    // "blocked_from_root").
     if (handledKeys.size === 0) {
-      ["closed", "close_in_simahedrin", "block_from_root"].forEach((k) => handledKeys.add(k));
+      ["open", "closed", "blocked_from_root", "sent_to_yosela", "sent_to_committee", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
     }
 
     // First status-change to a handled value per system in the window.
@@ -1244,22 +1247,24 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
     }
 
     // Bucket
-    const buckets = new Map<number, { count: number; totalHours: number }>();
+    const buckets = new Map<number, { count: number; totalHours: number; withDuration: number }>();
     const startBucket = Math.floor(from.getTime() / c.bucketMs) * c.bucketMs;
-    for (let t = startBucket; t <= now; t += c.bucketMs) buckets.set(t, { count: 0, totalHours: 0 });
+    for (let t = startBucket; t <= now; t += c.bucketMs) buckets.set(t, { count: 0, totalHours: 0, withDuration: 0 });
     for (const [sid, handledAtStr] of firstHandledBySystem.entries()) {
       const handledAt = new Date(handledAtStr).getTime();
       const bkt = Math.floor(handledAt / c.bucketMs) * c.bucketMs;
       const b = buckets.get(bkt); if (!b) continue;
-      const createdAt = createdMap.get(sid);
-      const hours = createdAt ? Math.max(0, (handledAt - new Date(createdAt).getTime()) / 3600_000) : 0;
-      b.count += 1;
+      b.count += 1; // always counts toward throughput
+      const createdAtStr = createdMap.get(sid);
+      if (!createdAtStr) continue; // unknown creation time — exclude from the average instead of silently counting as 0h
+      const hours = Math.max(0, (handledAt - new Date(createdAtStr).getTime()) / 3600_000);
       b.totalHours += hours;
+      b.withDuration += 1;
     }
     return Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]).map(([t, v]) => ({
       bucket: c.label(new Date(t)),
       throughput: v.count,
-      avgHours: v.count > 0 ? Number((v.totalHours / v.count).toFixed(1)) : 0,
+      avgHours: v.withDuration > 0 ? Number((v.totalHours / v.withDuration).toFixed(1)) : 0,
     }));
   });
 
@@ -1284,7 +1289,7 @@ export const getHandledRatio = createServerFn({ method: "POST" })
       .from("status_settings").select("status_key, is_handled");
     const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
     if (handledKeys.size === 0) {
-      ["closed", "close_in_simahedrin", "block_from_root", "blocked_from_root", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
+      ["open", "closed", "blocked_from_root", "sent_to_yosela", "sent_to_committee", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
     }
 
     const { data: sys } = await context.supabase
@@ -1301,16 +1306,21 @@ export const getHandledRatio = createServerFn({ method: "POST" })
     // Find first handled transition per system from activity log.
     const ids = rows.map((r) => r.id);
     const firstHandled = new Map<string, string>();
-    // Batch in chunks to avoid IN-list limits.
-    for (let i = 0; i < ids.length; i += 500) {
-      const chunk = ids.slice(i, i + 500);
-      const { data: logs } = await context.supabase
+    // Batch in chunks to avoid IN-list limits — fetched in parallel rather
+    // than one chunk at a time, which was serializing up to ~100 round-trips
+    // for large datasets.
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
+    const chunkResults = await Promise.all(chunks.map((chunk) =>
+      context.supabase
         .from("system_activity_log")
         .select("system_id, new_value, created_at")
         .eq("field", "status")
         .in("system_id", chunk)
         .order("created_at", { ascending: true })
-        .limit(20000);
+        .limit(20000),
+    ));
+    for (const { data: logs } of chunkResults) {
       for (const l of (logs ?? []) as any[]) {
         if (!handledKeys.has(l.new_value)) continue;
         if (firstHandled.has(l.system_id)) continue;

@@ -97,6 +97,50 @@ export async function runBackup(): Promise<BackupResult> {
   return { folder, files };
 }
 
+// Email a completed backup as a ZIP attachment via Resend. Shared by both
+// the daily and weekly cron webhooks so every scheduled backup — not just
+// the Thursday one — actually reaches the configured inbox. Recipient is
+// read from app_settings.backup_email, falling back to WEEKLY_REPORT_EMAIL.
+// Returns a short status string for logging; never throws.
+export async function sendBackupEmail(result: BackupResult, kind: "daily" | "weekly"): Promise<string> {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return "skipped (no RESEND_API_KEY)";
+
+  const { data: setting } = await supabaseAdmin
+    .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
+  const recipient = ((setting?.value as { email?: string } | null)?.email ?? process.env.WEEKLY_REPORT_EMAIL ?? "").trim();
+  if (!recipient) return "skipped (no recipient configured)";
+
+  try {
+    const JSZip = (await import("jszip")).default;
+    const zip = new JSZip();
+    for (const f of result.files) {
+      const { data: blob, error } = await supabaseAdmin.storage.from("backups").download(f.path);
+      if (error) throw new Error(`${f.name}: ${error.message}`);
+      zip.file(f.name, await blob.arrayBuffer());
+    }
+    const zipBuf = await zip.generateAsync({ type: "uint8array" });
+    const base64 = Buffer.from(zipBuf).toString("base64");
+    const filename = `backup-${result.folder}.zip`;
+    const subjectLabel = kind === "weekly" ? "שבועי" : "יומי";
+
+    const resp = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        from: process.env.RESEND_FROM_EMAIL ?? "CRM Backups <onboarding@resend.dev>",
+        to: [recipient],
+        subject: `גיבוי CRM ${subjectLabel} — ${result.folder}`,
+        text: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+        attachments: [{ filename, content: base64 }],
+      }),
+    });
+    return resp.ok ? "sent" : `failed:${resp.status}:${(await resp.text().catch(() => "")).slice(0, 200)}`;
+  } catch (e: any) {
+    return `error:${e?.message ?? "unknown"}`;
+  }
+}
+
 // ---------- Restore from backup ----------
 
 function parseCSV(text: string): Record<string, any>[] {

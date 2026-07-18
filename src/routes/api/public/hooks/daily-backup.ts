@@ -11,9 +11,10 @@ async function handleDailyBackup(request: Request) {
     });
   }
   try {
-    const { runBackup } = await import("@/lib/backups.server");
+    const { runBackup, sendBackupEmail } = await import("@/lib/backups.server");
     const result = await runBackup();
-    return new Response(JSON.stringify({ ok: true, ...result }), {
+    const emailStatus = await sendBackupEmail(result, "daily");
+    return new Response(JSON.stringify({ ok: true, ...result, emailStatus }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

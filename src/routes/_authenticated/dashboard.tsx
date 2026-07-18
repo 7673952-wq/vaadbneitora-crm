@@ -623,26 +623,26 @@ function Dashboard() {
       </div>
 
       {showCharts && (
-        <>
+        <div className="bg-gradient-to-br from-indigo-50/60 via-card to-card border border-border rounded-2xl shadow-sm p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
+            </div>
+            <Link to="/charts" target="_blank" rel="noreferrer"
+              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent shadow-sm">
+              <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
+            </Link>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <HandlingSpeedChart />
             <HandledRatioChart />
           </div>
+
           {(chartData.length > 0 || agentChartData.length > 0) && (
-            <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2 text-sm font-semibold">
-                  <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
-                </div>
-                <a href="/charts" target="_blank" rel="noreferrer"
-                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent">
-                  <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
-                </a>
-              </div>
-              <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
-            </div>
+            <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
           )}
-        </>
+        </div>
       )}
 
 
@@ -1651,11 +1651,13 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
 
   return (
     <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-xl font-bold mb-1">ייצוא לפי תאריכים</h2>
-        <p className="text-xs text-muted-foreground mb-4">סינון לפי תאריך עדכון אחרון של המערכת</p>
+      <div className="bg-card border border-border rounded-2xl max-w-md w-full shadow-xl max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+        <div className="p-6 pb-0 shrink-0">
+          <h2 className="text-xl font-bold mb-1">ייצוא לפי תאריכים</h2>
+          <p className="text-xs text-muted-foreground mb-4">סינון לפי תאריך עדכון אחרון של המערכת</p>
+        </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 overflow-y-auto px-6 py-4 flex-1 min-h-0">
           <div>
             <label className="text-sm font-medium block mb-2">טווח תאריכים</label>
             <div className="grid grid-cols-3 gap-2">
@@ -1779,18 +1781,18 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
           <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
             יישלחו לייצוא: <strong>{countInRange}</strong> מערכות
           </div>
+        </div>
 
-          <div className="flex gap-2 justify-end pt-2">
-            <button type="button" onClick={onClose}
-              className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
-            <button type="button" onClick={() => {
-              const { fromIso, toIso, label } = computeRange();
-              onExport(format, fromIso, toIso, label, statusFilter, agentFilter, crmMode);
-            }}
-              className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
-              ייצא
-            </button>
-          </div>
+        <div className="flex gap-2 justify-end p-4 border-t border-border shrink-0">
+          <button type="button" onClick={onClose}
+            className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
+          <button type="button" onClick={() => {
+            const { fromIso, toIso, label } = computeRange();
+            onExport(format, fromIso, toIso, label, statusFilter, agentFilter, crmMode);
+          }}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90">
+            ייצא
+          </button>
         </div>
       </div>
     </div>

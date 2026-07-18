@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
-  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { getHandlingSpeedTrend } from "@/lib/systems.functions";
 import { Gauge } from "lucide-react";
@@ -31,10 +31,12 @@ export function HandlingSpeedChart() {
   const overallAvg = totalHandled > 0 ? (weighted / totalHandled).toFixed(1) : "—";
 
   return (
-    <div className="bg-card border border-border rounded-2xl shadow-sm p-4">
+    <div className="bg-gradient-to-br from-sky-50/50 via-card to-card border border-border rounded-2xl shadow-sm hover:shadow-md transition p-4">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <Gauge className="h-4 w-4 text-emerald-600" />
+          <span className="h-7 w-7 rounded-lg bg-emerald-100 flex items-center justify-center">
+            <Gauge className="h-4 w-4 text-emerald-700" />
+          </span>
           מהירות טיפול
           <span className="text-xs text-muted-foreground font-normal">
             · {totalHandled} מערכות טופלו · ממוצע {overallAvg} שעות
@@ -57,14 +59,26 @@ export function HandlingSpeedChart() {
         ) : (
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={rows} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-              <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" />
-              <YAxis yAxisId="hours" tick={{ fontSize: 11 }} stroke="#10b981"
+              <defs>
+                <linearGradient id="speed-hours-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10b981" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                </linearGradient>
+                <linearGradient id="speed-count-grad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#6366f1" stopOpacity={0.25} />
+                  <stop offset="100%" stopColor="#6366f1" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
+              <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" axisLine={false} tickLine={false} />
+              <YAxis yAxisId="hours" tick={{ fontSize: 11 }} stroke="#10b981" axisLine={false} tickLine={false}
                 label={{ value: "שעות ממוצע", angle: -90, position: "insideLeft", style: { fontSize: 11, fill: "#10b981" } }} />
-              <YAxis yAxisId="count" orientation="right" tick={{ fontSize: 11 }} stroke="#6366f1"
+              <YAxis yAxisId="count" orientation="right" tick={{ fontSize: 11 }} stroke="#6366f1" axisLine={false} tickLine={false}
                 label={{ value: "מס' מערכות", angle: 90, position: "insideRight", style: { fontSize: 11, fill: "#6366f1" } }} />
               <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Area yAxisId="hours" type="monotone" dataKey="avgHours" fill="url(#speed-hours-grad)" stroke="none" legendType="none" />
+              <Area yAxisId="count" type="monotone" dataKey="throughput" fill="url(#speed-count-grad)" stroke="none" legendType="none" />
               <Line yAxisId="hours" type="monotone" dataKey="avgHours" name="שעות ממוצע לטיפול" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
               <Line yAxisId="count" type="monotone" dataKey="throughput" name="מערכות שנסגרו" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
             </LineChart>

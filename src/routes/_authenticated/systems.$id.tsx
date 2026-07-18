@@ -72,6 +72,8 @@ function SystemDetail() {
   const qc = useQueryClient();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showSendChoice, setShowSendChoice] = useState(false);
+  const [sendChoicePos, setSendChoicePos] = useState<{ top: number; left: number } | null>(null);
+  const sendChoiceBtnRef = useRef<HTMLButtonElement>(null);
   const [showSendPicker, setShowSendPicker] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
 
@@ -461,9 +463,16 @@ function SystemDetail() {
                       {copiedKey === "caller" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                     <button
+                      ref={sendChoiceBtnRef}
                       type="button"
                       disabled={!voiceEnabled || voiceMut.isPending || batchSending}
-                      onClick={() => setShowSendChoice((v) => !v)}
+                      onClick={() => {
+                        if (!showSendChoice) {
+                          const r = sendChoiceBtnRef.current?.getBoundingClientRect();
+                          if (r) setSendChoicePos({ top: r.bottom + 4, left: r.left });
+                        }
+                        setShowSendChoice((v) => !v);
+                      }}
                       title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שליחת הודעה קולית לפונה/ים דרך ימות המשיח"}
                       aria-label="שלח הודעה קולית"
                       className={`inline-flex items-center justify-center h-9 w-9 border-r border-border transition ${
@@ -479,8 +488,13 @@ function SystemDetail() {
                     </button>
                     </div>
 
-                    {showSendChoice && (
-                      <div className="absolute z-20 top-full mt-1 left-0 w-64 bg-popover border border-border rounded-lg shadow-lg p-2 space-y-1" dir="rtl">
+                    {showSendChoice && sendChoicePos && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowSendChoice(false)} />
+                        <div
+                          className="fixed z-50 w-64 bg-popover border border-border rounded-lg shadow-lg p-2 space-y-1"
+                          style={{ top: sendChoicePos.top, left: sendChoicePos.left }}
+                          dir="rtl">
                         <div className="text-xs font-semibold text-muted-foreground px-1 pb-1">למי לשלוח הודעה קולית?</div>
                         <button type="button"
                           onClick={() => {
@@ -508,7 +522,8 @@ function SystemDetail() {
                           className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent">
                           אחד מהפונים...
                         </button>
-                      </div>
+                        </div>
+                      </>
                     )}
 
                     {showSendPicker && (

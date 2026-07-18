@@ -23,6 +23,32 @@ const WITHIN_OPTS: Array<{ value: Within; label: string }> = [
   { value: 30, label: "חודש" },
 ];
 
+// Draws the % label OUTSIDE the ring (past outerRadius) with a short leader
+// line to its slice. Recharts' built-in function-label positions text right
+// at the slice boundary, where the next slice's fill (drawn after it) can
+// paint over it — this keeps labels clear of the pie entirely.
+function OutsideLabel(props: any) {
+  const { cx, cy, midAngle, outerRadius, percent, fill } = props;
+  if (!percent) return null;
+  const RAD = Math.PI / 180;
+  const sin = Math.sin(-midAngle * RAD);
+  const cos = Math.cos(-midAngle * RAD);
+  const lineStart = { x: cx + (outerRadius + 4) * cos, y: cy + (outerRadius + 4) * sin };
+  const lineEnd = { x: cx + (outerRadius + 18) * cos, y: cy + (outerRadius + 18) * sin };
+  const textAnchor = cos >= 0 ? "start" : "end";
+  const textX = lineEnd.x + (cos >= 0 ? 4 : -4);
+  return (
+    <g>
+      <path d={`M${lineStart.x},${lineStart.y}L${lineEnd.x},${lineEnd.y}`} stroke={fill} strokeWidth={1.5} fill="none" />
+      <circle cx={lineEnd.x} cy={lineEnd.y} r={2} fill={fill} />
+      <text x={textX} y={lineEnd.y} textAnchor={textAnchor} dominantBaseline="central"
+        fontSize={12} fontWeight={700} fill="var(--foreground, #0f172a)">
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    </g>
+  );
+}
+
 export function HandledRatioChart() {
   const [openedPeriod, setOpenedPeriod] = useState<Period>("week");
   const [withinDays, setWithinDays] = useState<Within>(3);
@@ -47,10 +73,12 @@ export function HandledRatioChart() {
   const withinLabel = WITHIN_OPTS.find((w) => w.value === withinDays)?.label ?? "";
 
   return (
-    <div className="bg-card border border-border rounded-2xl shadow-soft p-4">
+    <div className="bg-gradient-to-br from-emerald-50/50 via-card to-card border border-border rounded-2xl shadow-sm hover:shadow-md transition p-4">
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
-          <PieIcon className="h-4 w-4 text-primary" />
+          <span className="h-7 w-7 rounded-lg bg-emerald-100 flex items-center justify-center">
+            <PieIcon className="h-4 w-4 text-emerald-700" />
+          </span>
           אחוז מערכות שטופלו בזמן
           <span className="text-xs text-muted-foreground font-normal">
             · {handled}/{total} · {pct}%
@@ -91,12 +119,20 @@ export function HandledRatioChart() {
         ) : (
           <>
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
+              <PieChart margin={{ top: 20, right: 40, bottom: 20, left: 40 }}>
+                <defs>
+                  {chartData.map((d, i) => (
+                    <linearGradient key={i} id={`ratio-grad-${i}`} x1="0" y1="0" x2="1" y2="1">
+                      <stop offset="0%" stopColor={d.color} stopOpacity={1} />
+                      <stop offset="100%" stopColor={d.color} stopOpacity={0.75} />
+                    </linearGradient>
+                  ))}
+                </defs>
                 <Pie data={chartData} dataKey="value" nameKey="name" cx="50%" cy="50%"
-                  innerRadius={60} outerRadius={100} paddingAngle={2}
-                  label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
-                  labelLine={false}>
-                  {chartData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  innerRadius={60} outerRadius={92} paddingAngle={3} cornerRadius={4}
+                  stroke="#fff" strokeWidth={2}
+                  label={OutsideLabel} labelLine={false}>
+                  {chartData.map((entry, i) => <Cell key={i} fill={`url(#ratio-grad-${i})`} />)}
                 </Pie>
                 <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} formatter={(v: any) => [`${v} מערכות`, ""]} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />

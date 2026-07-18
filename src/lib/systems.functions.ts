@@ -1202,8 +1202,8 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     // Bucketing config per period.
     const cfg: Record<string, { hours: number; bucketMs: number; label: (d: Date) => string }> = {
-      day:    { hours: 24,        bucketMs: 60 * 60 * 1000,             label: (d) => d.toISOString().slice(11, 13) + ":00" },
-      "3days":{ hours: 72,        bucketMs: 3 * 60 * 60 * 1000,         label: (d) => `${d.getDate()}/${d.getMonth()+1} ${String(d.getHours()).padStart(2,"0")}:00` },
+      day:    { hours: 24,        bucketMs: 60 * 60 * 1000,             label: (d) => String(getIsraelHour(d)).padStart(2, "0") + ":00" },
+      "3days":{ hours: 72,        bucketMs: 3 * 60 * 60 * 1000,         label: (d) => `${d.getDate()}/${d.getMonth()+1} ${String(getIsraelHour(d)).padStart(2,"0")}:00` },
       week:   { hours: 24 * 7,    bucketMs: 24 * 60 * 60 * 1000,        label: (d) => `${d.getDate()}/${d.getMonth()+1}` },
       month:  { hours: 24 * 30,   bucketMs: 24 * 60 * 60 * 1000,        label: (d) => `${d.getDate()}/${d.getMonth()+1}` },
       year:   { hours: 24 * 365,  bucketMs: 7 * 24 * 60 * 60 * 1000,    label: (d) => `${d.getDate()}/${d.getMonth()+1}` },

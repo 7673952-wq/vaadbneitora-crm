@@ -225,9 +225,10 @@ async function bestEffortMirrorStatusTable(supabaseAdmin: SupabaseLike, rows: St
 }
 
 
-export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
+export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike & { rpc?: (fn: string, args: any) => Promise<{ error: any }> }, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
   const rows = await readStatusSettings(supabaseAdmin);
   const existingIndex = rows.findIndex((row) => row.status_key === patch.status_key);
+  const isNewStatus = existingIndex < 0;
   const existing = existingIndex >= 0
     ? rows[existingIndex]
     : {
@@ -249,6 +250,18 @@ export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike, pat
       };
   const [merged] = normalizeRows([{ ...existing, ...patch }]);
   if (!merged) return rows;
+
+  // The `systems.status` column is a fixed Postgres ENUM — inserting a row
+  // into status_settings alone does NOT make Postgres accept that value for
+  // the column. A brand-new custom status must also be added to the enum
+  // itself, or assigning any system to it fails with "invalid input value
+  // for enum system_status". Existing keys are already in the enum, so this
+  // only runs for genuinely new ones.
+  if (isNewStatus && typeof supabaseAdmin.rpc === "function") {
+    const { error: enumErr } = await supabaseAdmin.rpc("add_system_status_enum_value", { new_value: merged.status_key });
+    if (enumErr) throw new Error(`נכשל להוסיף את הסטטוס לרשימת הערכים התקפים במסד הנתונים: ${enumErr.message}`);
+  }
+
   const nextRows = [...rows];
   if (existingIndex >= 0) nextRows[existingIndex] = merged;
   else nextRows.push(merged);

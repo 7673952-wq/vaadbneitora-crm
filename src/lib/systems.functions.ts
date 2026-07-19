@@ -1245,26 +1245,44 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
     // writes to system_activity_log never fired for it. Without this such
     // systems are invisible to the log-based query above even though they
     // are, in fact, handled. Mirrors the same fallback getHandledRatio uses.
+    // We only count it if updated_at is meaningfully after created_at —
+    // otherwise it's indistinguishable from "just created/imported and
+    // never touched", which would fabricate a fake ~0-hour handle and, at
+    // bulk-import scale, badly skew the average toward 0.
+    const MIN_REAL_GAP_MS = 2 * 60_000;
     const handledArr = Array.from(handledKeys);
     if (handledArr.length > 0) {
       const { data: curHandled } = await context.supabase
         .from("systems")
-        .select("id, updated_at")
+        .select("id, updated_at, created_at")
         .in("status", handledArr as any)
         .gte("updated_at", from.toISOString())
         .limit(10000);
       for (const s of (curHandled ?? []) as any[]) {
         if (firstHandledBySystem.has(s.id)) continue;
+        const gap = new Date(s.updated_at).getTime() - new Date(s.created_at).getTime();
+        if (gap < MIN_REAL_GAP_MS) continue;
         firstHandledBySystem.set(s.id, s.updated_at);
       }
     }
 
+    // Look up each handled system's created_at to compute duration. Chunked
+    // + parallel: a single .in() call with 1000+ ids can build a request URL
+    // long enough to be rejected by the server, which previously failed
+    // silently and left createdMap empty — forcing every bucket's average
+    // down to 0 regardless of the real data.
     const systemIds = Array.from(firstHandledBySystem.keys());
     let createdMap = new Map<string, string>();
     if (systemIds.length > 0) {
-      const { data: sys } = await context.supabase
-        .from("systems").select("id, created_at").in("id", systemIds);
-      for (const s of (sys ?? [])) createdMap.set(s.id as string, s.created_at as string);
+      const idChunks: string[][] = [];
+      for (let i = 0; i < systemIds.length; i += 500) idChunks.push(systemIds.slice(i, i + 500));
+      const chunkResults = await Promise.all(idChunks.map((chunk) =>
+        context.supabase.from("systems").select("id, created_at").in("id", chunk),
+      ));
+      for (const { data: sys, error: sysErr } of chunkResults) {
+        if (sysErr) continue;
+        for (const s of (sys ?? [])) createdMap.set(s.id as string, s.created_at as string);
+      }
     }
 
     // Bucket
@@ -1349,11 +1367,20 @@ export const getHandledRatio = createServerFn({ method: "POST" })
       }
     }
 
+    const MIN_REAL_GAP_MS = 2 * 60_000;
     const withinMs = data.withinDays * 24 * 3600_000;
     let handledInTime = 0, notHandledInTime = 0;
     for (const r of rows) {
       const isHandledNow = handledKeys.has(r.status);
-      const handledAt = firstHandled.get(r.id) ?? (isHandledNow ? r.updated_at : null);
+      const fromLog = firstHandled.get(r.id);
+      let handledAt: string | null = fromLog ?? null;
+      if (!handledAt && isHandledNow) {
+        const gap = new Date(r.updated_at).getTime() - new Date(r.created_at).getTime();
+        // No logged transition — only trust updated_at as a "handled at"
+        // proxy if real time actually passed; near-zero gaps are typically
+        // bulk-imported/seeded systems, not genuine fast handling.
+        if (gap >= MIN_REAL_GAP_MS) handledAt = r.updated_at;
+      }
       if (!handledAt) { notHandledInTime++; continue; }
       const delta = new Date(handledAt).getTime() - new Date(r.created_at).getTime();
       if (delta >= 0 && delta <= withinMs) handledInTime++;

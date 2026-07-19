@@ -50,7 +50,8 @@ export async function runBackup(): Promise<BackupResult> {
   const tables = [
     "systems", "system_notes", "system_activity_log", "system_transfers", "system_files",
     "profiles", "user_roles", "role_permissions", "user_permissions",
-    "status_settings", "app_settings",
+    "status_settings", "app_settings", "voice_message_log",
+    "email_messages", "email_threads", "email_templates",
   ];
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const folder = ts;
@@ -97,20 +98,24 @@ export async function runBackup(): Promise<BackupResult> {
   return { folder, files };
 }
 
-// Email a completed backup as a ZIP attachment via Resend. Shared by both
-// the daily and weekly cron webhooks so every scheduled backup — not just
-// the Thursday one — actually reaches the configured inbox. Recipient is
-// read from app_settings.backup_email, falling back to WEEKLY_REPORT_EMAIL.
-// Returns a short status string for logging; never throws.
+// Emails a completed backup as a ZIP attachment. Shared by both the daily
+// and weekly cron webhooks so every scheduled backup — not just the
+// Thursday one — actually reaches the configured inbox. Recipient is read
+// from app_settings.backup_email, falling back to WEEKLY_REPORT_EMAIL.
+// Prefers the Gmail relay (Apps Script, ניהול → מיילים) when it's
+// configured — sends from the same shared mailbox agents already use, no
+// separate transactional-email account needed. Falls back to Resend
+// (RESEND_API_KEY) if the relay isn't set up. Returns a short status
+// string for logging; never throws.
 export async function sendBackupEmail(result: BackupResult, kind: "daily" | "weekly"): Promise<string> {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) return "skipped (no RESEND_API_KEY)";
-
   const { data: setting } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
   const recipient = ((setting?.value as { email?: string } | null)?.email ?? process.env.WEEKLY_REPORT_EMAIL ?? "").trim();
   if (!recipient) return "skipped (no recipient configured)";
 
+  let zipBuf: Uint8Array;
+  let filename: string;
+  const subjectLabel = kind === "weekly" ? "שבועי" : "יומי";
   try {
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
@@ -119,11 +124,47 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
       if (error) throw new Error(`${f.name}: ${error.message}`);
       zip.file(f.name, await blob.arrayBuffer());
     }
-    const zipBuf = await zip.generateAsync({ type: "uint8array" });
-    const base64 = Buffer.from(zipBuf).toString("base64");
-    const filename = `backup-${result.folder}.zip`;
-    const subjectLabel = kind === "weekly" ? "שבועי" : "יומי";
+    zipBuf = await zip.generateAsync({ type: "uint8array" });
+    filename = `backup-${result.folder}.zip`;
+  } catch (e: any) {
+    return `error building zip:${e?.message ?? "unknown"}`;
+  }
 
+  // Try the Gmail relay first, if configured.
+  const [{ data: relayUrlRow }, { data: relaySecretRow }] = await Promise.all([
+    supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_url").maybeSingle(),
+    supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_secret").maybeSingle(),
+  ]);
+  const relayUrl = (relayUrlRow?.value as { url?: string } | null)?.url;
+  const relaySecret = (relaySecretRow?.value as { secret?: string } | null)?.secret;
+  if (relayUrl && relaySecret) {
+    try {
+      const resp = await fetch(relayUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          secret: relaySecret,
+          action: "send_backup",
+          to: recipient,
+          subject: `גיבוי CRM ${subjectLabel} — ${result.folder}`,
+          body: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+          attachmentBase64: Buffer.from(zipBuf).toString("base64"),
+          attachmentName: filename,
+        }),
+      });
+      const json: any = await resp.json().catch(() => ({}));
+      if (resp.ok && json?.ok) return "sent (gmail relay)";
+      return `failed (gmail relay):${resp.status}:${json?.error ?? ""}`.slice(0, 250);
+    } catch (e: any) {
+      return `error (gmail relay):${e?.message ?? "unknown"}`;
+    }
+  }
+
+  // Fall back to Resend.
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return "skipped (no email relay or RESEND_API_KEY configured)";
+  try {
+    const base64 = Buffer.from(zipBuf).toString("base64");
     const resp = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
@@ -135,9 +176,9 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
         attachments: [{ filename, content: base64 }],
       }),
     });
-    return resp.ok ? "sent" : `failed:${resp.status}:${(await resp.text().catch(() => "")).slice(0, 200)}`;
+    return resp.ok ? "sent (resend)" : `failed (resend):${resp.status}:${(await resp.text().catch(() => "")).slice(0, 200)}`;
   } catch (e: any) {
-    return `error:${e?.message ?? "unknown"}`;
+    return `error (resend):${e?.message ?? "unknown"}`;
   }
 }
 

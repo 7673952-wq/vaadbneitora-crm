@@ -11,6 +11,11 @@ import {
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
+import {
+  getEmailRelayConfig, setEmailRelayConfig, getMyEmailProfile, setMyEmailSignature,
+  listEmailTemplates, upsertEmailTemplate, deleteEmailTemplate,
+  listAgentEmailNames, setAgentEmailDisplayName,
+} from "@/lib/email.functions";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
@@ -44,9 +49,10 @@ function AdminPage() {
   const canPermissions = !!perms.permissions_manage;
   const canVoiceLog = !!perms.settings_manage; // הרשאה לצפייה ביומן הודעות קוליות
   const canBackups = !!me?.isSuperAdmin; // גיבויים/שחזור מוגבלים לסופר-אדמין, כמו שהיה בדף הנפרד
+  const canEmail = !!(perms.settings_manage || perms.backup_manage); // חיבור Gmail, תבניות וחתימות
 
-  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups;
-  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : "backups";
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail;
+  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : "backups";
 
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -77,6 +83,7 @@ function AdminPage() {
           {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
           {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
           {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
+          {canEmail && <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />מיילים</TabsTrigger>}
         </TabsList>
 
         {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
@@ -90,6 +97,7 @@ function AdminPage() {
         {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
         {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
         {canBackups && <TabsContent value="backups" className="mt-4"><BackupsPage embedded /></TabsContent>}
+        {canEmail && <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>}
       </Tabs>
     </div>
   );
@@ -790,6 +798,212 @@ function PermissionsPanel() {
 }
 
 // ============= Shared bits =============
+// ============= Email settings (Gmail relay, templates, signature) =============
+function EmailSettingsPanel() {
+  const qc = useQueryClient();
+  const getConfigFn = useServerFn(getEmailRelayConfig);
+  const setConfigFn = useServerFn(setEmailRelayConfig);
+  const getProfileFn = useServerFn(getMyEmailProfile);
+  const setSignatureFn = useServerFn(setMyEmailSignature);
+  const listTemplatesFn = useServerFn(listEmailTemplates);
+  const upsertTemplateFn = useServerFn(upsertEmailTemplate);
+  const deleteTemplateFn = useServerFn(deleteEmailTemplate);
+
+  const { data: config } = useQuery({
+    queryKey: ["email_relay_config"],
+    queryFn: async () => getConfigFn({ headers: await getAuthHeaders() }),
+  });
+  const { data: myProfile } = useQuery({
+    queryKey: ["my_email_profile"],
+    queryFn: async () => getProfileFn({ headers: await getAuthHeaders() }),
+  });
+  const { data: templates } = useQuery({
+    queryKey: ["email_templates"],
+    queryFn: async () => listTemplatesFn({ headers: await getAuthHeaders() }),
+  });
+  const listAgentNamesFn = useServerFn(listAgentEmailNames);
+  const setAgentNameFn = useServerFn(setAgentEmailDisplayName);
+  const { data: agentNames, error: agentNamesError } = useQuery({
+    queryKey: ["agent_email_names"],
+    queryFn: async () => listAgentNamesFn({ headers: await getAuthHeaders() }),
+    retry: false,
+  });
+  const [agentNameDrafts, setAgentNameDrafts] = useState<Record<string, string>>({});
+  const saveAgentNameMut = useMutation({
+    mutationFn: async (v: { user_id: string; email_display_name: string }) => setAgentNameFn({ data: v, headers: await getAuthHeaders() }),
+    onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["agent_email_names"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
+  });
+
+  const [webAppUrl, setWebAppUrl] = useState("");
+  const [address, setAddress] = useState("");
+  const [secret, setSecret] = useState("");
+  useEffect(() => { if (config) { setWebAppUrl(config.url); setAddress(config.address); } }, [config]);
+
+  const saveConfigMut = useMutation({
+    mutationFn: async () => setConfigFn({ data: { url: webAppUrl, address, secret: secret || undefined }, headers: await getAuthHeaders() }),
+    onSuccess: () => { toast.success("החיבור נשמר"); setSecret(""); qc.invalidateQueries({ queryKey: ["email_relay_config"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
+  });
+
+  const [signature, setSignatureLocal] = useState("");
+  useEffect(() => { if (myProfile) setSignatureLocal(myProfile.signature); }, [myProfile]);
+  const saveSignatureMut = useMutation({
+    mutationFn: async () => setSignatureFn({ data: { signature }, headers: await getAuthHeaders() }),
+    onSuccess: () => toast.success("החתימה נשמרה"),
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
+  });
+
+  const [editingTemplate, setEditingTemplate] = useState<{ id?: string; name: string; subject: string; body: string } | null>(null);
+  const saveTemplateMut = useMutation({
+    mutationFn: async (t: { id?: string; name: string; subject: string; body: string }) => upsertTemplateFn({ data: t, headers: await getAuthHeaders() }),
+    onSuccess: () => { toast.success("התבנית נשמרה"); setEditingTemplate(null); qc.invalidateQueries({ queryKey: ["email_templates"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
+  });
+  const deleteTemplateMut = useMutation({
+    mutationFn: async (id: string) => deleteTemplateFn({ data: { id }, headers: await getAuthHeaders() }),
+    onSuccess: () => { toast.success("התבנית נמחקה"); qc.invalidateQueries({ queryKey: ["email_templates"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה במחיקה"),
+  });
+
+  const configured = !!config?.url && config?.hasSecret;
+
+  return (
+    <div className="space-y-6">
+      {/* Connection */}
+      <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Mail className="h-5 w-5 text-primary" />
+          חיבור Gmail (Google Apps Script)
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${configured ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+            {configured ? "מחובר" : "לא מוגדר"}
+          </span>
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          כל הנציגים שולחים מאותה תיבת Gmail משותפת; השם שיוצג לפונה נקבע לפי הנציג ששולח, לא לפי כתובת המייל.
+          יש להתקין תחילה את קובץ ה-Apps Script (זמין להורדה בריפו תחת <code dir="ltr">apps-script/email-relay.gs</code>) ולפרוס אותו כ-Web App.
+        </p>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">כתובת Web App (מה-Deploy ב-Apps Script)</label>
+            <input value={webAppUrl} onChange={(e) => setWebAppUrl(e.target.value)} dir="ltr" placeholder="https://script.google.com/macros/s/.../exec"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">כתובת תיבת המייל המשותפת</label>
+            <input value={address} onChange={(e) => setAddress(e.target.value)} dir="ltr" placeholder="office@example.com"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium mb-1">
+              סוד משותף {config?.hasSecret && <span className="text-emerald-700">(כבר הוגדר — השאר ריק כדי לא לשנות)</span>}
+            </label>
+            <input value={secret} onChange={(e) => setSecret(e.target.value)} type="password" dir="ltr"
+              placeholder={config?.hasSecret ? "••••••••" : "אותו ערך שיוזן ב-SHARED_SECRET ב-Apps Script"}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+        </div>
+        <button onClick={() => saveConfigMut.mutate()} disabled={saveConfigMut.isPending || !webAppUrl}
+          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+          {saveConfigMut.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
+
+      {/* My signature */}
+      <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3">
+        <h2 className="text-lg font-bold">החתימה האישית שלי</h2>
+        <p className="text-xs text-muted-foreground">
+          תתווסף אוטומטית לסוף כל מייל שאתה שולח מכרטיס מערכת. שם התצוגה שלך ({myProfile?.displayName || "—"}) נלקח מהפרופיל שלך במערכת.
+        </p>
+        <textarea value={signature} onChange={(e) => setSignatureLocal(e.target.value)} rows={4}
+          placeholder={"בברכה,\nשם הנציג\nועד בני תורה"}
+          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+        <button onClick={() => saveSignatureMut.mutate()} disabled={saveSignatureMut.isPending}
+          className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+          {saveSignatureMut.isPending ? "שומר..." : "שמור חתימה"}
+        </button>
+      </div>
+
+      {/* Per-agent email display name (admin override) */}
+      {!agentNamesError && (
+        <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3">
+          <h2 className="text-lg font-bold">שם תצוגה למייל לכל נציג</h2>
+          <p className="text-xs text-muted-foreground">
+            קובע איזה שם יופיע לפונה כשולח, לכל נציג בנפרד - בלי קשר לשם התצוגה הרגיל שלו במערכת. אם לא מוגדר, ישתמש בשם התצוגה הרגיל.
+          </p>
+          <div className="space-y-2">
+            {(agentNames ?? []).map((a) => {
+              const draft = agentNameDrafts[a.id] ?? a.email_display_name ?? "";
+              return (
+                <div key={a.id} className="flex items-center gap-3">
+                  <span className="text-sm w-40 shrink-0 truncate text-muted-foreground">{a.display_name}</span>
+                  <input value={draft}
+                    onChange={(e) => setAgentNameDrafts((d) => ({ ...d, [a.id]: e.target.value }))}
+                    placeholder={a.display_name}
+                    className="flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm" />
+                  <button
+                    onClick={() => saveAgentNameMut.mutate({ user_id: a.id, email_display_name: draft })}
+                    disabled={saveAgentNameMut.isPending}
+                    className="px-3 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-accent disabled:opacity-50 shrink-0">
+                    שמור
+                  </button>
+                </div>
+              );
+            })}
+            {(agentNames ?? []).length === 0 && <p className="text-sm text-muted-foreground italic">אין נציגים להצגה.</p>}
+          </div>
+        </div>
+      )}
+
+      {/* Templates */}
+      <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-bold">תבניות מייל מוכנות</h2>
+          <button onClick={() => setEditingTemplate({ name: "", subject: "", body: "" })}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-accent">
+            <Plus className="h-3.5 w-3.5" />תבנית חדשה
+          </button>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          ניתן להשתמש בשדות <code dir="ltr">{"{{system_code}}"}</code>, <code dir="ltr">{"{{system_name}}"}</code>, <code dir="ltr">{"{{caller_phone}}"}</code>, <code dir="ltr">{"{{agent_name}}"}</code> - ימולאו אוטומטית בעת השליחה מכרטיס מערכת.
+        </p>
+        <div className="space-y-2">
+          {(templates ?? []).length === 0 && <p className="text-sm text-muted-foreground italic">אין עדיין תבניות.</p>}
+          {(templates ?? []).map((t: any) => (
+            <div key={t.id} className="flex items-center justify-between gap-3 border border-border rounded-lg px-3 py-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium">{t.name}</div>
+                <div className="text-xs text-muted-foreground truncate">{t.subject}</div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => setEditingTemplate(t)} className="p-1.5 rounded hover:bg-accent text-muted-foreground"><Pencil className="h-3.5 w-3.5" /></button>
+                <button onClick={() => { if (window.confirm("למחוק תבנית זו?")) deleteTemplateMut.mutate(t.id); }} className="p-1.5 rounded hover:bg-accent text-destructive"><Trash2 className="h-3.5 w-3.5" /></button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {editingTemplate && (
+          <div className="border border-border rounded-lg p-3 space-y-2 bg-muted/20">
+            <input value={editingTemplate.name} onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
+              placeholder="שם התבנית" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <input value={editingTemplate.subject} onChange={(e) => setEditingTemplate({ ...editingTemplate, subject: e.target.value })}
+              placeholder="נושא" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <textarea value={editingTemplate.body} onChange={(e) => setEditingTemplate({ ...editingTemplate, body: e.target.value })}
+              placeholder="תוכן ההודעה" rows={5} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <div className="flex items-center gap-2">
+              <button onClick={() => saveTemplateMut.mutate(editingTemplate)} disabled={saveTemplateMut.isPending || !editingTemplate.name}
+                className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
+                שמור תבנית
+              </button>
+              <button onClick={() => setEditingTemplate(null)} className="px-3 py-1.5 rounded-lg border border-border text-sm hover:bg-accent">ביטול</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AdminError({ message }: { message: string }) {
   return (
     <div className="max-w-xl mx-auto text-center py-20">

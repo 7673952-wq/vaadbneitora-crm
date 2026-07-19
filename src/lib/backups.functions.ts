@@ -138,7 +138,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
   .inputValidator((d: { files: { table: string; csv: string }[]; mode?: "merge" | "replace"; confirm_token?: string }) =>
     z.object({
       files: z.array(z.object({
-        table: z.enum(["systems","system_notes","system_activity_log","system_transfers","profiles","user_roles","status_settings"]),
+        table: z.enum(["systems","system_notes","system_activity_log","system_transfers","system_files","profiles","user_roles","role_permissions","user_permissions","status_settings","app_settings","voice_message_log","email_messages","email_threads","email_templates"]),
         csv: z.string().max(20_000_000),
       })).min(1).max(20),
       mode: z.enum(["merge","replace"]).optional(),

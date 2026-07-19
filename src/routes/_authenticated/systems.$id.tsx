@@ -9,6 +9,7 @@ import {
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
+import { listSystemEmailThread, sendSystemEmail, listEmailTemplates } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
@@ -22,7 +23,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
@@ -131,6 +132,40 @@ function SystemDetail() {
     queryKey: ["system-files", id],
     queryFn: () => filesFn({ data: { system_id: id } }),
   });
+  const emailThreadFn = useServerFn(listSystemEmailThread);
+  const sendEmailFn = useServerFn(sendSystemEmail);
+  const emailTemplatesFn = useServerFn(listEmailTemplates);
+  const { data: emailThread } = useQuery({
+    queryKey: ["system-email-thread", id],
+    queryFn: () => emailThreadFn({ data: { system_id: id } }),
+  });
+  const { data: emailTemplates } = useQuery({
+    queryKey: ["email_templates"],
+    queryFn: async () => emailTemplatesFn({ headers: await getAuthHeaders() }),
+  });
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeTo, setComposeTo] = useState("");
+  const [composeSubject, setComposeSubject] = useState("");
+  const [composeBody, setComposeBody] = useState("");
+  const sendEmailMut = useMutation({
+    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null }) =>
+      sendEmailFn({ data: { system_id: id, ...v } }),
+    onSuccess: () => {
+      toast.success("המייל נשלח");
+      qc.invalidateQueries({ queryKey: ["system-email-thread", id] });
+      setComposeOpen(false); setComposeSubject(""); setComposeBody("");
+    },
+    onError: (e: any) => toast.error(e.message ?? "שליחת המייל נכשלה"),
+  });
+  function applyTemplate(t: { subject: string; body: string }) {
+    const fill = (text: string) => text
+      .replace(/\{\{system_code\}\}/g, s.system_code ?? "")
+      .replace(/\{\{system_name\}\}/g, s.name ?? "")
+      .replace(/\{\{caller_phone\}\}/g, s.caller_phone ?? "")
+      .replace(/\{\{agent_name\}\}/g, me?.displayName ?? "");
+    setComposeSubject(fill(t.subject));
+    setComposeBody(fill(t.body));
+  }
   const deleteFileMut = useMutation({
     mutationFn: (file_id: string) => deleteFileFn({ data: { file_id } }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["system-files", id] }); toast.success("הקובץ נמחק"); },
@@ -784,141 +819,201 @@ function SystemDetail() {
         </ReminderSection>
 
 
-        {/* ===== הערות + יומן שינויים זה לצד זה ===== */}
-        <div className="mt-8 pt-6 border-t border-border grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* הערות */}
-          <div>
-            <h2 className="font-semibold flex items-center gap-2 mb-4"><MessageSquare className="h-4 w-4" />הערות ({data.notes.length})</h2>
-            <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
-              className="flex gap-2 mb-4 relative">
-              <div className="relative flex-1">
-                <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-                {mentionOpen && (
-                  <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
-                    {mentionOptions.map((opt) => (
-                      <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
-                        className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
-                        <span className="text-primary">@</span>{opt.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <button type="submit" className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
-                <Send className="h-4 w-4" />
-              </button>
-            </form>
-            <div className="space-y-3 max-h-[28rem] overflow-y-auto pr-1">
-              {data.notes.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">אין הערות עדיין</p>}
-              {data.notes.map((n: any) => (
-                <div key={n.id} className="border border-border rounded-lg p-3 bg-background">
-                  <div className="text-sm whitespace-pre-wrap">{n.body}</div>
-                  <div className="text-xs text-muted-foreground mt-2 flex justify-between">
-                    <span>{n.author_name}</span>
-                    <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* ===== פעילות מאוחדת: הערות + היסטוריה + מיילים יחד ===== */}
+        <div className="mt-8 pt-6 border-t border-border">
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              פעילות ({data.notes.length + data.activity.length + data.transfers.length + (emailThread?.length ?? 0)})
+            </h2>
+            <button type="button"
+              onClick={() => { setComposeOpen(true); setComposeTo((s as any).email || ""); }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-xs font-medium hover:bg-fuchsia-700">
+              <Mail className="h-3.5 w-3.5" />שלח מייל
+            </button>
           </div>
 
-          {/* היסטוריה משולבת (יומן + העברות נציג) */}
-          <div>
-            <h2 className="font-semibold flex items-center gap-2 mb-4">
-              <History className="h-4 w-4" />היסטוריה ({data.activity.length + data.transfers.length})
-            </h2>
-            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
-              {(() => {
-                const merged = [
-                  ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-                  ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
-                ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+          <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
+            className="flex gap-2 mb-4 relative">
+            <div className="relative flex-1">
+              <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              {mentionOpen && (
+                <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
+                  {mentionOptions.map((opt) => (
+                    <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
+                      className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                      <span className="text-primary">@</span>{opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <button type="submit" className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
+              <Send className="h-4 w-4" />
+            </button>
+          </form>
 
-                if (merged.length === 0) {
-                  return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות</p>;
-                }
-                return merged.map((row) => {
-                  if (row.kind === "transfer") {
-                    const t = row.item;
-                    return (
-                      <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-3">
-                        <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                          <span className="font-medium text-foreground">{t.by_name}</span>
-                          <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
-                        </div>
-                        <div className="text-sm flex items-center gap-2 flex-wrap">
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
-                          <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
-                          <span className="text-muted-foreground">→</span>
-                          <span className="font-medium text-sm">{t.to_name || "—"}</span>
-                        </div>
-                      </div>
-                    );
-                  }
-                  const a = row.item;
-                  const oldDisp = a.field === "assigned_agent_id"
-                    ? (a.old_agent_name || formatValue(a.field, a.old_value))
-                    : a.field === "parent_system_id"
-                      ? (a.old_value ? (a.old_parent_name || formatValue(a.field, a.old_value)) : "ללא מערכת אב")
-                      : formatValue(a.field, a.old_value);
-                  const newDisp = a.field === "assigned_agent_id"
-                    ? (a.new_agent_name || formatValue(a.field, a.new_value))
-                    : a.field === "parent_system_id"
-                      ? (a.new_value ? (a.new_parent_name || formatValue(a.field, a.new_value)) : "ללא מערכת אב")
-                      : formatValue(a.field, a.new_value);
-                  const isStatus = a.field === "status";
+          <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1">
+            {(() => {
+              const merged = [
+                ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
+                ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
+                ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
+                ...(emailThread ?? []).map((m: any) => ({ kind: "email" as const, at: m.created_at, item: m })),
+              ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+
+              if (merged.length === 0) {
+                return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות עדיין</p>;
+              }
+              return merged.map((row) => {
+                if (row.kind === "note") {
+                  const n = row.item;
                   return (
-                    <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                        <span className="font-medium text-foreground">{a.actor_name}</span>
-                        <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                    <div key={`n-${n.id}`} className="border border-border rounded-lg p-3 bg-background">
+                      <div className="text-sm whitespace-pre-wrap">{n.body}</div>
+                      <div className="text-xs text-muted-foreground mt-2 flex justify-between">
+                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{n.author_name}</span>
+                        <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
                       </div>
-                      <div className="text-sm flex items-center gap-2 flex-wrap">
-                        {a.action === "created" && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
-                        )}
-                        {a.action === "deleted" && (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
-                        )}
-                        {a.action === "updated" && (
-                          <>
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
-                              {FIELD_LABELS[a.field] || a.field}
-                            </span>
-                            {isStatus ? (
-                              <>
-                                <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
-                                <span className="text-muted-foreground">→</span>
-                                <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
-                              </>
-                            ) : (
-                              <>
-                                <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
-                                <span className="text-muted-foreground">→</span>
-                                <span className="font-medium text-sm">{newDisp}</span>
-                              </>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      {isStatus ? (
-                        <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                          <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
-                        </div>
-                      ) : a.reason && (
-                        <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                          <span className="font-semibold">סיבה:</span> {a.reason}
-                        </div>
-                      )}
                     </div>
                   );
-                });
-              })()}
-            </div>
+                }
+                if (row.kind === "email") {
+                  const m = row.item;
+                  const isOutbound = m.direction === "outbound";
+                  return (
+                    <div key={`e-${m.id}`} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                      <div className={`max-w-[85%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
+                        <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
+                          <span className="font-medium flex items-center gap-1">
+                            <Mail className="h-3 w-3" />
+                            {isOutbound ? (m.agent_name || "נציג") : (m.from_address || "פונה")}
+                          </span>
+                          <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
+                        </div>
+                        {m.subject && <div className="text-xs font-semibold mb-0.5">{m.subject}</div>}
+                        <div className="text-sm whitespace-pre-wrap">{m.body}</div>
+                      </div>
+                    </div>
+                  );
+                }
+                if (row.kind === "transfer") {
+                  const t = row.item;
+                  return (
+                    <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-3">
+                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
+                        <span className="font-medium text-foreground">{t.by_name}</span>
+                        <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
+                      </div>
+                      <div className="text-sm flex items-center gap-2 flex-wrap">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
+                        <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
+                        <span className="text-muted-foreground">→</span>
+                        <span className="font-medium text-sm">{t.to_name || "—"}</span>
+                      </div>
+                    </div>
+                  );
+                }
+                const a = row.item;
+                const oldDisp = a.field === "assigned_agent_id"
+                  ? (a.old_agent_name || formatValue(a.field, a.old_value))
+                  : a.field === "parent_system_id"
+                    ? (a.old_value ? (a.old_parent_name || formatValue(a.field, a.old_value)) : "ללא מערכת אב")
+                    : formatValue(a.field, a.old_value);
+                const newDisp = a.field === "assigned_agent_id"
+                  ? (a.new_agent_name || formatValue(a.field, a.new_value))
+                  : a.field === "parent_system_id"
+                    ? (a.new_value ? (a.new_parent_name || formatValue(a.field, a.new_value)) : "ללא מערכת אב")
+                    : formatValue(a.field, a.new_value);
+                const isStatus = a.field === "status";
+                return (
+                  <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
+                      <span className="font-medium text-foreground">{a.actor_name}</span>
+                      <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                    </div>
+                    <div className="text-sm flex items-center gap-2 flex-wrap">
+                      {a.action === "created" && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
+                      )}
+                      {a.action === "deleted" && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
+                      )}
+                      {a.action === "updated" && (
+                        <>
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
+                            {FIELD_LABELS[a.field] || a.field}
+                          </span>
+                          {isStatus ? (
+                            <>
+                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
+                              <span className="text-muted-foreground">→</span>
+                              <span className="font-medium text-sm">{newDisp}</span>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                    {isStatus ? (
+                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                        <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
+                      </div>
+                    ) : a.reason && (
+                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                        <span className="font-semibold">סיבה:</span> {a.reason}
+                      </div>
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       </div>
+
+      {composeOpen && (
+        <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" onClick={() => setComposeOpen(false)}>
+          <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3" dir="rtl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold flex items-center gap-2"><Mail className="h-4 w-4" />שליחת מייל</h3>
+              <button onClick={() => setComposeOpen(false)} className="p-1 hover:bg-accent rounded"><X className="h-3.5 w-3.5" /></button>
+            </div>
+            {(emailTemplates ?? []).length > 0 && (
+              <select onChange={(e) => {
+                const t = (emailTemplates ?? []).find((tp: any) => tp.id === e.target.value) as any;
+                if (t) applyTemplate(t);
+              }} defaultValue="" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm">
+                <option value="" disabled>בחר תבנית (אופציונלי)</option>
+                {(emailTemplates ?? []).map((t: any) => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            )}
+            <input value={composeTo} onChange={(e) => setComposeTo(e.target.value)} placeholder="כתובת מייל של הפונה" dir="ltr"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <input value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="נושא"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <textarea value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="תוכן ההודעה" rows={6}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <p className="text-[11px] text-muted-foreground">החתימה האישית שלך תתווסף אוטומטית בסוף ההודעה.</p>
+            <button
+              onClick={() => {
+                if (!composeTo.trim()) { toast.error("יש להזין כתובת מייל"); return; }
+                if (!composeBody.trim()) { toast.error("יש להזין תוכן"); return; }
+                sendEmailMut.mutate({ to: composeTo.trim(), subject: composeSubject.trim(), body: composeBody.trim() });
+              }}
+              disabled={sendEmailMut.isPending}
+              className="w-full px-4 py-2 rounded-lg bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700 disabled:opacity-50">
+              {sendEmailMut.isPending ? "שולח..." : "שלח"}
+            </button>
+          </div>
+        </div>
+      )}
 
 
       {/* ===== תתי-מערכות ===== */}

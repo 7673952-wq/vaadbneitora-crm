@@ -115,7 +115,7 @@ export const listSystems = createServerFn({ method: "POST" })
     const statusValues = await resolveStatusFilterValues(context.supabase, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
     const primaryStatusValues = primaryStatusFilterValues(statusValues);
-    if (data.status && primaryStatusValues.length === 0 && secondaryStatusValues.length === 0) {
+    if (data.status && statusValues.length === 0 && secondaryStatusValues.length === 0) {
       return { items: [], total: 0, page: data.page ?? 1, pageSize: data.pageSize ?? 1000 };
     }
     const page = data.page ?? 1;

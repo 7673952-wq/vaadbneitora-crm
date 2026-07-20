@@ -759,8 +759,9 @@ export const listMyNotifications = createServerFn({ method: "GET" })
 
     let notes: any[] = [];
     let activity: any[] = [];
+    let inboundEmails: any[] = [];
     if (myIds.length > 0) {
-      const [notesRes, actRes] = await Promise.all([
+      const [notesRes, actRes, emailRes] = await Promise.all([
         context.supabase.from("system_notes")
           .select("id, system_id, body, author_id, created_at")
           .in("system_id", myIds).neq("author_id", me).gte("created_at", since)
@@ -771,9 +772,14 @@ export const listMyNotifications = createServerFn({ method: "GET" })
           .in("field", ["status", "assigned_agent_id"])
           .gte("created_at", since)
           .order("created_at", { ascending: false }).limit(50),
+        context.supabase.from("email_messages" as any)
+          .select("id, system_id, from_address, subject, body, created_at")
+          .in("system_id", myIds).eq("direction", "inbound").gte("created_at", since)
+          .order("created_at", { ascending: false }).limit(50),
       ]);
       notes = notesRes.data ?? [];
       activity = actRes.data ?? [];
+      inboundEmails = (emailRes.data as any[]) ?? [];
     }
 
     const { data: mentionRows } = await context.supabase
@@ -837,6 +843,16 @@ export const listMyNotifications = createServerFn({ method: "GET" })
         title: a.field === "status" ? "שינוי סטטוס" : "שינוי נציג",
         detail: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
         reason: `${a.old_value ?? "—"} ← ${a.new_value ?? "—"}`,
+      });
+    }
+    for (const e of inboundEmails) {
+      const sys = sysMap.get(e.system_id);
+      items.push({
+        id: `e:${e.id}`, kind: "email", system_id: e.system_id,
+        system_code: sys?.code, system_name: sys?.name, created_at: e.created_at,
+        title: "מייל חדש",
+        detail: e.from_address ?? "פונה",
+        reason: (e.subject ? `${e.subject} — ` : "") + String(e.body ?? "").slice(0, 100),
       });
     }
     items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());

@@ -837,11 +837,12 @@ function EmailSettingsPanel() {
 
   const [webAppUrl, setWebAppUrl] = useState("");
   const [address, setAddress] = useState("");
+  const [generalName, setGeneralName] = useState("");
   const [secret, setSecret] = useState("");
-  useEffect(() => { if (config) { setWebAppUrl(config.url); setAddress(config.address); } }, [config]);
+  useEffect(() => { if (config) { setWebAppUrl(config.url); setAddress(config.address); setGeneralName(config.generalName ?? ""); } }, [config]);
 
   const saveConfigMut = useMutation({
-    mutationFn: async () => setConfigFn({ data: { url: webAppUrl, address, secret: secret || undefined }, headers: await getAuthHeaders() }),
+    mutationFn: async () => setConfigFn({ data: { url: webAppUrl, address, generalName, secret: secret || undefined }, headers: await getAuthHeaders() }),
     onSuccess: () => { toast.success("החיבור נשמר"); setSecret(""); qc.invalidateQueries({ queryKey: ["email_relay_config"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
@@ -893,6 +894,12 @@ function EmailSettingsPanel() {
             <label className="block text-xs font-medium mb-1">כתובת תיבת המייל המשותפת</label>
             <input value={address} onChange={(e) => setAddress(e.target.value)} dir="ltr" placeholder="office@example.com"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium mb-1">שם כללי לשליחה (למשל "ועד בני תורה")</label>
+            <input value={generalName} onChange={(e) => setGeneralName(e.target.value)} placeholder="ועד בני תורה"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <p className="text-[11px] text-muted-foreground mt-1">כשמוגדר, כל נציג יוכל לבחור בעת שליחת מייל אם לשלוח בשם האישי שלו או בשם הכללי הזה.</p>
           </div>
           <div className="sm:col-span-2">
             <label className="block text-xs font-medium mb-1">

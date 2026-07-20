@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { Bell, ArrowRightLeft, MessageSquare, Activity, AlarmClock, X, AtSign } from "lucide-react";
+import { Bell, ArrowRightLeft, MessageSquare, Activity, AlarmClock, X, AtSign, Mail } from "lucide-react";
 import { listMyNotifications } from "@/lib/admin.functions";
 import { listDueReminders, dismissReminder } from "@/lib/systems.functions";
 
@@ -165,7 +165,7 @@ export function NotificationBell() {
             <ul className="divide-y">
               {items.map((n) => {
                 const isUnread = new Date(n.created_at).getTime() > lastRead;
-                const Icon = n.kind === "transfer" ? ArrowRightLeft : n.kind === "note" ? MessageSquare : n.kind === "mention" ? AtSign : Activity;
+                const Icon = n.kind === "transfer" ? ArrowRightLeft : n.kind === "note" ? MessageSquare : n.kind === "mention" ? AtSign : n.kind === "email" ? Mail : Activity;
                 return (
                   <li key={n.id} className={isUnread ? "bg-amber-50/60" : ""}>
                     <Link

@@ -4,8 +4,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
+import { getMyEmailProfile, setMyEmailSignature } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRound, X } from "lucide-react";
+import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRound, X, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -40,6 +41,29 @@ function AuthedLayout() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const [displayName, setDisplayName] = useState<string>("");
   const [pwOpen, setPwOpen] = useState(false);
+  const [sigOpen, setSigOpen] = useState(false);
+  const [sigText, setSigText] = useState("");
+  const [sigBusy, setSigBusy] = useState(false);
+  const getSigFn = useServerFn(getMyEmailProfile);
+  const setSigFn = useServerFn(setMyEmailSignature);
+  const { data: mySig } = useQuery({
+    queryKey: ["my_email_profile"],
+    queryFn: async () => getSigFn({ headers: await getAuthHeaders() }),
+    enabled: sigOpen,
+  });
+  useEffect(() => { if (mySig) setSigText(mySig.signature); }, [mySig]);
+  async function saveSignature() {
+    setSigBusy(true);
+    try {
+      await setSigFn({ data: { signature: sigText }, headers: await getAuthHeaders() });
+      toast.success("החתימה נשמרה");
+      setSigOpen(false);
+    } catch (e: any) {
+      toast.error(e?.message ?? "שגיאה בשמירה");
+    } finally {
+      setSigBusy(false);
+    }
+  }
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [pw1, setPw1] = useState("");
   const [pw2, setPw2] = useState("");
@@ -161,6 +185,13 @@ function AuthedLayout() {
                 <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
                 <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover shadow-lg py-1">
                   <button
+                    onClick={() => { setUserMenuOpen(false); setSigOpen(true); }}
+                    className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"
+                  >
+                    <Mail className="h-4 w-4" />
+                    החתימה שלי למייל
+                  </button>
+                  <button
                     onClick={() => { setUserMenuOpen(false); setPwOpen(true); }}
                     className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"
                   >
@@ -209,6 +240,33 @@ function AuthedLayout() {
                   {pwBusy ? "מעדכן..." : "עדכן סיסמה"}
                 </button>
                 <button onClick={() => setPwOpen(false)} disabled={pwBusy}
+                  className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
+                  ביטול
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {sigOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !sigBusy && setSigOpen(false)}>
+          <div className="w-full max-w-sm rounded-xl bg-background border border-border shadow-2xl p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">החתימה שלי למייל</h2>
+              <button onClick={() => !sigBusy && setSigOpen(false)} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">תתווסף אוטומטית לסוף כל מייל שאתה שולח מכרטיס מערכת.</p>
+              <textarea autoFocus value={sigText} onChange={(e) => setSigText(e.target.value)} rows={5}
+                placeholder={"בברכה,\nשם הנציג\nועד בני תורה"}
+                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <div className="flex gap-2 pt-2">
+                <button onClick={saveSignature} disabled={sigBusy}
+                  className="flex-1 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
+                  {sigBusy ? "שומר..." : "שמור חתימה"}
+                </button>
+                <button onClick={() => setSigOpen(false)} disabled={sigBusy}
                   className="rounded-lg border border-border px-4 py-2 text-sm hover:bg-accent disabled:opacity-50">
                   ביטול
                 </button>

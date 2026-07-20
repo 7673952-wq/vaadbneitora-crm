@@ -9,7 +9,7 @@ import {
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
-import { listSystemEmailThread, sendSystemEmail, listEmailTemplates } from "@/lib/email.functions";
+import { listSystemEmailThread, sendSystemEmail, listEmailTemplates, getEmailGeneralName } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
@@ -143,12 +143,20 @@ function SystemDetail() {
     queryKey: ["email_templates"],
     queryFn: async () => emailTemplatesFn({ headers: await getAuthHeaders() }),
   });
+  const emailGeneralNameFn = useServerFn(getEmailGeneralName);
+  const { data: emailGeneralName } = useQuery({
+    queryKey: ["email_general_name"],
+    queryFn: async () => emailGeneralNameFn({ headers: await getAuthHeaders() }),
+  });
   const [composeOpen, setComposeOpen] = useState(false);
+  const [composeMode, setComposeMode] = useState<"new" | "reply" | "forward">("new");
+  const [composeThreadId, setComposeThreadId] = useState<string | null>(null);
   const [composeTo, setComposeTo] = useState("");
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
+  const [composeUseGeneral, setComposeUseGeneral] = useState(false);
   const sendEmailMut = useMutation({
-    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null }) =>
+    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean }) =>
       sendEmailFn({ data: { system_id: id, ...v } }),
     onSuccess: () => {
       toast.success("המייל נשלח");
@@ -165,6 +173,32 @@ function SystemDetail() {
       .replace(/\{\{agent_name\}\}/g, me?.displayName ?? "");
     setComposeSubject(fill(t.subject));
     setComposeBody(fill(t.body));
+  }
+  function extractEmail(raw: string): string {
+    const m = raw.match(/<([^>]+)>/);
+    return (m ? m[1] : raw).trim();
+  }
+  function openNewEmail() {
+    setComposeMode("new"); setComposeThreadId(null);
+    setComposeTo((s as any).email || ""); setComposeSubject(""); setComposeBody(""); setComposeUseGeneral(false);
+    setComposeOpen(true);
+  }
+  function openReplyEmail(m: any) {
+    const other = m.direction === "outbound" ? (m.to_address || "") : extractEmail(m.from_address || "");
+    setComposeMode("reply"); setComposeThreadId(m.gmail_thread_id ?? null);
+    setComposeTo(other);
+    setComposeSubject(m.subject ? (m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`) : "Re: ");
+    setComposeBody(""); setComposeUseGeneral(false);
+    setComposeOpen(true);
+  }
+  function openForwardEmail(m: any) {
+    setComposeMode("forward"); setComposeThreadId(null);
+    setComposeTo("");
+    setComposeSubject(m.subject ? (m.subject.startsWith("Fwd:") ? m.subject : `Fwd: ${m.subject}`) : "Fwd: ");
+    const who = m.direction === "outbound" ? (m.agent_name || "") : (m.from_address || "");
+    setComposeBody(`\n\n---------- הודעה מקורית ----------\nמאת: ${who}\n${new Date(m.created_at).toLocaleString("he-IL")}\n\n${m.body ?? ""}`);
+    setComposeUseGeneral(false);
+    setComposeOpen(true);
   }
   const deleteFileMut = useMutation({
     mutationFn: (file_id: string) => deleteFileFn({ data: { file_id } }),
@@ -710,6 +744,12 @@ function SystemDetail() {
             <label className="text-sm font-medium block mb-2">דוא"ל</label>
             <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
           </div>
+          <div className="md:col-span-2">
+            <AdditionalEmailsEditor
+              emails={((s as any).additional_emails ?? []) as string[]}
+              onChange={(next) => updateMut.mutate({ data: { id, additional_emails: next } })}
+            />
+          </div>
           {me?.isAdmin && (
             <div>
               <label className="text-sm font-medium block mb-2">מבנה</label>
@@ -819,18 +859,13 @@ function SystemDetail() {
         </ReminderSection>
 
 
-        {/* ===== פעילות מאוחדת: הערות + היסטוריה + מיילים יחד ===== */}
+        {/* ===== פעילות: הערות + היסטוריה ===== */}
         <div className="mt-8 pt-6 border-t border-border">
           <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
             <h2 className="font-semibold flex items-center gap-2">
               <Activity className="h-4 w-4" />
-              פעילות ({data.notes.length + data.activity.length + data.transfers.length + (emailThread?.length ?? 0)})
+              פעילות ({data.notes.length + data.activity.length + data.transfers.length})
             </h2>
-            <button type="button"
-              onClick={() => { setComposeOpen(true); setComposeTo((s as any).email || ""); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-xs font-medium hover:bg-fuchsia-700">
-              <Mail className="h-3.5 w-3.5" />שלח מייל
-            </button>
           </div>
 
           <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
@@ -860,7 +895,6 @@ function SystemDetail() {
                 ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
                 ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
                 ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
-                ...(emailThread ?? []).map((m: any) => ({ kind: "email" as const, at: m.created_at, item: m })),
               ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
               if (merged.length === 0) {
@@ -875,25 +909,6 @@ function SystemDetail() {
                       <div className="text-xs text-muted-foreground mt-2 flex justify-between">
                         <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{n.author_name}</span>
                         <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
-                      </div>
-                    </div>
-                  );
-                }
-                if (row.kind === "email") {
-                  const m = row.item;
-                  const isOutbound = m.direction === "outbound";
-                  return (
-                    <div key={`e-${m.id}`} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                      <div className={`max-w-[85%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
-                        <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
-                          <span className="font-medium flex items-center gap-1">
-                            <Mail className="h-3 w-3" />
-                            {isOutbound ? (m.agent_name || "נציג") : (m.from_address || "פונה")}
-                          </span>
-                          <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
-                        </div>
-                        {m.subject && <div className="text-xs font-semibold mb-0.5">{m.subject}</div>}
-                        <div className="text-sm whitespace-pre-wrap">{m.body}</div>
                       </div>
                     </div>
                   );
@@ -976,13 +991,66 @@ function SystemDetail() {
             })()}
           </div>
         </div>
+
+        {/* ===== מיילים: פאנל נפרד, קטן כברירת מחדל ומתרחב כשיש תוכן ===== */}
+        <div className="mt-6 pt-6 border-t border-border">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-semibold flex items-center gap-2">
+              <Mail className="h-4 w-4" />מיילים ({emailThread?.length ?? 0})
+            </h2>
+            <button type="button" onClick={openNewEmail}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-xs font-medium hover:bg-fuchsia-700">
+              <Mail className="h-3.5 w-3.5" />שלח מייל
+            </button>
+          </div>
+
+          {(!emailThread || emailThread.length === 0) ? (
+            <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+              אין עדיין מיילים בכרטיסייה הזו
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
+              {[...emailThread].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((m: any) => {
+                const isOutbound = m.direction === "outbound";
+                return (
+                  <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
+                      <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
+                        <span className="font-medium flex items-center gap-1">
+                          <Mail className="h-3 w-3" />
+                          {isOutbound ? (m.agent_name || "נציג") : (m.from_address || "פונה")}
+                        </span>
+                        <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
+                      </div>
+                      {m.subject && <div className="text-xs font-semibold mb-0.5">{m.subject}</div>}
+                      <div className="text-sm whitespace-pre-wrap">{m.body}</div>
+                      <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-black/5">
+                        <button type="button" onClick={() => openReplyEmail(m)}
+                          className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
+                          <CornerUpRight className="h-3 w-3 -scale-x-100" />השב
+                        </button>
+                        <button type="button" onClick={() => openForwardEmail(m)}
+                          className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
+                          <CornerUpRight className="h-3 w-3" />העבר
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {composeOpen && (
         <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" onClick={() => setComposeOpen(false)}>
           <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-lg p-5 space-y-3" dir="rtl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold flex items-center gap-2"><Mail className="h-4 w-4" />שליחת מייל</h3>
+              <h3 className="text-sm font-bold flex items-center gap-2">
+                <Mail className="h-4 w-4" />
+                {composeMode === "reply" ? "השבה למייל" : composeMode === "forward" ? "העברת מייל" : "שליחת מייל"}
+              </h3>
               <button onClick={() => setComposeOpen(false)} className="p-1 hover:bg-accent rounded"><X className="h-3.5 w-3.5" /></button>
             </div>
             {(emailTemplates ?? []).length > 0 && (
@@ -1000,12 +1068,29 @@ function SystemDetail() {
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
             <textarea value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="תוכן ההודעה" rows={6}
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            {emailGeneralName?.generalName && (
+              <div className="flex items-center gap-4 text-xs bg-muted/50 rounded-lg px-3 py-2">
+                <span className="font-medium text-muted-foreground">שלח בשם:</span>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={!composeUseGeneral} onChange={() => setComposeUseGeneral(false)} />
+                  השם שלי ({me?.displayName || "נציג"})
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" checked={composeUseGeneral} onChange={() => setComposeUseGeneral(true)} />
+                  {emailGeneralName.generalName}
+                </label>
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground">החתימה האישית שלך תתווסף אוטומטית בסוף ההודעה.</p>
             <button
               onClick={() => {
                 if (!composeTo.trim()) { toast.error("יש להזין כתובת מייל"); return; }
                 if (!composeBody.trim()) { toast.error("יש להזין תוכן"); return; }
-                sendEmailMut.mutate({ to: composeTo.trim(), subject: composeSubject.trim(), body: composeBody.trim() });
+                sendEmailMut.mutate({
+                  to: composeTo.trim(), subject: composeSubject.trim(), body: composeBody.trim(),
+                  gmail_thread_id: composeMode === "reply" ? composeThreadId : null,
+                  use_general_name: composeUseGeneral,
+                });
               }}
               disabled={sendEmailMut.isPending}
               className="w-full px-4 py-2 rounded-lg bg-fuchsia-600 text-white text-sm font-medium hover:bg-fuchsia-700 disabled:opacity-50">
@@ -1127,6 +1212,43 @@ function formatValue(field: string, value: string | null): string {
     return value.slice(0, 8) + "…";
   }
   return value;
+}
+
+function AdditionalEmailsEditor({ emails, onChange }: { emails: string[]; onChange: (next: string[]) => void }) {
+  const [draft, setDraft] = useState("");
+  function add() {
+    const v = draft.trim();
+    if (!v) return;
+    if (!v.includes("@")) { toast.error("כתובת מייל לא תקינה"); return; }
+    if (emails.includes(v)) { toast.error("כתובת זו כבר קיימת"); return; }
+    onChange([...emails, v]);
+    setDraft("");
+  }
+  return (
+    <div>
+      <label className="text-sm font-medium block mb-2">כתובות מייל נוספות</label>
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {emails.map((e) => (
+          <span key={e} className="inline-flex items-center gap-1 bg-muted rounded-full pl-1 pr-2 py-1 text-xs">
+            <span dir="ltr">{e}</span>
+            <button type="button" onClick={() => onChange(emails.filter((x) => x !== e))}
+              className="p-0.5 hover:bg-accent rounded-full"><X className="h-3 w-3" /></button>
+          </span>
+        ))}
+        {emails.length === 0 && <span className="text-xs text-muted-foreground italic">אין כתובות נוספות</span>}
+      </div>
+      <div className="flex gap-1">
+        <input value={draft} onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
+          placeholder="הוסף כתובת מייל נוספת" type="email" dir="ltr"
+          className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+        <button type="button" onClick={add}
+          className="px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent text-xs font-medium">
+          הוסף
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function EmailField({ initial, onSave }: { initial: string; onSave: (v: string | null) => void }) {

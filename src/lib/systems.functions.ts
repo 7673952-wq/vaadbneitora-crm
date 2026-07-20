@@ -502,6 +502,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     caller_phone?: string | null; source?: string | null; audio_url?: string | null;
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
     email?: string | null;
+    additional_emails?: string[] | null;
     reason?: string;
     apply_to_children?: boolean;
     is_blocking_number?: boolean;
@@ -521,6 +522,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       reminder_at: z.string().datetime().nullable().optional(),
       reminder_agent_ids: z.array(z.string().uuid()).nullable().optional(),
       email: z.string().email().max(200).nullable().optional().or(z.literal("")),
+      additional_emails: z.array(z.string().email().max(200)).max(20).nullable().optional(),
       reason: z.string().max(500).optional(),
       apply_to_children: z.boolean().optional(),
       is_blocking_number: z.boolean().optional(),

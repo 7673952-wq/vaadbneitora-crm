@@ -12,6 +12,7 @@ async function ensureCanWrite(userId: string) {
 const RELAY_URL_KEY = "email_relay_url";
 const RELAY_SECRET_KEY = "email_relay_secret";
 const RELAY_ADDRESS_KEY = "email_relay_address";
+const GENERAL_NAME_KEY = "email_general_name";
 
 export const getEmailRelayConfig = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -19,21 +20,23 @@ export const getEmailRelayConfig = createServerFn({ method: "GET" })
     const { assertAnyPermission } = await import("@/lib/permissions.server");
     await assertAnyPermission(context.userId, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
-      .from("app_settings").select("key, value").in("key", [RELAY_URL_KEY, RELAY_SECRET_KEY, RELAY_ADDRESS_KEY]);
+      .from("app_settings").select("key, value").in("key", [RELAY_URL_KEY, RELAY_SECRET_KEY, RELAY_ADDRESS_KEY, GENERAL_NAME_KEY]);
     const get = (k: string) => (data ?? []).find((r: any) => r.key === k)?.value as Record<string, string> | undefined;
     return {
       url: get(RELAY_URL_KEY)?.url ?? "",
       address: get(RELAY_ADDRESS_KEY)?.address ?? "",
+      generalName: get(GENERAL_NAME_KEY)?.name ?? "",
       hasSecret: !!get(RELAY_SECRET_KEY)?.secret,
     };
   });
 
 export const setEmailRelayConfig = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { url: string; address: string; secret?: string }) =>
+  .inputValidator((d: { url: string; address: string; generalName?: string; secret?: string }) =>
     z.object({
       url: z.string().max(300).refine((v) => v === "" || /^https:\/\//.test(v), "כתובת חייבת להתחיל ב-https"),
       address: z.string().max(200).refine((v) => v === "" || /.+@.+\..+/.test(v), "כתובת מייל לא תקינה"),
+      generalName: z.string().max(200).optional(),
       secret: z.string().max(300).optional(),
     }).parse(d),
   )
@@ -45,6 +48,7 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     const upserts = [
       { key: RELAY_URL_KEY, value: { url: data.url.replace(/\/$/, "") } },
       { key: RELAY_ADDRESS_KEY, value: { address: data.address } },
+      { key: GENERAL_NAME_KEY, value: { name: data.generalName ?? "" } },
     ];
     for (const row of upserts) {
       const { error } = await supabaseAdmin.from("app_settings").upsert({ ...row, updated_at: now, updated_by: context.userId });
@@ -57,6 +61,16 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
     }
     return { ok: true };
+  });
+
+// Lightweight, non-admin-gated: any agent composing an email needs to know
+// whether a "general name" option exists, without exposing the rest of the
+// relay config (URL/secret) which stays admin-only.
+export const getEmailGeneralName = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase.from("app_settings").select("value").eq("key", GENERAL_NAME_KEY).maybeSingle();
+    return { generalName: (data?.value as { name?: string } | null)?.name ?? "" };
   });
 
 // ============= Agent display name + signature =============
@@ -170,30 +184,34 @@ export const listSystemEmailThread = createServerFn({ method: "POST" })
 // ============= Send / reply =============
 export const sendSystemEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null }) =>
+  .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean }) =>
     z.object({
       system_id: z.string().uuid(),
       to: z.string().email(),
       subject: z.string().max(300),
       body: z.string().min(1).max(20000),
       gmail_thread_id: z.string().nullable().optional(),
+      use_general_name: z.boolean().optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const [{ data: relayUrlRow }, { data: relaySecretRow }, { data: profileRow }] = await Promise.all([
+    const [{ data: relayUrlRow }, { data: relaySecretRow }, { data: profileRow }, { data: generalNameRow }] = await Promise.all([
       supabaseAdmin.from("app_settings").select("value").eq("key", RELAY_URL_KEY).maybeSingle(),
       supabaseAdmin.from("app_settings").select("value").eq("key", RELAY_SECRET_KEY).maybeSingle(),
       supabaseAdmin.from("profiles").select("display_name, email_signature, email_display_name" as any).eq("id", context.userId).maybeSingle(),
+      supabaseAdmin.from("app_settings").select("value").eq("key", "email_general_name").maybeSingle(),
     ]);
     const relayUrl = (relayUrlRow?.value as { url?: string } | null)?.url;
     const relaySecret = (relaySecretRow?.value as { secret?: string } | null)?.secret;
     if (!relayUrl || !relaySecret) {
       throw new Error("שליחת מייל לא מוגדרת עדיין — יש להגדיר את חיבור Gmail תחת ניהול → מיילים");
     }
-    const agentName = (profileRow as any)?.email_display_name || (profileRow as any)?.display_name || "נציג";
+    const personalName = (profileRow as any)?.email_display_name || (profileRow as any)?.display_name || "נציג";
+    const generalName = (generalNameRow?.value as { name?: string } | null)?.name || "";
+    const agentName = (data.use_general_name && generalName) ? generalName : personalName;
     const agentSignature = (profileRow as any)?.email_signature || "";
 
     const relayPayload = data.gmail_thread_id

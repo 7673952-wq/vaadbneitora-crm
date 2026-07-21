@@ -35,20 +35,180 @@ export type Database = {
         }
         Relationships: []
       }
+      email_messages: {
+        Row: {
+          agent_id: string | null
+          agent_name: string | null
+          body: string
+          created_at: string
+          direction: string
+          from_address: string | null
+          gmail_message_id: string | null
+          gmail_thread_id: string | null
+          id: string
+          in_reply_to: string | null
+          subject: string | null
+          system_id: string
+          to_address: string | null
+        }
+        Insert: {
+          agent_id?: string | null
+          agent_name?: string | null
+          body?: string
+          created_at?: string
+          direction: string
+          from_address?: string | null
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
+          id?: string
+          in_reply_to?: string | null
+          subject?: string | null
+          system_id: string
+          to_address?: string | null
+        }
+        Update: {
+          agent_id?: string | null
+          agent_name?: string | null
+          body?: string
+          created_at?: string
+          direction?: string
+          from_address?: string | null
+          gmail_message_id?: string | null
+          gmail_thread_id?: string | null
+          id?: string
+          in_reply_to?: string | null
+          subject?: string | null
+          system_id?: string
+          to_address?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_messages_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_templates: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          name: string
+          subject: string
+          updated_at: string
+        }
+        Insert: {
+          body?: string
+          created_at?: string
+          id?: string
+          name: string
+          subject?: string
+          updated_at?: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          name?: string
+          subject?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      email_threads: {
+        Row: {
+          created_at: string
+          gmail_thread_id: string
+          system_id: string
+        }
+        Insert: {
+          created_at?: string
+          gmail_thread_id: string
+          system_id: string
+        }
+        Update: {
+          created_at?: string
+          gmail_thread_id?: string
+          system_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_threads_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_role_defaults: {
+        Row: {
+          enabled: boolean
+          event_key: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          enabled?: boolean
+          event_key: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          enabled?: boolean
+          event_key?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
+      notification_user_overrides: {
+        Row: {
+          enabled: boolean
+          event_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          enabled: boolean
+          event_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          enabled?: boolean
+          event_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
           display_name: string
+          email_display_name: string | null
+          email_signature: string | null
           id: string
         }
         Insert: {
           created_at?: string
           display_name: string
+          email_display_name?: string | null
+          email_signature?: string | null
           id: string
         }
         Update: {
           created_at?: string
           display_name?: string
+          email_display_name?: string | null
+          email_signature?: string | null
           id?: string
         }
         Relationships: []
@@ -274,16 +434,21 @@ export type Database = {
       systems: {
         Row: {
           additional_caller_phones: Json
+          additional_emails: Json
           assigned_agent_id: string | null
           audio_url: string | null
           caller_phone: string | null
           created_at: string
           email: string | null
           handled_pending_at: string | null
+          has_unread_email: boolean
           id: string
+          is_blocking_number: boolean
+          last_inbound_email_at: string | null
           name: string
           notes: string | null
           parent_system_id: string | null
+          pending_voice_send_at: string | null
           phone: string | null
           reminder_agent_ids: string[] | null
           reminder_at: string | null
@@ -298,16 +463,21 @@ export type Database = {
         }
         Insert: {
           additional_caller_phones?: Json
+          additional_emails?: Json
           assigned_agent_id?: string | null
           audio_url?: string | null
           caller_phone?: string | null
           created_at?: string
           email?: string | null
           handled_pending_at?: string | null
+          has_unread_email?: boolean
           id?: string
+          is_blocking_number?: boolean
+          last_inbound_email_at?: string | null
           name: string
           notes?: string | null
           parent_system_id?: string | null
+          pending_voice_send_at?: string | null
           phone?: string | null
           reminder_agent_ids?: string[] | null
           reminder_at?: string | null
@@ -322,16 +492,21 @@ export type Database = {
         }
         Update: {
           additional_caller_phones?: Json
+          additional_emails?: Json
           assigned_agent_id?: string | null
           audio_url?: string | null
           caller_phone?: string | null
           created_at?: string
           email?: string | null
           handled_pending_at?: string | null
+          has_unread_email?: boolean
           id?: string
+          is_blocking_number?: boolean
+          last_inbound_email_at?: string | null
           name?: string
           notes?: string | null
           parent_system_id?: string | null
+          pending_voice_send_at?: string | null
           phone?: string | null
           reminder_agent_ids?: string[] | null
           reminder_at?: string | null
@@ -395,6 +570,56 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      voice_message_log: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          error_message: string | null
+          id: string
+          phone: string | null
+          phone_index: number
+          send_mode: string
+          status_key: string | null
+          success: boolean
+          system_code: string | null
+          system_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          error_message?: string | null
+          id?: string
+          phone?: string | null
+          phone_index?: number
+          send_mode?: string
+          status_key?: string | null
+          success: boolean
+          system_code?: string | null
+          system_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          error_message?: string | null
+          id?: string
+          phone?: string | null
+          phone_index?: number
+          send_mode?: string
+          status_key?: string | null
+          success?: boolean
+          system_code?: string | null
+          system_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_message_log_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

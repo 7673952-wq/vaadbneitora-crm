@@ -1231,10 +1231,21 @@ function SystemDetail() {
         )}
       </div>
     </div>
+    {splitOpen && data.parent && (
+      <div className="flex-1 min-w-0 sticky top-4 border-2 border-primary/40 rounded-xl overflow-hidden bg-card shadow-lg" style={{ height: "calc(100vh - 2rem)" }}>
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/40">
+          <span className="text-sm font-medium">מערכת אב — תצוגה במקביל</span>
+          <button onClick={() => setSplitOpen(false)} className="text-xs px-2 py-1 rounded border hover:bg-accent">סגור פרישה</button>
+        </div>
+        <iframe src={`/systems/${data.parent.id}`} className="w-full border-0 block" style={{ height: "calc(100% - 40px)" }} title="מערכת אב" />
+      </div>
+    )}
+    </div>
 
 
   );
 }
+
 
 function formatValue(field: string, value: string | null): string {
   if (value === null || value === undefined || value === "") return "—";

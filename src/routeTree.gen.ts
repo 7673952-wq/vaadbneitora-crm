@@ -23,6 +23,7 @@ import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/publi
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
+import { Route as ApiPublicHooksScheduledBackupCheckRouteImport } from './routes/api/public/hooks/scheduled-backup-check'
 import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
 import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
@@ -99,6 +100,12 @@ const ApiPublicHooksWeeklyBackupRoute =
     path: '/api/public/hooks/weekly-backup',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksScheduledBackupCheckRoute =
+  ApiPublicHooksScheduledBackupCheckRouteImport.update({
+    id: '/api/public/hooks/scheduled-backup-check',
+    path: '/api/public/hooks/scheduled-backup-check',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksProcessVoiceQueueRoute =
   ApiPublicHooksProcessVoiceQueueRouteImport.update({
     id: '/api/public/hooks/process-voice-queue',
@@ -134,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
+  '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRoutesByTo {
@@ -152,6 +160,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
+  '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRoutesById {
@@ -172,6 +181,7 @@ export interface FileRoutesById {
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
+  '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
 }
 export interface FileRouteTypes {
@@ -192,6 +202,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
+    | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/weekly-backup'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -210,6 +221,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
+    | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/weekly-backup'
   id:
     | '__root__'
@@ -229,6 +241,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
+    | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/weekly-backup'
   fileRoutesById: FileRoutesById
 }
@@ -241,6 +254,7 @@ export interface RootRouteChildren {
   ApiPublicHooksDailyBackupRoute: typeof ApiPublicHooksDailyBackupRoute
   ApiPublicHooksInboundEmailRoute: typeof ApiPublicHooksInboundEmailRoute
   ApiPublicHooksProcessVoiceQueueRoute: typeof ApiPublicHooksProcessVoiceQueueRoute
+  ApiPublicHooksScheduledBackupCheckRoute: typeof ApiPublicHooksScheduledBackupCheckRoute
   ApiPublicHooksWeeklyBackupRoute: typeof ApiPublicHooksWeeklyBackupRoute
 }
 
@@ -344,6 +358,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksWeeklyBackupRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/scheduled-backup-check': {
+      id: '/api/public/hooks/scheduled-backup-check'
+      path: '/api/public/hooks/scheduled-backup-check'
+      fullPath: '/api/public/hooks/scheduled-backup-check'
+      preLoaderRoute: typeof ApiPublicHooksScheduledBackupCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/process-voice-queue': {
       id: '/api/public/hooks/process-voice-queue'
       path: '/api/public/hooks/process-voice-queue'
@@ -402,6 +423,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksDailyBackupRoute: ApiPublicHooksDailyBackupRoute,
   ApiPublicHooksInboundEmailRoute: ApiPublicHooksInboundEmailRoute,
   ApiPublicHooksProcessVoiceQueueRoute: ApiPublicHooksProcessVoiceQueueRoute,
+  ApiPublicHooksScheduledBackupCheckRoute:
+    ApiPublicHooksScheduledBackupCheckRoute,
   ApiPublicHooksWeeklyBackupRoute: ApiPublicHooksWeeklyBackupRoute,
 }
 export const routeTree = rootRouteImport

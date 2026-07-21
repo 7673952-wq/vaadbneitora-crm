@@ -335,6 +335,14 @@ export const getSystem = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     if (!sys) throw new Error("מערכת לא נמצאה");
 
+    // Opening a system clears its "unread email" flag so it drops off the
+    // dashboard indicator immediately. Fire-and-forget — best-effort.
+    if ((sys as any).has_unread_email) {
+      context.supabase.from("systems").update({ has_unread_email: false } as any).eq("id", data.id)
+        .then(() => {}, () => {});
+      (sys as any).has_unread_email = false;
+    }
+
     const [notesRes, transfersRes, childrenRes, activityRes, profilesRes, parentRes] = await Promise.all([
       context.supabase.from("system_notes").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
       context.supabase.from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),

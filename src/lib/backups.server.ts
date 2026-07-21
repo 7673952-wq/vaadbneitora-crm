@@ -130,7 +130,7 @@ export async function runBackup(): Promise<BackupResult> {
         "מספר פונה": r.caller_phone ?? "",
         "הערות": r.notes ?? "",
       }));
-      const worksheet = XLSX.utils.json_to_sheet(sheetRows);
+      const worksheet = XLSX.utils.json_to_sheet(sanitizeRows(sheetRows));
       worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");

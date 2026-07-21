@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 function csvEscape(value: unknown) {
-  return `"${String(value ?? "").replace(/"/g, '""')}"`;
+  const raw = String(value ?? "");
+  const safe = /^[=+\-@\t\r]/.test(raw) ? "'" + raw : raw;
+  return `"${safe.replace(/"/g, '""')}"`;
 }
 
 export const Route = createFileRoute("/api/public/weekly-crm-report")({

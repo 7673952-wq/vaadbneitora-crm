@@ -88,6 +88,25 @@ function SystemDetail() {
       .catch(() => toast.error("ההעתקה נכשלה"));
   }
 
+  // פותח מערכת אחרת בחלון חדש חצי-רוחב מימין, וממקם את החלון הנוכחי
+  // לחצי השמאלי, כדי לקבל "פרישה במקביל" של אב↔תת-מערכת.
+  function openSideBySide(path: string) {
+    try {
+      const sw = window.screen.availWidth || window.innerWidth;
+      const sh = window.screen.availHeight || window.innerHeight;
+      const sx = (window.screen as any).availLeft ?? 0;
+      const sy = (window.screen as any).availTop ?? 0;
+      const half = Math.floor(sw / 2);
+      const feats = `left=${sx + half},top=${sy},width=${half},height=${sh}`;
+      const w = window.open(path, `sysCompare_${path}`, feats);
+      if (!w) { window.open(path, "_blank"); return; }
+      try { window.moveTo(sx, sy); window.resizeTo(half, sh); } catch { /* חסום ע"י דפדפן — ניתן להתעלם */ }
+      w.focus();
+    } catch {
+      window.open(path, "_blank");
+    }
+  }
+
   const getFn = useServerFn(getSystem);
   const agentsFn = useServerFn(listAgents);
   const mainsFn = useServerFn(listMainSystems);
@@ -446,8 +465,18 @@ function SystemDetail() {
               {STATUS_LABEL[data.parent.status as SystemStatus] ?? data.parent.status}
             </span>
           </div>
-          <Link to="/systems/$id" params={{ id: data.parent.id }}
-            className="text-xs underline hover:no-underline">לפתיחת המערכת הראשית</Link>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => openSideBySide(`/systems/${data.parent!.id}`)}
+              className="text-xs bg-white/70 hover:bg-white border border-white/80 rounded-md px-2 py-1 font-medium"
+              title="פותח את מערכת האב בחלון חדש לצד המערכת הנוכחית"
+            >
+              פרישה במקביל
+            </button>
+            <Link to="/systems/$id" params={{ id: data.parent.id }}
+              className="text-xs underline hover:no-underline">לפתיחת המערכת הראשית</Link>
+          </div>
         </div>
       )}
 

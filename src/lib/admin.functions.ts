@@ -279,7 +279,16 @@ export const listStatusSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    return readStatusSettings(supabaseAdmin);
+    const { hasPermission } = await import("@/lib/permissions.server");
+    const rows = await readStatusSettings(supabaseAdmin);
+    // Only admins who manage settings/permissions may see the raw voice
+    // provider API key. Strip it for everyone else so it never leaves
+    // the server.
+    const canSeeSecrets =
+      (await hasPermission(context.userId, "settings_manage")) ||
+      (await hasPermission(context.userId, "permissions_manage"));
+    if (canSeeSecrets) return rows;
+    return rows.map((r) => ({ ...r, voice_message_api_key: "" }));
   });
 
 export const listPendingVoiceSends = createServerFn({ method: "GET" })

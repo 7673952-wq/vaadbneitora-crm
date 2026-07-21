@@ -1121,3 +1121,86 @@ function EditRow({ value, onChange, onSave, onCancel, type = "text", placeholder
     </div>
   );
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: "סופר-אדמין",
+  admin: "אדמין",
+  agent: "נציג",
+  viewer: "צופה",
+};
+
+function NotificationsPanel() {
+  const listFn = useServerFn(listRoleNotificationDefaults);
+  const upFn = useServerFn(updateRoleNotificationDefault);
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["notif_role_defaults"],
+    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+  });
+
+  const mut = useMutation({
+    mutationFn: (v: { role: string; event_key: string; enabled: boolean }) => upFn({ data: v as any }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notif_role_defaults"] });
+      qc.invalidateQueries({ queryKey: ["my_notification_prefs"] });
+      toast.success("עודכן");
+    },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בעדכון"),
+  });
+
+  if (isLoading || !data) return <div className="text-muted-foreground text-sm">טוען...</div>;
+
+  const { grid, events, roles } = data as any;
+  const cellFor = (role: string, key: string) =>
+    (grid as any[]).find((g) => g.role === role && g.event_key === key)?.enabled ?? true;
+
+  return (
+    <div className="border rounded-xl bg-card p-6 shadow-soft space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2"><BellRing className="h-4 w-4" />הגדרת פעמון התראות</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          בחר אילו סוגי התראות יופיעו בפעמון לכל תפקיד. נציגים יכולים לדרוס את ברירת המחדל מההגדרות האישיות שלהם.
+        </p>
+      </div>
+
+      <div className="overflow-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="text-right py-2 px-3 font-medium">אירוע</th>
+              {(roles as string[]).map((role) => (
+                <th key={role} className="text-center py-2 px-3 font-medium">{ROLE_LABELS[role] ?? role}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(events as any[]).map((ev) => (
+              <tr key={ev.key} className="border-b last:border-0 hover:bg-accent/40">
+                <td className="py-2 px-3">
+                  <div className="font-medium">{ev.label}</div>
+                  <div className="text-xs text-muted-foreground">{ev.description}</div>
+                </td>
+                {(roles as string[]).map((role) => {
+                  const enabled = cellFor(role, ev.key);
+                  return (
+                    <td key={role} className="text-center py-2 px-3">
+                      <input
+                        type="checkbox"
+                        checked={!!enabled}
+                        disabled={mut.isPending}
+                        onChange={(e) => mut.mutate({ role, event_key: ev.key, enabled: e.target.checked })}
+                        className="h-4 w-4 cursor-pointer accent-primary"
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+

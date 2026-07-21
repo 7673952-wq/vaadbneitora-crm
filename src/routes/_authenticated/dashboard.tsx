@@ -443,7 +443,7 @@ function Dashboard() {
       (r.notes || "").replace(/\n/g, " "), new Date(r.updated_at).toLocaleString("he-IL"),
     ]);
     const csv = "\uFEFF" + [header, ...data].map((row) =>
-      row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")
+      row.map((c) => `"${String(sanitizeCell(c) ?? "").replace(/"/g, '""')}"`).join(",")
     ).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);

@@ -24,10 +24,13 @@ import { BackupsPage } from "./backups";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { 
-  UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, 
-  Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks, 
-  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2 
+import {
+  listRoleNotificationDefaults, updateRoleNotificationDefault,
+} from "@/lib/notifications.functions";
+import {
+  UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X,
+  Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks,
+  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -51,9 +54,10 @@ function AdminPage() {
   const canVoiceLog = !!perms.settings_manage; // הרשאה לצפייה ביומן הודעות קוליות
   const canBackups = !!me?.isSuperAdmin; // גיבויים/שחזור מוגבלים לסופר-אדמין, כמו שהיה בדף הנפרד
   const canEmail = !!(perms.settings_manage || perms.backup_manage); // חיבור Gmail, תבניות וחתימות
+  const canNotifs = !!(perms.settings_manage || perms.users_manage || perms.permissions_manage);
 
-  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail;
-  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : "backups";
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
+  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : canNotifs ? "notifications" : "backups";
 
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -80,6 +84,7 @@ function AdminPage() {
           {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
           {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
           {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
+          {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />התראות</TabsTrigger>}
           {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
           {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
           {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
@@ -95,6 +100,7 @@ function AdminPage() {
           <StaleHoursPanel />
         </TabsContent>}
         {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
+        {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>}
         {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
         {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
         {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
@@ -1115,3 +1121,86 @@ function EditRow({ value, onChange, onSave, onCancel, type = "text", placeholder
     </div>
   );
 }
+
+const ROLE_LABELS: Record<string, string> = {
+  super_admin: "סופר-אדמין",
+  admin: "אדמין",
+  agent: "נציג",
+  viewer: "צופה",
+};
+
+function NotificationsPanel() {
+  const listFn = useServerFn(listRoleNotificationDefaults);
+  const upFn = useServerFn(updateRoleNotificationDefault);
+  const qc = useQueryClient();
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["notif_role_defaults"],
+    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+  });
+
+  const mut = useMutation({
+    mutationFn: (v: { role: string; event_key: string; enabled: boolean }) => upFn({ data: v as any }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notif_role_defaults"] });
+      qc.invalidateQueries({ queryKey: ["my_notification_prefs"] });
+      toast.success("עודכן");
+    },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בעדכון"),
+  });
+
+  if (isLoading || !data) return <div className="text-muted-foreground text-sm">טוען...</div>;
+
+  const { grid, events, roles } = data as any;
+  const cellFor = (role: string, key: string) =>
+    (grid as any[]).find((g) => g.role === role && g.event_key === key)?.enabled ?? true;
+
+  return (
+    <div className="border rounded-xl bg-card p-6 shadow-soft space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold flex items-center gap-2"><BellRing className="h-4 w-4" />הגדרת פעמון התראות</h2>
+        <p className="text-sm text-muted-foreground mt-1">
+          בחר אילו סוגי התראות יופיעו בפעמון לכל תפקיד. נציגים יכולים לדרוס את ברירת המחדל מההגדרות האישיות שלהם.
+        </p>
+      </div>
+
+      <div className="overflow-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b">
+              <th className="text-right py-2 px-3 font-medium">אירוע</th>
+              {(roles as string[]).map((role) => (
+                <th key={role} className="text-center py-2 px-3 font-medium">{ROLE_LABELS[role] ?? role}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {(events as any[]).map((ev) => (
+              <tr key={ev.key} className="border-b last:border-0 hover:bg-accent/40">
+                <td className="py-2 px-3">
+                  <div className="font-medium">{ev.label}</div>
+                  <div className="text-xs text-muted-foreground">{ev.description}</div>
+                </td>
+                {(roles as string[]).map((role) => {
+                  const enabled = cellFor(role, ev.key);
+                  return (
+                    <td key={role} className="text-center py-2 px-3">
+                      <input
+                        type="checkbox"
+                        checked={!!enabled}
+                        disabled={mut.isPending}
+                        onChange={(e) => mut.mutate({ role, event_key: ev.key, enabled: e.target.checked })}
+                        className="h-4 w-4 cursor-pointer accent-primary"
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+

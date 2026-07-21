@@ -56,8 +56,11 @@ async function handleInboundEmail(request: Request) {
       });
     }
 
+    const receivedIso = receivedAt ?? new Date().toISOString();
+    const systemId = (threadRow as any).system_id as string;
+
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({
-      system_id: (threadRow as any).system_id,
+      system_id: systemId,
       direction: "inbound",
       gmail_thread_id: gmailThreadId,
       gmail_message_id: gmailMessageId ?? null,
@@ -65,9 +68,23 @@ async function handleInboundEmail(request: Request) {
       to_address: to ?? null,
       subject: subject ?? null,
       body: text ?? "",
-      created_at: receivedAt ?? new Date().toISOString(),
+      created_at: receivedIso,
     });
     if (error) throw error;
+
+    // Flag the system so the dashboard shows an "unread email" badge, and
+    // optionally re-open it into an unhandled status (configured in admin).
+    const patch: any = {
+      has_unread_email: true,
+      last_inbound_email_at: receivedIso,
+      updated_at: receivedIso,
+    };
+    const { data: statusCfg } = await supabaseAdmin
+      .from("app_settings").select("value").eq("key", "unhandled_email_status_key").maybeSingle();
+    const nextStatus = (statusCfg?.value as { status_key?: string } | null)?.status_key?.trim();
+    if (nextStatus) patch.status = nextStatus;
+    await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,

@@ -124,7 +124,7 @@ export const listSystems = createServerFn({ method: "POST" })
     const endTo = offset + pageSize - 1;
 
     const baseSelect =
-      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
+      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, has_unread_email, last_inbound_email_at, created_at, updated_at";
 
     const applySharedFilters = (q: any) => {
       if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
@@ -334,6 +334,14 @@ export const getSystem = createServerFn({ method: "POST" })
       .from("systems").select("*").eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!sys) throw new Error("מערכת לא נמצאה");
+
+    // Opening a system clears its "unread email" flag so it drops off the
+    // dashboard indicator immediately. Fire-and-forget — best-effort.
+    if ((sys as any).has_unread_email) {
+      context.supabase.from("systems").update({ has_unread_email: false } as any).eq("id", data.id)
+        .then(() => {}, () => {});
+      (sys as any).has_unread_email = false;
+    }
 
     const [notesRes, transfersRes, childrenRes, activityRes, profilesRes, parentRes] = await Promise.all([
       context.supabase.from("system_notes").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),

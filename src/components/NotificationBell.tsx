@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { Bell, ArrowRightLeft, MessageSquare, Activity, AlarmClock, X, AtSign, Mail } from "lucide-react";
 import { listMyNotifications } from "@/lib/admin.functions";
 import { listDueReminders, dismissReminder } from "@/lib/systems.functions";
+import { getMyNotificationPrefs } from "@/lib/notifications.functions";
 
 const LS_KEY = "notif_last_read_at";
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
@@ -20,10 +21,20 @@ function timeAgo(iso: string): string {
   return `לפני ${d} ימים`;
 }
 
+// Map an incoming notification item to its preference event key.
+function kindToEventKey(kind: string): string {
+  if (kind === "mention") return "mention";
+  if (kind === "email") return "email_inbound";
+  if (kind === "transfer") return "assigned_to_me";
+  if (kind === "note") return "note_added_to_my_system";
+  return "";
+}
+
 export function NotificationBell() {
   const fn = useServerFn(listMyNotifications);
   const remindersFn = useServerFn(listDueReminders);
   const dismissFn = useServerFn(dismissReminder);
+  const prefsFn = useServerFn(getMyNotificationPrefs);
   const qc = useQueryClient();
 
   const { data } = useQuery({
@@ -36,13 +47,26 @@ export function NotificationBell() {
     queryFn: () => remindersFn(),
     refetchInterval: 60_000,
   });
+  const { data: prefs } = useQuery({
+    queryKey: ["my_notification_prefs"],
+    queryFn: () => prefsFn(),
+    staleTime: 5 * 60_000,
+  });
 
   const rawItems = (data ?? []) as any[];
   const items = useMemo(() => {
     const cutoff = Date.now() - MAX_AGE_MS;
-    return rawItems.filter((n) => new Date(n.created_at).getTime() >= cutoff);
-  }, [rawItems]);
-  const reminders = (remindersData ?? []) as any[];
+    const prefMap = (prefs ?? {}) as Record<string, boolean>;
+    return rawItems.filter((n) => {
+      if (new Date(n.created_at).getTime() < cutoff) return false;
+      const ek = kindToEventKey(n.kind);
+      if (!ek) return true;
+      return prefMap[ek] !== false;
+    });
+  }, [rawItems, prefs]);
+  const remindersEnabled = (prefs?.reminder_due ?? true) as boolean;
+  const reminders = remindersEnabled ? ((remindersData ?? []) as any[]) : [];
+
 
   const dismissMut = useMutation({
     mutationFn: (id: string) => dismissFn({ data: { system_id: id } }),

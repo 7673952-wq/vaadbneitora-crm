@@ -74,7 +74,7 @@ async function handleInboundEmail(request: Request) {
 
     // Flag the system so the dashboard shows an "unread email" badge, and
     // optionally re-open it into an unhandled status (configured in admin).
-    const patch: Record<string, unknown> = {
+    const patch: any = {
       has_unread_email: true,
       last_inbound_email_at: receivedIso,
       updated_at: receivedIso,

@@ -122,7 +122,7 @@ function normalizeRows(rows: unknown): StatusSettingRow[] {
           ? row.voice_message_template.trim()
           : defaultVoiceMessageTemplate(statusKey, typeof row.label === "string" ? row.label : ""),
         voice_message_api_key: typeof row.voice_message_api_key === "string" ? row.voice_message_api_key : "",
-        voice_send_mode: row.voice_send_mode === "auto" ? "auto" : "manual",
+        voice_send_mode: (row.voice_send_mode === "auto" ? "auto" : "manual") as "auto" | "manual",
         auto_send_start_hour: Number.isFinite(Number(row.auto_send_start_hour))
           ? Math.min(23, Math.max(0, Math.round(Number(row.auto_send_start_hour))))
           : 8,
@@ -225,7 +225,7 @@ async function bestEffortMirrorStatusTable(supabaseAdmin: SupabaseLike, rows: St
 }
 
 
-export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike & { rpc?: (fn: string, args: any) => Promise<{ error: any }> }, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
+export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike & { rpc?: any }, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
   const rows = await readStatusSettings(supabaseAdmin);
   const existingIndex = rows.findIndex((row) => row.status_key === patch.status_key);
   const isNewStatus = existingIndex < 0;

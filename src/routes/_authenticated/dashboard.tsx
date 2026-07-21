@@ -514,7 +514,7 @@ function Dashboard() {
     ];
     const write = (rowsToWrite: any[][], fileLabel: string) => {
       if (!rowsToWrite.length) return false;
-      const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...rowsToWrite]);
+      const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...sanitizeMatrix(rowsToWrite)]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
       XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);

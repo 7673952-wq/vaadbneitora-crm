@@ -470,11 +470,11 @@ function SystemDetail() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => openSideBySide(`/systems/${data.parent!.id}`)}
+              onClick={() => setSplitOpen((v) => !v)}
               className="text-xs bg-white/70 hover:bg-white border border-white/80 rounded-md px-2 py-1 font-medium"
-              title="פותח את מערכת האב בחלון חדש לצד המערכת הנוכחית"
+              title="פורש את מערכת האב לצד המערכת הנוכחית באותו חלון"
             >
-              פרישה במקביל
+              {splitOpen ? "סגור פרישה" : "פרישה במקביל"}
             </button>
             <Link to="/systems/$id" params={{ id: data.parent.id }}
               className="text-xs underline hover:no-underline">לפתיחת המערכת הראשית</Link>

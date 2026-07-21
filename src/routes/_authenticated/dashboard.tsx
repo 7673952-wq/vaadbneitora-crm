@@ -1203,6 +1203,11 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
                 <CornerUpRight className="h-2.5 w-2.5" />תת-מערכת
               </span>
             )}
+            {r.has_unread_email && (
+              <span title="מייל חדש שלא נקרא" className="text-[10px] bg-red-600 text-white rounded-full px-1.5 py-0.5 font-semibold flex items-center gap-0.5 animate-pulse">
+                <Mail className="h-2.5 w-2.5" />מייל חדש
+              </span>
+            )}
             {r.reminder_at && new Date(r.reminder_at) <= new Date() && (
               <Bell className="h-3 w-3 text-amber-700" />
             )}

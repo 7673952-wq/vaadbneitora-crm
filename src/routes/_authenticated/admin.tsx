@@ -24,10 +24,13 @@ import { BackupsPage } from "./backups";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { 
-  UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X, 
-  Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks, 
-  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2 
+import {
+  listRoleNotificationDefaults, updateRoleNotificationDefault,
+} from "@/lib/notifications.functions";
+import {
+  UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X,
+  Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks,
+  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({

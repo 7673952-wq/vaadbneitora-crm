@@ -554,7 +554,7 @@ function Dashboard() {
       "הערות": r.notes || "",
       "עדכון אחרון": new Date(r.updated_at).toLocaleString("he-IL"),
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws = XLSX.utils.json_to_sheet(sanitizeRows(data));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Systems");
     XLSX.writeFile(wb, `systems_${label}.xlsx`);

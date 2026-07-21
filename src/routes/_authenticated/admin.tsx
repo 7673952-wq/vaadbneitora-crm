@@ -54,9 +54,10 @@ function AdminPage() {
   const canVoiceLog = !!perms.settings_manage; // הרשאה לצפייה ביומן הודעות קוליות
   const canBackups = !!me?.isSuperAdmin; // גיבויים/שחזור מוגבלים לסופר-אדמין, כמו שהיה בדף הנפרד
   const canEmail = !!(perms.settings_manage || perms.backup_manage); // חיבור Gmail, תבניות וחתימות
+  const canNotifs = !!(perms.settings_manage || perms.users_manage || perms.permissions_manage);
 
-  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail;
-  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : "backups";
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
+  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : canNotifs ? "notifications" : "backups";
 
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -83,6 +84,7 @@ function AdminPage() {
           {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
           {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
           {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
+          {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />התראות</TabsTrigger>}
           {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
           {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
           {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
@@ -98,6 +100,7 @@ function AdminPage() {
           <StaleHoursPanel />
         </TabsContent>}
         {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
+        {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>}
         {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
         {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
         {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}

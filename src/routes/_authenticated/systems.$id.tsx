@@ -138,6 +138,7 @@ function SystemDetail() {
   const [showParentPick, setShowParentPick] = useState(false);
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
   
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -435,7 +436,8 @@ function SystemDetail() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
+    <div className={splitOpen && data.parent ? "space-y-6 flex-1 min-w-0" : "space-y-6 max-w-5xl mx-auto"}>
       <Link to="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
@@ -468,11 +470,11 @@ function SystemDetail() {
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => openSideBySide(`/systems/${data.parent!.id}`)}
+              onClick={() => setSplitOpen((v) => !v)}
               className="text-xs bg-white/70 hover:bg-white border border-white/80 rounded-md px-2 py-1 font-medium"
-              title="פותח את מערכת האב בחלון חדש לצד המערכת הנוכחית"
+              title="פורש את מערכת האב לצד המערכת הנוכחית באותו חלון"
             >
-              פרישה במקביל
+              {splitOpen ? "סגור פרישה" : "פרישה במקביל"}
             </button>
             <Link to="/systems/$id" params={{ id: data.parent.id }}
               className="text-xs underline hover:no-underline">לפתיחת המערכת הראשית</Link>
@@ -1229,10 +1231,21 @@ function SystemDetail() {
         )}
       </div>
     </div>
+    {splitOpen && data.parent && (
+      <div className="flex-1 min-w-0 sticky top-4 border-2 border-primary/40 rounded-xl overflow-hidden bg-card shadow-lg" style={{ height: "calc(100vh - 2rem)" }}>
+        <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/40">
+          <span className="text-sm font-medium">מערכת אב — תצוגה במקביל</span>
+          <button onClick={() => setSplitOpen(false)} className="text-xs px-2 py-1 rounded border hover:bg-accent">סגור פרישה</button>
+        </div>
+        <iframe src={`/systems/${data.parent.id}`} className="w-full border-0 block" style={{ height: "calc(100% - 40px)" }} title="מערכת אב" />
+      </div>
+    )}
+    </div>
 
 
   );
 }
+
 
 function formatValue(field: string, value: string | null): string {
   if (value === null || value === undefined || value === "") return "—";

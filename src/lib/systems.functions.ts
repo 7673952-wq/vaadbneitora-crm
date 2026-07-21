@@ -142,15 +142,37 @@ export const listSystems = createServerFn({ method: "POST" })
       return q;
     };
 
+    // Dashboard priority: systems still waiting for treatment must always be
+    // shown before handled ones — even when the view is capped to a page
+    // size (50/100/200). Sorting purely by "most recently updated" and then
+    // cutting off at the page size can bury an old waiting system under a
+    // page full of rows that were simply handled more recently. To guarantee
+    // the ordering we fetch every row matching the current filters, sort by
+    // (waiting-first, then most-recently-updated), and only then slice out
+    // the requested page.
+    const { data: statusRows } = await context.supabase
+      .from("status_settings").select("status_key, is_handled");
+    const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
+    if (handledKeys.size === 0) {
+      ["open", "closed", "blocked_from_root", "sent_to_yosela", "sent_to_committee", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
+    }
+    const sortWaitingFirst = (rows: any[]) => [...rows].sort((a, b) => {
+      const aHandled = handledKeys.has(a.status) ? 1 : 0;
+      const bHandled = handledKeys.has(b.status) ? 1 : 0;
+      if (aHandled !== bHandled) return aHandled - bHandled; // waiting (0) before handled (1)
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+
+    const CHUNK = 1000;
+
     // Status filters must support both the fixed enum column (`status`) and
     // the flexible optional column (`secondary_status`), including custom
     // statuses and legacy rows that stored workflow statuses in either place.
-    // Fetch the filtered window in JS instead of building enum/text OR queries,
+    // Fetch the filtered set in JS instead of building enum/text OR queries,
     // so a custom optional status can never be dropped by the database cast.
     if (statusValues.length > 0 || secondaryStatusValues.length > 0) {
       const statusSet = new Set(statusValues);
       const secondaryStatusSet = new Set(secondaryStatusValues);
-      const CHUNK = 1000;
       const pageQuery = (from: number, withCount: boolean) => {
         let q = context.supabase.from("systems").select(baseSelect, withCount ? { count: "exact" } : {});
         return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
@@ -176,42 +198,38 @@ export const listSystems = createServerFn({ method: "POST" })
           || statusValueMatches(row.status, secondaryStatusSet);
         return matchesPrimary && matchesSecondary;
       });
-      const items = await enrichSystemRows(context.supabase, filteredRows.slice(offset, endTo + 1));
-      return { items, total: filteredRows.length, page, pageSize };
+      const orderedRows = sortWaitingFirst(filteredRows);
+      const items = await enrichSystemRows(context.supabase, orderedRows.slice(offset, endTo + 1));
+      return { items, total: orderedRows.length, page, pageSize };
     }
 
-    const buildQuery = (from: number, to: number, withCount: boolean) => {
+    // No status filter: fetch every row matching the remaining filters (in
+    // 1000-row chunks — PostgREST caps a single response there — fetched
+    // concurrently after the first page tells us the total) so the
+    // waiting/handled ordering above can be applied across the whole set,
+    // then slice out the requested page.
+    const buildQuery = (from: number, withCount: boolean) => {
       let q = context.supabase
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
       if (primaryStatusValues.length > 0) q = q.in("status", primaryStatusValues as any);
-      return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, to);
+      return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
     };
-
-    // PostgREST caps a single response at ~1000 rows. When the caller asks
-    // for more (e.g. "All" in the dashboard, or a full export), fetch the
-    // window in 1000-row chunks — the first page tells us whether more are
-    // needed, and any remaining pages are fetched concurrently rather than
-    // one-at-a-time.
-    const CHUNK = 1000;
-    const firstTo = Math.min(offset + CHUNK - 1, endTo);
-    const { data: firstPageRows, error: firstPageErr, count: firstCount } = await buildQuery(offset, firstTo, true);
+    const { data: firstPageRows, error: firstPageErr, count: firstCount } = await buildQuery(0, true);
     if (firstPageErr) throw new Error(firstPageErr.message);
     const allRows: any[] = [...(firstPageRows ?? [])];
     const total = typeof firstCount === "number" ? firstCount : allRows.length;
-    if (firstTo < endTo && allRows.length === firstTo - offset + 1) {
+    if (total > CHUNK) {
       const remaining: Promise<any>[] = [];
-      for (let from = firstTo + 1; from <= endTo; from += CHUNK) {
-        const to = Math.min(from + CHUNK - 1, endTo);
-        remaining.push(buildQuery(from, to, false));
-      }
+      for (let from = CHUNK; from < total; from += CHUNK) remaining.push(buildQuery(from, false));
       for (const res of await Promise.all(remaining)) {
         if (res.error) throw new Error(res.error.message);
         allRows.push(...(res.data ?? []));
       }
     }
-    const items = await enrichSystemRows(context.supabase, allRows);
-    return { items, total: total || items.length, page, pageSize };
+    const orderedRows = sortWaitingFirst(allRows);
+    const items = await enrichSystemRows(context.supabase, orderedRows.slice(offset, endTo + 1));
+    return { items, total: total || orderedRows.length, page, pageSize };
   });
 
 // Global per-status counts across ALL systems (with optional agent/period
@@ -326,7 +344,7 @@ export const getSystem = createServerFn({ method: "POST" })
         .order("created_at", { ascending: false }).limit(300),
       context.supabase.from("profiles").select("id, display_name"),
       sys.parent_system_id
-        ? context.supabase.from("systems").select("id, system_code, name").eq("id", sys.parent_system_id).maybeSingle()
+        ? context.supabase.from("systems").select("id, system_code, name, status").eq("id", sys.parent_system_id).maybeSingle()
         : Promise.resolve({ data: null }),
     ]);
     const notes = notesRes.data;
@@ -334,7 +352,7 @@ export const getSystem = createServerFn({ method: "POST" })
     const children = childrenRes.data;
     const activity = activityRes.data;
     const profiles = profilesRes.data;
-    const parent = (parentRes.data as { id: string; system_code: string; name: string } | null) ?? null;
+    const parent = (parentRes.data as { id: string; system_code: string; name: string; status: string } | null) ?? null;
 
     const pmap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
     return {

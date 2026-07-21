@@ -196,6 +196,8 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "emails_send");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [{ data: relayUrlRow }, { data: relaySecretRow }, { data: profileRow }, { data: generalNameRow }] = await Promise.all([

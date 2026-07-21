@@ -228,8 +228,10 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
 
     const { data: setting } = await supabaseAdmin
       .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
-    const email = ((setting?.value as { email?: string } | null)?.email ?? "").trim();
-    if (!email) {
+    const v = (setting?.value as { email?: string; emails?: string[] } | null) ?? null;
+    const emails = (Array.isArray(v?.emails) && v.emails.length ? v.emails : (v?.email ? [v.email] : []))
+      .map((e) => e.trim()).filter(Boolean);
+    if (emails.length === 0) {
       throw new Error("לא הוגדר מייל לגיבויים. הגדר תחת 'ניהול ראשי → מייל לגיבויים'.");
     }
 
@@ -262,7 +264,7 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
       },
       body: JSON.stringify({
         from: "CRM Backups <onboarding@resend.dev>",
-        to: [email],
+        to: emails,
         subject: `גיבוי CRM — ${data.folder}`,
         text: `מצורף קובץ הגיבוי של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
         attachments: [{ filename, content: base64 }],
@@ -272,5 +274,5 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
       const errText = await resp.text().catch(() => "");
       throw new Error(`Resend נכשל (${resp.status}): ${errText.slice(0, 200)}`);
     }
-    return { email, folder: data.folder, sizeKb: Math.round(zipBuf.length / 1024) };
+    return { emails, folder: data.folder, sizeKb: Math.round(zipBuf.length / 1024) };
   });

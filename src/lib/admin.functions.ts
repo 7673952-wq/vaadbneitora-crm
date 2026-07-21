@@ -35,7 +35,7 @@ async function assertAnyPermission(context: { userId: string }, permissions: imp
 const ROLES = ["viewer", "agent", "admin", "super_admin"] as const;
 const PERMISSION_KEYS = [
   "systems_read", "systems_write", "systems_delete", "system_name_edit", "system_code_edit",
-  "status_change", "agent_transfer", "notes_write", "files_manage",
+  "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage",
   "import_export", "series_manage", "backup_manage", "audit_view", "settings_manage", "users_manage", "permissions_manage",
 ] as const;
 
@@ -52,8 +52,8 @@ const DEFAULT_ROLE_PERMISSION_ROWS = ROLES.flatMap((role) => PERMISSION_KEYS.map
   role,
   permission,
   allowed: role === "super_admin"
-    || (role === "admin" && ["systems_read", "systems_write", "system_name_edit", "status_change", "agent_transfer", "notes_write", "files_manage", "import_export", "series_manage", "backup_manage", "settings_manage"].includes(permission))
-    || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "files_manage"].includes(permission))
+    || (role === "admin" && ["systems_read", "systems_write", "system_name_edit", "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage", "import_export", "series_manage", "backup_manage", "settings_manage"].includes(permission))
+    || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage"].includes(permission))
     || (role === "viewer" && permission === "systems_read"),
 }))) as { role: string; permission: string; allowed: boolean }[];
 const PERMISSION_SETTINGS_KEY = "permission_settings";
@@ -101,8 +101,8 @@ async function seedMissingRolePermissions() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
     viewer: { systems_read: true },
-    agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true },
-    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true, audit_view: true },
+    agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, emails_send: true, files_manage: true },
+    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, emails_send: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true, audit_view: true },
     super_admin: Object.fromEntries(PERMISSION_KEYS.map((p) => [p, true])) as Record<(typeof PERMISSION_KEYS)[number], boolean>,
   };
   const rows = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({
@@ -606,27 +606,92 @@ function computeSnoozeUntil(unit: string, date?: string|null): string {
 
 const BACKUP_EMAIL_KEY = "backup_email";
 
+// Stored as { emails: string[] }. Older rows may still have the legacy
+// single-string { email } shape — read both, always write the new shape.
 export const getBackupEmail = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
     await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", BACKUP_EMAIL_KEY).maybeSingle();
-    const v = (data?.value as { email?: string } | null) ?? null;
-    return { email: v?.email ?? "" };
+    const v = (data?.value as { email?: string; emails?: string[] } | null) ?? null;
+    const emails = Array.isArray(v?.emails) && v.emails.length
+      ? v.emails
+      : (v?.email ? [v.email] : []);
+    return { emails };
   });
 
 export const setBackupEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { email: string }) =>
-    z.object({ email: z.string().email().max(200).or(z.literal("")) }).parse(d),
+  .inputValidator((d: { emails: string[] }) =>
+    z.object({ emails: z.array(z.string().email().max(200)).max(20) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "backup_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // De-dupe, case-insensitively, while preserving the order the admin typed them in.
+    const seen = new Set<string>();
+    const emails = data.emails.filter((e) => {
+      const key = e.trim().toLowerCase();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: BACKUP_EMAIL_KEY,
+      value: { emails },
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+// ============= Backup schedule (frequency + time of day) =============
+// Consumed by the pg_cron heartbeat (every 15 min) via
+// /api/public/hooks/scheduled-backup-check — see backups.server.ts
+// shouldRunScheduledBackup() for the matching logic. Hour/day are in Asia/Jerusalem
+// local time so admins don't have to think in UTC.
+
+const BACKUP_SCHEDULE_KEY = "backup_schedule";
+
+export type BackupSchedule = {
+  frequency: "daily" | "weekly";
+  hour: number; // 0-23, Asia/Jerusalem local time
+  dayOfWeek: number; // 0 (Sunday) - 6 (Saturday), only used when frequency === "weekly"
+};
+
+const DEFAULT_BACKUP_SCHEDULE: BackupSchedule = { frequency: "daily", hour: 2, dayOfWeek: 4 };
+
+export const getBackupSchedule = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", BACKUP_SCHEDULE_KEY).maybeSingle();
+    const v = (data?.value as Partial<BackupSchedule> | null) ?? null;
+    return {
+      frequency: v?.frequency === "weekly" ? "weekly" : "daily",
+      hour: typeof v?.hour === "number" && v.hour >= 0 && v.hour <= 23 ? v.hour : DEFAULT_BACKUP_SCHEDULE.hour,
+      dayOfWeek: typeof v?.dayOfWeek === "number" && v.dayOfWeek >= 0 && v.dayOfWeek <= 6 ? v.dayOfWeek : DEFAULT_BACKUP_SCHEDULE.dayOfWeek,
+    } as BackupSchedule;
+  });
+
+export const setBackupSchedule = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: BackupSchedule) =>
+    z.object({
+      frequency: z.enum(["daily", "weekly"]),
+      hour: z.number().int().min(0).max(23),
+      dayOfWeek: z.number().int().min(0).max(6),
+    }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
-      key: BACKUP_EMAIL_KEY,
-      value: { email: data.email },
+      key: BACKUP_SCHEDULE_KEY,
+      value: data,
       updated_at: new Date().toISOString(),
       updated_by: context.userId,
     });
@@ -721,6 +786,11 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
 //  - status / agent changes by others on my systems
 // "Unread" state is tracked client-side via localStorage (last-read timestamp).
 
+// The bell only surfaces two kinds of notifications, on purpose: places the
+// user was explicitly @-mentioned in a note, and new inbound emails on
+// systems assigned to them. Transfers, plain notes, and status/agent-change
+// activity are intentionally excluded — those are visible on the system
+// card itself and don't need to interrupt via the bell.
 export const listMyNotifications = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
@@ -749,37 +819,13 @@ export const listMyNotifications = createServerFn({ method: "GET" })
       return re.test(text);
     };
 
-    const { data: transfers } = await context.supabase
-      .from("system_transfers")
-      .select("id, system_id, from_agent_id, to_agent_id, transferred_by, reason, created_at")
-      .or(`to_agent_id.eq.${me},from_agent_id.eq.${me}`)
-      .gte("created_at", since)
-      .order("created_at", { ascending: false })
-      .limit(50);
-
-    let notes: any[] = [];
-    let activity: any[] = [];
     let inboundEmails: any[] = [];
     if (myIds.length > 0) {
-      const [notesRes, actRes, emailRes] = await Promise.all([
-        context.supabase.from("system_notes")
-          .select("id, system_id, body, author_id, created_at")
-          .in("system_id", myIds).neq("author_id", me).gte("created_at", since)
-          .order("created_at", { ascending: false }).limit(50),
-        context.supabase.from("system_activity_log")
-          .select("id, system_id, actor_id, actor_display_name, action, field, old_value, new_value, created_at")
-          .in("system_id", myIds).neq("actor_id", me)
-          .in("field", ["status", "assigned_agent_id"])
-          .gte("created_at", since)
-          .order("created_at", { ascending: false }).limit(50),
-        context.supabase.from("email_messages" as any)
-          .select("id, system_id, from_address, subject, body, created_at")
-          .in("system_id", myIds).eq("direction", "inbound").gte("created_at", since)
-          .order("created_at", { ascending: false }).limit(50),
-      ]);
-      notes = notesRes.data ?? [];
-      activity = actRes.data ?? [];
-      inboundEmails = (emailRes.data as any[]) ?? [];
+      const { data } = await context.supabase.from("email_messages" as any)
+        .select("id, system_id, from_address, subject, body, created_at")
+        .in("system_id", myIds).eq("direction", "inbound").gte("created_at", since)
+        .order("created_at", { ascending: false }).limit(50);
+      inboundEmails = (data as any[]) ?? [];
     }
 
     const { data: mentionRows } = await context.supabase
@@ -791,10 +837,9 @@ export const listMyNotifications = createServerFn({ method: "GET" })
       .limit(100);
     const mentionNotes = (mentionRows ?? []).filter((n: any) => isMentioned(n.body));
 
-    const extraIds = Array.from(new Set([
-      ...(transfers ?? []).map((t: any) => t.system_id),
-      ...mentionNotes.map((n: any) => n.system_id),
-    ].filter((id: string) => id && !sysMap.has(id))));
+    const extraIds = Array.from(new Set(
+      mentionNotes.map((n: any) => n.system_id).filter((id: string) => id && !sysMap.has(id)),
+    ));
     if (extraIds.length) {
       const { data: extra } = await context.supabase
         .from("systems").select("id, system_code, name").in("id", extraIds);
@@ -802,29 +847,6 @@ export const listMyNotifications = createServerFn({ method: "GET" })
     }
 
     const items: any[] = [];
-    for (const t of (transfers ?? []) as any[]) {
-      const sys = sysMap.get(t.system_id);
-      const toMe = t.to_agent_id === me;
-      const other = toMe ? t.from_agent_id : t.to_agent_id;
-      items.push({
-        id: `t:${t.id}`, kind: "transfer", system_id: t.system_id,
-        system_code: sys?.code, system_name: sys?.name, created_at: t.created_at,
-        title: toMe ? "הועברה אליך מערכת" : "הועברה ממך מערכת",
-        detail: other ? (pmap.get(other) ?? "לא ידוע") : "לא משויך",
-        reason: t.reason ?? null,
-      });
-    }
-    for (const n of notes) {
-      if (mentionNotes.some((m: any) => m.id === n.id)) continue;
-      const sys = sysMap.get(n.system_id);
-      items.push({
-        id: `n:${n.id}`, kind: "note", system_id: n.system_id,
-        system_code: sys?.code, system_name: sys?.name, created_at: n.created_at,
-        title: "הערה חדשה",
-        detail: pmap.get(n.author_id) ?? "לא ידוע",
-        reason: (n.body ?? "").slice(0, 120),
-      });
-    }
     for (const n of mentionNotes) {
       const sys = sysMap.get(n.system_id);
       items.push({
@@ -833,16 +855,6 @@ export const listMyNotifications = createServerFn({ method: "GET" })
         title: String(n.body ?? "").includes("@כולם") ? "תיוג לכל הנציגים" : "תויגת בהערה",
         detail: pmap.get(n.author_id) ?? "לא ידוע",
         reason: (n.body ?? "").slice(0, 120),
-      });
-    }
-    for (const a of activity) {
-      const sys = sysMap.get(a.system_id);
-      items.push({
-        id: `a:${a.id}`, kind: "activity", system_id: a.system_id,
-        system_code: sys?.code, system_name: sys?.name, created_at: a.created_at,
-        title: a.field === "status" ? "שינוי סטטוס" : "שינוי נציג",
-        detail: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
-        reason: `${a.old_value ?? "—"} ← ${a.new_value ?? "—"}`,
       });
     }
     for (const e of inboundEmails) {

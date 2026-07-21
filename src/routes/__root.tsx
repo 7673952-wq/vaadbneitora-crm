@@ -105,13 +105,55 @@ function RootComponent() {
     // Force re-login on every browser/tab close: sessionStorage clears on close,
     // localStorage (where Supabase persists) does not. If we have no marker but
     // a session exists, it's a stale session from a previous tab — sign out.
+    //
+    // Caveat: sessionStorage is per-tab, and whether it gets copied into a
+    // brand-new tab (e.g. our "פתח בלשונית נפרדת" button, or a plain
+    // ctrl/cmd-click) is inconsistent across browsers, especially with
+    // rel="noopener"/"noreferrer". Without a guard, a legitimate new tab of an
+    // already-open session could look exactly like "stale session from a
+    // closed browser" and get force-signed-out, bouncing the user to /auth.
+    //
+    // Instead of relying on that inconsistent sessionStorage-copy behavior, we
+    // directly ask: "is another tab of this app alive right now?" via
+    // BroadcastChannel (same-origin, all currently-open tabs receive it). If
+    // one answers, this is a legitimate additional tab — adopt the marker
+    // instead of signing out. Only sign out if truly nobody answers (i.e. this
+    // is the first tab — the whole browser was closed and reopened).
     const SESSION_MARKER = "crm_active_session";
-    (async () => {
+    const CHANNEL_NAME = "crm_tab_presence";
+    const PING_TIMEOUT_MS = 300;
+
+    let decided = false;
+    async function resolvePresence(otherTabAlive: boolean) {
+      if (decided) return;
+      decided = true;
       const { data } = await supabase.auth.getSession();
       if (data.session && !sessionStorage.getItem(SESSION_MARKER)) {
-        await supabase.auth.signOut();
+        if (otherTabAlive) {
+          sessionStorage.setItem(SESSION_MARKER, "1");
+        } else {
+          await supabase.auth.signOut();
+        }
       }
-    })();
+    }
+
+    let channel: BroadcastChannel | null = null;
+    let pingTimer: ReturnType<typeof setTimeout> | null = null;
+    if (typeof BroadcastChannel !== "undefined") {
+      channel = new BroadcastChannel(CHANNEL_NAME);
+      channel.onmessage = (event) => {
+        if (event.data === "ping") {
+          channel?.postMessage("pong");
+        } else if (event.data === "pong") {
+          resolvePresence(true);
+        }
+      };
+      channel.postMessage("ping");
+      pingTimer = setTimeout(() => resolvePresence(false), PING_TIMEOUT_MS);
+    } else {
+      // No BroadcastChannel support — fall back to the original strict behavior.
+      resolvePresence(false);
+    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
       if (event === "SIGNED_IN") sessionStorage.setItem(SESSION_MARKER, "1");
@@ -120,7 +162,11 @@ function RootComponent() {
       router.invalidate();
       if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
     });
-    return () => subscription.unsubscribe();
+    return () => {
+      subscription.unsubscribe();
+      if (pingTimer) clearTimeout(pingTimer);
+      channel?.close();
+    };
   }, [router, queryClient]);
 
   return (

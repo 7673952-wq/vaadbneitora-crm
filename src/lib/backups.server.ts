@@ -2,6 +2,54 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import * as XLSX from "xlsx";
 import { STATUS_LABEL } from "@/lib/status";
 
+// ---------- Scheduled-backup time matching ----------
+// The DB-side pg_cron job fires a lightweight "heartbeat" every 15 minutes
+// (see supabase/migrations/*_scheduled_backup_schedule.sql). Each heartbeat
+// calls shouldRunScheduledBackup() to decide, based on the admin-configured
+// backup_schedule setting (ניהול → גיבויים), whether *this* is the moment to
+// actually run+email a backup. Comparing in Asia/Jerusalem local time means
+// admins pick an hour the way they'd say it out loud, without worrying about
+// UTC or DST.
+type BackupScheduleSetting = { frequency: "daily" | "weekly"; hour: number; dayOfWeek: number };
+
+function jerusalemParts(date: Date): { hour: number; dayOfWeek: number; dateKey: string } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Jerusalem",
+    hour: "2-digit", hour12: false,
+    weekday: "short",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((p) => [p.type, p.value]));
+  const weekdayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  // "24" from hour12:false at midnight is a known Intl quirk — normalize to 0.
+  const hour = Number(parts.hour) % 24;
+  return {
+    hour,
+    dayOfWeek: weekdayMap[parts.weekday] ?? new Date(date).getDay(),
+    dateKey: `${parts.year}-${parts.month}-${parts.day}`,
+  };
+}
+
+// Exported for the webhook + for tests: decides whether a scheduled backup
+// should run right now, and returns the matched kind for the email subject.
+export function shouldRunScheduledBackup(
+  schedule: BackupScheduleSetting,
+  lastRunAt: string | null,
+  now: Date = new Date(),
+): { run: boolean; kind: "daily" | "weekly" } {
+  const { hour, dayOfWeek, dateKey } = jerusalemParts(now);
+  const kind: "daily" | "weekly" = schedule.frequency === "weekly" ? "weekly" : "daily";
+  if (hour !== schedule.hour) return { run: false, kind };
+  if (kind === "weekly" && dayOfWeek !== schedule.dayOfWeek) return { run: false, kind };
+  // Guard against running twice within the same target hour (the heartbeat
+  // fires every 15 min, so the hour condition above matches 4 times in a
+  // row) — only run if we haven't already run today (or, for weekly, we
+  // haven't already run on this exact calendar day).
+  const lastRunDateKey = lastRunAt ? jerusalemParts(new Date(lastRunAt)).dateKey : null;
+  if (lastRunDateKey === dateKey) return { run: false, kind };
+  return { run: true, kind };
+}
+
 function csvEscape(v: any): string {
   if (v === null || v === undefined) return "";
   const s = typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -110,8 +158,12 @@ export async function runBackup(): Promise<BackupResult> {
 export async function sendBackupEmail(result: BackupResult, kind: "daily" | "weekly"): Promise<string> {
   const { data: setting } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
-  const recipient = ((setting?.value as { email?: string } | null)?.email ?? process.env.WEEKLY_REPORT_EMAIL ?? "").trim();
-  if (!recipient) return "skipped (no recipient configured)";
+  const v = (setting?.value as { email?: string; emails?: string[] } | null) ?? null;
+  const recipients = (Array.isArray(v?.emails) && v.emails.length ? v.emails : (v?.email ? [v.email] : []))
+    .map((e) => e.trim()).filter(Boolean);
+  if (recipients.length === 0 && process.env.WEEKLY_REPORT_EMAIL) recipients.push(process.env.WEEKLY_REPORT_EMAIL.trim());
+  if (recipients.length === 0) return "skipped (no recipient configured)";
+  const recipient = recipients.join(", ");
 
   let zipBuf: Uint8Array;
   let filename: string;

@@ -225,7 +225,7 @@ async function bestEffortMirrorStatusTable(supabaseAdmin: SupabaseLike, rows: St
 }
 
 
-export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike & { rpc?: (fn: string, args: any) => Promise<{ error: any }> }, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
+export async function upsertStatusSettingStable(supabaseAdmin: SupabaseLike & { rpc?: any }, patch: Partial<StatusSettingRow> & { status_key: string }, userId: string) {
   const rows = await readStatusSettings(supabaseAdmin);
   const existingIndex = rows.findIndex((row) => row.status_key === patch.status_key);
   const isNewStatus = existingIndex < 0;

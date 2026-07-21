@@ -22,6 +22,7 @@ import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
 import { HandledRatioChart } from "@/components/HandledRatioChart";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
+import { sanitizeCell, sanitizeRows, sanitizeMatrix } from "@/lib/csv-safe";
 import {
   Pagination,
   PaginationContent,

@@ -124,7 +124,7 @@ export const listSystems = createServerFn({ method: "POST" })
     const endTo = offset + pageSize - 1;
 
     const baseSelect =
-      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, created_at, updated_at";
+      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, has_unread_email, last_inbound_email_at, created_at, updated_at";
 
     const applySharedFilters = (q: any) => {
       if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);

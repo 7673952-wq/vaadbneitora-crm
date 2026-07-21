@@ -436,7 +436,8 @@ function SystemDetail() {
   }
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
+    <div className={splitOpen && data.parent ? "space-y-6 flex-1 min-w-0" : "space-y-6 max-w-5xl mx-auto"}>
       <Link to="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>

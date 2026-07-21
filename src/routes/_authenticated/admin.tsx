@@ -7,6 +7,7 @@ import {
   listStatusSettings, upsertStatusSetting, deleteStatusSetting, reorderStatusSettings,
   getAutoSnoozeSetting, setAutoSnoozeSetting,
   getBackupEmail, setBackupEmail,
+  getBackupSchedule, setBackupSchedule,
   getStaleWarningHours, setStaleWarningHours,
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
@@ -90,6 +91,7 @@ function AdminPage() {
         {canGeneral && <TabsContent value="general" className="mt-4 space-y-6">
           <AutoSnoozePanel />
           <BackupEmailPanel />
+          <BackupSchedulePanel />
           <StaleHoursPanel />
         </TabsContent>}
         {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
@@ -277,21 +279,100 @@ function BackupEmailPanel() {
   const setFn = useServerFn(setBackupEmail);
   const qc = useQueryClient();
   const { data } = useQuery({ queryKey: ["backup_email"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
-  const [email, setEmail] = useState("");
-  useEffect(() => { if (data) setEmail(data.email); }, [data]);
+  const [emails, setEmails] = useState<string[]>([""]);
+  useEffect(() => { if (data) setEmails(data.emails.length ? data.emails : [""]); }, [data]);
   const mut = useMutation({
-    mutationFn: async (vars: { data: { email: string } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
-    onSuccess: () => { toast.success("המייל נשמר"); qc.invalidateQueries({ queryKey: ["backup_email"] }); },
+    mutationFn: async (vars: { data: { emails: string[] } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    onSuccess: () => { toast.success("המיילים נשמרו"); qc.invalidateQueries({ queryKey: ["backup_email"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });
+  const cleaned = emails.map((e) => e.trim()).filter(Boolean);
+  const savedCleaned = (data?.emails ?? []).map((e) => e.trim());
+  const isDirty = JSON.stringify(cleaned) !== JSON.stringify(savedCleaned);
   return (
     <div className="bg-card border border-border rounded-xl p-5">
-      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Mail className="h-4 w-4" />מייל לגיבויים</h2>
-      <p className="text-xs text-muted-foreground mb-3">כתובת המייל שאליה יישלח קישור הגיבוי בלחיצה על "שלח למייל" במסך הגיבויים.</p>
-      <div className="flex gap-2 flex-wrap">
-        <input type="email" dir="ltr" placeholder="name@example.com" value={email} onChange={(e) => setEmail(e.target.value)}
-          className="flex-1 min-w-[240px] rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-        <button onClick={() => mut.mutate({ data: { email: email.trim() } })} disabled={mut.isPending || email === (data?.email ?? "")}
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Mail className="h-4 w-4" />מיילים לגיבויים</h2>
+      <p className="text-xs text-muted-foreground mb-3">כתובות המייל שאליהן יישלח קובץ הגיבוי — גם בגיבוי המתוזמן וגם בלחיצה על "שלח למייל" במסך הגיבויים. אפשר להוסיף כמה כתובות.</p>
+      <div className="space-y-2">
+        {emails.map((email, i) => (
+          <div key={i} className="flex gap-2 flex-wrap">
+            <input type="email" dir="ltr" placeholder="name@example.com" value={email}
+              onChange={(e) => setEmails((arr) => arr.map((v, idx) => idx === i ? e.target.value : v))}
+              className="flex-1 min-w-[240px] rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            <button type="button" onClick={() => setEmails((arr) => arr.length > 1 ? arr.filter((_, idx) => idx !== i) : [""])}
+              title="הסר" className="px-3 py-2 border border-border rounded-lg text-sm hover:bg-accent">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+        <div className="flex gap-2 flex-wrap items-center pt-1">
+          <button type="button" onClick={() => setEmails((arr) => [...arr, ""])}
+            className="flex items-center gap-1 px-3 py-2 border border-border rounded-lg text-sm hover:bg-accent">
+            <Plus className="h-4 w-4" />הוסף כתובת
+          </button>
+          <button onClick={() => mut.mutate({ data: { emails: cleaned } })} disabled={mut.isPending || !isDirty}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+            {mut.isPending ? "שומר..." : "שמור"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============= Backup Schedule (frequency + time) =============
+const WEEKDAY_LABELS = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+
+function BackupSchedulePanel() {
+  const getFn = useServerFn(getBackupSchedule);
+  const setFn = useServerFn(setBackupSchedule);
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["backup_schedule"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
+  const [hour, setHour] = useState(2);
+  const [dayOfWeek, setDayOfWeek] = useState(4);
+  useEffect(() => {
+    if (data) { setFrequency(data.frequency); setHour(data.hour); setDayOfWeek(data.dayOfWeek); }
+  }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { frequency: "daily" | "weekly"; hour: number; dayOfWeek: number } }) =>
+      setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    onSuccess: () => { toast.success("התדירות נשמרה"); qc.invalidateQueries({ queryKey: ["backup_schedule"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  const isDirty = !data || data.frequency !== frequency || data.hour !== hour || data.dayOfWeek !== dayOfWeek;
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />תדירות ושעת גיבוי אוטומטי</h2>
+      <p className="text-xs text-muted-foreground mb-3">מתי לבצע גיבוי אוטומטי ולשלוח למיילים שהוגדרו למעלה. השעה היא לפי שעון ישראל; ייתכן איחור של עד רבע שעה מהמועד המדויק.</p>
+      <div className="flex gap-3 flex-wrap items-end">
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">תדירות</label>
+          <select value={frequency} onChange={(e) => setFrequency(e.target.value as "daily" | "weekly")}
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm">
+            <option value="daily">כל יום</option>
+            <option value="weekly">פעם בשבוע</option>
+          </select>
+        </div>
+        {frequency === "weekly" && (
+          <div>
+            <label className="block text-xs text-muted-foreground mb-1">יום בשבוע</label>
+            <select value={dayOfWeek} onChange={(e) => setDayOfWeek(Number(e.target.value))}
+              className="rounded-lg border border-input bg-background px-3 py-2 text-sm">
+              {WEEKDAY_LABELS.map((label, idx) => <option key={idx} value={idx}>יום {label}</option>)}
+            </select>
+          </div>
+        )}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">שעה</label>
+          <select value={hour} onChange={(e) => setHour(Number(e.target.value))}
+            className="rounded-lg border border-input bg-background px-3 py-2 text-sm">
+            {Array.from({ length: 24 }, (_, h) => (
+              <option key={h} value={h}>{String(h).padStart(2, "0")}:00</option>
+            ))}
+          </select>
+        </div>
+        <button onClick={() => mut.mutate({ data: { frequency, hour, dayOfWeek } })} disabled={mut.isPending || !isDirty}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {mut.isPending ? "שומר..." : "שמור"}
         </button>

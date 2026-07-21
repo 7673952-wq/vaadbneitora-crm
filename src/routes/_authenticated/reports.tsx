@@ -26,7 +26,11 @@ function periodToRange(p: Period): { from: string | null; to: string | null } {
 }
 
 function downloadCSV(filename: string, headers: string[], rows: (string | number | null)[][]) {
-  const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const escape = (v: any) => {
+    const raw = String(v ?? "");
+    const safe = /^[=+\-@\t\r]/.test(raw) ? "'" + raw : raw;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const csv = "\uFEFF" + [headers, ...rows].map((r) => r.map(escape).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
   const url = URL.createObjectURL(blob);

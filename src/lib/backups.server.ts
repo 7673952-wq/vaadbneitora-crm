@@ -50,9 +50,12 @@ export function shouldRunScheduledBackup(
   return { run: true, kind };
 }
 
+import { sanitizeCell, sanitizeRows } from "./csv-safe";
+
 function csvEscape(v: any): string {
   if (v === null || v === undefined) return "";
-  const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+  const safe = sanitizeCell(typeof v === "object" ? JSON.stringify(v) : v);
+  const s = String(safe);
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }

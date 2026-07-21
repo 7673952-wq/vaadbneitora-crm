@@ -50,9 +50,12 @@ export function shouldRunScheduledBackup(
   return { run: true, kind };
 }
 
+import { sanitizeCell, sanitizeRows } from "./csv-safe";
+
 function csvEscape(v: any): string {
   if (v === null || v === undefined) return "";
-  const s = typeof v === "object" ? JSON.stringify(v) : String(v);
+  const safe = sanitizeCell(typeof v === "object" ? JSON.stringify(v) : v);
+  const s = String(safe);
   if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
@@ -127,7 +130,7 @@ export async function runBackup(): Promise<BackupResult> {
         "מספר פונה": r.caller_phone ?? "",
         "הערות": r.notes ?? "",
       }));
-      const worksheet = XLSX.utils.json_to_sheet(sheetRows);
+      const worksheet = XLSX.utils.json_to_sheet(sanitizeRows(sheetRows));
       worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");

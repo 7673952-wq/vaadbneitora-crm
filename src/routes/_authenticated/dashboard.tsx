@@ -22,6 +22,7 @@ import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
 import { HandledRatioChart } from "@/components/HandledRatioChart";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
+import { sanitizeCell, sanitizeRows, sanitizeMatrix } from "@/lib/csv-safe";
 import {
   Pagination,
   PaginationContent,
@@ -442,7 +443,7 @@ function Dashboard() {
       (r.notes || "").replace(/\n/g, " "), new Date(r.updated_at).toLocaleString("he-IL"),
     ]);
     const csv = "\uFEFF" + [header, ...data].map((row) =>
-      row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")
+      row.map((c) => `"${String(sanitizeCell(c) ?? "").replace(/"/g, '""')}"`).join(",")
     ).join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -513,7 +514,7 @@ function Dashboard() {
     ];
     const write = (rowsToWrite: any[][], fileLabel: string) => {
       if (!rowsToWrite.length) return false;
-      const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...rowsToWrite]);
+      const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...sanitizeMatrix(rowsToWrite)]);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
       XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);
@@ -553,7 +554,7 @@ function Dashboard() {
       "הערות": r.notes || "",
       "עדכון אחרון": new Date(r.updated_at).toLocaleString("he-IL"),
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
+    const ws = XLSX.utils.json_to_sheet(sanitizeRows(data));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Systems");
     XLSX.writeFile(wb, `systems_${label}.xlsx`);

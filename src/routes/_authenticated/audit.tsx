@@ -45,7 +45,11 @@ function fmtDate(iso: string) {
 
 function downloadCSV(rows: any[]) {
   const headers = ["תאריך", "משתמש", "פעולה", "שדה", "ערך קודם", "ערך חדש", "סיבה", "מערכת"];
-  const escape = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const escape = (v: any) => {
+    const raw = String(v ?? "");
+    const safe = /^[=+\-@\t\r]/.test(raw) ? "'" + raw : raw;
+    return `"${safe.replace(/"/g, '""')}"`;
+  };
   const data = rows.map((r) => [
     fmtDate(r.created_at), r.actor_name, ACTION_LABELS[r.action] ?? r.action,
     FIELD_LABELS[r.field] ?? r.field ?? "", r.old_display ?? "", r.new_display ?? "",

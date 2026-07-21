@@ -138,6 +138,7 @@ function SystemDetail() {
   const [showParentPick, setShowParentPick] = useState(false);
   const [parentChoice, setParentChoice] = useState<string>("");
   const [reminderAgentIds, setReminderAgentIds] = useState<string[]>([]);
+  const [splitOpen, setSplitOpen] = useState(false);
   const [reminderScope, setReminderScope] = useState<"all" | "specific">("all");
   
   const fileInputRef = useRef<HTMLInputElement>(null);

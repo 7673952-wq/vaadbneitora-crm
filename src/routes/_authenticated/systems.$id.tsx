@@ -736,14 +736,6 @@ function SystemDetail() {
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-semibold flex items-center gap-2 text-sm"><Info className="h-4 w-4" />פרטים</h2>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <label className="text-[11px] text-muted-foreground">סטטוס משני:</label>
-            <select
-              value={s.secondary_status || ""}
-              onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
-              className="rounded-md border border-input bg-background px-2 py-1 text-xs">
-              <option value="">— ללא —</option>
-              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
             {me?.isAdmin && (
               !isSub ? (
                 <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}

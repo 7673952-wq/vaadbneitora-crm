@@ -533,11 +533,6 @@ function SystemDetail() {
                       חסימה
                     </label>
                   )}
-                  {s.created_at && (
-                    <span className="text-[10px] opacity-70 mr-auto">
-                      {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
-                    </span>
-                  )}
                 </div>
                 {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input
@@ -548,7 +543,7 @@ function SystemDetail() {
                 ) : (
                   <h1 className="text-lg md:text-xl font-bold tracking-tight mt-1.5 truncate">{s.name}</h1>
                 )}
-                {/* Inline status + agent selects */}
+                {/* Inline status + agent + secondary status selects */}
                 <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                   <select value={s.status} onChange={(e) => changeStatus(e.target.value)} className={chip} title="סטטוס">
                     {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -557,7 +552,20 @@ function SystemDetail() {
                     <option value="">— לא משויך —</option>
                     {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
                   </select>
+                  <select
+                    value={s.secondary_status || ""}
+                    onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
+                    className={chip}
+                    title="סטטוס משני">
+                    <option value="">— סטטוס משני —</option>
+                    {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
+                {s.created_at && (
+                  <div className="mt-2 text-[11px] opacity-70">
+                    שעת יצירה: {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+                  </div>
+                )}
               </div>
 
               {/* Actions zone */}

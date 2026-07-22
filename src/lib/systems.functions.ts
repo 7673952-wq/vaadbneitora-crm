@@ -1417,6 +1417,41 @@ export const getHandledRatio = createServerFn({ method: "POST" })
     return { handledInTime, notHandledInTime, total: rows.length, withinDays: data.withinDays };
   });
 
+// Status funnel: count of systems per status for a period (by created_at).
+export const getStatusFunnel = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { period: string }) =>
+    z.object({ period: z.enum(["day", "3days", "week", "month", "year", "all"]) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const hoursByPeriod: Record<string, number | null> = {
+      day: 24, "3days": 72, week: 24 * 7, month: 24 * 30, year: 24 * 365, all: null,
+    };
+    const h = hoursByPeriod[data.period];
+
+    const { data: statusRows } = await context.supabase
+      .from("status_settings").select("status_key, label, tone, sort_order");
+    const statusMeta = new Map<string, { label: string; tone: string; sort_order: number }>();
+    for (const r of (statusRows ?? []) as any[]) {
+      statusMeta.set(r.status_key, { label: r.label ?? r.status_key, tone: r.tone ?? "gray", sort_order: r.sort_order ?? 999 });
+    }
+
+    let q = context.supabase.from("systems").select("status").limit(50000);
+    if (h !== null) q = q.gte("created_at", new Date(Date.now() - h * 3600_000).toISOString());
+    const { data: rows, error } = await q;
+    if (error) throw new Error(error.message);
+
+    const counts = new Map<string, number>();
+    for (const r of (rows ?? []) as any[]) {
+      const k = r.status ?? "—";
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    const out = Array.from(counts.entries()).map(([status_key, count]) => {
+      const meta = statusMeta.get(status_key) ?? { label: status_key, tone: "gray", sort_order: 999 };
+      return { status_key, label: meta.label, tone: meta.tone, sort_order: meta.sort_order, count };
+    }).sort((a, b) => b.count - a.count);
+    return out;
+  });
+
 // --- Yemot HaMashiach: prepare a per-phone extension and call it ---
 function getIsraelHour(date: Date): number {
   const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Jerusalem", hour: "numeric", hour12: false });

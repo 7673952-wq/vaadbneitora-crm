@@ -21,7 +21,7 @@ export const listSavedViews = createServerFn({ method: "GET" })
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false });
     if (error) throw new Error(error.message);
-    return (data ?? []) as { id: string; name: string; filters: SavedViewFilters; created_at: string }[];
+    return (data ?? []) as unknown as { id: string; name: string; filters: SavedViewFilters; created_at: string }[];
   });
 
 export const createSavedView = createServerFn({ method: "POST" })

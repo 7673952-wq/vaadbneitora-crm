@@ -1293,6 +1293,7 @@ function formatValue(field: string, value: string | null): string {
 }
 
 function AdditionalEmailsEditor({ emails, onChange }: { emails: string[]; onChange: (next: string[]) => void }) {
+  const [showAdd, setShowAdd] = useState(false);
   const [draft, setDraft] = useState("");
   function add() {
     const v = draft.trim();
@@ -1301,10 +1302,18 @@ function AdditionalEmailsEditor({ emails, onChange }: { emails: string[]; onChan
     if (emails.includes(v)) { toast.error("כתובת זו כבר קיימת"); return; }
     onChange([...emails, v]);
     setDraft("");
+    setShowAdd(false);
   }
   return (
     <div>
-      <label className="text-sm font-medium block mb-2">כתובות מייל נוספות</label>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium">כתובות מייל נוספות</label>
+        <button type="button" onClick={() => setShowAdd((v) => !v)}
+          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-input bg-background hover:bg-accent text-foreground"
+          title="הוסף כתובת מייל נוספת">
+          <Plus className="h-3.5 w-3.5" /> הוסף מייל
+        </button>
+      </div>
       <div className="flex flex-wrap gap-1.5 mb-2">
         {emails.map((e) => (
           <span key={e} className="inline-flex items-center gap-1 bg-muted rounded-full pl-1 pr-2 py-1 text-xs">
@@ -1313,18 +1322,24 @@ function AdditionalEmailsEditor({ emails, onChange }: { emails: string[]; onChan
               className="p-0.5 hover:bg-accent rounded-full"><X className="h-3 w-3" /></button>
           </span>
         ))}
-        {emails.length === 0 && <span className="text-xs text-muted-foreground italic">אין כתובות נוספות</span>}
+        {emails.length === 0 && !showAdd && <span className="text-xs text-muted-foreground italic">אין כתובות נוספות</span>}
       </div>
-      <div className="flex gap-1">
-        <input value={draft} onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } }}
-          placeholder="הוסף כתובת מייל נוספת" type="email" dir="ltr"
-          className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
-        <button type="button" onClick={add}
-          className="px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent text-xs font-medium">
-          הוסף
-        </button>
-      </div>
+      {showAdd && (
+        <div className="flex gap-1">
+          <input value={draft} onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } else if (e.key === "Escape") { setShowAdd(false); setDraft(""); } }}
+            placeholder="name@example.com" type="email" dir="ltr" autoFocus
+            className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+          <button type="button" onClick={add}
+            className="px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent text-xs font-medium">
+            הוסף
+          </button>
+          <button type="button" onClick={() => { setShowAdd(false); setDraft(""); }}
+            className="px-2 py-2 border border-input rounded-lg bg-background hover:bg-accent text-xs">
+            בטל
+          </button>
+        </div>
+      )}
     </div>
   );
 }

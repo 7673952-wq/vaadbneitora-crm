@@ -1331,16 +1331,17 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
 // updated_at when no log entry exists).
 export const getHandledRatio = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { openedPeriod: string; withinDays: number }) =>
+  .inputValidator((d: { openedPeriod: string; withinDays: number; compareToPrevious?: boolean }) =>
     z.object({
       openedPeriod: z.enum(["day", "3days", "week", "month", "year"]),
       withinDays: z.union([z.literal(1), z.literal(3), z.literal(7), z.literal(30)]),
+      compareToPrevious: z.boolean().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
     const hoursByPeriod: Record<string, number> = {
       day: 24, "3days": 72, week: 24 * 7, month: 24 * 30, year: 24 * 365,
     };
-    const fromOpened = new Date(Date.now() - hoursByPeriod[data.openedPeriod] * 3600_000);
+    const windowMs = hoursByPeriod[data.openedPeriod] * 3600_000;
 
     const { data: statusRows } = await context.supabase
       .from("status_settings").select("status_key, is_handled");
@@ -1348,63 +1349,60 @@ export const getHandledRatio = createServerFn({ method: "POST" })
     if (handledKeys.size === 0) {
       ["open", "closed", "blocked_from_root", "sent_to_yosela", "sent_to_committee", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
     }
-
-    const { data: sys } = await context.supabase
-      .from("systems")
-      .select("id, status, created_at, updated_at")
-      .gte("created_at", fromOpened.toISOString())
-      .limit(50000);
-
-    const rows = (sys ?? []) as any[];
-    if (rows.length === 0) {
-      return { handledInTime: 0, notHandledInTime: 0, total: 0, withinDays: data.withinDays };
-    }
-
-    // Find first handled transition per system from activity log.
-    const ids = rows.map((r) => r.id);
-    const firstHandled = new Map<string, string>();
-    // Batch in chunks to avoid IN-list limits — fetched in parallel rather
-    // than one chunk at a time, which was serializing up to ~100 round-trips
-    // for large datasets.
-    const chunks: string[][] = [];
-    for (let i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
-    const chunkResults = await Promise.all(chunks.map((chunk) =>
-      context.supabase
-        .from("system_activity_log")
-        .select("system_id, new_value, created_at")
-        .eq("field", "status")
-        .in("system_id", chunk)
-        .order("created_at", { ascending: true })
-        .limit(20000),
-    ));
-    for (const { data: logs } of chunkResults) {
-      for (const l of (logs ?? []) as any[]) {
-        if (!handledKeys.has(l.new_value)) continue;
-        if (firstHandled.has(l.system_id)) continue;
-        firstHandled.set(l.system_id, l.created_at);
-      }
-    }
-
     const MIN_REAL_GAP_MS = 2 * 60_000;
     const withinMs = data.withinDays * 24 * 3600_000;
-    let handledInTime = 0, notHandledInTime = 0;
-    for (const r of rows) {
-      const isHandledNow = handledKeys.has(r.status);
-      const fromLog = firstHandled.get(r.id);
-      let handledAt: string | null = fromLog ?? null;
-      if (!handledAt && isHandledNow) {
-        const gap = new Date(r.updated_at).getTime() - new Date(r.created_at).getTime();
-        // No logged transition — only trust updated_at as a "handled at"
-        // proxy if real time actually passed; near-zero gaps are typically
-        // bulk-imported/seeded systems, not genuine fast handling.
-        if (gap >= MIN_REAL_GAP_MS) handledAt = r.updated_at;
+
+    async function computeRatio(fromTs: number, toTs: number) {
+      const { data: sys } = await context.supabase
+        .from("systems").select("id, status, created_at, updated_at")
+        .gte("created_at", new Date(fromTs).toISOString())
+        .lte("created_at", new Date(toTs).toISOString())
+        .limit(50000);
+      const rows = (sys ?? []) as any[];
+      if (rows.length === 0) return { handledInTime: 0, notHandledInTime: 0, total: 0 };
+      const ids = rows.map((r) => r.id);
+      const firstHandled = new Map<string, string>();
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += 500) chunks.push(ids.slice(i, i + 500));
+      const chunkResults = await Promise.all(chunks.map((chunk) =>
+        context.supabase.from("system_activity_log")
+          .select("system_id, new_value, created_at")
+          .eq("field", "status").in("system_id", chunk)
+          .order("created_at", { ascending: true }).limit(20000)));
+      for (const { data: logs } of chunkResults) {
+        for (const l of (logs ?? []) as any[]) {
+          if (!handledKeys.has(l.new_value)) continue;
+          if (firstHandled.has(l.system_id)) continue;
+          firstHandled.set(l.system_id, l.created_at);
+        }
       }
-      if (!handledAt) { notHandledInTime++; continue; }
-      const delta = new Date(handledAt).getTime() - new Date(r.created_at).getTime();
-      if (delta >= 0 && delta <= withinMs) handledInTime++;
-      else notHandledInTime++;
+      let handledInTime = 0, notHandledInTime = 0;
+      for (const r of rows) {
+        const isHandledNow = handledKeys.has(r.status);
+        const fromLog = firstHandled.get(r.id);
+        let handledAt: string | null = fromLog ?? null;
+        if (!handledAt && isHandledNow) {
+          const gap = new Date(r.updated_at).getTime() - new Date(r.created_at).getTime();
+          if (gap >= MIN_REAL_GAP_MS) handledAt = r.updated_at;
+        }
+        if (!handledAt) { notHandledInTime++; continue; }
+        const delta = new Date(handledAt).getTime() - new Date(r.created_at).getTime();
+        if (delta >= 0 && delta <= withinMs) handledInTime++;
+        else notHandledInTime++;
+      }
+      return { handledInTime, notHandledInTime, total: rows.length };
     }
-    return { handledInTime, notHandledInTime, total: rows.length, withinDays: data.withinDays };
+
+    const now = Date.now();
+    const cur = await computeRatio(now - windowMs, now);
+    const prev = data.compareToPrevious ? await computeRatio(now - 2 * windowMs, now - windowMs) : null;
+    return {
+      handledInTime: cur.handledInTime,
+      notHandledInTime: cur.notHandledInTime,
+      total: cur.total,
+      withinDays: data.withinDays,
+      previous: prev,
+    };
   });
 
 // Status funnel: count of systems per status for a period (by created_at).

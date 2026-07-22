@@ -175,6 +175,10 @@ function SystemDetail() {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [composeUseGeneral, setComposeUseGeneral] = useState(false);
+  // Inline quick-reply state (avoids opening a modal for a fast response)
+  const [inlineReplyFor, setInlineReplyFor] = useState<string | null>(null);
+  const [inlineReplyText, setInlineReplyText] = useState("");
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const sendEmailMut = useMutation({
     mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean }) =>
       sendEmailFn({ data: { system_id: id, ...v } }),

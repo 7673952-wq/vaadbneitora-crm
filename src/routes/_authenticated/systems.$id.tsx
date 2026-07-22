@@ -1293,7 +1293,14 @@ function EmailField({ initial, onSave }: { initial: string; onSave: (v: string |
         className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
       <button
         type="button"
-        onClick={() => { if (val && !val.includes("@")) setVal(val + "@gmail.com"); }}
+        // Prevent input blur from firing first with the partial (invalid) value
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          if (!val || val.includes("@")) return;
+          const next = val.trim() + "@gmail.com";
+          setVal(next);
+          if (next !== (initial || "")) onSave(next);
+        }}
         className="text-xs px-2 py-2 border border-input rounded-lg bg-background hover:bg-accent whitespace-nowrap"
         title="הוסף @gmail.com">
         @gmail.com

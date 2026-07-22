@@ -35,6 +35,33 @@ export type Database = {
         }
         Relationships: []
       }
+      dashboard_saved_views: {
+        Row: {
+          created_at: string
+          filters: Json
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          filters?: Json
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       email_messages: {
         Row: {
           agent_id: string | null

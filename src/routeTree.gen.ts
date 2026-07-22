@@ -9,42 +9,62 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
-import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
-import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedChartsRouteImport } from './routes/_authenticated/charts'
-import { Route as AuthenticatedBackupsRouteImport } from './routes/_authenticated/backups'
-import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAdminRouteImport } from './routes/_authenticated/admin'
-import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
-import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
+import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/audit'
+import { Route as AuthenticatedBackupsRouteImport } from './routes/_authenticated/backups'
+import { Route as AuthenticatedChartsRouteImport } from './routes/_authenticated/charts'
+import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
+import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
+import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
-import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
-import { Route as ApiPublicHooksScheduledBackupCheckRouteImport } from './routes/api/public/hooks/scheduled-backup-check'
-import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
-import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
+import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
+import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
+import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
+import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
+import { Route as ApiPublicHooksScheduledBackupCheckRouteImport } from './routes/api/public/hooks/scheduled-backup-check'
+import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
 
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
+const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAuditRoute = AuthenticatedAuditRouteImport.update({
+  id: '/audit',
+  path: '/audit',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedBackupsRoute = AuthenticatedBackupsRouteImport.update({
+  id: '/backups',
+  path: '/backups',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedChartsRoute = AuthenticatedChartsRouteImport.update({
+  id: '/charts',
+  path: '/charts',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedManagerDashboardRoute =
@@ -53,30 +73,20 @@ const AuthenticatedManagerDashboardRoute =
     path: '/manager-dashboard',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
+const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedChartsRoute = AuthenticatedChartsRouteImport.update({
-  id: '/charts',
-  path: '/charts',
+const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
+  id: '/systems/$id',
+  path: '/systems/$id',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedBackupsRoute = AuthenticatedBackupsRouteImport.update({
-  id: '/backups',
-  path: '/backups',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAuditRoute = AuthenticatedAuditRouteImport.update({
-  id: '/audit',
-  path: '/audit',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAdminRoute = AuthenticatedAdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => AuthenticatedRouteRoute,
+const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
+  id: '/api/public/health',
+  path: '/api/public/health',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicWeeklyCrmReportRoute =
   ApiPublicWeeklyCrmReportRouteImport.update({
@@ -84,32 +94,10 @@ const ApiPublicWeeklyCrmReportRoute =
     path: '/api/public/weekly-crm-report',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicHealthRoute = ApiPublicHealthRouteImport.update({
-  id: '/api/public/health',
-  path: '/api/public/health',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
-  id: '/systems/$id',
-  path: '/systems/$id',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const ApiPublicHooksWeeklyBackupRoute =
-  ApiPublicHooksWeeklyBackupRouteImport.update({
-    id: '/api/public/hooks/weekly-backup',
-    path: '/api/public/hooks/weekly-backup',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicHooksScheduledBackupCheckRoute =
-  ApiPublicHooksScheduledBackupCheckRouteImport.update({
-    id: '/api/public/hooks/scheduled-backup-check',
-    path: '/api/public/hooks/scheduled-backup-check',
-    getParentRoute: () => rootRouteImport,
-  } as any)
-const ApiPublicHooksProcessVoiceQueueRoute =
-  ApiPublicHooksProcessVoiceQueueRouteImport.update({
-    id: '/api/public/hooks/process-voice-queue',
-    path: '/api/public/hooks/process-voice-queue',
+const ApiPublicHooksDailyBackupRoute =
+  ApiPublicHooksDailyBackupRouteImport.update({
+    id: '/api/public/hooks/daily-backup',
+    path: '/api/public/hooks/daily-backup',
     getParentRoute: () => rootRouteImport,
   } as any)
 const ApiPublicHooksInboundEmailRoute =
@@ -118,10 +106,22 @@ const ApiPublicHooksInboundEmailRoute =
     path: '/api/public/hooks/inbound-email',
     getParentRoute: () => rootRouteImport,
   } as any)
-const ApiPublicHooksDailyBackupRoute =
-  ApiPublicHooksDailyBackupRouteImport.update({
-    id: '/api/public/hooks/daily-backup',
-    path: '/api/public/hooks/daily-backup',
+const ApiPublicHooksProcessVoiceQueueRoute =
+  ApiPublicHooksProcessVoiceQueueRouteImport.update({
+    id: '/api/public/hooks/process-voice-queue',
+    path: '/api/public/hooks/process-voice-queue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksScheduledBackupCheckRoute =
+  ApiPublicHooksScheduledBackupCheckRouteImport.update({
+    id: '/api/public/hooks/scheduled-backup-check',
+    path: '/api/public/hooks/scheduled-backup-check',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiPublicHooksWeeklyBackupRoute =
+  ApiPublicHooksWeeklyBackupRouteImport.update({
+    id: '/api/public/hooks/weekly-backup',
+    path: '/api/public/hooks/weekly-backup',
     getParentRoute: () => rootRouteImport,
   } as any)
 
@@ -260,11 +260,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -274,46 +274,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/_authenticated/reports': {
-      id: '/_authenticated/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof AuthenticatedReportsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/manager-dashboard': {
-      id: '/_authenticated/manager-dashboard'
-      path: '/manager-dashboard'
-      fullPath: '/manager-dashboard'
-      preLoaderRoute: typeof AuthenticatedManagerDashboardRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/dashboard': {
-      id: '/_authenticated/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/charts': {
-      id: '/_authenticated/charts'
-      path: '/charts'
-      fullPath: '/charts'
-      preLoaderRoute: typeof AuthenticatedChartsRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/backups': {
-      id: '/_authenticated/backups'
-      path: '/backups'
-      fullPath: '/backups'
-      preLoaderRoute: typeof AuthenticatedBackupsRouteImport
+    '/_authenticated/admin': {
+      id: '/_authenticated/admin'
+      path: '/admin'
+      fullPath: '/admin'
+      preLoaderRoute: typeof AuthenticatedAdminRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/audit': {
@@ -323,26 +295,40 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAuditRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/admin': {
-      id: '/_authenticated/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AuthenticatedAdminRouteImport
+    '/_authenticated/backups': {
+      id: '/_authenticated/backups'
+      path: '/backups'
+      fullPath: '/backups'
+      preLoaderRoute: typeof AuthenticatedBackupsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/public/weekly-crm-report': {
-      id: '/api/public/weekly-crm-report'
-      path: '/api/public/weekly-crm-report'
-      fullPath: '/api/public/weekly-crm-report'
-      preLoaderRoute: typeof ApiPublicWeeklyCrmReportRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/charts': {
+      id: '/_authenticated/charts'
+      path: '/charts'
+      fullPath: '/charts'
+      preLoaderRoute: typeof AuthenticatedChartsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/public/health': {
-      id: '/api/public/health'
-      path: '/api/public/health'
-      fullPath: '/api/public/health'
-      preLoaderRoute: typeof ApiPublicHealthRouteImport
-      parentRoute: typeof rootRouteImport
+    '/_authenticated/dashboard': {
+      id: '/_authenticated/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof AuthenticatedDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/manager-dashboard': {
+      id: '/_authenticated/manager-dashboard'
+      path: '/manager-dashboard'
+      fullPath: '/manager-dashboard'
+      preLoaderRoute: typeof AuthenticatedManagerDashboardRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/reports': {
+      id: '/_authenticated/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof AuthenticatedReportsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/systems/$id': {
       id: '/_authenticated/systems/$id'
@@ -351,25 +337,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedSystemsIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/public/hooks/weekly-backup': {
-      id: '/api/public/hooks/weekly-backup'
-      path: '/api/public/hooks/weekly-backup'
-      fullPath: '/api/public/hooks/weekly-backup'
-      preLoaderRoute: typeof ApiPublicHooksWeeklyBackupRouteImport
+    '/api/public/health': {
+      id: '/api/public/health'
+      path: '/api/public/health'
+      fullPath: '/api/public/health'
+      preLoaderRoute: typeof ApiPublicHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/scheduled-backup-check': {
-      id: '/api/public/hooks/scheduled-backup-check'
-      path: '/api/public/hooks/scheduled-backup-check'
-      fullPath: '/api/public/hooks/scheduled-backup-check'
-      preLoaderRoute: typeof ApiPublicHooksScheduledBackupCheckRouteImport
+    '/api/public/weekly-crm-report': {
+      id: '/api/public/weekly-crm-report'
+      path: '/api/public/weekly-crm-report'
+      fullPath: '/api/public/weekly-crm-report'
+      preLoaderRoute: typeof ApiPublicWeeklyCrmReportRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/process-voice-queue': {
-      id: '/api/public/hooks/process-voice-queue'
-      path: '/api/public/hooks/process-voice-queue'
-      fullPath: '/api/public/hooks/process-voice-queue'
-      preLoaderRoute: typeof ApiPublicHooksProcessVoiceQueueRouteImport
+    '/api/public/hooks/daily-backup': {
+      id: '/api/public/hooks/daily-backup'
+      path: '/api/public/hooks/daily-backup'
+      fullPath: '/api/public/hooks/daily-backup'
+      preLoaderRoute: typeof ApiPublicHooksDailyBackupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/hooks/inbound-email': {
@@ -379,11 +365,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksInboundEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/api/public/hooks/daily-backup': {
-      id: '/api/public/hooks/daily-backup'
-      path: '/api/public/hooks/daily-backup'
-      fullPath: '/api/public/hooks/daily-backup'
-      preLoaderRoute: typeof ApiPublicHooksDailyBackupRouteImport
+    '/api/public/hooks/process-voice-queue': {
+      id: '/api/public/hooks/process-voice-queue'
+      path: '/api/public/hooks/process-voice-queue'
+      fullPath: '/api/public/hooks/process-voice-queue'
+      preLoaderRoute: typeof ApiPublicHooksProcessVoiceQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/scheduled-backup-check': {
+      id: '/api/public/hooks/scheduled-backup-check'
+      path: '/api/public/hooks/scheduled-backup-check'
+      fullPath: '/api/public/hooks/scheduled-backup-check'
+      preLoaderRoute: typeof ApiPublicHooksScheduledBackupCheckRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/public/hooks/weekly-backup': {
+      id: '/api/public/hooks/weekly-backup'
+      path: '/api/public/hooks/weekly-backup'
+      fullPath: '/api/public/hooks/weekly-backup'
+      preLoaderRoute: typeof ApiPublicHooksWeeklyBackupRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

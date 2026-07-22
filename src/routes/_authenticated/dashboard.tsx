@@ -20,6 +20,8 @@ import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-re
 import { ChartGrid } from "@/components/ChartGrid";
 import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
 import { HandledRatioChart } from "@/components/HandledRatioChart";
+import { StatusFunnelChart } from "@/components/StatusFunnelChart";
+import { SavedViewsBar } from "@/components/SavedViewsBar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
 import { sanitizeCell, sanitizeRows, sanitizeMatrix } from "@/lib/csv-safe";
@@ -639,6 +641,7 @@ function Dashboard() {
             <HandlingSpeedChart />
             <HandledRatioChart />
           </div>
+          <StatusFunnelChart />
 
           {(chartData.length > 0 || agentChartData.length > 0) && (
             <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />

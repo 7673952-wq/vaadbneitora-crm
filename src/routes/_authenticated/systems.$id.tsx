@@ -175,6 +175,10 @@ function SystemDetail() {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [composeUseGeneral, setComposeUseGeneral] = useState(false);
+  // Inline quick-reply state (avoids opening a modal for a fast response)
+  const [inlineReplyFor, setInlineReplyFor] = useState<string | null>(null);
+  const [inlineReplyText, setInlineReplyText] = useState("");
+  const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const sendEmailMut = useMutation({
     mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean }) =>
       sendEmailFn({ data: { system_id: id, ...v } }),
@@ -533,11 +537,6 @@ function SystemDetail() {
                       חסימה
                     </label>
                   )}
-                  {s.created_at && (
-                    <span className="text-[10px] opacity-70 mr-auto">
-                      {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
-                    </span>
-                  )}
                 </div>
                 {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input
@@ -548,7 +547,7 @@ function SystemDetail() {
                 ) : (
                   <h1 className="text-lg md:text-xl font-bold tracking-tight mt-1.5 truncate">{s.name}</h1>
                 )}
-                {/* Inline status + agent selects */}
+                {/* Inline status + agent + secondary status selects */}
                 <div className="mt-2 flex items-center gap-1.5 flex-wrap">
                   <select value={s.status} onChange={(e) => changeStatus(e.target.value)} className={chip} title="סטטוס">
                     {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -557,7 +556,20 @@ function SystemDetail() {
                     <option value="">— לא משויך —</option>
                     {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
                   </select>
+                  <select
+                    value={s.secondary_status || ""}
+                    onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
+                    className={chip}
+                    title="סטטוס משני">
+                    <option value="">— סטטוס משני —</option>
+                    {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
                 </div>
+                {s.created_at && (
+                  <div className="mt-2 text-[11px] opacity-70">
+                    שעת יצירה: {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+                  </div>
+                )}
               </div>
 
               {/* Actions zone */}
@@ -728,14 +740,6 @@ function SystemDetail() {
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-semibold flex items-center gap-2 text-sm"><Info className="h-4 w-4" />פרטים</h2>
           <div className="flex items-center gap-1.5 flex-wrap">
-            <label className="text-[11px] text-muted-foreground">סטטוס משני:</label>
-            <select
-              value={s.secondary_status || ""}
-              onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
-              className="rounded-md border border-input bg-background px-2 py-1 text-xs">
-              <option value="">— ללא —</option>
-              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
             {me?.isAdmin && (
               !isSub ? (
                 <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
@@ -1024,9 +1028,14 @@ function SystemDetail() {
             <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
               {[...emailThread].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((m: any) => {
                 const isOutbound = m.direction === "outbound";
+                const isExpanded = expandedMessages.has(m.id);
+                const body = m.body ?? "";
+                const isLong = body.length > 220;
+                const shownBody = isExpanded || !isLong ? body : body.slice(0, 220) + "…";
+                const replyTo = m.direction === "outbound" ? (m.to_address || "") : extractEmail(m.from_address || "");
                 return (
                   <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[92%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
+                    <div className={`max-w-[92%] w-full rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
                       <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
                         <span className="font-medium flex items-center gap-1">
                           <Mail className="h-3 w-3" />
@@ -1035,9 +1044,20 @@ function SystemDetail() {
                         <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
                       </div>
                       {m.subject && <div className="text-xs font-semibold mb-0.5">{m.subject}</div>}
-                      <div className="text-sm whitespace-pre-wrap">{m.body}</div>
-                      <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-black/5">
-                        <button type="button" onClick={() => openReplyEmail(m)}
+                      <div className="text-sm whitespace-pre-wrap">{shownBody}</div>
+                      <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-black/5 flex-wrap">
+                        {isLong && (
+                          <button type="button"
+                            onClick={() => setExpandedMessages((prev) => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n; })}
+                            className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
+                            {isExpanded ? "הצג פחות" : "צפייה"}
+                          </button>
+                        )}
+                        <button type="button"
+                          onClick={() => {
+                            if (inlineReplyFor === m.id) { setInlineReplyFor(null); return; }
+                            setInlineReplyFor(m.id); setInlineReplyText("");
+                          }}
                           className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
                           <CornerUpRight className="h-3 w-3 -scale-x-100" />השב
                         </button>
@@ -1045,7 +1065,41 @@ function SystemDetail() {
                           className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
                           <CornerUpRight className="h-3 w-3" />העבר
                         </button>
+                        {!isOutbound && (
+                          <button type="button" onClick={() => openReplyEmail(m)}
+                            className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1 mr-auto"
+                            title="פתח בחלון מלא">
+                            עריכה מורחבת
+                          </button>
+                        )}
                       </div>
+                      {inlineReplyFor === m.id && (
+                        <div className="mt-2 space-y-1.5">
+                          <textarea
+                            value={inlineReplyText}
+                            onChange={(e) => setInlineReplyText(e.target.value)}
+                            placeholder={`השב אל ${replyTo || "…"}`}
+                            rows={3}
+                            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button type="button" onClick={() => { setInlineReplyFor(null); setInlineReplyText(""); }}
+                              className="text-[11px] px-2 py-1 rounded-md hover:bg-black/5">בטל</button>
+                            <button type="button"
+                              disabled={sendEmailMut.isPending || !inlineReplyText.trim() || !replyTo}
+                              onClick={() => {
+                                sendEmailMut.mutate({
+                                  to: replyTo,
+                                  subject: m.subject ? (m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`) : "Re: ",
+                                  body: inlineReplyText.trim(),
+                                  gmail_thread_id: m.gmail_thread_id ?? null,
+                                }, { onSuccess: () => { setInlineReplyFor(null); setInlineReplyText(""); } });
+                              }}
+                              className="text-[11px] px-2.5 py-1 rounded-md bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-50">
+                              {sendEmailMut.isPending ? "שולח…" : "שלח"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1293,7 +1347,14 @@ function EmailField({ initial, onSave }: { initial: string; onSave: (v: string |
         className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
       <button
         type="button"
-        onClick={() => { if (val && !val.includes("@")) setVal(val + "@gmail.com"); }}
+        // Prevent input blur from firing first with the partial (invalid) value
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          if (!val || val.includes("@")) return;
+          const next = val.trim() + "@gmail.com";
+          setVal(next);
+          if (next !== (initial || "")) onSave(next);
+        }}
         className="text-xs px-2 py-2 border border-input rounded-lg bg-background hover:bg-accent whitespace-nowrap"
         title="הוסף @gmail.com">
         @gmail.com

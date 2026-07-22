@@ -484,16 +484,33 @@ function SystemDetail() {
 
       {(() => {
         const cardTone = statusCardClasses(s.status);
-        const accentBorder = cardTone.split(" ").find((c) => /^border-[a-z]+-\d+$/.test(c)) ?? "border-border";
-        const btnBase = "inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md transition";
-        const iconBtn = "inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent transition";
+        const btnBase = "inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-md transition";
+        const iconBtn = "inline-flex items-center justify-center h-8 w-8 rounded-md border border-white/70 bg-white/70 text-foreground hover:bg-white transition";
+        const chip = "rounded-md border border-white/70 bg-white/80 px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary";
+        const changeStatus = (newStatus: string) => {
+          if (newStatus === s.status) return;
+          const isRootWithChildren = !s.parent_system_id && (data?.children?.length ?? 0) > 0;
+          let apply_to_children: boolean | undefined;
+          if (isRootWithChildren) {
+            apply_to_children = window.confirm(
+              `להחיל את שינוי הסטטוס גם על ${data!.children.length} תתי-המערכות?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית`
+            );
+          }
+          if (!statusRequiresReason(newStatus)) {
+            updateMut.mutate({ data: { id, status: newStatus, ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
+            return;
+          }
+          const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
+          if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
+          updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim(), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
+        };
         return (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-            <div className="flex flex-col lg:flex-row lg:items-stretch">
-              {/* Title zone with status accent on the right (RTL start) */}
-              <div className={`flex-1 min-w-0 border-r-4 ${accentBorder} p-5`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-[11px] rounded-full px-2.5 py-0.5 font-medium ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
+          <div className={`border-2 rounded-xl overflow-hidden shadow-sm ${cardTone}`}>
+            <div className="p-3 flex items-start justify-between gap-3 flex-wrap">
+              {/* Title zone */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[11px] rounded-full px-2.5 py-0.5 font-semibold ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
                     {STATUS_LABEL[s.status as SystemStatus]}
                   </span>
                   {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
@@ -501,68 +518,75 @@ function SystemDetail() {
                     <input
                       defaultValue={s.system_code || ""}
                       onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
-                      className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5 border border-border w-36 focus:outline-none focus:border-primary"
+                      className="text-[11px] font-mono bg-white/70 rounded px-2 py-0.5 border border-white/70 w-32 focus:outline-none focus:border-primary"
                       title="מזהה מערכת"
                     />
                   ) : (
-                    <span className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5">{s.system_code}</span>
+                    <span className="text-[11px] font-mono bg-white/70 rounded px-2 py-0.5">{s.system_code}</span>
                   )}
                   {!isSub && (me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) && (
-                    <label className="flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5 cursor-pointer"
+                    <label className="flex items-center gap-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5 cursor-pointer"
                       title="בהודעה קולית על סיום הפניה יישלח מספר המערכת הפוך וללא קידומת 0">
                       <input type="checkbox" checked={!!s.is_blocking_number}
                         onChange={(e) => updateMut.mutate({ data: { id, is_blocking_number: e.target.checked } })}
                         className="h-3 w-3" />
-                      מספר חסימה
+                      חסימה
                     </label>
+                  )}
+                  {s.created_at && (
+                    <span className="text-[10px] opacity-70 mr-auto">
+                      {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+                    </span>
                   )}
                 </div>
                 {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input
                     defaultValue={s.name || ""}
                     onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
-                    className="text-2xl md:text-3xl font-bold tracking-tight mt-2 bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none w-full"
+                    className="text-lg md:text-xl font-bold tracking-tight mt-1.5 bg-transparent border-b border-transparent hover:border-white/60 focus:border-primary focus:outline-none w-full"
                   />
                 ) : (
-                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight mt-2 truncate">{s.name}</h1>
+                  <h1 className="text-lg md:text-xl font-bold tracking-tight mt-1.5 truncate">{s.name}</h1>
                 )}
-                <div className="mt-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-muted-foreground">
-                  <span>נציג: <span className="font-medium text-foreground">{s.agent_name || "לא משויך"}</span></span>
-                  {s.created_at && (
-                    <span>
-                      נפתחה: <span className="font-medium text-foreground">{new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-                    </span>
-                  )}
+                {/* Inline status + agent selects */}
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  <select value={s.status} onChange={(e) => changeStatus(e.target.value)} className={chip} title="סטטוס">
+                    {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })} className={chip} title="נציג מטפל">
+                    <option value="">— לא משויך —</option>
+                    {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+                  </select>
                 </div>
               </div>
 
               {/* Actions zone */}
-              <div className="p-5 lg:border-r lg:border-border bg-muted/20 flex flex-wrap gap-2 lg:min-w-[320px] lg:justify-end items-start content-start">
+              <div className="flex flex-wrap gap-1.5 items-center shrink-0">
                 {s.system_code && (
-                  <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                  <div className="inline-flex items-stretch rounded-md overflow-hidden shadow-sm">
                     <a href={`tel:${buildDialNumber(s.system_code)}`}
-                      className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+                      className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">
                       <Phone className="h-3.5 w-3.5" />
-                      <span>חיוג מערכת</span>
+                      <span>מערכת</span>
                     </a>
                     <button onClick={() => copyToClipboard(s.system_code, "code", "מזהה המערכת")}
                       title="העתק מזהה מערכת"
-                      className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
+                      className="inline-flex items-center justify-center h-8 w-8 bg-white/80 hover:bg-white text-muted-foreground border-r border-white/70">
                       {copiedKey === "code" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 )}
                 {s.caller_phone && (
                   <div className="relative inline-flex items-stretch">
-                    <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                    <div className="inline-flex items-stretch rounded-md overflow-hidden shadow-sm">
                     <a href={`tel:${buildDialNumber(s.caller_phone)}`}
-                      className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
+                      className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
                       <Phone className="h-3.5 w-3.5" />
-                      <span>חיוג פונה</span>
+                      <span>פונה</span>
                     </a>
                     <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
                       title="העתק מספר פונה"
-                      className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
+                      className="inline-flex items-center justify-center h-8 w-8 bg-white/80 hover:bg-white text-muted-foreground border-r border-white/70">
                       {copiedKey === "caller" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                     <button
@@ -578,9 +602,9 @@ function SystemDetail() {
                       }}
                       title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שליחת הודעה קולית לפונה/ים דרך ימות המשיח"}
                       aria-label="שלח הודעה קולית"
-                      className={`inline-flex items-center justify-center h-9 w-9 border-r border-border transition ${
+                      className={`inline-flex items-center justify-center h-8 w-8 border-r border-white/70 transition ${
                         !voiceEnabled
-                          ? "bg-background text-muted-foreground/40 cursor-not-allowed"
+                          ? "bg-white/60 text-muted-foreground/40 cursor-not-allowed"
                           : voiceAlreadySent
                             ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
                             : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
@@ -664,7 +688,7 @@ function SystemDetail() {
                   <a href={`tel:${s.phone}`}
                     className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm`}>
                     <Phone className="h-3.5 w-3.5" />
-                    חיוג {s.phone}
+                    {s.phone}
                   </a>
                 )}
                 {me?.isSuperAdmin && (
@@ -689,7 +713,7 @@ function SystemDetail() {
                   }}
                     title="מחק מערכת"
                     aria-label="מחק מערכת"
-                    className={`${iconBtn} hover:!text-destructive hover:!bg-destructive/10 hover:!border-destructive/30`}>
+                    className={`${iconBtn} hover:!text-destructive hover:!bg-destructive/10`}>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}
@@ -700,61 +724,57 @@ function SystemDetail() {
       })()}
 
       {/* ===== פרטים ===== */}
-      <div className="bg-card border border-border rounded-2xl p-6">
-        <h2 className="font-semibold flex items-center gap-2 mb-4"><Info className="h-4 w-4" />פרטים</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-sm font-medium block mb-2">סטטוס</label>
-            <select value={s.status} onChange={(e) => {
-              const newStatus = e.target.value;
-              if (newStatus === s.status) return;
-              const isRootWithChildren = !s.parent_system_id && (data?.children?.length ?? 0) > 0;
-              let apply_to_children: boolean | undefined;
-              if (isRootWithChildren) {
-                apply_to_children = window.confirm(
-                  `להחיל את שינוי הסטטוס גם על ${data!.children.length} תתי-המערכות?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית`
-                );
-              }
-              if (!statusRequiresReason(newStatus)) {
-                updateMut.mutate({ data: { id, status: newStatus, ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
-                return;
-              }
-              const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
-              if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
-              updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim(), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
-            }}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
-              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium block mb-2">סטטוס משני (אופציונלי)</label>
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="font-semibold flex items-center gap-2 text-sm"><Info className="h-4 w-4" />פרטים</h2>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <label className="text-[11px] text-muted-foreground">סטטוס משני:</label>
             <select
               value={s.secondary_status || ""}
               onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
+              className="rounded-md border border-input bg-background px-2 py-1 text-xs">
               <option value="">— ללא —</option>
               {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <p className="text-[11px] text-muted-foreground mt-1">מוצג רק בכרטיס המערכת, לא בדשבורד.</p>
+            {me?.isAdmin && (
+              !isSub ? (
+                <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
+                  className="text-[11px] px-2 py-1 border border-input rounded-md bg-background hover:bg-accent">
+                  הפוך לתת-מערכת
+                </button>
+              ) : (
+                <button onClick={() => parentMut.mutate({ data: { id, parent_system_id: null } })}
+                  className="text-[11px] px-2 py-1 border border-input rounded-md bg-background hover:bg-accent">
+                  הפוך למערכת ראשית
+                </button>
+              )
+            )}
           </div>
-
-          <div>
-            <label className="text-sm font-medium block mb-2">נציג מטפל</label>
-            <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
-              <option value="">— לא משויך —</option>
-              {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-            </select>
+        </div>
+        {showParentPick && !isSub && (
+          <div className="mb-3">
+            <ParentPicker
+              mains={mains ?? []}
+              excludeId={id}
+              value={parentChoice}
+              onChange={setParentChoice}
+              onConfirm={() => parentMut.mutate({ data: { id, parent_system_id: parentChoice } })}
+              onCancel={() => setShowParentPick(false)}
+            />
           </div>
+        )}
+        <div className="grid md:grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium block mb-2">טלפון לחיוג</label>
+            <label className="text-xs font-medium block mb-1 text-muted-foreground">טלפון לחיוג</label>
             <input
               defaultValue={s.phone || ""}
               onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.phone || "")) updateMut.mutate({ data: { id, phone: v || null } }); }}
               placeholder="מספר טלפון"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1 text-muted-foreground">דוא"ל</label>
+            <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
           </div>
           <div className="md:col-span-2">
             <CallerPhonesEditor
@@ -772,283 +792,241 @@ function SystemDetail() {
               sending={voiceMut.isPending}
             />
           </div>
-
-
-          <div>
-            <label className="text-sm font-medium block mb-2">דוא"ל</label>
-            <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
-          </div>
           <div className="md:col-span-2">
             <AdditionalEmailsEditor
               emails={((s as any).additional_emails ?? []) as string[]}
               onChange={(next) => updateMut.mutate({ data: { id, additional_emails: next } })}
             />
           </div>
-          {me?.isAdmin && (
-            <div>
-              <label className="text-sm font-medium block mb-2">מבנה</label>
-              <div className="flex items-center gap-2 flex-wrap">
-                {!isSub ? (
-                  <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
-                    className="text-xs px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent">
-                    הפוך לתת-מערכת
-                  </button>
-                ) : (
-                  <button onClick={() => parentMut.mutate({ data: { id, parent_system_id: null } })}
-                    className="text-xs px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent">
-                    הפוך למערכת ראשית
-                  </button>
-                )}
-                {showParentPick && !isSub && (
-                  <ParentPicker
-                    mains={mains ?? []}
-                    excludeId={id}
-                    value={parentChoice}
-                    onChange={setParentChoice}
-                    onConfirm={() => parentMut.mutate({ data: { id, parent_system_id: parentChoice } })}
-                    onCancel={() => setShowParentPick(false)}
-                  />
-                )}
-              </div>
-            </div>
-          )}
+        </div>
+      </div>
+
+      {/* ===== פעילות ===== */}
+      <div className="bg-card border border-border rounded-xl p-4">
+        {/* ===== פעילות: הערות + היסטוריה ===== */}
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="font-semibold flex items-center gap-2 text-sm">
+            <Activity className="h-4 w-4" />
+            פעילות ({data.notes.length + data.activity.length + data.transfers.length})
+          </h2>
         </div>
 
-        {/* ===== מעקב — תזכורות ===== */}
-        <ReminderSection
-          hasReminder={!!s.reminder_at}
-          headerSummary={
-            s.reminder_at ? (
-              <span>
-                תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
-                {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
-                  <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
-                )}
-              </span>
-            ) : (
-              <span className="opacity-70">אין תזכורת מוגדרת</span>
-            )
-          }
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-end gap-1 flex-wrap">
-              {(["day","week","month","2months","year"] as const).map((r) => (
-                <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
-                  {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
-                </button>
-              ))}
-              <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
-                className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
-              <button disabled={!customDate}
-                onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
-              {s.reminder_at && (
-                <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
-                  <BellOff className="h-3 w-3" />בטל
-                </button>
-              )}
-            </div>
-
-            <div className="text-xs space-y-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="opacity-80">שיוך התזכורת:</span>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="reminder-scope" checked={reminderScope === "all"}
-                    onChange={() => { setReminderScope("all"); setReminderAgentIds([]); }} />
-                  כל הנציגים
-                </label>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="reminder-scope" checked={reminderScope === "specific"}
-                    onChange={() => setReminderScope("specific")} />
-                  נציגים נבחרים
-                </label>
-                {reminderScope === "specific" && (
-                  <>
-                    <button type="button" onClick={() => setReminderAgentIds((agents ?? []).map((a: any) => a.id))}
-                      className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">סמן הכל</button>
-                    <button type="button" onClick={() => setReminderAgentIds([])}
-                      className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">נקה</button>
-                  </>
-                )}
+        <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
+          className="flex gap-2 mb-3 relative">
+          <div className="relative flex-1">
+            <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
+              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
+            {mentionOpen && (
+              <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
+                {mentionOptions.map((opt) => (
+                  <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
+                    className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                    <span className="text-primary">@</span>{opt.label}
+                  </button>
+                ))}
               </div>
-              {reminderScope === "specific" && (
-                <div className="flex flex-wrap gap-2 p-2 border border-input rounded-md bg-background max-h-40 overflow-auto">
-                  {(agents ?? []).map((a: any) => {
-                    const checked = reminderAgentIds.includes(a.id);
-                    return (
-                      <label key={a.id} className={`flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer ${checked ? "bg-primary text-primary-foreground border-primary" : "border-input hover:bg-accent"}`}>
-                        <input type="checkbox" className="hidden" checked={checked}
-                          onChange={(e) => setReminderAgentIds((prev) => e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id))} />
-                        {a.display_name}
-                      </label>
-                    );
-                  })}
-                  {(agents ?? []).length === 0 && <span className="opacity-70">אין נציגים זמינים</span>}
-                </div>
-              )}
-            </div>
+            )}
           </div>
-        </ReminderSection>
+          <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
+            <Send className="h-4 w-4" />
+          </button>
+        </form>
 
+        <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+          {(() => {
+            const merged = [
+              ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
+              ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
+              ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
+            ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
 
-        {/* ===== פעילות: הערות + היסטוריה ===== */}
-        <div className="mt-8 pt-6 border-t border-border">
-          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-            <h2 className="font-semibold flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              פעילות ({data.notes.length + data.activity.length + data.transfers.length})
-            </h2>
-          </div>
-
-          <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
-            className="flex gap-2 mb-4 relative">
-            <div className="relative flex-1">
-              <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-              {mentionOpen && (
-                <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
-                  {mentionOptions.map((opt) => (
-                    <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
-                      className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
-                      <span className="text-primary">@</span>{opt.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <button type="submit" className="px-3 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90">
-              <Send className="h-4 w-4" />
-            </button>
-          </form>
-
-          <div className="space-y-2 max-h-[36rem] overflow-y-auto pr-1">
-            {(() => {
-              const merged = [
-                ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
-                ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-                ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
-              ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-
-              if (merged.length === 0) {
-                return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות עדיין</p>;
-              }
-              return merged.map((row) => {
-                if (row.kind === "note") {
-                  const n = row.item;
-                  return (
-                    <div key={`n-${n.id}`} className="border border-border rounded-lg p-3 bg-background">
-                      <div className="text-sm whitespace-pre-wrap">{n.body}</div>
-                      <div className="text-xs text-muted-foreground mt-2 flex justify-between">
-                        <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{n.author_name}</span>
-                        <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
-                      </div>
-                    </div>
-                  );
-                }
-                if (row.kind === "transfer") {
-                  const t = row.item;
-                  return (
-                    <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-3">
-                      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                        <span className="font-medium text-foreground">{t.by_name}</span>
-                        <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
-                      </div>
-                      <div className="text-sm flex items-center gap-2 flex-wrap">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
-                        <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
-                        <span className="text-muted-foreground">→</span>
-                        <span className="font-medium text-sm">{t.to_name || "—"}</span>
-                      </div>
-                    </div>
-                  );
-                }
-                const a = row.item;
-                const oldDisp = a.field === "assigned_agent_id"
-                  ? (a.old_agent_name || formatValue(a.field, a.old_value))
-                  : a.field === "parent_system_id"
-                    ? (a.old_value ? (a.old_parent_name || formatValue(a.field, a.old_value)) : "ללא מערכת אב")
-                    : formatValue(a.field, a.old_value);
-                const newDisp = a.field === "assigned_agent_id"
-                  ? (a.new_agent_name || formatValue(a.field, a.new_value))
-                  : a.field === "parent_system_id"
-                    ? (a.new_value ? (a.new_parent_name || formatValue(a.field, a.new_value)) : "ללא מערכת אב")
-                    : formatValue(a.field, a.new_value);
-                const isStatus = a.field === "status";
+            if (merged.length === 0) {
+              return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות עדיין</p>;
+            }
+            return merged.map((row) => {
+              if (row.kind === "note") {
+                const n = row.item;
                 return (
-                  <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-3 hover:bg-accent/30 transition">
-                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1.5">
-                      <span className="font-medium text-foreground">{a.actor_name}</span>
-                      <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                  <div key={`n-${n.id}`} className="border border-border rounded-lg p-2.5 bg-background">
+                    <div className="text-sm whitespace-pre-wrap">{n.body}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1.5 flex justify-between">
+                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{n.author_name}</span>
+                      <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
                     </div>
-                    <div className="text-sm flex items-center gap-2 flex-wrap">
-                      {a.action === "created" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
-                      )}
-                      {a.action === "deleted" && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
-                      )}
-                      {a.action === "updated" && (
-                        <>
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
-                            {FIELD_LABELS[a.field] || a.field}
-                          </span>
-                          {isStatus ? (
-                            <>
-                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
-                              <span className="text-muted-foreground">→</span>
-                              <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
-                            </>
-                          ) : (
-                            <>
-                              <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
-                              <span className="text-muted-foreground">→</span>
-                              <span className="font-medium text-sm">{newDisp}</span>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    {isStatus ? (
-                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                        <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
-                      </div>
-                    ) : a.reason && (
-                      <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
-                        <span className="font-semibold">סיבה:</span> {a.reason}
-                      </div>
-                    )}
                   </div>
                 );
-              });
-            })()}
-          </div>
+              }
+              if (row.kind === "transfer") {
+                const t = row.item;
+                return (
+                  <div key={`t-${t.id}`} className="rounded-lg border border-border bg-background p-2.5">
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1">
+                      <span className="font-medium text-foreground">{t.by_name}</span>
+                      <span>{new Date(t.created_at).toLocaleString("he-IL")}</span>
+                    </div>
+                    <div className="text-sm flex items-center gap-2 flex-wrap">
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 text-xs font-medium">העברת נציג</span>
+                      <span className="text-muted-foreground line-through text-xs">{t.from_name || "—"}</span>
+                      <span className="text-muted-foreground">→</span>
+                      <span className="font-medium text-sm">{t.to_name || "—"}</span>
+                    </div>
+                  </div>
+                );
+              }
+              const a = row.item;
+              const oldDisp = a.field === "assigned_agent_id"
+                ? (a.old_agent_name || formatValue(a.field, a.old_value))
+                : a.field === "parent_system_id"
+                  ? (a.old_value ? (a.old_parent_name || formatValue(a.field, a.old_value)) : "ללא מערכת אב")
+                  : formatValue(a.field, a.old_value);
+              const newDisp = a.field === "assigned_agent_id"
+                ? (a.new_agent_name || formatValue(a.field, a.new_value))
+                : a.field === "parent_system_id"
+                  ? (a.new_value ? (a.new_parent_name || formatValue(a.field, a.new_value)) : "ללא מערכת אב")
+                  : formatValue(a.field, a.new_value);
+              const isStatus = a.field === "status";
+              return (
+                <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-2.5 hover:bg-accent/30 transition">
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1">
+                    <span className="font-medium text-foreground">{a.actor_name}</span>
+                    <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                  </div>
+                  <div className="text-sm flex items-center gap-2 flex-wrap">
+                    {a.action === "created" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 text-xs font-medium">נוצרה מערכת</span>
+                    )}
+                    {a.action === "deleted" && (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-900 text-xs font-medium">נמחקה</span>
+                    )}
+                    {a.action === "updated" && (
+                      <>
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-muted text-foreground text-xs font-medium">
+                          {FIELD_LABELS[a.field] || a.field}
+                        </span>
+                        {isStatus ? (
+                          <>
+                            <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.old_value as SystemStatus])}`}>{oldDisp}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className={`text-xs rounded-full px-2 py-0.5 ${toneClasses(STATUS_TONE[a.new_value as SystemStatus])}`}>{newDisp}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-muted-foreground line-through text-xs">{oldDisp}</span>
+                            <span className="text-muted-foreground">→</span>
+                            <span className="font-medium text-sm">{newDisp}</span>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                  {isStatus ? (
+                    <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                      <span className="font-semibold">סיבת שינוי הסטטוס:</span> {a.reason || "לא נרשמה סיבה"}
+                    </div>
+                  ) : a.reason && (
+                    <div className="text-xs mt-2 text-amber-900 bg-amber-50 border-r-2 border-amber-400 px-2 py-1 rounded">
+                      <span className="font-semibold">סיבה:</span> {a.reason}
+                    </div>
+                  )}
+                </div>
+              );
+            });
+          })()}
+        </div>
+      </div>
+
+      {/* ===== תזכורות + מיילים (side-by-side) ===== */}
+      <div className="grid lg:grid-cols-2 gap-4">
+        {/* תזכורות */}
+        <div className="bg-card border border-border rounded-xl p-4">
+          <ReminderSection
+            hasReminder={!!s.reminder_at}
+            headerSummary={
+              s.reminder_at ? (
+                <span>
+                  תזכורת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
+                </span>
+              ) : (
+                <span className="opacity-70">אין תזכורת</span>
+              )
+            }
+          >
+            <div className="space-y-3">
+              <div className="flex items-center justify-end gap-1 flex-wrap">
+                {(["day","week","month","2months","year"] as const).map((r) => (
+                  <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
+                    className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
+                    {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
+                  </button>
+                ))}
+                <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
+                  className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
+                <button disabled={!customDate}
+                  onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
+                  className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
+                {s.reminder_at && (
+                  <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
+                    className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
+                    <BellOff className="h-3 w-3" />בטל
+                  </button>
+                )}
+              </div>
+              <div className="text-xs space-y-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className="opacity-80">שיוך:</span>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="radio" name="reminder-scope" checked={reminderScope === "all"}
+                      onChange={() => { setReminderScope("all"); setReminderAgentIds([]); }} />
+                    כולם
+                  </label>
+                  <label className="flex items-center gap-1 cursor-pointer">
+                    <input type="radio" name="reminder-scope" checked={reminderScope === "specific"}
+                      onChange={() => setReminderScope("specific")} />
+                    נבחרים
+                  </label>
+                </div>
+                {reminderScope === "specific" && (
+                  <div className="flex flex-wrap gap-1.5 p-2 border border-input rounded-md bg-background max-h-32 overflow-auto">
+                    {(agents ?? []).map((a: any) => {
+                      const checked = reminderAgentIds.includes(a.id);
+                      return (
+                        <label key={a.id} className={`flex items-center gap-1 px-2 py-0.5 rounded-md border cursor-pointer text-xs ${checked ? "bg-primary text-primary-foreground border-primary" : "border-input hover:bg-accent"}`}>
+                          <input type="checkbox" className="hidden" checked={checked}
+                            onChange={(e) => setReminderAgentIds((prev) => e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id))} />
+                          {a.display_name}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          </ReminderSection>
         </div>
 
-        {/* ===== מיילים: פאנל נפרד, קטן כברירת מחדל ומתרחב כשיש תוכן ===== */}
-        <div className="mt-6 pt-6 border-t border-border">
+        {/* מיילים */}
+        <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="font-semibold flex items-center gap-2">
+            <h2 className="font-semibold flex items-center gap-2 text-sm">
               <Mail className="h-4 w-4" />מיילים ({emailThread?.length ?? 0})
             </h2>
             <button type="button" onClick={openNewEmail}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-fuchsia-600 text-white text-xs font-medium hover:bg-fuchsia-700">
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-fuchsia-600 text-white text-xs font-medium hover:bg-fuchsia-700">
               <Mail className="h-3.5 w-3.5" />שלח מייל
             </button>
           </div>
 
           {(!emailThread || emailThread.length === 0) ? (
-            <div className="rounded-lg border border-dashed border-border p-4 text-center text-sm text-muted-foreground">
+            <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
               אין עדיין מיילים בכרטיסייה הזו
             </div>
           ) : (
-            <div className="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
+            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
               {[...emailThread].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((m: any) => {
                 const isOutbound = m.direction === "outbound";
                 return (
                   <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[85%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
+                    <div className={`max-w-[92%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
                       <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
                         <span className="font-medium flex items-center gap-1">
                           <Mail className="h-3 w-3" />
@@ -1076,6 +1054,7 @@ function SystemDetail() {
           )}
         </div>
       </div>
+
 
       {composeOpen && (
         <div className="fixed inset-0 z-40 bg-black/40 flex items-center justify-center p-4" onClick={() => setComposeOpen(false)}>

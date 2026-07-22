@@ -66,6 +66,7 @@ function ChartsPage() {
         <HandlingSpeedChart />
         <HandledRatioChart />
       </div>
+      <StatusFunnelChart />
       <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} large />
     </div>
   );

@@ -1028,9 +1028,14 @@ function SystemDetail() {
             <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
               {[...emailThread].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((m: any) => {
                 const isOutbound = m.direction === "outbound";
+                const isExpanded = expandedMessages.has(m.id);
+                const body = m.body ?? "";
+                const isLong = body.length > 220;
+                const shownBody = isExpanded || !isLong ? body : body.slice(0, 220) + "…";
+                const replyTo = m.direction === "outbound" ? (m.to_address || "") : extractEmail(m.from_address || "");
                 return (
                   <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[92%] rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
+                    <div className={`max-w-[92%] w-full rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
                       <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
                         <span className="font-medium flex items-center gap-1">
                           <Mail className="h-3 w-3" />
@@ -1039,9 +1044,20 @@ function SystemDetail() {
                         <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
                       </div>
                       {m.subject && <div className="text-xs font-semibold mb-0.5">{m.subject}</div>}
-                      <div className="text-sm whitespace-pre-wrap">{m.body}</div>
-                      <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-black/5">
-                        <button type="button" onClick={() => openReplyEmail(m)}
+                      <div className="text-sm whitespace-pre-wrap">{shownBody}</div>
+                      <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-black/5 flex-wrap">
+                        {isLong && (
+                          <button type="button"
+                            onClick={() => setExpandedMessages((prev) => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n; })}
+                            className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
+                            {isExpanded ? "הצג פחות" : "צפייה"}
+                          </button>
+                        )}
+                        <button type="button"
+                          onClick={() => {
+                            if (inlineReplyFor === m.id) { setInlineReplyFor(null); return; }
+                            setInlineReplyFor(m.id); setInlineReplyText("");
+                          }}
                           className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
                           <CornerUpRight className="h-3 w-3 -scale-x-100" />השב
                         </button>
@@ -1049,7 +1065,41 @@ function SystemDetail() {
                           className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
                           <CornerUpRight className="h-3 w-3" />העבר
                         </button>
+                        {!isOutbound && (
+                          <button type="button" onClick={() => openReplyEmail(m)}
+                            className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1 mr-auto"
+                            title="פתח בחלון מלא">
+                            עריכה מורחבת
+                          </button>
+                        )}
                       </div>
+                      {inlineReplyFor === m.id && (
+                        <div className="mt-2 space-y-1.5">
+                          <textarea
+                            value={inlineReplyText}
+                            onChange={(e) => setInlineReplyText(e.target.value)}
+                            placeholder={`השב אל ${replyTo || "…"}`}
+                            rows={3}
+                            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button type="button" onClick={() => { setInlineReplyFor(null); setInlineReplyText(""); }}
+                              className="text-[11px] px-2 py-1 rounded-md hover:bg-black/5">בטל</button>
+                            <button type="button"
+                              disabled={sendEmailMut.isPending || !inlineReplyText.trim() || !replyTo}
+                              onClick={() => {
+                                sendEmailMut.mutate({
+                                  to: replyTo,
+                                  subject: m.subject ? (m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`) : "Re: ",
+                                  body: inlineReplyText.trim(),
+                                  gmail_thread_id: m.gmail_thread_id ?? null,
+                                }, { onSuccess: () => { setInlineReplyFor(null); setInlineReplyText(""); } });
+                              }}
+                              className="text-[11px] px-2.5 py-1 rounded-md bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-50">
+                              {sendEmailMut.isPending ? "שולח…" : "שלח"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );

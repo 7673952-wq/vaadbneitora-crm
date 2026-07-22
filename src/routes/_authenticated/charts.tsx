@@ -7,6 +7,7 @@ import { STATUS_OPTIONS } from "@/lib/status";
 import { ChartGrid } from "@/components/ChartGrid";
 import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
 import { HandledRatioChart } from "@/components/HandledRatioChart";
+import { StatusFunnelChart } from "@/components/StatusFunnelChart";
 import { ArrowRight } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/charts")({
@@ -65,6 +66,7 @@ function ChartsPage() {
         <HandlingSpeedChart />
         <HandledRatioChart />
       </div>
+      <StatusFunnelChart />
       <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} large />
     </div>
   );

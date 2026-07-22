@@ -20,6 +20,8 @@ import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail } from "lucide-re
 import { ChartGrid } from "@/components/ChartGrid";
 import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
 import { HandledRatioChart } from "@/components/HandledRatioChart";
+import { StatusFunnelChart } from "@/components/StatusFunnelChart";
+import { SavedViewsBar } from "@/components/SavedViewsBar";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
 import { sanitizeCell, sanitizeRows, sanitizeMatrix } from "@/lib/csv-safe";
@@ -639,6 +641,7 @@ function Dashboard() {
             <HandlingSpeedChart />
             <HandledRatioChart />
           </div>
+          <StatusFunnelChart />
 
           {(chartData.length > 0 || agentChartData.length > 0) && (
             <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
@@ -703,6 +706,19 @@ function Dashboard() {
           </button>
         )}
         <div className="ms-auto flex items-center gap-2">
+          <SavedViewsBar
+            current={{ status, secondaryStatus, agentId, period, dateFrom, dateTo, search }}
+            onApply={(f) => {
+              setStatus(f.status ?? "");
+              setSecondaryStatus(f.secondaryStatus ?? "");
+              setAgentId(f.agentId ?? "");
+              setPeriod((f.period as Period) ?? "");
+              setDateFrom(f.dateFrom ?? "");
+              setDateTo(f.dateTo ?? "");
+              setSearch(f.search ?? "");
+              setPage(1);
+            }}
+          />
           {!me?.isViewer && (
             <button
               onClick={() => { setSelectMode((v) => !v); if (selectMode) clearSelection(); }}

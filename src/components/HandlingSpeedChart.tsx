@@ -17,10 +17,11 @@ const PERIODS: Array<{ value: "day" | "3days" | "week" | "month" | "year"; label
 
 export function HandlingSpeedChart() {
   const [period, setPeriod] = useState<"day" | "3days" | "week" | "month" | "year">("week");
+  const [compare, setCompare] = useState(false);
   const trendFn = useServerFn(getHandlingSpeedTrend);
   const { data, isLoading } = useQuery({
-    queryKey: ["handlingSpeed", period],
-    queryFn: () => trendFn({ data: { period } }),
+    queryKey: ["handlingSpeed", period, compare],
+    queryFn: () => trendFn({ data: { period, compareToPrevious: compare } }),
     staleTime: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -29,6 +30,8 @@ export function HandlingSpeedChart() {
   const totalHandled = rows.reduce((sum, r) => sum + (r.throughput ?? 0), 0);
   const weighted = rows.reduce((sum, r) => sum + (r.avgHours ?? 0) * (r.throughput ?? 0), 0);
   const overallAvg = totalHandled > 0 ? (weighted / totalHandled).toFixed(1) : "—";
+  const totalPrev = rows.reduce((s, r: any) => s + (r.throughputPrev ?? 0), 0);
+  const deltaPct = compare && totalPrev > 0 ? Math.round(((totalHandled - totalPrev) / totalPrev) * 100) : null;
 
   return (
     <div className="bg-gradient-to-br from-sky-50/50 via-card to-card border border-border rounded-2xl shadow-sm hover:shadow-md transition p-4">
@@ -40,15 +43,27 @@ export function HandlingSpeedChart() {
           מהירות טיפול
           <span className="text-xs text-muted-foreground font-normal">
             · {totalHandled} מערכות טופלו · ממוצע {overallAvg} שעות
+            {deltaPct !== null && (
+              <span className={`ms-1 font-semibold ${deltaPct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                ({deltaPct >= 0 ? "+" : ""}{deltaPct}% מול תקופה קודמת)
+              </span>
+            )}
           </span>
         </div>
-        <div className="flex rounded-md border border-input bg-white overflow-hidden">
-          {PERIODS.map((p) => (
-            <button key={p.value} onClick={() => setPeriod(p.value)}
-              className={`text-xs px-2.5 py-1.5 transition ${period === p.value ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-accent"}`}>
-              {p.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <button onClick={() => setCompare((v) => !v)}
+            className={`text-xs px-2 py-1.5 rounded-md border ${compare ? "bg-indigo-600 text-white border-indigo-600" : "border-input bg-white hover:bg-accent"}`}
+            title="השווה לתקופה הקודמת">
+            השוואה
+          </button>
+          <div className="flex rounded-md border border-input bg-white overflow-hidden">
+            {PERIODS.map((p) => (
+              <button key={p.value} onClick={() => setPeriod(p.value)}
+                className={`text-xs px-2.5 py-1.5 transition ${period === p.value ? "bg-emerald-600 text-white" : "text-muted-foreground hover:bg-accent"}`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <div className="h-72">
@@ -81,6 +96,12 @@ export function HandlingSpeedChart() {
               <Area yAxisId="count" type="monotone" dataKey="throughput" fill="url(#speed-count-grad)" stroke="none" legendType="none" />
               <Line yAxisId="hours" type="monotone" dataKey="avgHours" name="שעות ממוצע לטיפול" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
               <Line yAxisId="count" type="monotone" dataKey="throughput" name="מערכות שנסגרו" stroke="#6366f1" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+              {compare && (
+                <>
+                  <Line yAxisId="hours" type="monotone" dataKey="avgHoursPrev" name="שעות (תקופה קודמת)" stroke="#10b981" strokeDasharray="5 4" strokeWidth={2} dot={false} />
+                  <Line yAxisId="count" type="monotone" dataKey="throughputPrev" name="מערכות (תקופה קודמת)" stroke="#6366f1" strokeDasharray="5 4" strokeWidth={2} dot={false} />
+                </>
+              )}
             </LineChart>
           </ResponsiveContainer>
         )}

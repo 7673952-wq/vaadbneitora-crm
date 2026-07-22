@@ -53,10 +53,11 @@ export function HandledRatioChart() {
   const [openedPeriod, setOpenedPeriod] = useState<Period>("week");
   const [withinDays, setWithinDays] = useState<Within>(3);
   const [hovering, setHovering] = useState(false);
+  const [compare, setCompare] = useState(false);
   const fn = useServerFn(getHandledRatio);
   const { data, isLoading } = useQuery({
-    queryKey: ["handledRatio", openedPeriod, withinDays],
-    queryFn: () => fn({ data: { openedPeriod, withinDays } }),
+    queryKey: ["handledRatio", openedPeriod, withinDays, compare],
+    queryFn: () => fn({ data: { openedPeriod, withinDays, compareToPrevious: compare } }),
     staleTime: 60_000,
     placeholderData: (prev) => prev,
   });
@@ -65,6 +66,9 @@ export function HandledRatioChart() {
   const notHandled = data?.notHandledInTime ?? 0;
   const total = data?.total ?? 0;
   const pct = total > 0 ? Math.round((handled / total) * 100) : 0;
+  const prev = data?.previous ?? null;
+  const prevPct = prev && prev.total > 0 ? Math.round((prev.handledInTime / prev.total) * 100) : null;
+  const deltaPct = prevPct !== null ? pct - prevPct : null;
 
   const chartData = [
     { name: `טופלו בזמן`, value: handled, color: "#10b981" },
@@ -83,8 +87,18 @@ export function HandledRatioChart() {
           אחוז מערכות שטופלו בזמן
           <span className="text-xs text-muted-foreground font-normal">
             · {handled}/{total} · {pct}%
+            {deltaPct !== null && (
+              <span className={`ms-1 font-semibold ${deltaPct >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                ({deltaPct >= 0 ? "+" : ""}{deltaPct}נ.א מול {prevPct}% תקופה קודמת)
+              </span>
+            )}
           </span>
         </div>
+        <button onClick={() => setCompare((v) => !v)}
+          className={`text-xs px-2 py-1.5 rounded-md border ${compare ? "bg-indigo-600 text-white border-indigo-600" : "border-input bg-white hover:bg-accent"}`}
+          title="השווה לתקופה הקודמת">
+          השוואה
+        </button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 mb-3 text-xs">

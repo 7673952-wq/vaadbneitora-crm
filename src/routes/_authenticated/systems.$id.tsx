@@ -724,61 +724,57 @@ function SystemDetail() {
       })()}
 
       {/* ===== פרטים ===== */}
-      <div className="bg-card border border-border rounded-2xl p-6">
-        <h2 className="font-semibold flex items-center gap-2 mb-4"><Info className="h-4 w-4" />פרטים</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className="text-sm font-medium block mb-2">סטטוס</label>
-            <select value={s.status} onChange={(e) => {
-              const newStatus = e.target.value;
-              if (newStatus === s.status) return;
-              const isRootWithChildren = !s.parent_system_id && (data?.children?.length ?? 0) > 0;
-              let apply_to_children: boolean | undefined;
-              if (isRootWithChildren) {
-                apply_to_children = window.confirm(
-                  `להחיל את שינוי הסטטוס גם על ${data!.children.length} תתי-המערכות?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית`
-                );
-              }
-              if (!statusRequiresReason(newStatus)) {
-                updateMut.mutate({ data: { id, status: newStatus, ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
-                return;
-              }
-              const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
-              if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
-              updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim(), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
-            }}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
-              {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-
-          <div>
-            <label className="text-sm font-medium block mb-2">סטטוס משני (אופציונלי)</label>
+      <div className="bg-card border border-border rounded-xl p-4">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <h2 className="font-semibold flex items-center gap-2 text-sm"><Info className="h-4 w-4" />פרטים</h2>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <label className="text-[11px] text-muted-foreground">סטטוס משני:</label>
             <select
               value={s.secondary_status || ""}
               onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
+              className="rounded-md border border-input bg-background px-2 py-1 text-xs">
               <option value="">— ללא —</option>
               {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
-            <p className="text-[11px] text-muted-foreground mt-1">מוצג רק בכרטיס המערכת, לא בדשבורד.</p>
+            {me?.isAdmin && (
+              !isSub ? (
+                <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
+                  className="text-[11px] px-2 py-1 border border-input rounded-md bg-background hover:bg-accent">
+                  הפוך לתת-מערכת
+                </button>
+              ) : (
+                <button onClick={() => parentMut.mutate({ data: { id, parent_system_id: null } })}
+                  className="text-[11px] px-2 py-1 border border-input rounded-md bg-background hover:bg-accent">
+                  הפוך למערכת ראשית
+                </button>
+              )
+            )}
           </div>
-
-          <div>
-            <label className="text-sm font-medium block mb-2">נציג מטפל</label>
-            <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })}
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground">
-              <option value="">— לא משויך —</option>
-              {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-            </select>
+        </div>
+        {showParentPick && !isSub && (
+          <div className="mb-3">
+            <ParentPicker
+              mains={mains ?? []}
+              excludeId={id}
+              value={parentChoice}
+              onChange={setParentChoice}
+              onConfirm={() => parentMut.mutate({ data: { id, parent_system_id: parentChoice } })}
+              onCancel={() => setShowParentPick(false)}
+            />
           </div>
+        )}
+        <div className="grid md:grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium block mb-2">טלפון לחיוג</label>
+            <label className="text-xs font-medium block mb-1 text-muted-foreground">טלפון לחיוג</label>
             <input
               defaultValue={s.phone || ""}
               onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.phone || "")) updateMut.mutate({ data: { id, phone: v || null } }); }}
               placeholder="מספר טלפון"
-              className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground" />
+              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm" />
+          </div>
+          <div>
+            <label className="text-xs font-medium block mb-1 text-muted-foreground">דוא"ל</label>
+            <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
           </div>
           <div className="md:col-span-2">
             <CallerPhonesEditor
@@ -796,125 +792,18 @@ function SystemDetail() {
               sending={voiceMut.isPending}
             />
           </div>
-
-
-          <div>
-            <label className="text-sm font-medium block mb-2">דוא"ל</label>
-            <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
-          </div>
           <div className="md:col-span-2">
             <AdditionalEmailsEditor
               emails={((s as any).additional_emails ?? []) as string[]}
               onChange={(next) => updateMut.mutate({ data: { id, additional_emails: next } })}
             />
           </div>
-          {me?.isAdmin && (
-            <div>
-              <label className="text-sm font-medium block mb-2">מבנה</label>
-              <div className="flex items-center gap-2 flex-wrap">
-                {!isSub ? (
-                  <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
-                    className="text-xs px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent">
-                    הפוך לתת-מערכת
-                  </button>
-                ) : (
-                  <button onClick={() => parentMut.mutate({ data: { id, parent_system_id: null } })}
-                    className="text-xs px-3 py-2 border border-input rounded-lg bg-background hover:bg-accent">
-                    הפוך למערכת ראשית
-                  </button>
-                )}
-                {showParentPick && !isSub && (
-                  <ParentPicker
-                    mains={mains ?? []}
-                    excludeId={id}
-                    value={parentChoice}
-                    onChange={setParentChoice}
-                    onConfirm={() => parentMut.mutate({ data: { id, parent_system_id: parentChoice } })}
-                    onCancel={() => setShowParentPick(false)}
-                  />
-                )}
-              </div>
-            </div>
-          )}
         </div>
+      </div>
 
-        {/* ===== מעקב — תזכורות ===== */}
-        <ReminderSection
-          hasReminder={!!s.reminder_at}
-          headerSummary={
-            s.reminder_at ? (
-              <span>
-                תזכורת מתוכננת ל-<strong>{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>
-                {((s as any).reminder_agent_ids?.length ?? 0) > 0 && (
-                  <span className="opacity-80"> · עבור: {((s as any).reminder_agent_ids as string[]).map((aid) => (agents ?? []).find((a: any) => a.id === aid)?.display_name).filter(Boolean).join(", ")}</span>
-                )}
-              </span>
-            ) : (
-              <span className="opacity-70">אין תזכורת מוגדרת</span>
-            )
-          }
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-end gap-1 flex-wrap">
-              {(["day","week","month","2months","year"] as const).map((r) => (
-                <button key={r} onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: r, agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground">
-                  {r === "day" ? "מחר" : r === "week" ? "+שבוע" : r === "month" ? "+חודש" : r === "2months" ? "+חודשיים" : "+שנה"}
-                </button>
-              ))}
-              <input type="datetime-local" value={customDate} onChange={(e) => setCustomDate(e.target.value)}
-                className="text-xs px-2 py-1 border border-input rounded-md bg-background text-foreground" />
-              <button disabled={!customDate}
-                onClick={() => reminderMut.mutate({ data: { system_id: id, repeat: "custom", custom_date: new Date(customDate).toISOString(), agent_ids: reminderScope === "specific" ? reminderAgentIds : [] } })}
-                className="text-xs px-2 py-1 bg-primary text-primary-foreground rounded-md disabled:opacity-50">קבע</button>
-              {s.reminder_at && (
-                <button onClick={() => dismissMut.mutate({ data: { system_id: id } })}
-                  className="text-xs px-2 py-1 border border-input rounded-md bg-background hover:bg-accent text-foreground flex items-center gap-1">
-                  <BellOff className="h-3 w-3" />בטל
-                </button>
-              )}
-            </div>
+      {/* ===== פעילות ===== */}
+      <div className="bg-card border border-border rounded-xl p-4">
 
-            <div className="text-xs space-y-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <span className="opacity-80">שיוך התזכורת:</span>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="reminder-scope" checked={reminderScope === "all"}
-                    onChange={() => { setReminderScope("all"); setReminderAgentIds([]); }} />
-                  כל הנציגים
-                </label>
-                <label className="flex items-center gap-1 cursor-pointer">
-                  <input type="radio" name="reminder-scope" checked={reminderScope === "specific"}
-                    onChange={() => setReminderScope("specific")} />
-                  נציגים נבחרים
-                </label>
-                {reminderScope === "specific" && (
-                  <>
-                    <button type="button" onClick={() => setReminderAgentIds((agents ?? []).map((a: any) => a.id))}
-                      className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">סמן הכל</button>
-                    <button type="button" onClick={() => setReminderAgentIds([])}
-                      className="px-2 py-0.5 border border-input rounded-md bg-background hover:bg-accent">נקה</button>
-                  </>
-                )}
-              </div>
-              {reminderScope === "specific" && (
-                <div className="flex flex-wrap gap-2 p-2 border border-input rounded-md bg-background max-h-40 overflow-auto">
-                  {(agents ?? []).map((a: any) => {
-                    const checked = reminderAgentIds.includes(a.id);
-                    return (
-                      <label key={a.id} className={`flex items-center gap-1 px-2 py-1 rounded-md border cursor-pointer ${checked ? "bg-primary text-primary-foreground border-primary" : "border-input hover:bg-accent"}`}>
-                        <input type="checkbox" className="hidden" checked={checked}
-                          onChange={(e) => setReminderAgentIds((prev) => e.target.checked ? [...prev, a.id] : prev.filter((x) => x !== a.id))} />
-                        {a.display_name}
-                      </label>
-                    );
-                  })}
-                  {(agents ?? []).length === 0 && <span className="opacity-70">אין נציגים זמינים</span>}
-                </div>
-              )}
-            </div>
-          </div>
-        </ReminderSection>
 
 
         {/* ===== פעילות: הערות + היסטוריה ===== */}

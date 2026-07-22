@@ -1225,8 +1225,11 @@ export const ensureCategoryRoot = createServerFn({ method: "POST" })
 // hours from system creation to that first handled transition (avgHours).
 export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { period: string }) =>
-    z.object({ period: z.enum(["day", "3days", "week", "month", "year"]) }).parse(d))
+  .inputValidator((d: { period: string; compareToPrevious?: boolean }) =>
+    z.object({
+      period: z.enum(["day", "3days", "week", "month", "year"]),
+      compareToPrevious: z.boolean().optional(),
+    }).parse(d))
   .handler(async ({ data, context }) => {
     // Bucketing config per period.
     const cfg: Record<string, { hours: number; bucketMs: number; label: (d: Date) => string }> = {
@@ -1237,102 +1240,89 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
       year:   { hours: 24 * 365,  bucketMs: 7 * 24 * 60 * 60 * 1000,    label: (d) => `${d.getDate()}/${d.getMonth()+1}` },
     };
     const c = cfg[data.period];
-    const now = Date.now();
-    const from = new Date(now - c.hours * 60 * 60 * 1000);
 
-    // Discover which status keys are "handled".
     const { data: statusRows } = await context.supabase
       .from("status_settings").select("status_key, is_handled");
     const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
-    // Fallback defaults if table is empty — must be actual completed/terminal
-    // statuses, not "to do" instruction statuses (e.g. "block_from_root" means
-    // "TO block from root", not "blocked"; the completed counterpart is
-    // "blocked_from_root").
     if (handledKeys.size === 0) {
       ["open", "closed", "blocked_from_root", "sent_to_yosela", "sent_to_committee", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
     }
-
-    // First status-change to a handled value per system in the window.
-    const { data: logs } = await context.supabase
-      .from("system_activity_log")
-      .select("system_id, new_value, created_at")
-      .eq("field", "status")
-      .gte("created_at", from.toISOString())
-      .order("created_at", { ascending: true })
-      .limit(10000);
-    const firstHandledBySystem = new Map<string, string>();
-    for (const l of (logs ?? [])) {
-      if (!handledKeys.has(l.new_value as string)) continue;
-      if (firstHandledBySystem.has(l.system_id as string)) continue;
-      firstHandledBySystem.set(l.system_id as string, l.created_at as string);
-    }
-
-    // Fallback: a system can be sitting in a "handled" status today without
-    // ever having a logged status-CHANGE row for it — e.g. it was imported
-    // or created directly in that final status, so the UPDATE trigger that
-    // writes to system_activity_log never fired for it. Without this such
-    // systems are invisible to the log-based query above even though they
-    // are, in fact, handled. Mirrors the same fallback getHandledRatio uses.
-    // We only count it if updated_at is meaningfully after created_at —
-    // otherwise it's indistinguishable from "just created/imported and
-    // never touched", which would fabricate a fake ~0-hour handle and, at
-    // bulk-import scale, badly skew the average toward 0.
     const MIN_REAL_GAP_MS = 2 * 60_000;
-    const handledArr = Array.from(handledKeys);
-    if (handledArr.length > 0) {
-      const { data: curHandled } = await context.supabase
-        .from("systems")
-        .select("id, updated_at, created_at")
-        .in("status", handledArr as any)
-        .gte("updated_at", from.toISOString())
+
+    async function computeWindow(fromTs: number, toTs: number) {
+      const from = new Date(fromTs), to = new Date(toTs);
+      const { data: logs } = await context.supabase
+        .from("system_activity_log")
+        .select("system_id, new_value, created_at")
+        .eq("field", "status")
+        .gte("created_at", from.toISOString())
+        .lte("created_at", to.toISOString())
+        .order("created_at", { ascending: true })
         .limit(10000);
-      for (const s of (curHandled ?? []) as any[]) {
-        if (firstHandledBySystem.has(s.id)) continue;
-        const gap = new Date(s.updated_at).getTime() - new Date(s.created_at).getTime();
-        if (gap < MIN_REAL_GAP_MS) continue;
-        firstHandledBySystem.set(s.id, s.updated_at);
+      const firstHandledBySystem = new Map<string, string>();
+      for (const l of (logs ?? []) as any[]) {
+        if (!handledKeys.has(l.new_value)) continue;
+        if (firstHandledBySystem.has(l.system_id)) continue;
+        firstHandledBySystem.set(l.system_id, l.created_at);
       }
+      const handledArr = Array.from(handledKeys);
+      if (handledArr.length > 0) {
+        const { data: curHandled } = await context.supabase
+          .from("systems").select("id, updated_at, created_at")
+          .in("status", handledArr as any)
+          .gte("updated_at", from.toISOString()).lte("updated_at", to.toISOString())
+          .limit(10000);
+        for (const s of (curHandled ?? []) as any[]) {
+          if (firstHandledBySystem.has(s.id)) continue;
+          const gap = new Date(s.updated_at).getTime() - new Date(s.created_at).getTime();
+          if (gap < MIN_REAL_GAP_MS) continue;
+          firstHandledBySystem.set(s.id, s.updated_at);
+        }
+      }
+      const systemIds = Array.from(firstHandledBySystem.keys());
+      const createdMap = new Map<string, string>();
+      if (systemIds.length > 0) {
+        const idChunks: string[][] = [];
+        for (let i = 0; i < systemIds.length; i += 500) idChunks.push(systemIds.slice(i, i + 500));
+        const chunkResults = await Promise.all(idChunks.map((chunk) =>
+          context.supabase.from("systems").select("id, created_at").in("id", chunk)));
+        for (const { data: sys, error: sysErr } of chunkResults) {
+          if (sysErr) continue;
+          for (const s of (sys ?? [])) createdMap.set(s.id as string, s.created_at as string);
+        }
+      }
+      const buckets = new Map<number, { count: number; totalHours: number; withDuration: number }>();
+      const startBucket = Math.floor(fromTs / c.bucketMs) * c.bucketMs;
+      for (let t = startBucket; t <= toTs; t += c.bucketMs) buckets.set(t, { count: 0, totalHours: 0, withDuration: 0 });
+      for (const [sid, handledAtStr] of firstHandledBySystem.entries()) {
+        const handledAt = new Date(handledAtStr).getTime();
+        const bkt = Math.floor(handledAt / c.bucketMs) * c.bucketMs;
+        const b = buckets.get(bkt); if (!b) continue;
+        b.count += 1;
+        const createdAtStr = createdMap.get(sid);
+        if (!createdAtStr) continue;
+        const hours = Math.max(0, (handledAt - new Date(createdAtStr).getTime()) / 3600_000);
+        b.totalHours += hours;
+        b.withDuration += 1;
+      }
+      return Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]);
     }
 
-    // Look up each handled system's created_at to compute duration. Chunked
-    // + parallel: a single .in() call with 1000+ ids can build a request URL
-    // long enough to be rejected by the server, which previously failed
-    // silently and left createdMap empty — forcing every bucket's average
-    // down to 0 regardless of the real data.
-    const systemIds = Array.from(firstHandledBySystem.keys());
-    let createdMap = new Map<string, string>();
-    if (systemIds.length > 0) {
-      const idChunks: string[][] = [];
-      for (let i = 0; i < systemIds.length; i += 500) idChunks.push(systemIds.slice(i, i + 500));
-      const chunkResults = await Promise.all(idChunks.map((chunk) =>
-        context.supabase.from("systems").select("id, created_at").in("id", chunk),
-      ));
-      for (const { data: sys, error: sysErr } of chunkResults) {
-        if (sysErr) continue;
-        for (const s of (sys ?? [])) createdMap.set(s.id as string, s.created_at as string);
-      }
-    }
+    const now = Date.now();
+    const windowMs = c.hours * 3600_000;
+    const curr = await computeWindow(now - windowMs, now);
+    const prev = data.compareToPrevious ? await computeWindow(now - 2 * windowMs, now - windowMs) : [];
 
-    // Bucket
-    const buckets = new Map<number, { count: number; totalHours: number; withDuration: number }>();
-    const startBucket = Math.floor(from.getTime() / c.bucketMs) * c.bucketMs;
-    for (let t = startBucket; t <= now; t += c.bucketMs) buckets.set(t, { count: 0, totalHours: 0, withDuration: 0 });
-    for (const [sid, handledAtStr] of firstHandledBySystem.entries()) {
-      const handledAt = new Date(handledAtStr).getTime();
-      const bkt = Math.floor(handledAt / c.bucketMs) * c.bucketMs;
-      const b = buckets.get(bkt); if (!b) continue;
-      b.count += 1; // always counts toward throughput
-      const createdAtStr = createdMap.get(sid);
-      if (!createdAtStr) continue; // unknown creation time — exclude from the average instead of silently counting as 0h
-      const hours = Math.max(0, (handledAt - new Date(createdAtStr).getTime()) / 3600_000);
-      b.totalHours += hours;
-      b.withDuration += 1;
-    }
-    return Array.from(buckets.entries()).sort((a, b) => a[0] - b[0]).map(([t, v]) => ({
-      bucket: c.label(new Date(t)),
-      throughput: v.count,
-      avgHours: v.withDuration > 0 ? Number((v.totalHours / v.withDuration).toFixed(1)) : 0,
-    }));
+    return curr.map(([t, v], i) => {
+      const p = prev[i]?.[1];
+      return {
+        bucket: c.label(new Date(t)),
+        throughput: v.count,
+        avgHours: v.withDuration > 0 ? Number((v.totalHours / v.withDuration).toFixed(1)) : 0,
+        throughputPrev: p?.count ?? null,
+        avgHoursPrev: p && p.withDuration > 0 ? Number((p.totalHours / p.withDuration).toFixed(1)) : null,
+      };
+    });
   });
 
 // % of systems that were HANDLED within `withinDays` of being opened, among

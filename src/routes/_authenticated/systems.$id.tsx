@@ -484,16 +484,33 @@ function SystemDetail() {
 
       {(() => {
         const cardTone = statusCardClasses(s.status);
-        const accentBorder = cardTone.split(" ").find((c) => /^border-[a-z]+-\d+$/.test(c)) ?? "border-border";
-        const btnBase = "inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium rounded-md transition";
-        const iconBtn = "inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-accent transition";
+        const btnBase = "inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-md transition";
+        const iconBtn = "inline-flex items-center justify-center h-8 w-8 rounded-md border border-white/70 bg-white/70 text-foreground hover:bg-white transition";
+        const chip = "rounded-md border border-white/70 bg-white/80 px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary";
+        const changeStatus = (newStatus: string) => {
+          if (newStatus === s.status) return;
+          const isRootWithChildren = !s.parent_system_id && (data?.children?.length ?? 0) > 0;
+          let apply_to_children: boolean | undefined;
+          if (isRootWithChildren) {
+            apply_to_children = window.confirm(
+              `להחיל את שינוי הסטטוס גם על ${data!.children.length} תתי-המערכות?\n\nאישור = לשנות גם את התתי-מערכת\nביטול = לשנות רק את המערכת הראשית`
+            );
+          }
+          if (!statusRequiresReason(newStatus)) {
+            updateMut.mutate({ data: { id, status: newStatus, ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
+            return;
+          }
+          const reason = window.prompt("סיבת שינוי הסטטוס (חובה):", "");
+          if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
+          updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim(), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
+        };
         return (
-          <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-            <div className="flex flex-col lg:flex-row lg:items-stretch">
-              {/* Title zone with status accent on the right (RTL start) */}
-              <div className={`flex-1 min-w-0 border-r-4 ${accentBorder} p-5`}>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className={`text-[11px] rounded-full px-2.5 py-0.5 font-medium ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
+          <div className={`border-2 rounded-xl overflow-hidden shadow-sm ${cardTone}`}>
+            <div className="p-3 flex items-start justify-between gap-3 flex-wrap">
+              {/* Title zone */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[11px] rounded-full px-2.5 py-0.5 font-semibold ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
                     {STATUS_LABEL[s.status as SystemStatus]}
                   </span>
                   {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
@@ -501,68 +518,75 @@ function SystemDetail() {
                     <input
                       defaultValue={s.system_code || ""}
                       onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
-                      className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5 border border-border w-36 focus:outline-none focus:border-primary"
+                      className="text-[11px] font-mono bg-white/70 rounded px-2 py-0.5 border border-white/70 w-32 focus:outline-none focus:border-primary"
                       title="מזהה מערכת"
                     />
                   ) : (
-                    <span className="text-xs font-mono text-muted-foreground bg-muted/40 rounded px-2 py-0.5">{s.system_code}</span>
+                    <span className="text-[11px] font-mono bg-white/70 rounded px-2 py-0.5">{s.system_code}</span>
                   )}
                   {!isSub && (me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) && (
-                    <label className="flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5 cursor-pointer"
+                    <label className="flex items-center gap-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5 cursor-pointer"
                       title="בהודעה קולית על סיום הפניה יישלח מספר המערכת הפוך וללא קידומת 0">
                       <input type="checkbox" checked={!!s.is_blocking_number}
                         onChange={(e) => updateMut.mutate({ data: { id, is_blocking_number: e.target.checked } })}
                         className="h-3 w-3" />
-                      מספר חסימה
+                      חסימה
                     </label>
+                  )}
+                  {s.created_at && (
+                    <span className="text-[10px] opacity-70 mr-auto">
+                      {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+                    </span>
                   )}
                 </div>
                 {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
                   <input
                     defaultValue={s.name || ""}
                     onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
-                    className="text-2xl md:text-3xl font-bold tracking-tight mt-2 bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none w-full"
+                    className="text-lg md:text-xl font-bold tracking-tight mt-1.5 bg-transparent border-b border-transparent hover:border-white/60 focus:border-primary focus:outline-none w-full"
                   />
                 ) : (
-                  <h1 className="text-2xl md:text-3xl font-bold tracking-tight mt-2 truncate">{s.name}</h1>
+                  <h1 className="text-lg md:text-xl font-bold tracking-tight mt-1.5 truncate">{s.name}</h1>
                 )}
-                <div className="mt-2 flex items-center gap-x-4 gap-y-1 flex-wrap text-xs text-muted-foreground">
-                  <span>נציג: <span className="font-medium text-foreground">{s.agent_name || "לא משויך"}</span></span>
-                  {s.created_at && (
-                    <span>
-                      נפתחה: <span className="font-medium text-foreground">{new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}</span>
-                    </span>
-                  )}
+                {/* Inline status + agent selects */}
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  <select value={s.status} onChange={(e) => changeStatus(e.target.value)} className={chip} title="סטטוס">
+                    {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })} className={chip} title="נציג מטפל">
+                    <option value="">— לא משויך —</option>
+                    {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+                  </select>
                 </div>
               </div>
 
               {/* Actions zone */}
-              <div className="p-5 lg:border-r lg:border-border bg-muted/20 flex flex-wrap gap-2 lg:min-w-[320px] lg:justify-end items-start content-start">
+              <div className="flex flex-wrap gap-1.5 items-center shrink-0">
                 {s.system_code && (
-                  <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                  <div className="inline-flex items-stretch rounded-md overflow-hidden shadow-sm">
                     <a href={`tel:${buildDialNumber(s.system_code)}`}
-                      className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+                      className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">
                       <Phone className="h-3.5 w-3.5" />
-                      <span>חיוג מערכת</span>
+                      <span>מערכת</span>
                     </a>
                     <button onClick={() => copyToClipboard(s.system_code, "code", "מזהה המערכת")}
                       title="העתק מזהה מערכת"
-                      className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
+                      className="inline-flex items-center justify-center h-8 w-8 bg-white/80 hover:bg-white text-muted-foreground border-r border-white/70">
                       {copiedKey === "code" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                   </div>
                 )}
                 {s.caller_phone && (
                   <div className="relative inline-flex items-stretch">
-                    <div className="inline-flex items-stretch rounded-md border border-border overflow-hidden shadow-sm">
+                    <div className="inline-flex items-stretch rounded-md overflow-hidden shadow-sm">
                     <a href={`tel:${buildDialNumber(s.caller_phone)}`}
-                      className="inline-flex items-center gap-1.5 h-9 px-3 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
+                      className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
                       <Phone className="h-3.5 w-3.5" />
-                      <span>חיוג פונה</span>
+                      <span>פונה</span>
                     </a>
                     <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
                       title="העתק מספר פונה"
-                      className="inline-flex items-center justify-center h-9 w-9 bg-background hover:bg-accent text-muted-foreground border-r border-border">
+                      className="inline-flex items-center justify-center h-8 w-8 bg-white/80 hover:bg-white text-muted-foreground border-r border-white/70">
                       {copiedKey === "caller" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                     </button>
                     <button
@@ -578,9 +602,9 @@ function SystemDetail() {
                       }}
                       title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שליחת הודעה קולית לפונה/ים דרך ימות המשיח"}
                       aria-label="שלח הודעה קולית"
-                      className={`inline-flex items-center justify-center h-9 w-9 border-r border-border transition ${
+                      className={`inline-flex items-center justify-center h-8 w-8 border-r border-white/70 transition ${
                         !voiceEnabled
-                          ? "bg-background text-muted-foreground/40 cursor-not-allowed"
+                          ? "bg-white/60 text-muted-foreground/40 cursor-not-allowed"
                           : voiceAlreadySent
                             ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
                             : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
@@ -664,7 +688,7 @@ function SystemDetail() {
                   <a href={`tel:${s.phone}`}
                     className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm`}>
                     <Phone className="h-3.5 w-3.5" />
-                    חיוג {s.phone}
+                    {s.phone}
                   </a>
                 )}
                 {me?.isSuperAdmin && (
@@ -689,7 +713,7 @@ function SystemDetail() {
                   }}
                     title="מחק מערכת"
                     aria-label="מחק מערכת"
-                    className={`${iconBtn} hover:!text-destructive hover:!bg-destructive/10 hover:!border-destructive/30`}>
+                    className={`${iconBtn} hover:!text-destructive hover:!bg-destructive/10`}>
                     <Trash2 className="h-4 w-4" />
                   </button>
                 )}

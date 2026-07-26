@@ -747,8 +747,25 @@ function SystemDetail() {
       {/* ===== פרטים ===== */}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="font-semibold flex items-center gap-2 text-sm"><Info className="h-4 w-4" />פרטים</h2>
+          <button type="button" onClick={() => setDetailsOpen((v) => !v)}
+            className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition"
+            aria-expanded={detailsOpen}>
+            <Info className="h-4 w-4" />פרטים
+            <ChevronDown className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
+          </button>
           <div className="flex items-center gap-1.5 flex-wrap">
+            <button type="button"
+              onClick={() => {
+                const next = !detailsDefaultOpen;
+                setDetailsDefaultOpen(next);
+                try { window.localStorage.setItem("crm.details.defaultOpen", next ? "1" : "0"); } catch {}
+                setDetailsOpen(next);
+                toast.success(next ? "פרטים ייפתחו אוטומטית" : "פרטים יהיו מכווצים אוטומטית");
+              }}
+              title={detailsDefaultOpen ? "ברירת מחדל: פרוש. לחץ כדי לקבוע מכווץ" : "ברירת מחדל: מכווץ. לחץ כדי לקבוע פרוש"}
+              className={`text-[11px] px-2 py-1 border rounded-md ${detailsDefaultOpen ? "bg-primary/10 border-primary/30 text-primary" : "border-input bg-background hover:bg-accent"}`}>
+              {detailsDefaultOpen ? "פתוח כברירת מחדל" : "סגור כברירת מחדל"}
+            </button>
             {me?.isAdmin && (
               !isSub ? (
                 <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
@@ -764,6 +781,7 @@ function SystemDetail() {
             )}
           </div>
         </div>
+        {detailsOpen && (<>
         {showParentPick && !isSub && (
           <div className="mb-3">
             <ParentPicker
@@ -812,7 +830,10 @@ function SystemDetail() {
             />
           </div>
         </div>
+        </>)}
       </div>
+
+
 
       {/* ===== פעילות ===== */}
       <div className="bg-card border border-border rounded-xl p-4">

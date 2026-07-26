@@ -3,12 +3,12 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
-import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
+import { getManagerDashboard, getSystemsByCallerPhone } from "@/lib/manager-dashboard.functions";
 import { getMyRole, listPendingVoiceSends } from "@/lib/admin.functions";
 import { scanSystemSeries, createMissingSystems, manualSendPendingVoice, rescheduleVoicePending } from "@/lib/systems.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send, Phone } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),

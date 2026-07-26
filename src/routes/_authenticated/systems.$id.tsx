@@ -964,18 +964,47 @@ function SystemDetail() {
         </div>
 
 
-        <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
-          className="flex gap-2 mb-3 relative">
+        <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
+          className="flex gap-2 mb-3 relative items-start">
           <div className="relative flex-1">
-            <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
-              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
-            {mentionOpen && (
+            <div
+              ref={noteEditorRef}
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-label="הוסף הערה"
+              onInput={handleNoteInput}
+              onKeyDown={(e) => {
+                if (mentionQuery !== null && mentionOptions.length > 0) {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setMentionActiveIndex((i) => Math.min(i + 1, mentionOptions.length - 1)); return; }
+                  if (e.key === "ArrowUp") { e.preventDefault(); setMentionActiveIndex((i) => Math.max(i - 1, 0)); return; }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    const pick = mentionOptions[mentionActiveIndex] ?? mentionOptions[0];
+                    if (pick) insertMention(pick.label);
+                    return;
+                  }
+                  if (e.key === "Escape") { e.preventDefault(); setMentionQuery(null); return; }
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const body = serializeNote();
+                  if (body) noteMut.mutate({ data: { system_id: id, body } });
+                }
+              }}
+              data-placeholder="הוסף הערה... הקלד @ לתיוג"
+              className="min-h-[36px] w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {mentionQuery !== null && mentionOptions.length > 0 && (
               <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
-                {mentionOptions.map((opt) => {
+                {mentionOptions.map((opt, idx) => {
                   const initial = (opt.label || "?").trim().charAt(0);
+                  const active = idx === mentionActiveIndex;
                   return (
-                    <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
-                      className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                    <button key={opt.id} type="button"
+                      onMouseDown={(e) => { e.preventDefault(); insertMention(opt.label); }}
+                      onMouseEnter={() => setMentionActiveIndex(idx)}
+                      className={`w-full text-right px-3 py-2 text-sm flex items-center gap-2 ${active ? "bg-accent" : "hover:bg-accent"}`}>
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/15 text-primary text-[11px] font-semibold">{initial}</span>
                       <span className="flex-1">{opt.label}</span>
                     </button>
@@ -983,7 +1012,6 @@ function SystemDetail() {
                 })}
               </div>
             )}
-
           </div>
           <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
             <Send className="h-4 w-4" />

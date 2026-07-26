@@ -445,7 +445,9 @@ function SystemDetail() {
     return nodes;
   }
 
+  if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
   const s = data.system;
+
   const isSub = !!s.parent_system_id;
   
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);

@@ -901,14 +901,19 @@ function SystemDetail() {
               className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
             {mentionOpen && (
               <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
-                {mentionOptions.map((opt) => (
-                  <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
-                    className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
-                    <span className="text-primary">@</span>{opt.label}
-                  </button>
-                ))}
+                {mentionOptions.map((opt) => {
+                  const initial = (opt.label || "?").trim().charAt(0);
+                  return (
+                    <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
+                      className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/15 text-primary text-[11px] font-semibold">{initial}</span>
+                      <span className="flex-1">{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
+
           </div>
           <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
             <Send className="h-4 w-4" />

@@ -104,6 +104,18 @@ export function applyStatusSettings(rows: { status_key: string; label: string; t
   rebuildMaps();
 }
 
+// Client-only: hydrate from localStorage at module load, before any component
+// renders. Eliminates the brief flash of stale hardcoded statuses on cold load.
+if (typeof window !== "undefined") {
+  try {
+    const raw = window.localStorage.getItem("crm_status_settings_v1");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) applyStatusSettings(parsed);
+    }
+  } catch {}
+}
+
 // Pure variant of `applyStatusSettings`: takes status rows and returns fresh
 // objects without touching any module-level state. Prefer this in new code
 // (e.g. inside React Query selectors) so consumers can cache derived maps

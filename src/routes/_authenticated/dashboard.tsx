@@ -706,19 +706,7 @@ function Dashboard() {
           </button>
         )}
         <div className="ms-auto flex items-center gap-2">
-          <SavedViewsBar
-            current={{ status, secondaryStatus, agentId, period, dateFrom, dateTo, search }}
-            onApply={(f) => {
-              setStatus(f.status ?? "");
-              setSecondaryStatus(f.secondaryStatus ?? "");
-              setAgentId(f.agentId ?? "");
-              setPeriod((f.period as Period) ?? "");
-              setDateFrom(f.dateFrom ?? "");
-              setDateTo(f.dateTo ?? "");
-              setSearch(f.search ?? "");
-              setPage(1);
-            }}
-          />
+
           {!me?.isViewer && (
             <button
               onClick={() => { setSelectMode((v) => !v); if (selectMode) clearSelection(); }}

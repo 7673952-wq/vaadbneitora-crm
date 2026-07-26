@@ -35,6 +35,13 @@ import {
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
+  loader: ({ context }) => {
+    context.queryClient.prefetchQuery({
+      queryKey: ["me"],
+      queryFn: async () => getMyRole({ headers: await getAuthHeaders() }),
+      staleTime: 5 * 60_000,
+    });
+  },
   component: AdminPage,
 });
 

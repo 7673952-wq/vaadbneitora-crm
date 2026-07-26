@@ -44,6 +44,16 @@ import {
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "דשבורד | CRM" }] }),
+  loader: ({ context }) => {
+    const qc = context.queryClient;
+    qc.prefetchQuery({
+      queryKey: ["me"],
+      queryFn: async () => getMyRole({ headers: await getAuthHeaders() }),
+      staleTime: 5 * 60_000,
+    });
+    qc.prefetchQuery({ queryKey: ["agents"], queryFn: () => listAgents(), staleTime: 5 * 60_000 });
+    qc.prefetchQuery({ queryKey: ["status_settings"], queryFn: () => listStatusSettings(), staleTime: 5 * 60_000 });
+  },
   component: Dashboard,
 });
 

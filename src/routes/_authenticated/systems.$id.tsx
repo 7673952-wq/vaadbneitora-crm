@@ -23,8 +23,9 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail, ExternalLink,
 } from "lucide-react";
+
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
 
@@ -132,6 +133,15 @@ function SystemDetail() {
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
   const [noteText, setNoteText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState<string | null>(null);
+  // Per-user preference for whether the "פרטים" section starts expanded.
+  const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const v = window.localStorage.getItem("crm.details.defaultOpen");
+    return v === null ? true : v === "1";
+  });
+  const [detailsOpen, setDetailsOpen] = useState<boolean>(detailsDefaultOpen);
+
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
   const [customDate, setCustomDate] = useState<string>("");
@@ -396,8 +406,49 @@ function SystemDetail() {
     setMentionOpen(false);
   }
 
+  // Known mention names (agents + "כולם"), longest first for greedy matching.
+  const mentionNames = useMemo(() => {
+    const names = ["כולם", ...((agents ?? []) as any[]).map((a) => a.display_name)].filter(Boolean);
+    return Array.from(new Set(names)).sort((a, b) => b.length - a.length);
+  }, [agents]);
+
+  // Parse note body and render `@name` mentions as clickable chip pills.
+  function renderNoteBody(body: string) {
+    if (!body) return null;
+    const nodes: ReactNode[] = [];
+    let i = 0;
+    let key = 0;
+    while (i < body.length) {
+      const at = body.indexOf("@", i);
+      if (at === -1) { nodes.push(body.slice(i)); break; }
+      if (at > i) nodes.push(body.slice(i, at));
+      let matched: string | null = null;
+      for (const name of mentionNames) {
+        if (body.startsWith(name, at + 1)) { matched = name; break; }
+      }
+      if (matched) {
+        const label = matched;
+        const isActive = mentionFilter === label;
+        nodes.push(
+          <button key={`m-${key++}`} type="button"
+            onClick={() => setMentionFilter((cur) => (cur === label ? null : label))}
+            className={`inline-flex items-center gap-0.5 align-baseline mx-0.5 px-1.5 py-0.5 rounded-full text-[11px] font-medium transition ${isActive ? "bg-primary text-primary-foreground shadow-sm" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
+            title={`סנן פעילות עם @${label}`}>
+            <span>@</span>{label}
+          </button>,
+        );
+        i = at + 1 + label.length;
+      } else {
+        nodes.push("@");
+        i = at + 1;
+      }
+    }
+    return nodes;
+  }
+
   if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
   const s = data.system;
+
   const isSub = !!s.parent_system_id;
   
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
@@ -738,8 +789,25 @@ function SystemDetail() {
       {/* ===== פרטים ===== */}
       <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="font-semibold flex items-center gap-2 text-sm"><Info className="h-4 w-4" />פרטים</h2>
+          <button type="button" onClick={() => setDetailsOpen((v) => !v)}
+            className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition"
+            aria-expanded={detailsOpen}>
+            <Info className="h-4 w-4" />פרטים
+            <ChevronDown className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
+          </button>
           <div className="flex items-center gap-1.5 flex-wrap">
+            <button type="button"
+              onClick={() => {
+                const next = !detailsDefaultOpen;
+                setDetailsDefaultOpen(next);
+                try { window.localStorage.setItem("crm.details.defaultOpen", next ? "1" : "0"); } catch {}
+                setDetailsOpen(next);
+                toast.success(next ? "פרטים ייפתחו אוטומטית" : "פרטים יהיו מכווצים אוטומטית");
+              }}
+              title={detailsDefaultOpen ? "ברירת מחדל: פרוש. לחץ כדי לקבוע מכווץ" : "ברירת מחדל: מכווץ. לחץ כדי לקבוע פרוש"}
+              className={`text-[11px] px-2 py-1 border rounded-md ${detailsDefaultOpen ? "bg-primary/10 border-primary/30 text-primary" : "border-input bg-background hover:bg-accent"}`}>
+              {detailsDefaultOpen ? "פתוח כברירת מחדל" : "סגור כברירת מחדל"}
+            </button>
             {me?.isAdmin && (
               !isSub ? (
                 <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
@@ -755,6 +823,7 @@ function SystemDetail() {
             )}
           </div>
         </div>
+        {detailsOpen && (<>
         {showParentPick && !isSub && (
           <div className="mb-3">
             <ParentPicker
@@ -803,7 +872,10 @@ function SystemDetail() {
             />
           </div>
         </div>
+        </>)}
       </div>
+
+
 
       {/* ===== פעילות ===== */}
       <div className="bg-card border border-border rounded-xl p-4">
@@ -813,7 +885,15 @@ function SystemDetail() {
             <Activity className="h-4 w-4" />
             פעילות ({data.notes.length + data.activity.length + data.transfers.length})
           </h2>
+          {mentionFilter && (
+            <button type="button" onClick={() => setMentionFilter(null)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90">
+              מסונן לפי @{mentionFilter}
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
+
 
         <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
           className="flex gap-2 mb-3 relative">
@@ -822,14 +902,19 @@ function SystemDetail() {
               className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
             {mentionOpen && (
               <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
-                {mentionOptions.map((opt) => (
-                  <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
-                    className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
-                    <span className="text-primary">@</span>{opt.label}
-                  </button>
-                ))}
+                {mentionOptions.map((opt) => {
+                  const initial = (opt.label || "?").trim().charAt(0);
+                  return (
+                    <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
+                      className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                      <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/15 text-primary text-[11px] font-semibold">{initial}</span>
+                      <span className="flex-1">{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
+
           </div>
           <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
             <Send className="h-4 w-4" />
@@ -838,28 +923,36 @@ function SystemDetail() {
 
         <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
           {(() => {
-            const merged = [
+            const allMerged = [
               ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
               ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
               ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+            const merged = mentionFilter
+              ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))
+              : allMerged;
 
             if (merged.length === 0) {
-              return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות עדיין</p>;
+              return <p className="text-sm text-muted-foreground text-center py-8">{mentionFilter ? `אין הערות עם @${mentionFilter}` : "אין פעילות עדיין"}</p>;
             }
             return merged.map((row) => {
               if (row.kind === "note") {
                 const n = row.item;
+                const initial = (n.author_name || "?").trim().charAt(0);
                 return (
                   <div key={`n-${n.id}`} className="border border-border rounded-lg p-2.5 bg-background">
-                    <div className="text-sm whitespace-pre-wrap">{n.body}</div>
-                    <div className="text-[11px] text-muted-foreground mt-1.5 flex justify-between">
-                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{n.author_name}</span>
+                    <div className="text-sm whitespace-pre-wrap leading-relaxed">{renderNoteBody(n.body || "")}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1.5 flex justify-between items-center">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold">{initial}</span>
+                        {n.author_name}
+                      </span>
                       <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
                     </div>
                   </div>
                 );
               }
+
               if (row.kind === "transfer") {
                 const t = row.item;
                 return (
@@ -1012,91 +1105,109 @@ function SystemDetail() {
         <div className="bg-card border border-border rounded-xl p-4">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold flex items-center gap-2 text-sm">
-              <Mail className="h-4 w-4" />מיילים ({emailThread?.length ?? 0})
+              <Mail className="h-4 w-4" />
+              מיילים
+              <span className="text-[11px] font-normal text-muted-foreground">({emailThread?.length ?? 0})</span>
             </h2>
             <button type="button" onClick={openNewEmail}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-fuchsia-600 text-white text-xs font-medium hover:bg-fuchsia-700">
-              <Mail className="h-3.5 w-3.5" />שלח מייל
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-l from-fuchsia-600 to-fuchsia-500 text-white text-xs font-medium hover:from-fuchsia-700 hover:to-fuchsia-600 shadow-sm">
+              <Send className="h-3.5 w-3.5" />הודעה חדשה
             </button>
           </div>
 
           {(!emailThread || emailThread.length === 0) ? (
-            <div className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
-              אין עדיין מיילים בכרטיסייה הזו
-            </div>
+            <button type="button" onClick={openNewEmail}
+              className="w-full rounded-xl border-2 border-dashed border-border p-6 text-center hover:bg-accent/30 hover:border-fuchsia-300 transition">
+              <Mail className="h-6 w-6 mx-auto text-muted-foreground mb-2" />
+              <div className="text-sm font-medium mb-1">אין עדיין מיילים בכרטיסייה הזו</div>
+              <div className="text-[11px] text-muted-foreground">לחץ כדי לפתוח שיחת מייל חדשה</div>
+            </button>
           ) : (
-            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
+            <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-1">
               {[...emailThread].sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).map((m: any) => {
                 const isOutbound = m.direction === "outbound";
                 const isExpanded = expandedMessages.has(m.id);
                 const body = m.body ?? "";
                 const isLong = body.length > 220;
                 const shownBody = isExpanded || !isLong ? body : body.slice(0, 220) + "…";
-                const replyTo = m.direction === "outbound" ? (m.to_address || "") : extractEmail(m.from_address || "");
+                const replyTo = isOutbound ? (m.to_address || "") : extractEmail(m.from_address || "");
+                const senderLabel = isOutbound ? (m.agent_name || "נציג") : (extractEmail(m.from_address || "") || "פונה");
+                const initial = (senderLabel || "?").trim().charAt(0).toUpperCase();
                 return (
-                  <div key={m.id} className={`flex ${isOutbound ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[92%] w-full rounded-xl px-3 py-2 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200" : "bg-muted border border-border"}`}>
+                  <div key={m.id} className={`flex gap-2 ${isOutbound ? "flex-row" : "flex-row-reverse"}`}>
+                    <div className={`shrink-0 h-8 w-8 rounded-full flex items-center justify-center text-xs font-semibold shadow-sm ${isOutbound ? "bg-fuchsia-600 text-white" : "bg-primary/15 text-primary"}`}>
+                      {initial}
+                    </div>
+                    <div className={`flex-1 min-w-0 rounded-2xl px-3.5 py-2.5 ${isOutbound ? "bg-fuchsia-50 border border-fuchsia-200 rounded-tr-sm" : "bg-muted border border-border rounded-tl-sm"}`}>
                       <div className={`flex items-center justify-between gap-3 text-[11px] mb-1 ${isOutbound ? "text-fuchsia-800" : "text-muted-foreground"}`}>
-                        <span className="font-medium flex items-center gap-1">
-                          <Mail className="h-3 w-3" />
-                          {isOutbound ? (m.agent_name || "נציג") : (m.from_address || "פונה")}
-                        </span>
-                        <span>{new Date(m.created_at).toLocaleString("he-IL")}</span>
+                        <span className="font-semibold truncate" title={senderLabel}>{senderLabel}</span>
+                        <span className="shrink-0">{new Date(m.created_at).toLocaleString("he-IL")}</span>
                       </div>
-                      {m.subject && <div className="text-xs font-semibold mb-0.5">{m.subject}</div>}
-                      <div className="text-sm whitespace-pre-wrap">{shownBody}</div>
-                      <div className="flex items-center gap-1 mt-1.5 pt-1.5 border-t border-black/5 flex-wrap">
+                      {m.subject && <div className="text-sm font-semibold mb-1 leading-tight">{m.subject}</div>}
+                      <div className="text-sm whitespace-pre-wrap leading-relaxed">{shownBody}</div>
+                      <div className={`flex items-center gap-0.5 mt-2 pt-2 border-t flex-wrap ${isOutbound ? "border-fuchsia-200/70" : "border-black/5"}`}>
                         {isLong && (
                           <button type="button"
                             onClick={() => setExpandedMessages((prev) => { const n = new Set(prev); if (n.has(m.id)) n.delete(m.id); else n.add(m.id); return n; })}
-                            className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
-                            {isExpanded ? "הצג פחות" : "צפייה"}
+                            title={isExpanded ? "הצג פחות" : "הצג הכל"}
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-black/5">
+                            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${isExpanded ? "rotate-180" : ""}`} />
                           </button>
                         )}
                         <button type="button"
-                          onClick={() => {
-                            if (inlineReplyFor === m.id) { setInlineReplyFor(null); return; }
-                            setInlineReplyFor(m.id); setInlineReplyText("");
-                          }}
-                          className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
-                          <CornerUpRight className="h-3 w-3 -scale-x-100" />השב
+                          onClick={() => { if (inlineReplyFor === m.id) { setInlineReplyFor(null); return; } setInlineReplyFor(m.id); setInlineReplyText(""); }}
+                          title="השב"
+                          className={`h-7 px-2 inline-flex items-center gap-1 rounded-md text-[11px] font-medium ${inlineReplyFor === m.id ? "bg-fuchsia-600 text-white" : "hover:bg-black/5"}`}>
+                          <CornerUpRight className="h-3.5 w-3.5 -scale-x-100" />השב
                         </button>
                         <button type="button" onClick={() => openForwardEmail(m)}
-                          className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1">
-                          <CornerUpRight className="h-3 w-3" />העבר
+                          title="העבר"
+                          className="h-7 px-2 inline-flex items-center gap-1 rounded-md hover:bg-black/5 text-[11px] font-medium">
+                          <CornerUpRight className="h-3.5 w-3.5" />העבר
                         </button>
-                        {!isOutbound && (
-                          <button type="button" onClick={() => openReplyEmail(m)}
-                            className="text-[11px] px-2 py-0.5 rounded-md hover:bg-black/5 flex items-center gap-1 mr-auto"
-                            title="פתח בחלון מלא">
-                            עריכה מורחבת
+                        <button type="button" onClick={() => openReplyEmail(m)}
+                          title="פתח בחלון מלא"
+                          className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-black/5">
+                          <ExternalLink className="h-3.5 w-3.5" />
+                        </button>
+                        {replyTo && (
+                          <button type="button" onClick={() => copyToClipboard(replyTo, `mail-${m.id}`, "כתובת המייל")}
+                            title="העתק כתובת מייל"
+                            className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-black/5">
+                            {copiedKey === `mail-${m.id}` ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
                           </button>
                         )}
                       </div>
                       {inlineReplyFor === m.id && (
-                        <div className="mt-2 space-y-1.5">
+                        <div className="mt-2.5 space-y-1.5 rounded-lg border border-fuchsia-200 bg-white p-2">
+                          <div className="text-[10px] text-muted-foreground">השב אל <span className="font-medium text-foreground" dir="ltr">{replyTo || "—"}</span></div>
                           <textarea
                             value={inlineReplyText}
                             onChange={(e) => setInlineReplyText(e.target.value)}
-                            placeholder={`השב אל ${replyTo || "…"}`}
+                            placeholder="כתוב תשובה מהירה..."
                             rows={3}
                             className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button type="button" onClick={() => { setInlineReplyFor(null); setInlineReplyText(""); }}
-                              className="text-[11px] px-2 py-1 rounded-md hover:bg-black/5">בטל</button>
-                            <button type="button"
-                              disabled={sendEmailMut.isPending || !inlineReplyText.trim() || !replyTo}
-                              onClick={() => {
-                                sendEmailMut.mutate({
-                                  to: replyTo,
-                                  subject: m.subject ? (m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`) : "Re: ",
-                                  body: inlineReplyText.trim(),
-                                  gmail_thread_id: m.gmail_thread_id ?? null,
-                                }, { onSuccess: () => { setInlineReplyFor(null); setInlineReplyText(""); } });
-                              }}
-                              className="text-[11px] px-2.5 py-1 rounded-md bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-50">
-                              {sendEmailMut.isPending ? "שולח…" : "שלח"}
-                            </button>
+                          <div className="flex items-center justify-between gap-1.5">
+                            <button type="button" onClick={() => openReplyEmail(m)}
+                              className="text-[11px] text-muted-foreground hover:text-foreground">פתח בחלון מלא ↗</button>
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={() => { setInlineReplyFor(null); setInlineReplyText(""); }}
+                                className="text-[11px] px-2 py-1 rounded-md hover:bg-black/5">בטל</button>
+                              <button type="button"
+                                disabled={sendEmailMut.isPending || !inlineReplyText.trim() || !replyTo}
+                                onClick={() => {
+                                  sendEmailMut.mutate({
+                                    to: replyTo,
+                                    subject: m.subject ? (m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`) : "Re: ",
+                                    body: inlineReplyText.trim(),
+                                    gmail_thread_id: m.gmail_thread_id ?? null,
+                                  }, { onSuccess: () => { setInlineReplyFor(null); setInlineReplyText(""); } });
+                                }}
+                                className="text-[11px] px-3 py-1 rounded-md bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700 disabled:opacity-50 inline-flex items-center gap-1">
+                                <Send className="h-3 w-3" />
+                                {sendEmailMut.isPending ? "שולח…" : "שלח"}
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -1108,6 +1219,7 @@ function SystemDetail() {
           )}
         </div>
       </div>
+
 
 
       {composeOpen && (

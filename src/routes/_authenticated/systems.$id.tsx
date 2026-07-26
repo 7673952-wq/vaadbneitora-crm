@@ -917,28 +917,36 @@ function SystemDetail() {
 
         <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
           {(() => {
-            const merged = [
+            const allMerged = [
               ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
               ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
               ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+            const merged = mentionFilter
+              ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))
+              : allMerged;
 
             if (merged.length === 0) {
-              return <p className="text-sm text-muted-foreground text-center py-8">אין פעילות עדיין</p>;
+              return <p className="text-sm text-muted-foreground text-center py-8">{mentionFilter ? `אין הערות עם @${mentionFilter}` : "אין פעילות עדיין"}</p>;
             }
             return merged.map((row) => {
               if (row.kind === "note") {
                 const n = row.item;
+                const initial = (n.author_name || "?").trim().charAt(0);
                 return (
                   <div key={`n-${n.id}`} className="border border-border rounded-lg p-2.5 bg-background">
-                    <div className="text-sm whitespace-pre-wrap">{n.body}</div>
-                    <div className="text-[11px] text-muted-foreground mt-1.5 flex justify-between">
-                      <span className="flex items-center gap-1"><MessageSquare className="h-3 w-3" />{n.author_name}</span>
+                    <div className="text-sm whitespace-pre-wrap leading-relaxed">{renderNoteBody(n.body || "")}</div>
+                    <div className="text-[11px] text-muted-foreground mt-1.5 flex justify-between items-center">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold">{initial}</span>
+                        {n.author_name}
+                      </span>
                       <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
                     </div>
                   </div>
                 );
               }
+
               if (row.kind === "transfer") {
                 const t = row.item;
                 return (

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { verifyWebhookAuth } from "@/lib/webhook-auth.server";
 
 // Called every 15 minutes by pg_cron (see
 // supabase/migrations/*_backup_schedule_config.sql). Unlike the old fixed
@@ -10,15 +11,8 @@ const SCHEDULE_KEY = "backup_schedule";
 const LAST_RUN_KEY = "backup_schedule_last_run";
 
 async function handleScheduledBackupCheck(request: Request) {
-  const apikey = request.headers.get("apikey");
-  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const expected = process.env.BACKUP_WEBHOOK_SECRET || process.env.CRON_SECRET;
-  if (!expected || (apikey !== expected && bearer !== expected)) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const unauthorized = verifyWebhookAuth(request);
+  if (unauthorized) return unauthorized;
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { shouldRunScheduledBackup, runBackup, sendBackupEmail } = await import("@/lib/backups.server");

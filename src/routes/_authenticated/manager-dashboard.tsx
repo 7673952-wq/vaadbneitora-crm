@@ -203,7 +203,7 @@ function CallerPhoneGroupsPanel() {
               {filtered.map((g) => {
                 const isOpen = openPhone === g.phone;
                 return (
-                  <>
+                  <Fragment key={g.phone}>
                     <tr key={g.phone} className="border-b border-border last:border-0 hover:bg-accent/50 cursor-pointer"
                       onClick={() => setOpenPhone(isOpen ? null : g.phone)}>
                       <td className="px-4 py-3 font-mono" dir="ltr">

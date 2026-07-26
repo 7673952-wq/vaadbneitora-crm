@@ -393,18 +393,86 @@ function SystemDetail() {
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
 
-  const mentionOptions = useMemo(() => [
-    { id: "__all", label: "כולם", token: "@כולם" },
-    ...(agents ?? []).map((a: any) => ({ id: a.id, label: a.display_name, token: `@${a.display_name}` })),
+  const allMentionOptions = useMemo(() => [
+    { id: "__all", label: "כולם" },
+    ...(agents ?? []).map((a: any) => ({ id: a.id as string, label: a.display_name as string })),
   ], [agents]);
-  function applyMention(token: string) {
-    setNoteText((prev) => {
-      const at = prev.lastIndexOf("@");
-      const base = at >= 0 ? prev.slice(0, at) : prev;
-      const suffix = prev.endsWith(" ") ? "" : " ";
-      return `${base}${token}${suffix}`;
-    });
-    setMentionOpen(false);
+  const mentionOptions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.trim();
+    if (!q) return allMentionOptions;
+    return allMentionOptions.filter((o) => o.label && o.label.toLowerCase().startsWith(q.toLowerCase()));
+  }, [allMentionOptions, mentionQuery]);
+
+  // Insert a mention chip at the current caret, replacing the `@query` typed so far.
+  function insertMention(name: string) {
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) return;
+    const text = node.textContent ?? "";
+    const at = text.slice(0, range.startOffset).lastIndexOf("@");
+    if (at < 0) return;
+
+    // Remove the "@query" segment from the text node, then insert a chip + space.
+    (node as Text).deleteData(at, range.startOffset - at);
+
+    const chip = document.createElement("span");
+    chip.setAttribute("data-mention", name);
+    chip.setAttribute("contenteditable", "false");
+    chip.className = "inline-flex items-center gap-0.5 align-baseline mx-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/15 text-primary select-none";
+    chip.textContent = `@${name}`;
+
+    const space = document.createTextNode("\u00A0");
+    const rest = (node as Text).splitText(at);
+    const parent = node.parentNode!;
+    parent.insertBefore(chip, rest);
+    parent.insertBefore(space, rest);
+
+    const r = document.createRange();
+    r.setStart(space, 1);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    setMentionQuery(null);
+    setMentionActiveIndex(0);
+  }
+
+  function serializeNote(): string {
+    const editor = noteEditorRef.current;
+    if (!editor) return "";
+    let out = "";
+    const walk = (n: Node) => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        out += (n.textContent ?? "").replace(/\u00A0/g, " ");
+      } else if (n instanceof HTMLElement) {
+        const m = n.getAttribute("data-mention");
+        if (m) { out += `@${m}`; return; }
+        if (n.tagName === "BR") { out += "\n"; return; }
+        n.childNodes.forEach(walk);
+      }
+    };
+    editor.childNodes.forEach(walk);
+    return out.trim();
+  }
+
+  function handleNoteInput() {
+    const sel = window.getSelection();
+    const editor = noteEditorRef.current;
+    if (!sel || !editor || sel.rangeCount === 0) { setMentionQuery(null); return; }
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) { setMentionQuery(null); return; }
+    const before = (node.textContent ?? "").slice(0, range.startOffset);
+    const at = before.lastIndexOf("@");
+    if (at < 0) { setMentionQuery(null); return; }
+    const after = before.slice(at + 1);
+    if (/\s/.test(after) || after.length > 30) { setMentionQuery(null); return; }
+    setMentionQuery(after);
+    setMentionActiveIndex(0);
   }
 
   // Known mention names (agents + "כולם"), longest first for greedy matching.

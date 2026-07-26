@@ -23,8 +23,9 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail, ExternalLink,
 } from "lucide-react";
+
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
 

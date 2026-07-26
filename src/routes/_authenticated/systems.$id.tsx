@@ -405,7 +405,46 @@ function SystemDetail() {
     setMentionOpen(false);
   }
 
-  if (isLoading || !data) return <div className="text-center py-20 text-muted-foreground">טוען...</div>;
+  // Known mention names (agents + "כולם"), longest first for greedy matching.
+  const mentionNames = useMemo(() => {
+    const names = ["כולם", ...((agents ?? []) as any[]).map((a) => a.display_name)].filter(Boolean);
+    return Array.from(new Set(names)).sort((a, b) => b.length - a.length);
+  }, [agents]);
+
+  // Parse note body and render `@name` mentions as clickable chip pills.
+  function renderNoteBody(body: string) {
+    if (!body) return null;
+    const nodes: ReactNode[] = [];
+    let i = 0;
+    let key = 0;
+    while (i < body.length) {
+      const at = body.indexOf("@", i);
+      if (at === -1) { nodes.push(body.slice(i)); break; }
+      if (at > i) nodes.push(body.slice(i, at));
+      let matched: string | null = null;
+      for (const name of mentionNames) {
+        if (body.startsWith(name, at + 1)) { matched = name; break; }
+      }
+      if (matched) {
+        const label = matched;
+        const isActive = mentionFilter === label;
+        nodes.push(
+          <button key={`m-${key++}`} type="button"
+            onClick={() => setMentionFilter((cur) => (cur === label ? null : label))}
+            className={`inline-flex items-center gap-0.5 align-baseline mx-0.5 px-1.5 py-0.5 rounded-full text-[11px] font-medium transition ${isActive ? "bg-primary text-primary-foreground shadow-sm" : "bg-primary/10 text-primary hover:bg-primary/20"}`}
+            title={`סנן פעילות עם @${label}`}>
+            <span>@</span>{label}
+          </button>,
+        );
+        i = at + 1 + label.length;
+      } else {
+        nodes.push("@");
+        i = at + 1;
+      }
+    }
+    return nodes;
+  }
+
   const s = data.system;
   const isSub = !!s.parent_system_id;
   

@@ -241,7 +241,7 @@ function CallerPhoneGroupsPanel() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

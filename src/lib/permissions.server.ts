@@ -98,6 +98,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: false,
     system_name_edit: true,
     system_code_edit: false,
+    history_edit: true,
   },
   super_admin: {
     systems_read: true,

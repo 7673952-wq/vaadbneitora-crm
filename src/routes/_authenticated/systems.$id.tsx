@@ -1167,7 +1167,7 @@ function SystemDetail() {
                         <button type="button" onClick={() => openReplyEmail(m)}
                           title="פתח בחלון מלא"
                           className="h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-black/5">
-                          <ExternalLinkIcon className="h-3.5 w-3.5" />
+                          <ExternalLink className="h-3.5 w-3.5" />
                         </button>
                         {replyTo && (
                           <button type="button" onClick={() => copyToClipboard(replyTo, `mail-${m.id}`, "כתובת המייל")}

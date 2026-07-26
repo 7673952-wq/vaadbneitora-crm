@@ -12,6 +12,13 @@ import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, 
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),
+  loader: ({ context }) => {
+    context.queryClient.prefetchQuery({
+      queryKey: ["manager-dashboard"],
+      queryFn: async () => getManagerDashboard({ headers: await getAuthHeaders() }),
+      staleTime: 30_000,
+    });
+  },
   component: ManagerDashboard,
 });
 

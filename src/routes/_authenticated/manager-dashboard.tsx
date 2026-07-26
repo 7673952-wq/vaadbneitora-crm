@@ -20,6 +20,7 @@ function ManagerDashboard() {
   const fn = useServerFn(getManagerDashboard);
   const [showSeries, setShowSeries] = useState(false);
   const [showPendingMessages, setShowPendingMessages] = useState(false);
+  const [tab, setTab] = useState<"overview" | "phones">("overview");
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: 5 * 60_000 });
   const { data, isLoading } = useQuery({
     queryKey: ["manager-dashboard"],

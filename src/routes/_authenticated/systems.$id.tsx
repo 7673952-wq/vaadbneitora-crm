@@ -300,8 +300,8 @@ function SystemDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["system", id] });
       qc.invalidateQueries({ queryKey: ["my_notifications"] });
-      setNoteText("");
-      setMentionOpen(false);
+      if (noteEditorRef.current) noteEditorRef.current.innerHTML = "";
+      setMentionQuery(null);
       toast.success("ההערה נוספה");
     },
     onError: (e: any) => toast.error(e.message),

@@ -58,6 +58,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: false,
     system_name_edit: false,
     system_code_edit: false,
+    history_edit: false,
   },
   agent: {
     systems_read: true,

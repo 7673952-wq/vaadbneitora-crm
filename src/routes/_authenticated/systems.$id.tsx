@@ -131,8 +131,9 @@ function SystemDetail() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn(), staleTime: REFERENCE_STALE_TIME });
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
-  const [noteText, setNoteText] = useState("");
-  const [mentionOpen, setMentionOpen] = useState(false);
+  const noteEditorRef = useRef<HTMLDivElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
   // Per-user preference for whether the "פרטים" section starts expanded.
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {

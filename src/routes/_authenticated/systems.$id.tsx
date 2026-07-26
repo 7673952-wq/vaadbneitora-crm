@@ -879,7 +879,7 @@ function SystemDetail() {
             </button>
             {me?.isAdmin && (
               !isSub ? (
-                <button onClick={() => { setShowParentPick(true); setParentChoice(""); }}
+                <button onClick={() => { setShowParentPick(true); setParentChoice(""); setDetailsOpen(true); }}
                   className="text-[11px] px-2 py-1 border border-input rounded-md bg-background hover:bg-accent">
                   הפוך לתת-מערכת
                 </button>
@@ -892,7 +892,6 @@ function SystemDetail() {
             )}
           </div>
         </div>
-        {detailsOpen && (<>
         {showParentPick && !isSub && (
           <div className="mb-3">
             <ParentPicker
@@ -905,6 +904,7 @@ function SystemDetail() {
             />
           </div>
         )}
+        {detailsOpen && (<>
         <div className="grid md:grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium block mb-1 text-muted-foreground">טלפון לחיוג</label>

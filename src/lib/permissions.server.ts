@@ -118,6 +118,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: true,
     system_name_edit: true,
     system_code_edit: true,
+    history_edit: true,
   },
 };
 

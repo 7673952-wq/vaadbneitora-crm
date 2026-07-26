@@ -1,14 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { toast } from "sonner";
-import { getManagerDashboard } from "@/lib/manager-dashboard.functions";
+import { getManagerDashboard, getSystemsByCallerPhone } from "@/lib/manager-dashboard.functions";
 import { getMyRole, listPendingVoiceSends } from "@/lib/admin.functions";
 import { scanSystemSeries, createMissingSystems, manualSendPendingVoice, rescheduleVoicePending } from "@/lib/systems.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send } from "lucide-react";
+import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send, Phone } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   head: () => ({ meta: [{ title: "דשבורד מנהלים | CRM" }] }),
@@ -20,6 +20,7 @@ function ManagerDashboard() {
   const fn = useServerFn(getManagerDashboard);
   const [showSeries, setShowSeries] = useState(false);
   const [showPendingMessages, setShowPendingMessages] = useState(false);
+  const [tab, setTab] = useState<"overview" | "phones">("overview");
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: 5 * 60_000 });
   const { data, isLoading } = useQuery({
     queryKey: ["manager-dashboard"],
@@ -63,75 +64,190 @@ function ManagerDashboard() {
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <KpiCard label="נפתחו השבוע" value={data.kpis.openedThisWeek} icon={<Plus className="h-5 w-5" />} tone="emerald" />
-        <KpiCard label="נסגרו השבוע" value={data.kpis.closedThisWeek} icon={<CheckCircle2 className="h-5 w-5" />} tone="sky" />
-        <KpiCard label="ממתינות לבדיקה" value={data.kpis.pending} icon={<Clock className="h-5 w-5" />} tone="amber" />
-        <KpiCard label="מעקבים באיחור" value={data.kpis.overdueReminders} icon={<AlertTriangle className="h-5 w-5" />} tone="red" />
-        <KpiCard label="נפתחו החודש" value={data.kpis.openedThisMonth} icon={<TrendingUp className="h-5 w-5" />} tone="violet" />
+      {/* Tabs */}
+      <div className="flex items-center gap-2 border-b border-border">
+        <button onClick={() => setTab("overview")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition ${tab === "overview" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+          סקירה כללית
+        </button>
+        <button onClick={() => setTab("phones")}
+          className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition flex items-center gap-2 ${tab === "phones" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
+          <Phone className="h-4 w-4" />לפי מספר פונה
+        </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Per-agent performance */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-lg font-semibold mb-4">ביצועים לפי נציג (7 ימים אחרונים)</h2>
-          {data.agentPerformance.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 text-sm">אין פעילות השבוע</div>
-          ) : (
-            <div className="space-y-3">
-              {data.agentPerformance.map((a) => (
-                <div key={a.agent_id} className="space-y-1">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{a.agent_name}</span>
-                    <span className="text-muted-foreground">{a.actions} פעולות</span>
-                  </div>
-                  <div className="h-2 bg-muted rounded">
-                    <div className="h-full bg-primary rounded transition-all" style={{ width: `${(a.actions / maxPerf) * 100}%` }} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+      {tab === "overview" && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <KpiCard label="נפתחו השבוע" value={data.kpis.openedThisWeek} icon={<Plus className="h-5 w-5" />} tone="emerald" />
+            <KpiCard label="נסגרו השבוע" value={data.kpis.closedThisWeek} icon={<CheckCircle2 className="h-5 w-5" />} tone="sky" />
+            <KpiCard label="ממתינות לבדיקה" value={data.kpis.pending} icon={<Clock className="h-5 w-5" />} tone="amber" />
+            <KpiCard label="מעקבים באיחור" value={data.kpis.overdueReminders} icon={<AlertTriangle className="h-5 w-5" />} tone="red" />
+            <KpiCard label="נפתחו החודש" value={data.kpis.openedThisMonth} icon={<TrendingUp className="h-5 w-5" />} tone="violet" />
+          </div>
 
-        {/* Overdue reminders list */}
-        <div className="bg-card border border-border rounded-xl p-5">
-          <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-red-600" />
-            מעקבים באיחור
-          </h2>
-          {data.overdueList.length === 0 ? (
-            <div className="text-center text-muted-foreground py-8 text-sm">אין מעקבים באיחור</div>
-          ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
-              {data.overdueList.map((s: any) => {
-                const date = new Date(s.reminder_at);
-                const daysOverdue = Math.floor((Date.now() - date.getTime()) / 86400000);
-                return (
-                  <Link key={s.id} to="/systems/$id" params={{ id: s.id }}
-                    className="block border border-border rounded-lg p-3 hover:bg-accent transition">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="font-medium truncate">{s.name}</div>
-                        <div className="text-xs text-muted-foreground font-mono">{s.system_code}</div>
-                        <div className="text-xs text-muted-foreground mt-1">נציג: {s.agent_name}</div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Per-agent performance */}
+            <div className="bg-card border border-border rounded-xl p-5">
+              <h2 className="text-lg font-semibold mb-4">ביצועים לפי נציג (7 ימים אחרונים)</h2>
+              {data.agentPerformance.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8 text-sm">אין פעילות השבוע</div>
+              ) : (
+                <div className="space-y-3">
+                  {data.agentPerformance.map((a) => (
+                    <div key={a.agent_id} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-medium">{a.agent_name}</span>
+                        <span className="text-muted-foreground">{a.actions} פעולות</span>
                       </div>
-                      <div className="text-left shrink-0">
-                        <div className="text-xs text-red-700 font-semibold">{daysOverdue} ימים</div>
-                        <div className="text-xs text-muted-foreground">{date.toLocaleDateString("he-IL")}</div>
+                      <div className="h-2 bg-muted rounded">
+                        <div className="h-full bg-primary rounded transition-all" style={{ width: `${(a.actions / maxPerf) * 100}%` }} />
                       </div>
                     </div>
-                  </Link>
-                );
-              })}
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
-      </div>
+
+            {/* Overdue reminders list */}
+            <div className="bg-card border border-border rounded-xl p-5">
+              <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600" />
+                מעקבים באיחור
+              </h2>
+              {data.overdueList.length === 0 ? (
+                <div className="text-center text-muted-foreground py-8 text-sm">אין מעקבים באיחור</div>
+              ) : (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto">
+                  {data.overdueList.map((s: any) => {
+                    const date = new Date(s.reminder_at);
+                    const daysOverdue = Math.floor((Date.now() - date.getTime()) / 86400000);
+                    return (
+                      <Link key={s.id} to="/systems/$id" params={{ id: s.id }}
+                        className="block border border-border rounded-lg p-3 hover:bg-accent transition">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="font-medium truncate">{s.name}</div>
+                            <div className="text-xs text-muted-foreground font-mono">{s.system_code}</div>
+                            <div className="text-xs text-muted-foreground mt-1">נציג: {s.agent_name}</div>
+                          </div>
+                          <div className="text-left shrink-0">
+                            <div className="text-xs text-red-700 font-semibold">{daysOverdue} ימים</div>
+                            <div className="text-xs text-muted-foreground">{date.toLocaleDateString("he-IL")}</div>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+
+      {tab === "phones" && <CallerPhoneGroupsPanel />}
 
       {showSeries && <SeriesScannerModal onClose={() => setShowSeries(false)} />}
       {showPendingMessages && <PendingMessagesModal onClose={() => setShowPendingMessages(false)} />}
+    </div>
+  );
+}
+
+// ============= Caller-phone groups (systems sharing the same caller phone) =============
+function CallerPhoneGroupsPanel() {
+  const fn = useServerFn(getSystemsByCallerPhone);
+  const [q, setQ] = useState("");
+  const [openPhone, setOpenPhone] = useState<string | null>(null);
+  const { data, isLoading } = useQuery({
+    queryKey: ["caller_phone_groups"],
+    queryFn: async () => fn({ headers: await getAuthHeaders() }),
+    staleTime: 60_000,
+  });
+
+  if (isLoading || !data) return <div className="text-center py-10 text-muted-foreground">טוען...</div>;
+
+  const filtered = q.trim()
+    ? data.filter((g) => g.phone.includes(q.trim()) || g.systems.some((s: any) => (s.name ?? "").includes(q.trim()) || (s.system_code ?? "").includes(q.trim())))
+    : data;
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="חיפוש מספר / שם מערכת..."
+            className="w-full pr-9 pl-3 py-2 rounded-lg border border-input bg-background text-sm" />
+        </div>
+        <div className="text-sm text-muted-foreground">
+          {filtered.length} מספרים עם יותר ממערכת אחת
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="bg-card border border-border rounded-xl p-10 text-center text-muted-foreground">
+          לא נמצאו מספרי פונה משותפים למספר מערכות
+        </div>
+      ) : (
+        <div className="bg-card border border-border rounded-xl overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 border-b border-border">
+              <tr className="text-right">
+                <th className="px-4 py-3 font-medium text-muted-foreground">מספר פונה</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground">מספר מערכות</th>
+                <th className="px-4 py-3 font-medium text-muted-foreground"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((g) => {
+                const isOpen = openPhone === g.phone;
+                return (
+                  <Fragment key={g.phone}>
+                    <tr key={g.phone} className="border-b border-border last:border-0 hover:bg-accent/50 cursor-pointer"
+                      onClick={() => setOpenPhone(isOpen ? null : g.phone)}>
+                      <td className="px-4 py-3 font-mono" dir="ltr">
+                        <a href={`tel:${g.phone}`} onClick={(e) => e.stopPropagation()}
+                          className="text-primary hover:underline inline-flex items-center gap-1">
+                          <Phone className="h-3.5 w-3.5" />{g.phone}
+                        </a>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex items-center justify-center min-w-8 h-7 px-2 rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                          {g.count}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-left text-xs text-muted-foreground">
+                        {isOpen ? "הסתר" : "הצג"}
+                      </td>
+                    </tr>
+                    {isOpen && (
+                      <tr key={`${g.phone}-details`} className="border-b border-border bg-muted/20">
+                        <td colSpan={3} className="px-4 py-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                            {g.systems.map((s: any) => (
+                              <Link key={s.id} to="/systems/$id" params={{ id: s.id }}
+                                className="flex items-center justify-between gap-2 p-2 rounded-lg border border-border bg-card hover:bg-accent transition">
+                                <div className="min-w-0">
+                                  <div className="font-medium truncate">{s.name || "—"}</div>
+                                  <div className="text-xs text-muted-foreground font-mono">{s.system_code}</div>
+                                </div>
+                                <div className="text-xs text-muted-foreground shrink-0">
+                                  {STATUS_LABEL[s.status as keyof typeof STATUS_LABEL] ?? s.status}
+                                </div>
+                              </Link>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

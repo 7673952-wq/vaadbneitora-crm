@@ -74,3 +74,41 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
       })),
     };
   });
+
+// Group systems by caller phone. Includes primary caller_phone as well as
+// entries from additional_caller_phones (jsonb array of {phone}).
+export const getSystemsByCallerPhone = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data, error } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, caller_phone, phone, additional_caller_phones, assigned_agent_id, created_at");
+    if (error) throw new Error(error.message);
+
+    const norm = (p: any): string | null => {
+      if (!p) return null;
+      const s = String(p).replace(/[^\d+]/g, "");
+      return s.length >= 4 ? s : null;
+    };
+
+    const groups = new Map<string, { phone: string; systems: any[] }>();
+    for (const row of data ?? []) {
+      const phones = new Set<string>();
+      const primary = norm((row as any).caller_phone) || norm((row as any).phone);
+      if (primary) phones.add(primary);
+      const extras = Array.isArray((row as any).additional_caller_phones) ? (row as any).additional_caller_phones : [];
+      for (const e of extras) {
+        const p = norm(e?.phone);
+        if (p) phones.add(p);
+      }
+      for (const p of phones) {
+        if (!groups.has(p)) groups.set(p, { phone: p, systems: [] });
+        groups.get(p)!.systems.push(row);
+      }
+    }
+
+    return Array.from(groups.values())
+      .filter((g) => g.systems.length > 1)
+      .map((g) => ({ phone: g.phone, count: g.systems.length, systems: g.systems }))
+      .sort((a, b) => b.count - a.count);
+  });

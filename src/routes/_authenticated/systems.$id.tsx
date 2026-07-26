@@ -131,8 +131,9 @@ function SystemDetail() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn(), staleTime: REFERENCE_STALE_TIME });
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
-  const [noteText, setNoteText] = useState("");
-  const [mentionOpen, setMentionOpen] = useState(false);
+  const noteEditorRef = useRef<HTMLDivElement>(null);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
   // Per-user preference for whether the "פרטים" section starts expanded.
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {
@@ -299,8 +300,8 @@ function SystemDetail() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["system", id] });
       qc.invalidateQueries({ queryKey: ["my_notifications"] });
-      setNoteText("");
-      setMentionOpen(false);
+      if (noteEditorRef.current) noteEditorRef.current.innerHTML = "";
+      setMentionQuery(null);
       toast.success("ההערה נוספה");
     },
     onError: (e: any) => toast.error(e.message),
@@ -392,18 +393,86 @@ function SystemDetail() {
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
 
-  const mentionOptions = useMemo(() => [
-    { id: "__all", label: "כולם", token: "@כולם" },
-    ...(agents ?? []).map((a: any) => ({ id: a.id, label: a.display_name, token: `@${a.display_name}` })),
+  const allMentionOptions = useMemo(() => [
+    { id: "__all", label: "כולם" },
+    ...(agents ?? []).map((a: any) => ({ id: a.id as string, label: a.display_name as string })),
   ], [agents]);
-  function applyMention(token: string) {
-    setNoteText((prev) => {
-      const at = prev.lastIndexOf("@");
-      const base = at >= 0 ? prev.slice(0, at) : prev;
-      const suffix = prev.endsWith(" ") ? "" : " ";
-      return `${base}${token}${suffix}`;
-    });
-    setMentionOpen(false);
+  const mentionOptions = useMemo(() => {
+    if (mentionQuery === null) return [];
+    const q = mentionQuery.trim();
+    if (!q) return allMentionOptions;
+    return allMentionOptions.filter((o) => o.label && o.label.toLowerCase().startsWith(q.toLowerCase()));
+  }, [allMentionOptions, mentionQuery]);
+
+  // Insert a mention chip at the current caret, replacing the `@query` typed so far.
+  function insertMention(name: string) {
+    const editor = noteEditorRef.current;
+    if (!editor) return;
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) return;
+    const text = node.textContent ?? "";
+    const at = text.slice(0, range.startOffset).lastIndexOf("@");
+    if (at < 0) return;
+
+    // Remove the "@query" segment from the text node, then insert a chip + space.
+    (node as Text).deleteData(at, range.startOffset - at);
+
+    const chip = document.createElement("span");
+    chip.setAttribute("data-mention", name);
+    chip.setAttribute("contenteditable", "false");
+    chip.className = "inline-flex items-center gap-0.5 align-baseline mx-0.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-primary/15 text-primary select-none";
+    chip.textContent = `@${name}`;
+
+    const space = document.createTextNode("\u00A0");
+    const rest = (node as Text).splitText(at);
+    const parent = node.parentNode!;
+    parent.insertBefore(chip, rest);
+    parent.insertBefore(space, rest);
+
+    const r = document.createRange();
+    r.setStart(space, 1);
+    r.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(r);
+    setMentionQuery(null);
+    setMentionActiveIndex(0);
+  }
+
+  function serializeNote(): string {
+    const editor = noteEditorRef.current;
+    if (!editor) return "";
+    let out = "";
+    const walk = (n: Node) => {
+      if (n.nodeType === Node.TEXT_NODE) {
+        out += (n.textContent ?? "").replace(/\u00A0/g, " ");
+      } else if (n instanceof HTMLElement) {
+        const m = n.getAttribute("data-mention");
+        if (m) { out += `@${m}`; return; }
+        if (n.tagName === "BR") { out += "\n"; return; }
+        n.childNodes.forEach(walk);
+      }
+    };
+    editor.childNodes.forEach(walk);
+    return out.trim();
+  }
+
+  function handleNoteInput() {
+    const sel = window.getSelection();
+    const editor = noteEditorRef.current;
+    if (!sel || !editor || sel.rangeCount === 0) { setMentionQuery(null); return; }
+    const range = sel.getRangeAt(0);
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !editor.contains(node)) { setMentionQuery(null); return; }
+    const before = (node.textContent ?? "").slice(0, range.startOffset);
+    const at = before.lastIndexOf("@");
+    if (at < 0) { setMentionQuery(null); return; }
+    const after = before.slice(at + 1);
+    if (/\s/.test(after) || after.length > 30) { setMentionQuery(null); return; }
+    setMentionQuery(after);
+    setMentionActiveIndex(0);
   }
 
   // Known mention names (agents + "כולם"), longest first for greedy matching.
@@ -895,18 +964,47 @@ function SystemDetail() {
         </div>
 
 
-        <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
-          className="flex gap-2 mb-3 relative">
+        <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
+          className="flex gap-2 mb-3 relative items-start">
           <div className="relative flex-1">
-            <input value={noteText} onChange={(e) => { setNoteText(e.target.value); setMentionOpen(e.target.value.includes("@")); }} onFocus={() => { if (noteText.includes("@")) setMentionOpen(true); }} placeholder="הוסף הערה..."
-              className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm" />
-            {mentionOpen && (
+            <div
+              ref={noteEditorRef}
+              contentEditable
+              suppressContentEditableWarning
+              role="textbox"
+              aria-label="הוסף הערה"
+              onInput={handleNoteInput}
+              onKeyDown={(e) => {
+                if (mentionQuery !== null && mentionOptions.length > 0) {
+                  if (e.key === "ArrowDown") { e.preventDefault(); setMentionActiveIndex((i) => Math.min(i + 1, mentionOptions.length - 1)); return; }
+                  if (e.key === "ArrowUp") { e.preventDefault(); setMentionActiveIndex((i) => Math.max(i - 1, 0)); return; }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    const pick = mentionOptions[mentionActiveIndex] ?? mentionOptions[0];
+                    if (pick) insertMention(pick.label);
+                    return;
+                  }
+                  if (e.key === "Escape") { e.preventDefault(); setMentionQuery(null); return; }
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  const body = serializeNote();
+                  if (body) noteMut.mutate({ data: { system_id: id, body } });
+                }
+              }}
+              data-placeholder="הוסף הערה... הקלד @ לתיוג"
+              className="min-h-[36px] w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {mentionQuery !== null && mentionOptions.length > 0 && (
               <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
-                {mentionOptions.map((opt) => {
+                {mentionOptions.map((opt, idx) => {
                   const initial = (opt.label || "?").trim().charAt(0);
+                  const active = idx === mentionActiveIndex;
                   return (
-                    <button key={opt.id} type="button" onClick={() => applyMention(opt.token)}
-                      className="w-full text-right px-3 py-2 text-sm hover:bg-accent flex items-center gap-2">
+                    <button key={opt.id} type="button"
+                      onMouseDown={(e) => { e.preventDefault(); insertMention(opt.label); }}
+                      onMouseEnter={() => setMentionActiveIndex(idx)}
+                      className={`w-full text-right px-3 py-2 text-sm flex items-center gap-2 ${active ? "bg-accent" : "hover:bg-accent"}`}>
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/15 text-primary text-[11px] font-semibold">{initial}</span>
                       <span className="flex-1">{opt.label}</span>
                     </button>
@@ -914,7 +1012,6 @@ function SystemDetail() {
                 })}
               </div>
             )}
-
           </div>
           <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
             <Send className="h-4 w-4" />

@@ -1,15 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { verifyWebhookAuth } from "@/lib/webhook-auth.server";
 
 async function handleWeeklyBackup(request: Request) {
-  const apikey = request.headers.get("apikey");
-  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const expected = process.env.BACKUP_WEBHOOK_SECRET || process.env.CRON_SECRET;
-  if (!expected || (apikey !== expected && bearer !== expected)) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
+  const unauthorized = verifyWebhookAuth(request);
+  if (unauthorized) return unauthorized;
   try {
     const { runBackup, sendBackupEmail } = await import("@/lib/backups.server");
     const result = await runBackup();

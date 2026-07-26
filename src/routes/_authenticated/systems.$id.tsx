@@ -307,6 +307,30 @@ function SystemDetail() {
     },
     onError: (e: any) => toast.error(e.message),
   });
+  const updateNoteFn = useServerFn(updateNote);
+  const deleteNoteFn = useServerFn(deleteNote);
+  const updateActivityFn = useServerFn(updateActivityLog);
+  const deleteActivityFn = useServerFn(deleteActivityLog);
+  const editNoteMut = useMutation({
+    mutationFn: updateNoteFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההערה עודכנה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const removeNoteMut = useMutation({
+    mutationFn: deleteNoteFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההערה נמחקה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const editActivityMut = useMutation({
+    mutationFn: updateActivityFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("השורה עודכנה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const removeActivityMut = useMutation({
+    mutationFn: deleteActivityFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("השורה נמחקה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
   const deleteMut = useMutation({
     mutationFn: deleteFn,
     onSuccess: () => { toast.success("נמחק"); navigate({ to: "/dashboard" }); },

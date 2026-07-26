@@ -776,10 +776,11 @@ export const updateActivityLog = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const isAdmin = await userHasRole(context.userId, "admin");
-    if (!isAdmin) throw new Error("רק מנהל יכול לערוך יומן שינויים");
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "history_edit");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { id, ...patch } = data;
-    const { error } = await context.supabase.from("system_activity_log").update(patch).eq("id", id);
+    const { error } = await supabaseAdmin.from("system_activity_log").update(patch).eq("id", id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -789,9 +790,10 @@ export const deleteActivityLog = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const isAdmin = await userHasRole(context.userId, "admin");
-    if (!isAdmin) throw new Error("רק מנהל יכול למחוק שורת יומן");
-    const { error } = await context.supabase.from("system_activity_log").delete().eq("id", data.id);
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "history_edit");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("system_activity_log").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -806,6 +808,46 @@ export const addNote = createServerFn({ method: "POST" })
     const { error } = await context.supabase.from("system_notes").insert({
       system_id: data.system_id, body: sanitizeText(data.body), author_id: context.userId,
     });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const updateNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string; body: string }) =>
+    z.object({ id: z.string().uuid(), body: z.string().min(1).max(2000) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const { hasPermission } = await import("@/lib/permissions.server");
+    const { data: existing, error: fetchErr } = await context.supabase
+      .from("system_notes").select("author_id").eq("id", data.id).maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!existing) throw new Error("ההערה לא נמצאה");
+    const isAuthor = (existing as any).author_id === context.userId;
+    const canEditAll = await hasPermission(context.userId, "history_edit");
+    if (!isAuthor && !canEditAll) throw new Error("אין הרשאה לערוך הערה של משתמש אחר");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("system_notes").update({ body: sanitizeText(data.body) }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+export const deleteNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await ensureCanWrite(context.userId);
+    const { hasPermission } = await import("@/lib/permissions.server");
+    const { data: existing, error: fetchErr } = await context.supabase
+      .from("system_notes").select("author_id").eq("id", data.id).maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    if (!existing) throw new Error("ההערה לא נמצאה");
+    const isAuthor = (existing as any).author_id === context.userId;
+    const canEditAll = await hasPermission(context.userId, "history_edit");
+    if (!isAuthor && !canEditAll) throw new Error("אין הרשאה למחוק הערה של משתמש אחר");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("system_notes").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

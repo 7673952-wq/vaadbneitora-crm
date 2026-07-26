@@ -30,6 +30,7 @@ export const PERMISSION_DEFINITIONS = [
   { key: "settings_manage", label: "הגדרות מערכת", description: "סטטוסים, שיוכים אוטומטיים והגדרות כלליות" },
   { key: "users_manage", label: "ניהול משתמשים", description: "יצירה, מחיקה ועדכון משתמשים" },
   { key: "permissions_manage", label: "ניהול הרשאות", description: "שינוי הרשאות לפי תפקיד ולפי משתמש" },
+  { key: "history_edit", label: "עריכת הערות ופעילות", description: "עריכה ומחיקה של הערות ושורות ביומן הפעילות של כל המשתמשים" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_DEFINITIONS)[number]["key"];
@@ -57,6 +58,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: false,
     system_name_edit: false,
     system_code_edit: false,
+    history_edit: false,
   },
   agent: {
     systems_read: true,
@@ -76,6 +78,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: false,
     system_name_edit: false,
     system_code_edit: false,
+    history_edit: false,
   },
   admin: {
     systems_read: true,
@@ -95,6 +98,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: false,
     system_name_edit: true,
     system_code_edit: false,
+    history_edit: true,
   },
   super_admin: {
     systems_read: true,
@@ -114,6 +118,7 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     permissions_manage: true,
     system_name_edit: true,
     system_code_edit: true,
+    history_edit: true,
   },
 };
 

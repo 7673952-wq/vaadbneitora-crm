@@ -6,6 +6,7 @@ import {
   updateSystem, addNote, deleteSystem, addSubSystem,
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
+  updateNote, deleteNote, updateActivityLog, deleteActivityLog,
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
@@ -304,6 +305,30 @@ function SystemDetail() {
       setMentionQuery(null);
       toast.success("ההערה נוספה");
     },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const updateNoteFn = useServerFn(updateNote);
+  const deleteNoteFn = useServerFn(deleteNote);
+  const updateActivityFn = useServerFn(updateActivityLog);
+  const deleteActivityFn = useServerFn(deleteActivityLog);
+  const editNoteMut = useMutation({
+    mutationFn: updateNoteFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההערה עודכנה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const removeNoteMut = useMutation({
+    mutationFn: deleteNoteFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההערה נמחקה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const editActivityMut = useMutation({
+    mutationFn: updateActivityFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("השורה עודכנה"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+  const removeActivityMut = useMutation({
+    mutationFn: deleteActivityFn,
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("השורה נמחקה"); },
     onError: (e: any) => toast.error(e.message),
   });
   const deleteMut = useMutation({
@@ -1033,18 +1058,46 @@ function SystemDetail() {
               return <p className="text-sm text-muted-foreground text-center py-8">{mentionFilter ? `אין הערות עם @${mentionFilter}` : "אין פעילות עדיין"}</p>;
             }
             return merged.map((row) => {
+              const canEditHistory = !!(me as any)?.permissions?.history_edit;
+              const myId = (me as any)?.userId as string | undefined;
               if (row.kind === "note") {
                 const n = row.item;
                 const initial = (n.author_name || "?").trim().charAt(0);
+                const canEditNote = canEditHistory || (myId && n.author_id === myId);
                 return (
-                  <div key={`n-${n.id}`} className="border border-border rounded-lg p-2.5 bg-background">
+                  <div key={`n-${n.id}`} className="border border-border rounded-lg p-2.5 bg-background group">
                     <div className="text-sm whitespace-pre-wrap leading-relaxed">{renderNoteBody(n.body || "")}</div>
                     <div className="text-[11px] text-muted-foreground mt-1.5 flex justify-between items-center">
                       <span className="flex items-center gap-1.5">
                         <span className="inline-flex items-center justify-center h-5 w-5 rounded-full bg-primary/15 text-primary text-[10px] font-semibold">{initial}</span>
                         {n.author_name}
                       </span>
-                      <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
+                      <span className="flex items-center gap-2">
+                        {canEditNote && (
+                          <>
+                            <button
+                              type="button"
+                              title="ערוך הערה"
+                              className="opacity-0 group-hover:opacity-100 hover:text-primary transition"
+                              onClick={() => {
+                                const next = window.prompt("עריכת הערה:", n.body || "");
+                                if (next !== null && next.trim() && next !== n.body) {
+                                  editNoteMut.mutate({ data: { id: n.id, body: next.trim() } });
+                                }
+                              }}
+                            >✎</button>
+                            <button
+                              type="button"
+                              title="מחק הערה"
+                              className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition"
+                              onClick={() => {
+                                if (window.confirm("למחוק את ההערה?")) removeNoteMut.mutate({ data: { id: n.id } });
+                              }}
+                            >🗑</button>
+                          </>
+                        )}
+                        <span>{new Date(n.created_at).toLocaleString("he-IL")}</span>
+                      </span>
                     </div>
                   </div>
                 );
@@ -1080,10 +1133,35 @@ function SystemDetail() {
                   : formatValue(a.field, a.new_value);
               const isStatus = a.field === "status";
               return (
-                <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-2.5 hover:bg-accent/30 transition">
+                <div key={`a-${a.id}`} className="rounded-lg border border-border bg-background p-2.5 hover:bg-accent/30 transition group">
                   <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground mb-1">
                     <span className="font-medium text-foreground">{a.actor_name}</span>
-                    <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                    <span className="flex items-center gap-2">
+                      {canEditHistory && (
+                        <>
+                          <button
+                            type="button"
+                            title="ערוך סיבה"
+                            className="opacity-0 group-hover:opacity-100 hover:text-primary transition"
+                            onClick={() => {
+                              const next = window.prompt("עריכת סיבה:", a.reason || "");
+                              if (next !== null) {
+                                editActivityMut.mutate({ data: { id: a.id, reason: next } });
+                              }
+                            }}
+                          >✎</button>
+                          <button
+                            type="button"
+                            title="מחק שורה"
+                            className="opacity-0 group-hover:opacity-100 hover:text-red-600 transition"
+                            onClick={() => {
+                              if (window.confirm("למחוק שורת יומן זו?")) removeActivityMut.mutate({ data: { id: a.id } });
+                            }}
+                          >🗑</button>
+                        </>
+                      )}
+                      <span>{new Date(a.created_at).toLocaleString("he-IL")}</span>
+                    </span>
                   </div>
                   <div className="text-sm flex items-center gap-2 flex-wrap">
                     {a.action === "created" && (

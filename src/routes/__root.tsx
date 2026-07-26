@@ -178,9 +178,22 @@ function RootComponent() {
   );
 }
 
+const STATUS_SETTINGS_CACHE_KEY = "crm_status_settings_v1";
+
 function StatusSettingsHydrator() {
   const fn = useServerFn(listStatusSettings);
   const [hasSession, setHasSession] = useState(false);
+  // Apply the last-known status settings from localStorage synchronously,
+  // before the server query resolves — otherwise the UI briefly renders
+  // hardcoded defaults from @/lib/status and then flips to the real ones.
+  useState(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = window.localStorage.getItem(STATUS_SETTINGS_CACHE_KEY);
+      if (raw) applyStatusSettings(JSON.parse(raw));
+    } catch {}
+    return null;
+  });
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -196,6 +209,10 @@ function StatusSettingsHydrator() {
     retry: false,
     throwOnError: false,
   });
-  useEffect(() => { if (data) applyStatusSettings(data as any); }, [data]);
+  useEffect(() => {
+    if (!data) return;
+    applyStatusSettings(data as any);
+    try { window.localStorage.setItem(STATUS_SETTINGS_CACHE_KEY, JSON.stringify(data)); } catch {}
+  }, [data]);
   return null;
 }

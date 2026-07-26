@@ -884,7 +884,15 @@ function SystemDetail() {
             <Activity className="h-4 w-4" />
             פעילות ({data.notes.length + data.activity.length + data.transfers.length})
           </h2>
+          {mentionFilter && (
+            <button type="button" onClick={() => setMentionFilter(null)}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90">
+              מסונן לפי @{mentionFilter}
+              <X className="h-3 w-3" />
+            </button>
+          )}
         </div>
+
 
         <form onSubmit={(e) => { e.preventDefault(); if (noteText.trim()) noteMut.mutate({ data: { system_id: id, body: noteText.trim() } }); }}
           className="flex gap-2 mb-3 relative">

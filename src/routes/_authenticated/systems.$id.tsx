@@ -132,6 +132,15 @@ function SystemDetail() {
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
   const [noteText, setNoteText] = useState("");
   const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionFilter, setMentionFilter] = useState<string | null>(null);
+  // Per-user preference for whether the "פרטים" section starts expanded.
+  const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    const v = window.localStorage.getItem("crm.details.defaultOpen");
+    return v === null ? true : v === "1";
+  });
+  const [detailsOpen, setDetailsOpen] = useState<boolean>(detailsDefaultOpen);
+
   const [subCode, setSubCode] = useState("");
   const [subName, setSubName] = useState("");
   const [customDate, setCustomDate] = useState<string>("");

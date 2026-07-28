@@ -276,15 +276,34 @@ function Dashboard() {
     if (!systems) return [];
     if (!search.trim()) return systems;
     const s = search.trim().toLowerCase();
+    const norm = (v: any) => String(v ?? "").toLowerCase();
+    const digits = (v: any) => String(v ?? "").replace(/\D/g, "");
+    const sDigits = digits(s);
+    const phoneHit = (v: any) => {
+      const d = digits(v);
+      if (!d) return false;
+      if (sDigits && d.includes(sDigits)) return true;
+      return norm(v).includes(s);
+    };
     return systems.filter((r: any) => {
-      const nameMatch = r.name?.toLowerCase().includes(s);
-      const codeMatch = r.system_code?.toLowerCase().includes(s);
-      const agentMatch = r.agent?.display_name?.toLowerCase().includes(s);
-      const statusMatch = (STATUS_LABEL[r.status as SystemStatus] || "").includes(s);
-      const phoneMatch = (r.phone || "").includes(s);
-      return nameMatch || codeMatch || agentMatch || statusMatch || phoneMatch;
+      if (norm(r.name).includes(s)) return true;
+      if (norm(r.system_code).includes(s)) return true;
+      if (norm(r.agent?.display_name).includes(s)) return true;
+      if ((STATUS_LABEL[r.status as SystemStatus] || "").toLowerCase().includes(s)) return true;
+      if ((STATUS_LABEL[r.secondary_status as SystemStatus] || "").toLowerCase().includes(s)) return true;
+      if (norm(r.notes).includes(s)) return true;
+      if (norm(r.source).includes(s)) return true;
+      if (norm(r.email).includes(s)) return true;
+      if (phoneHit(r.phone)) return true;
+      if (phoneHit(r.caller_phone)) return true;
+      const extraPhones = Array.isArray(r.additional_caller_phones) ? r.additional_caller_phones : [];
+      if (extraPhones.some((p: any) => phoneHit(p?.phone ?? p))) return true;
+      const extraEmails = Array.isArray(r.additional_emails) ? r.additional_emails : [];
+      if (extraEmails.some((e: any) => norm(e?.email ?? e).includes(s))) return true;
+      return false;
     });
   }, [systems, search]);
+
 
   // Global per-status counts across ALL systems (not just the current page).
   const stats = useMemo(() => {

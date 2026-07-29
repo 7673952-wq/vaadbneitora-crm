@@ -45,6 +45,16 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
         ))}
         <span className="mx-2 h-4 w-px bg-border" />
         <Link
+          to="/mail"
+          className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition ${
+            path.startsWith("/mail") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          <Mail className="h-4 w-4" />
+          מייל
+          {path.startsWith("/mail") && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+        </Link>
+        <Link
           to="/kosher"
           className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition ${
             path.startsWith("/kosher") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -54,6 +64,7 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
           הוראות כשרות
           {path.startsWith("/kosher") && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
         </Link>
+
         {isAdmin && (
           <Link
             to="/admin"

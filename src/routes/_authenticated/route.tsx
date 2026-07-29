@@ -214,7 +214,7 @@ function AuthedLayout() {
           </div>
         </div>
       </header>
-      <CrmTabs />
+      <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} />
 
       <main className="max-w-[1600px] mx-auto px-6 py-8">
         <Outlet />

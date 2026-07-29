@@ -10,6 +10,8 @@ import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRou
 import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";
+import { CrmTabs } from "@/components/CrmTabs";
+
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
@@ -154,6 +156,7 @@ function AuthedLayout() {
             <span className="font-semibold tracking-tight">CRM מערכות</span>
           </Link>
           <nav className="flex items-center gap-1 mr-4">
+
             {nav.map((n) => {
               const active = path.startsWith(n.to);
               return (
@@ -211,6 +214,8 @@ function AuthedLayout() {
           </div>
         </div>
       </header>
+      <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} />
+
       <main className="max-w-[1600px] mx-auto px-6 py-8">
         <Outlet />
       </main>

@@ -35,6 +35,162 @@ export type Database = {
         }
         Relationships: []
       }
+      crm_field_defs: {
+        Row: {
+          created_at: string
+          crm_key: string
+          field_key: string
+          field_type: string
+          id: string
+          label: string
+          options: Json
+          required: boolean
+          show_in_table: boolean
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          crm_key: string
+          field_key: string
+          field_type?: string
+          id?: string
+          label: string
+          options?: Json
+          required?: boolean
+          show_in_table?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          crm_key?: string
+          field_key?: string
+          field_type?: string
+          id?: string
+          label?: string
+          options?: Json
+          required?: boolean
+          show_in_table?: boolean
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_field_defs_crm_key_fkey"
+            columns: ["crm_key"]
+            isOneToOne: false
+            referencedRelation: "crms"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      crm_settings: {
+        Row: {
+          crm_key: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          crm_key: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          crm_key?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_settings_crm_key_fkey"
+            columns: ["crm_key"]
+            isOneToOne: false
+            referencedRelation: "crms"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      crm_user_roles: {
+        Row: {
+          created_at: string
+          crm_key: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          crm_key: string
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          crm_key?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_user_roles_crm_key_fkey"
+            columns: ["crm_key"]
+            isOneToOne: false
+            referencedRelation: "crms"
+            referencedColumns: ["key"]
+          },
+        ]
+      }
+      crms: {
+        Row: {
+          color: string
+          created_at: string
+          icon: string | null
+          id_label: string
+          is_active: boolean
+          key: string
+          name: string
+          record_table: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          icon?: string | null
+          id_label?: string
+          is_active?: boolean
+          key: string
+          name: string
+          record_table: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          icon?: string | null
+          id_label?: string
+          is_active?: boolean
+          key?: string
+          name?: string
+          record_table?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
       dashboard_saved_views: {
         Row: {
           created_at: string
@@ -170,6 +326,39 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      kosher_instructions: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          sort_order: number
+          title: string
+          updated_at: string
+          updated_by: string | null
+          updated_by_name: string | null
+        }
+        Insert: {
+          body?: string
+          created_at?: string
+          id?: string
+          sort_order?: number
+          title: string
+          updated_at?: string
+          updated_by?: string | null
+          updated_by_name?: string | null
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          sort_order?: number
+          title?: string
+          updated_at?: string
+          updated_by?: string | null
+          updated_by_name?: string | null
+        }
+        Relationships: []
       }
       notification_role_defaults: {
         Row: {
@@ -653,6 +842,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      has_crm_access: {
+        Args: { _crm_key: string; _user_id: string }
+        Returns: boolean
+      }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
     }
     Enums: {

@@ -154,6 +154,7 @@ function AuthedLayout() {
             <span className="font-semibold tracking-tight">CRM מערכות</span>
           </Link>
           <nav className="flex items-center gap-1 mr-4">
+
             {nav.map((n) => {
               const active = path.startsWith(n.to);
               return (

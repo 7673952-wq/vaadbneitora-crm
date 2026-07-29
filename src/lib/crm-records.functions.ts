@@ -4,6 +4,9 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fromSupabase, AppError } from "@/lib/errors";
 import { sanitizeText } from "@/lib/sanitize";
 
+export type CustomValue = string | number | boolean | null;
+export type CustomValues = Record<string, CustomValue>;
+
 export type CrmRecord = {
   id: string;
   crmKey: string;
@@ -17,7 +20,7 @@ export type CrmRecord = {
   source: string | null;
   notes: string | null;
   reminderAt: string | null;
-  custom: Record<string, unknown>;
+  custom: CustomValues;
   createdAt: string;
   updatedAt: string;
 };
@@ -36,7 +39,7 @@ function mapRecord(r: any): CrmRecord {
     source: r.source ?? null,
     notes: r.notes ?? null,
     reminderAt: r.reminder_at ?? null,
-    custom: (r.custom ?? {}) as Record<string, unknown>,
+    custom: (r.custom ?? {}) as CustomValues,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
@@ -203,7 +206,7 @@ const recordInput = z.object({
   email: z.string().trim().max(200).nullable().default(null),
   source: z.string().trim().max(80).nullable().default(null),
   notes: z.string().max(5000).nullable().default(null),
-  custom: z.record(z.string(), z.unknown()).default({}),
+  custom: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
 });
 
 async function actorName(context: { supabase: any; userId: string }) {
@@ -231,7 +234,7 @@ export const createRecord = createServerFn({ method: "POST" })
         email: data.email,
         source: data.source,
         notes: data.notes,
-        custom: data.custom,
+        custom: data.custom as any,
         created_by: context.userId,
         assigned_agent_id: context.userId,
       })
@@ -267,7 +270,7 @@ export const updateRecord = createServerFn({ method: "POST" })
     if (readErr) throw fromSupabase(readErr);
     if (!before) throw new AppError("הפניה לא נמצאה");
 
-    const patch: Record<string, unknown> = {};
+    const patch: Record<string, any> = {};
     const p = data.patch;
     if (p.recordCode !== undefined) patch.record_code = sanitizeText(p.recordCode);
     if (p.name !== undefined) patch.name = sanitizeText(p.name);
@@ -281,7 +284,7 @@ export const updateRecord = createServerFn({ method: "POST" })
 
     const { data: row, error } = await context.supabase
       .from("crm_records")
-      .update(patch)
+      .update(patch as any)
       .eq("id", data.id)
       .select("*")
       .single();

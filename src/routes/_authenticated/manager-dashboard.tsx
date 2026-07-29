@@ -451,6 +451,21 @@ function SeriesScannerModal({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState("open");
   const [namePrefix, setNamePrefix] = useState("מערכת");
+  // Which missing codes were already called — persisted locally per browser.
+  const DIALED_KEY = "series-dialed-codes";
+  const [dialedCodes, setDialedCodes] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(window.localStorage.getItem(DIALED_KEY) ?? "[]")); } catch { return new Set(); }
+  });
+  function persistDialed(next: Set<string>) {
+    try { window.localStorage.setItem(DIALED_KEY, JSON.stringify(Array.from(next))); } catch { /* ignore */ }
+  }
+  function markDialed(code: string) {
+    setDialedCodes((prev) => { const n = new Set(prev); n.add(code); persistDialed(n); return n; });
+  }
+  function toggleDialed(code: string) {
+    setDialedCodes((prev) => { const n = new Set(prev); if (n.has(code)) n.delete(code); else n.add(code); persistDialed(n); return n; });
+  }
 
   async function scan() {
     setBusy(true);
@@ -582,17 +597,35 @@ function SeriesScannerModal({ onClose }: { onClose: () => void }) {
                         </div>
                       )}
 
-                      <div className="p-2 flex flex-wrap gap-1 max-h-40 overflow-y-auto">
+                      <div className="p-2 space-y-1 max-h-64 overflow-y-auto">
                         {s.missing.map((code: string) => {
                           const on = selected.has(code);
+                          const dialed = dialedCodes.has(code);
                           return (
-                            <button key={code} onClick={() => toggle(code)}
-                              className={`text-xs font-mono px-2 py-1 rounded border ${on ? "bg-emerald-500 text-white border-emerald-600" : "bg-red-50 text-red-800 border-red-200 hover:bg-red-100"}`}>
-                              {code}
-                            </button>
+                            <div key={code}
+                              className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1.5 ${dialed ? "bg-muted/40 border-border" : "bg-red-50 border-red-200"}`}>
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-mono text-xs">{code}</span>
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${dialed ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-amber-300 bg-amber-50 text-amber-800"}`}>
+                                  {dialed ? "חויג" : "טרם חויג"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1 shrink-0">
+                                <a href={`tel:${buildDialNumber(code)}`} onClick={() => markDialed(code)}
+                                  className="px-2 py-0.5 rounded border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs"
+                                  title="חייג למספר זה">חייג</a>
+                                <button onClick={() => toggleDialed(code)}
+                                  className="px-2 py-0.5 rounded border border-input bg-background hover:bg-accent text-xs"
+                                  title="סמן/בטל סימון כחויג">{dialed ? "בטל סימון" : "סמן כחויג"}</button>
+                                <button onClick={() => toggle(code)}
+                                  className={`px-2 py-0.5 rounded border text-xs ${on ? "bg-emerald-600 text-white border-emerald-700" : "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100"}`}
+                                  title="בחר האם לפתוח מערכת למספר זה">{on ? "נבחר לפתיחה ✓" : "פתח מערכת"}</button>
+                              </div>
+                            </div>
                           );
                         })}
                       </div>
+
                     </div>
                   );
                 })}

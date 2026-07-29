@@ -20,6 +20,7 @@ import {
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
+import { CrmManagerPanel } from "@/components/CrmManagerPanel";
 import { BackupsPage } from "./backups";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ import {
 import {
   UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X,
   Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks,
-  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing,
+  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing, LayoutGrid,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -62,6 +63,7 @@ function AdminPage() {
   const canBackups = !!me?.isSuperAdmin; // גיבויים/שחזור מוגבלים לסופר-אדמין, כמו שהיה בדף הנפרד
   const canEmail = !!(perms.settings_manage || perms.backup_manage); // חיבור Gmail, תבניות וחתימות
   const canNotifs = !!(perms.settings_manage || perms.users_manage || perms.permissions_manage);
+  const canCrms = !!(perms.settings_manage || perms.permissions_manage || me?.isSuperAdmin);
 
   const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
   const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : canNotifs ? "notifications" : "backups";
@@ -89,6 +91,7 @@ function AdminPage() {
       <Tabs defaultValue={defaultTab} dir="rtl">
         <TabsList className="flex flex-wrap gap-1 h-auto">
           {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
+          {canCrms && <TabsTrigger value="crms" className="flex items-center gap-1.5"><LayoutGrid className="h-3.5 w-3.5" />מערכות CRM</TabsTrigger>}
           {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
           {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
           {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />התראות</TabsTrigger>}
@@ -100,6 +103,7 @@ function AdminPage() {
         </TabsList>
 
         {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
+        {canCrms && <TabsContent value="crms" className="mt-4"><CrmManagerPanel /></TabsContent>}
         {canGeneral && <TabsContent value="general" className="mt-4 space-y-6">
           <AutoSnoozePanel />
           <BackupEmailPanel />

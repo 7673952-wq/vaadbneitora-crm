@@ -89,6 +89,7 @@ function AdminPage() {
       <Tabs defaultValue={defaultTab} dir="rtl">
         <TabsList className="flex flex-wrap gap-1 h-auto">
           {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
+          {canCrms && <TabsTrigger value="crms" className="flex items-center gap-1.5"><LayoutGrid className="h-3.5 w-3.5" />מערכות CRM</TabsTrigger>}
           {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
           {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
           {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />התראות</TabsTrigger>}

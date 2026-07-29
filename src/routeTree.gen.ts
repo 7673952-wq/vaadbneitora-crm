@@ -19,6 +19,7 @@ import { Route as AuthenticatedChartsRouteImport } from './routes/_authenticated
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
 import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedCCrmRouteImport } from './routes/_authenticated/c.$crm'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
@@ -78,6 +79,11 @@ const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCCrmRoute = AuthenticatedCCrmRouteImport.update({
+  id: '/c/$crm',
+  path: '/c/$crm',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
   id: '/systems/$id',
   path: '/systems/$id',
@@ -135,6 +141,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/c/$crm': typeof AuthenticatedCCrmRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -154,6 +161,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/c/$crm': typeof AuthenticatedCCrmRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -175,6 +183,7 @@ export interface FileRoutesById {
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/_authenticated/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
+  '/_authenticated/c/$crm': typeof AuthenticatedCCrmRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -196,6 +205,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager-dashboard'
     | '/reports'
+    | '/c/$crm'
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -215,6 +225,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager-dashboard'
     | '/reports'
+    | '/c/$crm'
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -235,6 +246,7 @@ export interface FileRouteTypes {
     | '/_authenticated/dashboard'
     | '/_authenticated/manager-dashboard'
     | '/_authenticated/reports'
+    | '/_authenticated/c/$crm'
     | '/_authenticated/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -330,6 +342,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/c/$crm': {
+      id: '/_authenticated/c/$crm'
+      path: '/c/$crm'
+      fullPath: '/c/$crm'
+      preLoaderRoute: typeof AuthenticatedCCrmRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/systems/$id': {
       id: '/_authenticated/systems/$id'
       path: '/systems/$id'
@@ -397,6 +416,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedCCrmRoute: typeof AuthenticatedCCrmRoute
   AuthenticatedSystemsIdRoute: typeof AuthenticatedSystemsIdRoute
 }
 
@@ -408,6 +428,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
+  AuthenticatedCCrmRoute: AuthenticatedCCrmRoute,
   AuthenticatedSystemsIdRoute: AuthenticatedSystemsIdRoute,
 }
 

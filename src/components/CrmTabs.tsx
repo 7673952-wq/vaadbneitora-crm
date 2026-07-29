@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMyCrms } from "@/lib/use-crms";
-import { ShieldCheck, Settings2 } from "lucide-react";
+import { ShieldCheck, Settings2, Mail } from "lucide-react";
 
 /**
  * Top-level tab bar switching between the different CRMs plus the global

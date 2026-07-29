@@ -451,6 +451,21 @@ function SeriesScannerModal({ onClose }: { onClose: () => void }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState("open");
   const [namePrefix, setNamePrefix] = useState("מערכת");
+  // Which missing codes were already called — persisted locally per browser.
+  const DIALED_KEY = "series-dialed-codes";
+  const [dialedCodes, setDialedCodes] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") return new Set();
+    try { return new Set(JSON.parse(window.localStorage.getItem(DIALED_KEY) ?? "[]")); } catch { return new Set(); }
+  });
+  function persistDialed(next: Set<string>) {
+    try { window.localStorage.setItem(DIALED_KEY, JSON.stringify(Array.from(next))); } catch { /* ignore */ }
+  }
+  function markDialed(code: string) {
+    setDialedCodes((prev) => { const n = new Set(prev); n.add(code); persistDialed(n); return n; });
+  }
+  function toggleDialed(code: string) {
+    setDialedCodes((prev) => { const n = new Set(prev); if (n.has(code)) n.delete(code); else n.add(code); persistDialed(n); return n; });
+  }
 
   async function scan() {
     setBusy(true);

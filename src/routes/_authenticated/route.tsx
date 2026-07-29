@@ -11,6 +11,9 @@ import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";
 import { CrmTabs } from "@/components/CrmTabs";
+import { GlobalSearch } from "@/components/GlobalSearch";
+import { NewRecordButton } from "@/components/NewRecordButton";
+
 
 
 export const Route = createFileRoute("/_authenticated")({
@@ -169,7 +172,10 @@ function AuthedLayout() {
             })}
           </nav>
           <div className="mr-auto flex items-center gap-2 relative">
+            {sessionReady && <GlobalSearch />}
+            {sessionReady && <NewRecordButton />}
             {sessionReady && <NotificationBell />}
+
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent transition"

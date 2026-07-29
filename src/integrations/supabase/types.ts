@@ -85,6 +85,183 @@ export type Database = {
           },
         ]
       }
+      crm_record_activity: {
+        Row: {
+          action: string
+          actor_display_name: string | null
+          actor_id: string | null
+          created_at: string
+          crm_key: string
+          field: string | null
+          id: string
+          new_value: string | null
+          old_value: string | null
+          record_id: string | null
+        }
+        Insert: {
+          action: string
+          actor_display_name?: string | null
+          actor_id?: string | null
+          created_at?: string
+          crm_key: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          record_id?: string | null
+        }
+        Update: {
+          action?: string
+          actor_display_name?: string | null
+          actor_id?: string | null
+          created_at?: string
+          crm_key?: string
+          field?: string | null
+          id?: string
+          new_value?: string | null
+          old_value?: string | null
+          record_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_record_activity_crm_key_fkey"
+            columns: ["crm_key"]
+            isOneToOne: false
+            referencedRelation: "crms"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "crm_record_activity_record_id_fkey"
+            columns: ["record_id"]
+            isOneToOne: false
+            referencedRelation: "crm_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_record_notes: {
+        Row: {
+          author_id: string | null
+          author_name: string | null
+          body: string
+          created_at: string
+          crm_key: string
+          id: string
+          record_id: string
+          updated_at: string
+        }
+        Insert: {
+          author_id?: string | null
+          author_name?: string | null
+          body: string
+          created_at?: string
+          crm_key: string
+          id?: string
+          record_id: string
+          updated_at?: string
+        }
+        Update: {
+          author_id?: string | null
+          author_name?: string | null
+          body?: string
+          created_at?: string
+          crm_key?: string
+          id?: string
+          record_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_record_notes_crm_key_fkey"
+            columns: ["crm_key"]
+            isOneToOne: false
+            referencedRelation: "crms"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "crm_record_notes_record_id_fkey"
+            columns: ["record_id"]
+            isOneToOne: false
+            referencedRelation: "crm_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crm_records: {
+        Row: {
+          assigned_agent_id: string | null
+          caller_phone: string | null
+          created_at: string
+          created_by: string | null
+          crm_key: string
+          custom: Json
+          email: string | null
+          id: string
+          name: string
+          notes: string | null
+          parent_record_id: string | null
+          phone: string | null
+          record_code: string
+          reminder_at: string | null
+          source: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_agent_id?: string | null
+          caller_phone?: string | null
+          created_at?: string
+          created_by?: string | null
+          crm_key: string
+          custom?: Json
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          parent_record_id?: string | null
+          phone?: string | null
+          record_code: string
+          reminder_at?: string | null
+          source?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_agent_id?: string | null
+          caller_phone?: string | null
+          created_at?: string
+          created_by?: string | null
+          crm_key?: string
+          custom?: Json
+          email?: string | null
+          id?: string
+          name?: string
+          notes?: string | null
+          parent_record_id?: string | null
+          phone?: string | null
+          record_code?: string
+          reminder_at?: string | null
+          source?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_records_crm_key_fkey"
+            columns: ["crm_key"]
+            isOneToOne: false
+            referencedRelation: "crms"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "crm_records_parent_record_id_fkey"
+            columns: ["parent_record_id"]
+            isOneToOne: false
+            referencedRelation: "crm_records"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crm_settings: {
         Row: {
           crm_key: string

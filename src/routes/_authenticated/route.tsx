@@ -10,6 +10,8 @@ import { LayoutDashboard, Users, LogOut, BarChart3, TrendingUp, Database, KeyRou
 import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";
+import { CrmTabs } from "@/components/CrmTabs";
+
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,

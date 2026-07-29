@@ -20,6 +20,7 @@ import {
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
+import { CrmManagerPanel } from "@/components/CrmManagerPanel";
 import { BackupsPage } from "./backups";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -30,7 +31,7 @@ import {
 import {
   UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X,
   Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks,
-  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing,
+  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing, LayoutGrid,
 } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/admin")({
@@ -62,6 +63,7 @@ function AdminPage() {
   const canBackups = !!me?.isSuperAdmin; // גיבויים/שחזור מוגבלים לסופר-אדמין, כמו שהיה בדף הנפרד
   const canEmail = !!(perms.settings_manage || perms.backup_manage); // חיבור Gmail, תבניות וחתימות
   const canNotifs = !!(perms.settings_manage || perms.users_manage || perms.permissions_manage);
+  const canCrms = !!(perms.settings_manage || perms.permissions_manage || me?.isSuperAdmin);
 
   const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
   const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : canNotifs ? "notifications" : "backups";
@@ -101,6 +103,7 @@ function AdminPage() {
         </TabsList>
 
         {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
+        {canCrms && <TabsContent value="crms" className="mt-4"><CrmManagerPanel /></TabsContent>}
         {canGeneral && <TabsContent value="general" className="mt-4 space-y-6">
           <AutoSnoozePanel />
           <BackupEmailPanel />

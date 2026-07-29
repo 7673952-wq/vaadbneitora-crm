@@ -98,7 +98,7 @@ export const deleteCrm = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ key: z.string().trim().min(1) }).parse(input))
   .handler(async ({ data, context }) => {
     await assertCrmAdmin(context);
-    if (data.key === "yemot") throw new AppError("לא ניתן למחוק את המערכת הראשית", 400);
+    if (data.key === "yemot") throw new AppError("לא ניתן למחוק את המערכת הראשית");
     const { error } = await context.supabase.from("crms").delete().eq("key", data.key);
     if (error) throw fromSupabase(error);
     return { ok: true };

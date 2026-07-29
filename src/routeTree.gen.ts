@@ -24,6 +24,7 @@ import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authentica
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
 import { Route as AuthenticatedCCrmIndexRouteImport } from './routes/_authenticated/c.$crm.index'
+import { Route as AuthenticatedCCrmIdRouteImport } from './routes/_authenticated/c.$crm.$id'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
 import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
 import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
@@ -106,6 +107,11 @@ const AuthenticatedCCrmIndexRoute = AuthenticatedCCrmIndexRouteImport.update({
   path: '/c/$crm/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedCCrmIdRoute = AuthenticatedCCrmIdRouteImport.update({
+  id: '/c/$crm/$id',
+  path: '/c/$crm/$id',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const ApiPublicHooksDailyBackupRoute =
   ApiPublicHooksDailyBackupRouteImport.update({
     id: '/api/public/hooks/daily-backup',
@@ -151,6 +157,7 @@ export interface FileRoutesByFullPath {
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
+  '/c/$crm/$id': typeof AuthenticatedCCrmIdRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
@@ -172,6 +179,7 @@ export interface FileRoutesByTo {
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
+  '/c/$crm/$id': typeof AuthenticatedCCrmIdRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
+  '/_authenticated/c/$crm/$id': typeof AuthenticatedCCrmIdRoute
   '/api/public/hooks/daily-backup': typeof ApiPublicHooksDailyBackupRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
@@ -218,6 +227,7 @@ export interface FileRouteTypes {
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
+    | '/c/$crm/$id'
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
@@ -239,6 +249,7 @@ export interface FileRouteTypes {
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
+    | '/c/$crm/$id'
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
@@ -261,6 +272,7 @@ export interface FileRouteTypes {
     | '/_authenticated/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
+    | '/_authenticated/c/$crm/$id'
     | '/api/public/hooks/daily-backup'
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
@@ -389,6 +401,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedCCrmIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/c/$crm/$id': {
+      id: '/_authenticated/c/$crm/$id'
+      path: '/c/$crm/$id'
+      fullPath: '/c/$crm/$id'
+      preLoaderRoute: typeof AuthenticatedCCrmIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/public/hooks/daily-backup': {
       id: '/api/public/hooks/daily-backup'
       path: '/api/public/hooks/daily-backup'
@@ -437,6 +456,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSystemsIdRoute: typeof AuthenticatedSystemsIdRoute
+  AuthenticatedCCrmIdRoute: typeof AuthenticatedCCrmIdRoute
   AuthenticatedCCrmIndexRoute: typeof AuthenticatedCCrmIndexRoute
 }
 
@@ -450,6 +470,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSystemsIdRoute: AuthenticatedSystemsIdRoute,
+  AuthenticatedCCrmIdRoute: AuthenticatedCCrmIdRoute,
   AuthenticatedCCrmIndexRoute: AuthenticatedCCrmIndexRoute,
 }
 

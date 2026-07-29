@@ -8,7 +8,7 @@ import { useMyCrms } from "@/lib/use-crms";
 import { listRecords, createRecord, listFieldDefs } from "@/lib/crm-records.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 
-export const Route = createFileRoute("/_authenticated/c/$crm")({
+export const Route = createFileRoute("/_authenticated/c/$crm/")({
   component: CrmHome,
 });
 

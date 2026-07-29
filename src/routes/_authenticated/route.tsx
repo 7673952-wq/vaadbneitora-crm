@@ -11,6 +11,9 @@ import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";
 import { CrmTabs } from "@/components/CrmTabs";
+import { GlobalSearch } from "@/components/GlobalSearch";
+import { NewRecordButton } from "@/components/NewRecordButton";
+
 
 
 export const Route = createFileRoute("/_authenticated")({

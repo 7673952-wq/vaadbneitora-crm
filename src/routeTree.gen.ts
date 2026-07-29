@@ -20,10 +20,10 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedKosherRouteImport } from './routes/_authenticated/kosher'
 import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
-import { Route as AuthenticatedCCrmRouteImport } from './routes/_authenticated/c.$crm'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
+import { Route as AuthenticatedCCrmIndexRouteImport } from './routes/_authenticated/c.$crm.index'
 import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/public/hooks/daily-backup'
 import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
 import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
@@ -85,11 +85,6 @@ const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const AuthenticatedCCrmRoute = AuthenticatedCCrmRouteImport.update({
-  id: '/c/$crm',
-  path: '/c/$crm',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
   id: '/systems/$id',
   path: '/systems/$id',
@@ -106,6 +101,11 @@ const ApiPublicWeeklyCrmReportRoute =
     path: '/api/public/weekly-crm-report',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthenticatedCCrmIndexRoute = AuthenticatedCCrmIndexRouteImport.update({
+  id: '/c/$crm/',
+  path: '/c/$crm/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const ApiPublicHooksDailyBackupRoute =
   ApiPublicHooksDailyBackupRouteImport.update({
     id: '/api/public/hooks/daily-backup',
@@ -148,7 +148,6 @@ export interface FileRoutesByFullPath {
   '/kosher': typeof AuthenticatedKosherRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/c/$crm': typeof AuthenticatedCCrmRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -157,6 +156,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
+  '/c/$crm/': typeof AuthenticatedCCrmIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -169,7 +169,6 @@ export interface FileRoutesByTo {
   '/kosher': typeof AuthenticatedKosherRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
-  '/c/$crm': typeof AuthenticatedCCrmRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -178,6 +177,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
+  '/c/$crm': typeof AuthenticatedCCrmIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -192,7 +192,6 @@ export interface FileRoutesById {
   '/_authenticated/kosher': typeof AuthenticatedKosherRoute
   '/_authenticated/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
-  '/_authenticated/c/$crm': typeof AuthenticatedCCrmRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -201,6 +200,7 @@ export interface FileRoutesById {
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
+  '/_authenticated/c/$crm/': typeof AuthenticatedCCrmIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -215,7 +215,6 @@ export interface FileRouteTypes {
     | '/kosher'
     | '/manager-dashboard'
     | '/reports'
-    | '/c/$crm'
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -224,6 +223,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/weekly-backup'
+    | '/c/$crm/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -236,7 +236,6 @@ export interface FileRouteTypes {
     | '/kosher'
     | '/manager-dashboard'
     | '/reports'
-    | '/c/$crm'
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -245,6 +244,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/weekly-backup'
+    | '/c/$crm'
   id:
     | '__root__'
     | '/'
@@ -258,7 +258,6 @@ export interface FileRouteTypes {
     | '/_authenticated/kosher'
     | '/_authenticated/manager-dashboard'
     | '/_authenticated/reports'
-    | '/_authenticated/c/$crm'
     | '/_authenticated/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -267,6 +266,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/weekly-backup'
+    | '/_authenticated/c/$crm/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -361,13 +361,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/c/$crm': {
-      id: '/_authenticated/c/$crm'
-      path: '/c/$crm'
-      fullPath: '/c/$crm'
-      preLoaderRoute: typeof AuthenticatedCCrmRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
     '/_authenticated/systems/$id': {
       id: '/_authenticated/systems/$id'
       path: '/systems/$id'
@@ -388,6 +381,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/public/weekly-crm-report'
       preLoaderRoute: typeof ApiPublicWeeklyCrmReportRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/c/$crm/': {
+      id: '/_authenticated/c/$crm/'
+      path: '/c/$crm'
+      fullPath: '/c/$crm/'
+      preLoaderRoute: typeof AuthenticatedCCrmIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
     }
     '/api/public/hooks/daily-backup': {
       id: '/api/public/hooks/daily-backup'
@@ -436,8 +436,8 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedKosherRoute: typeof AuthenticatedKosherRoute
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
-  AuthenticatedCCrmRoute: typeof AuthenticatedCCrmRoute
   AuthenticatedSystemsIdRoute: typeof AuthenticatedSystemsIdRoute
+  AuthenticatedCCrmIndexRoute: typeof AuthenticatedCCrmIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -449,8 +449,8 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedKosherRoute: AuthenticatedKosherRoute,
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
-  AuthenticatedCCrmRoute: AuthenticatedCCrmRoute,
   AuthenticatedSystemsIdRoute: AuthenticatedSystemsIdRoute,
+  AuthenticatedCCrmIndexRoute: AuthenticatedCCrmIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

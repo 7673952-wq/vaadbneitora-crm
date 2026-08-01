@@ -1216,10 +1216,11 @@ function NotificationsPanel({ crms = [] }: { crms?: CrmSummary[] }) {
   const listFn = useServerFn(listRoleNotificationDefaults);
   const upFn = useServerFn(updateRoleNotificationDefault);
   const qc = useQueryClient();
+  const [scope, setScope] = useState<string>("yemot");
 
   const { data, isLoading } = useQuery({
-    queryKey: ["notif_role_defaults"],
-    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+    queryKey: ["notif_role_defaults", scope],
+    queryFn: async () => listFn({ data: { crmKey: scope }, headers: await getAuthHeaders() }),
   });
 
   const mut = useMutation({
@@ -1232,20 +1233,45 @@ function NotificationsPanel({ crms = [] }: { crms?: CrmSummary[] }) {
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בעדכון"),
   });
 
-  if (isLoading || !data) return <div className="text-muted-foreground text-sm">טוען...</div>;
-
-  const { grid, events, roles } = data as any;
-  const cellFor = (role: string, key: string) =>
-    (grid as any[]).find((g) => g.role === role && g.event_key === key)?.enabled ?? true;
+  const scopeTabs = crms.length ? crms : [{ key: "yemot", name: "ימות המשיח", color: "#2563eb" } as any];
 
   return (
     <div className="border rounded-xl bg-card p-6 shadow-soft space-y-4">
       <div>
         <h2 className="text-lg font-semibold flex items-center gap-2"><BellRing className="h-4 w-4" />הגדרת פעמון התראות</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          בחר אילו סוגי התראות יופיעו בפעמון לכל תפקיד. נציגים יכולים לדרוס את ברירת המחדל מההגדרות האישיות שלהם.
+          בחר אילו סוגי התראות יופיעו בפעמון לכל תפקיד, בכל אחת ממערכות ה-CRM. נציגים יכולים לדרוס את ברירת המחדל מההגדרות האישיות שלהם.
         </p>
       </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        {scopeTabs.map((c: any) => (
+          <button
+            key={c.key}
+            onClick={() => setScope(c.key)}
+            className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm transition ${
+              scope === c.key ? "border-primary bg-accent font-medium" : "border-border hover:bg-accent/50"
+            }`}
+          >
+            <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
+            {c.name}
+          </button>
+        ))}
+      </div>
+
+      {isLoading || !data ? <div className="text-muted-foreground text-sm">טוען...</div> : <NotificationsGrid data={data} mut={mut} />}
+    </div>
+  );
+}
+
+function NotificationsGrid({ data, mut }: { data: any; mut: any }) {
+  const { grid, events, roles } = data as any;
+  const cellFor = (role: string, key: string) =>
+    (grid as any[]).find((g) => g.role === role && g.event_key === key)?.enabled ?? true;
+
+  return (
+    <>
+
 
       <div className="overflow-auto">
         <table className="w-full text-sm">

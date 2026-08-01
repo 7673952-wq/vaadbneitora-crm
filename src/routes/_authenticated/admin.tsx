@@ -1309,7 +1309,7 @@ function NotificationsGrid({ data, mut }: { data: any; mut: any }) {
           </tbody>
         </table>
       </div>
-    </div>
+    </>
   );
 }
 

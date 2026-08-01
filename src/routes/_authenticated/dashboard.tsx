@@ -660,10 +660,18 @@ function Dashboard() {
             <div className="flex items-center gap-2 text-sm font-semibold">
               <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
             </div>
-            <Link to="/charts" target="_blank" rel="noreferrer"
-              className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent shadow-sm">
-              <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
-            </Link>
+            <div className="flex items-center gap-1.5">
+              {me?.isAdmin && (
+                <Link to="/manager-dashboard"
+                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 shadow-sm">
+                  <TrendingUp className="h-3 w-3" />דשבורד מנהלים
+                </Link>
+              )}
+              <Link to="/charts" target="_blank" rel="noreferrer"
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent shadow-sm">
+                <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
+              </Link>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

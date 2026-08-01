@@ -136,16 +136,6 @@ function AuthedLayout() {
     navigate({ to: "/auth", replace: true });
   }
 
-  const nav = [
-    { to: "/dashboard", label: "דשבורד", icon: LayoutDashboard },
-    ...(me?.isAdmin ? [
-      { to: "/manager-dashboard", label: "דשבורד מנהלים", icon: TrendingUp },
-    ] : []),
-    ...(me?.isSuperAdmin ? [
-      { to: "/admin", label: "ניהול", icon: Users },
-    ] : []),
-  ];
-
   if (!sessionReady) {
     return <div dir="rtl" className="min-h-screen bg-background flex items-center justify-center text-muted-foreground">טוען התחברות...</div>;
   }
@@ -153,40 +143,31 @@ function AuthedLayout() {
   return (
     <div dir="rtl" className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
-        <div className="max-w-[1600px] mx-auto px-6 h-16 flex items-center gap-6">
-          <Link to="/dashboard" className="flex items-center gap-2">
-            <div className="h-9 w-9 rounded-lg bg-primary text-primary-foreground font-bold flex items-center justify-center">C</div>
-            <span className="font-semibold tracking-tight">CRM מערכות</span>
+        <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-3">
+          <Link to="/dashboard" className="flex items-center gap-2 shrink-0">
+            <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground font-bold flex items-center justify-center">C</div>
+            <span className="font-semibold tracking-tight hidden md:inline">CRM</span>
           </Link>
-          <nav className="flex items-center gap-1 mr-4">
 
-            {nav.map((n) => {
-              const active = path.startsWith(n.to);
-              return (
-                <Link key={n.to} to={n.to}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition ${active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent/50"}`}>
-                  <n.icon className="h-4 w-4" />
-                  {n.label}
-                </Link>
-              );
-            })}
-          </nav>
-          <div className="mr-auto flex items-center gap-2 relative">
+          <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} />
+
+          <div className="mr-auto flex items-center gap-2 relative shrink-0">
             {sessionReady && <GlobalSearch />}
             {sessionReady && <NewRecordButton />}
+            {sessionReady && <KosherButton />}
             {sessionReady && <NotificationBell />}
 
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-accent transition"
+              className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-accent transition"
               title={displayName}
             >
-              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">
                 {getInitials(displayName)}
               </span>
-              <span className="text-sm text-right hidden sm:block">
+              <span className="text-sm text-right hidden xl:block leading-tight">
                 <div className="font-medium">{displayName}</div>
-                <div className="text-xs text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
+                <div className="text-[11px] text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
               </span>
             </button>
             {userMenuOpen && (
@@ -220,11 +201,11 @@ function AuthedLayout() {
           </div>
         </div>
       </header>
-      <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} />
 
-      <main className="max-w-[1600px] mx-auto px-6 py-8">
+      <main className="max-w-[1600px] mx-auto px-6 py-6">
         <Outlet />
       </main>
+
 
       {pwOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => !pwBusy && setPwOpen(false)}>

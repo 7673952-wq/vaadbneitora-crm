@@ -154,7 +154,7 @@ export function CrmManagerPanel() {
             {crms.filter((c) => c.key !== "yemot").map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
           </select>
         </div>
-        {activeCrm && activeCrm !== "yemot" ? <FieldBuilder crmKey={activeCrm} /> : (
+        {activeCrm && activeCrm !== "yemot" ? <CrmFieldBuilder crmKey={activeCrm} /> : (
           <p className="text-xs text-muted-foreground">בחר מערכת (במערכת "ימות המשיח" השדות קבועים).</p>
         )}
       </section>
@@ -194,7 +194,7 @@ function CrmRow({ crm, onSave, onDelete }: { crm: any; onSave: (p: any) => void;
   );
 }
 
-function FieldBuilder({ crmKey }: { crmKey: string }) {
+export function CrmFieldBuilder({ crmKey }: { crmKey: string }) {
   const qc = useQueryClient();
   const listFn = useServerFn(listFieldDefs);
   const upFn = useServerFn(upsertFieldDef);

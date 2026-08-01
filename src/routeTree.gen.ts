@@ -17,8 +17,6 @@ import { Route as AuthenticatedAuditRouteImport } from './routes/_authenticated/
 import { Route as AuthenticatedBackupsRouteImport } from './routes/_authenticated/backups'
 import { Route as AuthenticatedChartsRouteImport } from './routes/_authenticated/charts'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as AuthenticatedKosherRouteImport } from './routes/_authenticated/kosher'
-import { Route as AuthenticatedMailRouteImport } from './routes/_authenticated/mail'
 import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
@@ -69,16 +67,6 @@ const AuthenticatedChartsRoute = AuthenticatedChartsRouteImport.update({
 const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedKosherRoute = AuthenticatedKosherRouteImport.update({
-  id: '/kosher',
-  path: '/kosher',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedMailRoute = AuthenticatedMailRouteImport.update({
-  id: '/mail',
-  path: '/mail',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedManagerDashboardRoute =
@@ -157,8 +145,6 @@ export interface FileRoutesByFullPath {
   '/backups': typeof AuthenticatedBackupsRoute
   '/charts': typeof AuthenticatedChartsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/kosher': typeof AuthenticatedKosherRoute
-  '/mail': typeof AuthenticatedMailRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
@@ -180,8 +166,6 @@ export interface FileRoutesByTo {
   '/backups': typeof AuthenticatedBackupsRoute
   '/charts': typeof AuthenticatedChartsRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
-  '/kosher': typeof AuthenticatedKosherRoute
-  '/mail': typeof AuthenticatedMailRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
@@ -205,8 +189,6 @@ export interface FileRoutesById {
   '/_authenticated/backups': typeof AuthenticatedBackupsRoute
   '/_authenticated/charts': typeof AuthenticatedChartsRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
-  '/_authenticated/kosher': typeof AuthenticatedKosherRoute
-  '/_authenticated/mail': typeof AuthenticatedMailRoute
   '/_authenticated/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
@@ -230,8 +212,6 @@ export interface FileRouteTypes {
     | '/backups'
     | '/charts'
     | '/dashboard'
-    | '/kosher'
-    | '/mail'
     | '/manager-dashboard'
     | '/reports'
     | '/systems/$id'
@@ -253,8 +233,6 @@ export interface FileRouteTypes {
     | '/backups'
     | '/charts'
     | '/dashboard'
-    | '/kosher'
-    | '/mail'
     | '/manager-dashboard'
     | '/reports'
     | '/systems/$id'
@@ -277,8 +255,6 @@ export interface FileRouteTypes {
     | '/_authenticated/backups'
     | '/_authenticated/charts'
     | '/_authenticated/dashboard'
-    | '/_authenticated/kosher'
-    | '/_authenticated/mail'
     | '/_authenticated/manager-dashboard'
     | '/_authenticated/reports'
     | '/_authenticated/systems/$id'
@@ -362,20 +338,6 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/kosher': {
-      id: '/_authenticated/kosher'
-      path: '/kosher'
-      fullPath: '/kosher'
-      preLoaderRoute: typeof AuthenticatedKosherRouteImport
-      parentRoute: typeof AuthenticatedRouteRoute
-    }
-    '/_authenticated/mail': {
-      id: '/_authenticated/mail'
-      path: '/mail'
-      fullPath: '/mail'
-      preLoaderRoute: typeof AuthenticatedMailRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/manager-dashboard': {
@@ -471,8 +433,6 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedBackupsRoute: typeof AuthenticatedBackupsRoute
   AuthenticatedChartsRoute: typeof AuthenticatedChartsRoute
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
-  AuthenticatedKosherRoute: typeof AuthenticatedKosherRoute
-  AuthenticatedMailRoute: typeof AuthenticatedMailRoute
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
   AuthenticatedSystemsIdRoute: typeof AuthenticatedSystemsIdRoute
@@ -486,8 +446,6 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedBackupsRoute: AuthenticatedBackupsRoute,
   AuthenticatedChartsRoute: AuthenticatedChartsRoute,
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
-  AuthenticatedKosherRoute: AuthenticatedKosherRoute,
-  AuthenticatedMailRoute: AuthenticatedMailRoute,
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
   AuthenticatedSystemsIdRoute: AuthenticatedSystemsIdRoute,

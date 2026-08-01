@@ -1,4 +1,4 @@
-import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { createFileRoute, Outlet, redirect, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useServerFn } from "@tanstack/react-start";
@@ -44,7 +44,6 @@ function AuthedLayout() {
     throwOnError: false,
     staleTime: 5 * 60_000,
   });
-  const path = useRouterState({ select: (s) => s.location.pathname });
   const [displayName, setDisplayName] = useState<string>("");
   const [pwOpen, setPwOpen] = useState(false);
   const [sigOpen, setSigOpen] = useState(false);

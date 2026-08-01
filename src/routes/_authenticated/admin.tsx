@@ -49,24 +49,24 @@ export const Route = createFileRoute("/_authenticated/admin")({
 function AdminPage() {
   const meFn = useServerFn(getMyRole);
   const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
+  const { data: crms = [] } = useMyCrms();
 
   if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
   if (meError) return <AdminError message={meError.message} />;
-  
+
   const perms = (me?.permissions ?? {}) as Record<string, boolean>;
   const canUsers = !!perms.users_manage;
   const canGeneral = !!(perms.settings_manage || perms.backup_manage);
   const canStatuses = !!perms.settings_manage;
   const canSeries = !!perms.series_manage;
   const canPermissions = !!perms.permissions_manage;
-  const canVoiceLog = !!perms.settings_manage; // הרשאה לצפייה ביומן הודעות קוליות
-  const canBackups = !!me?.isSuperAdmin; // גיבויים/שחזור מוגבלים לסופר-אדמין, כמו שהיה בדף הנפרד
-  const canEmail = !!(perms.settings_manage || perms.backup_manage); // חיבור Gmail, תבניות וחתימות
+  const canVoiceLog = !!perms.settings_manage;
+  const canBackups = !!me?.isSuperAdmin;
+  const canEmail = !!(perms.settings_manage || perms.backup_manage);
   const canNotifs = !!(perms.settings_manage || perms.users_manage || perms.permissions_manage);
   const canCrms = !!(perms.settings_manage || perms.permissions_manage || me?.isSuperAdmin);
 
   const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
-  const defaultTab = canUsers ? "users" : canGeneral ? "general" : canStatuses ? "statuses" : canVoiceLog ? "voice_log" : canEmail ? "email" : canNotifs ? "notifications" : "backups";
 
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -77,7 +77,7 @@ function AdminPage() {
       <div className="flex items-end justify-between flex-wrap gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ניהול</h1>
-          <p className="text-muted-foreground text-sm mt-1">משתמשים, סטטוסים, הרשאות, סדרות והגדרות מערכת</p>
+          <p className="text-muted-foreground text-sm mt-1">הגדרות כלליות לכל המערכות, והגדרות נפרדות לכל CRM</p>
         </div>
         {me?.isSuperAdmin && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -88,37 +88,108 @@ function AdminPage() {
         )}
       </div>
 
-      <Tabs defaultValue={defaultTab} dir="rtl">
+      <Tabs defaultValue="general" dir="rtl">
         <TabsList className="flex flex-wrap gap-1 h-auto">
-          {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
-          {canCrms && <TabsTrigger value="crms" className="flex items-center gap-1.5"><LayoutGrid className="h-3.5 w-3.5" />מערכות CRM</TabsTrigger>}
-          {canGeneral && <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>}
-          {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
-          {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />התראות</TabsTrigger>}
-          {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
-          {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
-          {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות</TabsTrigger>}
-          {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
-          {canEmail && <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />מיילים</TabsTrigger>}
+          <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>
+          {crms.map((c) => (
+            <TabsTrigger key={c.key} value={`crm:${c.key}`} className="flex items-center gap-1.5">
+              <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
+              {c.name}
+            </TabsTrigger>
+          ))}
         </TabsList>
 
-        {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
-        {canCrms && <TabsContent value="crms" className="mt-4"><CrmManagerPanel /></TabsContent>}
-        {canGeneral && <TabsContent value="general" className="mt-4 space-y-6">
-          <AutoSnoozePanel />
-          <BackupEmailPanel />
-          <BackupSchedulePanel />
-          <StaleHoursPanel />
-        </TabsContent>}
-        {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
-        {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel /></TabsContent>}
-        {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
-        {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
-        {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
-        {canBackups && <TabsContent value="backups" className="mt-4"><BackupsPage embedded /></TabsContent>}
-        {canEmail && <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>}
+        <TabsContent value="general" className="mt-4">
+          <GeneralAdminTabs
+            me={me}
+            flags={{ canUsers, canGeneral, canPermissions, canBackups, canEmail, canNotifs, canCrms }}
+            crms={crms}
+          />
+        </TabsContent>
+
+        {crms.map((c) => (
+          <TabsContent key={c.key} value={`crm:${c.key}`} className="mt-4">
+            {c.key === "yemot" ? (
+              <YemotAdminTabs flags={{ canStatuses, canSeries, canVoiceLog, canCrms }} />
+            ) : (
+              <GenericCrmAdminTabs crmKey={c.key} canCrms={canCrms} />
+            )}
+          </TabsContent>
+        ))}
       </Tabs>
     </div>
+  );
+}
+
+/** "כללי" — everything that is shared across all CRMs. */
+function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, boolean>; crms: any[] }) {
+  const { canUsers, canGeneral, canPermissions, canBackups, canEmail, canNotifs, canCrms } = flags;
+  const first = canUsers ? "users" : canCrms ? "crms" : canGeneral ? "settings" : canNotifs ? "notifications" : canEmail ? "email" : canPermissions ? "permissions" : "backups";
+  return (
+    <Tabs defaultValue={first} dir="rtl">
+      <TabsList className="flex flex-wrap gap-1 h-auto">
+        {canUsers && <TabsTrigger value="users" className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5" />משתמשים</TabsTrigger>}
+        {canCrms && <TabsTrigger value="crms" className="flex items-center gap-1.5"><LayoutGrid className="h-3.5 w-3.5" />מערכות CRM</TabsTrigger>}
+        {canGeneral && <TabsTrigger value="settings" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />הגדרות כלליות</TabsTrigger>}
+        {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />פעמון התראות</TabsTrigger>}
+        {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות מערכת</TabsTrigger>}
+        {canEmail && <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />הגדרות מייל</TabsTrigger>}
+        {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
+      </TabsList>
+
+      {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
+      {canCrms && <TabsContent value="crms" className="mt-4"><CrmManagerPanel /></TabsContent>}
+      {canGeneral && <TabsContent value="settings" className="mt-4 space-y-6">
+        <AutoSnoozePanel />
+        <StaleHoursPanel />
+        <BackupEmailPanel />
+        <BackupSchedulePanel />
+      </TabsContent>}
+      {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel crms={crms} /></TabsContent>}
+      {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
+      {canEmail && <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>}
+      {canBackups && <TabsContent value="backups" className="mt-4"><BackupsPage embedded /></TabsContent>}
+    </Tabs>
+  );
+}
+
+/** "ימות המשיח" — settings that only belong to the original CRM. */
+function YemotAdminTabs({ flags }: { flags: Record<string, boolean> }) {
+  const { canStatuses, canSeries, canVoiceLog, canCrms } = flags;
+  const first = canStatuses ? "statuses" : canCrms ? "access" : canVoiceLog ? "voice_log" : "series";
+  return (
+    <Tabs defaultValue={first} dir="rtl">
+      <TabsList className="flex flex-wrap gap-1 h-auto">
+        {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
+        {canCrms && <TabsTrigger value="access" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות למערכת</TabsTrigger>}
+        {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
+        {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
+      </TabsList>
+      {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
+      {canCrms && <TabsContent value="access" className="mt-4"><CrmPermissionsPanel crmKey="yemot" /></TabsContent>}
+      {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
+      {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
+    </Tabs>
+  );
+}
+
+/** Any additional CRM — its own access control and custom field builder. */
+function GenericCrmAdminTabs({ crmKey, canCrms }: { crmKey: string; canCrms: boolean }) {
+  if (!canCrms) return <div className="text-sm text-muted-foreground">אין הרשאה להגדרות מערכת זו.</div>;
+  return (
+    <Tabs defaultValue="access" dir="rtl">
+      <TabsList className="flex flex-wrap gap-1 h-auto">
+        <TabsTrigger value="access" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות למערכת</TabsTrigger>
+        <TabsTrigger value="fields" className="flex items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" />שדות מותאמים</TabsTrigger>
+      </TabsList>
+      <TabsContent value="access" className="mt-4"><CrmPermissionsPanel crmKey={crmKey} /></TabsContent>
+      <TabsContent value="fields" className="mt-4">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <h3 className="text-sm font-semibold mb-3">שדות מותאמים</h3>
+          <CrmFieldBuilder crmKey={crmKey} />
+        </div>
+      </TabsContent>
+    </Tabs>
   );
 }
 

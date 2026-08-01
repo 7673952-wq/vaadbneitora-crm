@@ -63,26 +63,49 @@ export const getMyNotificationPrefs = createServerFn({ method: "GET" })
     return effective;
   });
 
-/** Admin: full grid role×event of enabled flags. */
+/**
+ * Event keys are either a plain catalog key (global / "ימות המשיח" scope) or a
+ * per-CRM scoped key: `crm:<crmKey>:<event>`.
+ */
+const scopedEventKey = z
+  .string()
+  .max(120)
+  .refine((v) => {
+    const m = /^crm:[a-z0-9_-]+:(.+)$/.exec(v);
+    const base = m ? m[1] : v;
+    return (NOTIFICATION_EVENT_KEYS as string[]).includes(base);
+  }, "אירוע לא מוכר");
+
+/** Admin: full grid role×event of enabled flags, optionally scoped to a CRM. */
 export const listRoleNotificationDefaults = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: unknown) =>
+    z.object({ crmKey: z.string().max(60).nullable().optional() }).default({}).parse(input ?? {}),
+  )
+  .handler(async ({ data, context }) => {
     await assertNotificationsAdmin(context);
-    const { data } = await context.supabase
+    const crmKey = data?.crmKey && data.crmKey !== "yemot" ? data.crmKey : null;
+    const prefix = crmKey ? `crm:${crmKey}:` : "";
+    const { data: rows } = await context.supabase
       .from("notification_role_defaults")
       .select("event_key, role, enabled");
     const map = new Map<string, boolean>();
-    for (const r of ((data ?? []) as { event_key: string; role: AppRole; enabled: boolean }[])) {
+    for (const r of ((rows ?? []) as { event_key: string; role: AppRole; enabled: boolean }[])) {
       map.set(`${r.role}::${r.event_key}`, r.enabled);
     }
     const grid: { role: AppRole; event_key: string; enabled: boolean }[] = [];
     for (const role of ROLES) {
       for (const ev of NOTIFICATION_EVENTS) {
-        const key = `${role}::${ev.key}`;
-        grid.push({ role, event_key: ev.key, enabled: map.has(key) ? map.get(key)! : ev.defaultEnabled });
+        const scoped = `${prefix}${ev.key}`;
+        const key = `${role}::${scoped}`;
+        grid.push({ role, event_key: scoped, enabled: map.has(key) ? map.get(key)! : ev.defaultEnabled });
       }
     }
-    return { grid, events: NOTIFICATION_EVENTS, roles: ROLES };
+    return {
+      grid,
+      events: NOTIFICATION_EVENTS.map((e) => ({ ...e, key: `${prefix}${e.key}` })),
+      roles: ROLES,
+    };
   });
 
 /** Admin: set a single (role, event) default. */
@@ -91,7 +114,7 @@ export const updateRoleNotificationDefault = createServerFn({ method: "POST" })
   .inputValidator((d: { role: AppRole; event_key: string; enabled: boolean }) =>
     z.object({
       role: z.enum(["admin", "agent", "super_admin", "viewer"]),
-      event_key: z.enum(NOTIFICATION_EVENT_KEYS as [NotificationEventKey, ...NotificationEventKey[]]),
+      event_key: scopedEventKey,
       enabled: z.boolean(),
     }).parse(d),
   )

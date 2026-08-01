@@ -1,11 +1,10 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMyCrms } from "@/lib/use-crms";
-import { ShieldCheck, Settings2, Mail } from "lucide-react";
+import { Settings2 } from "lucide-react";
 
 /**
- * Top-level tab bar switching between the different CRMs plus the global
- * tabs (kosher instructions, general settings). Hidden entirely when the
- * user has access to a single CRM and no global tabs.
+ * Inline CRM switcher rendered inside the single top header row.
+ * Shows only the CRMs the signed-in user has access to, plus the admin tab.
  */
 export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
   const { data: crms = [] } = useMyCrms();
@@ -16,68 +15,39 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
     label: c.name,
     color: c.color,
     to: c.key === "yemot" ? "/dashboard" : `/c/${c.key}`,
-    active: c.key === "yemot"
-      ? path.startsWith("/dashboard") || path.startsWith("/systems")
-      : path.startsWith(`/c/${c.key}`),
+    active:
+      c.key === "yemot"
+        ? path.startsWith("/dashboard") || path.startsWith("/systems") || path.startsWith("/charts") || path.startsWith("/manager-dashboard")
+        : path.startsWith(`/c/${c.key}`),
   }));
 
-  if (crmTabs.length <= 1 && !isAdmin) return null;
+  if (crmTabs.length === 0 && !isAdmin) return null;
 
   return (
-    <div className="border-b border-border bg-muted/30">
-      <div className="max-w-[1600px] mx-auto px-6 flex items-center gap-1 overflow-x-auto">
-        {crmTabs.map((t) => (
-          <Link
-            key={t.key}
-            to={t.to}
-            className={`relative px-4 py-2.5 text-sm font-medium whitespace-nowrap transition ${
-              t.active ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full" style={{ background: t.color }} />
-              {t.label}
-            </span>
-            {t.active && (
-              <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full" style={{ background: t.color }} />
-            )}
-          </Link>
-        ))}
-        <span className="mx-2 h-4 w-px bg-border" />
+    <nav className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar">
+      {crmTabs.map((t) => (
         <Link
-          to="/mail"
-          className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition ${
-            path.startsWith("/mail") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+          key={t.key}
+          to={t.to}
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            t.active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
           }`}
         >
-          <Mail className="h-4 w-4" />
-          מייל
-          {path.startsWith("/mail") && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+          <span className="h-2 w-2 rounded-full shrink-0" style={{ background: t.color }} />
+          {t.label}
         </Link>
+      ))}
+      {isAdmin && (
         <Link
-          to="/kosher"
-          className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition ${
-            path.startsWith("/kosher") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+          to="/admin"
+          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            path.startsWith("/admin") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
           }`}
         >
-          <ShieldCheck className="h-4 w-4" />
-          הוראות כשרות
-          {path.startsWith("/kosher") && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
+          <Settings2 className="h-4 w-4" />
+          ניהול
         </Link>
-
-        {isAdmin && (
-          <Link
-            to="/admin"
-            className={`relative flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium whitespace-nowrap transition ${
-              path.startsWith("/admin") ? "text-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Settings2 className="h-4 w-4" />
-            כללי
-            {path.startsWith("/admin") && <span className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-primary" />}
-          </Link>
-        )}
-      </div>
-    </div>
+      )}
+    </nav>
   );
 }

@@ -28,27 +28,19 @@ const FIELD_TYPES: { v: string; l: string }[] = [
   { v: "checkbox", l: "כן/לא" },
 ];
 
-/** Admin panel: CRM registry, per-CRM permissions matrix and custom field builder. */
+/** Global admin panel: the CRM registry + the cross-CRM permissions matrix. */
 export function CrmManagerPanel() {
   const qc = useQueryClient();
   const crmsFn = useServerFn(listMyCrms);
   const upsertFn = useServerFn(upsertCrm);
   const delFn = useServerFn(deleteCrm);
-  const membersFn = useServerFn(listCrmMembers);
-  const setRoleFn = useServerFn(setCrmUserRole);
 
   const { data: crms = [] } = useQuery({
     queryKey: ["my_crms"],
     queryFn: async () => crmsFn({ headers: await getAuthHeaders() }),
   });
-  const { data: members } = useQuery({
-    queryKey: ["crm_members"],
-    queryFn: async () => membersFn({ headers: await getAuthHeaders() }),
-  });
 
   const [draft, setDraft] = useState({ key: "", name: "", color: "#2563eb", idLabel: "מספר פניה" });
-  const [selected, setSelected] = useState<string | null>(null);
-  const activeCrm = selected ?? crms[0]?.key ?? null;
 
   async function saveCrm(payload: any) {
     try {
@@ -59,9 +51,6 @@ export function CrmManagerPanel() {
       toast.error(e?.message ?? "שגיאה בשמירה");
     }
   }
-
-  const roleOf = (userId: string, crmKey: string) =>
-    members?.memberships.find((m) => m.userId === userId && m.crmKey === crmKey)?.role ?? "";
 
   return (
     <div dir="rtl" className="space-y-6">
@@ -104,61 +93,115 @@ export function CrmManagerPanel() {
         </div>
       </section>
 
-      <section className="rounded-xl border border-border bg-card p-4 overflow-x-auto">
-        <h3 className="text-sm font-semibold mb-3">הרשאות לפי מערכת</h3>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-xs text-muted-foreground">
-              <th className="text-right py-2 font-medium">משתמש</th>
-              {crms.map((c) => <th key={c.key} className="text-right py-2 font-medium">{c.name}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {(members?.users ?? []).map((u) => (
-              <tr key={u.id} className="border-t border-border">
-                <td className="py-1.5 pl-3">{u.displayName}</td>
-                {crms.map((c) => (
-                  <td key={c.key} className="py-1.5 pl-3">
-                    <select
-                      value={roleOf(u.id, c.key)}
-                      onChange={async (e) => {
-                        const v = e.target.value;
-                        try {
-                          await setRoleFn({
-                            data: { userId: u.id, crmKey: c.key, role: (v || null) as CrmRole | null },
-                            headers: await getAuthHeaders(),
-                          });
-                          await qc.invalidateQueries({ queryKey: ["crm_members"] });
-                        } catch (err: any) { toast.error(err?.message ?? "שגיאה"); }
-                      }}
-                      className="rounded-lg border border-input bg-background px-2 py-1 text-xs"
-                    >
-                      {Object.entries(ROLE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                    </select>
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
-      <section className="rounded-xl border border-border bg-card p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-sm font-semibold">שדות מותאמים</h3>
-          <select
-            value={activeCrm ?? ""}
-            onChange={(e) => setSelected(e.target.value)}
-            className="rounded-lg border border-input bg-background px-2 py-1 text-xs"
-          >
-            {crms.filter((c) => c.key !== "yemot").map((c) => <option key={c.key} value={c.key}>{c.name}</option>)}
-          </select>
-        </div>
-        {activeCrm && activeCrm !== "yemot" ? <CrmFieldBuilder crmKey={activeCrm} /> : (
-          <p className="text-xs text-muted-foreground">בחר מערכת (במערכת "ימות המשיח" השדות קבועים).</p>
-        )}
-      </section>
+      <CrmAccessMatrix crms={crms} />
     </div>
+  );
+}
+
+/** Cross-CRM access matrix (all users × all CRMs). */
+export function CrmAccessMatrix({ crms }: { crms: any[] }) {
+  const qc = useQueryClient();
+  const membersFn = useServerFn(listCrmMembers);
+  const setRoleFn = useServerFn(setCrmUserRole);
+  const { data: members } = useQuery({
+    queryKey: ["crm_members"],
+    queryFn: async () => membersFn({ headers: await getAuthHeaders() }),
+  });
+
+  const roleOf = (userId: string, crmKey: string) =>
+    members?.memberships.find((m) => m.userId === userId && m.crmKey === crmKey)?.role ?? "";
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-4 overflow-x-auto">
+      <h3 className="text-sm font-semibold mb-3">הרשאות גישה לפי מערכת</h3>
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-xs text-muted-foreground">
+            <th className="text-right py-2 font-medium">משתמש</th>
+            {crms.map((c) => <th key={c.key} className="text-right py-2 font-medium">{c.name}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {(members?.users ?? []).map((u) => (
+            <tr key={u.id} className="border-t border-border">
+              <td className="py-1.5 pl-3">{u.displayName}</td>
+              {crms.map((c) => (
+                <td key={c.key} className="py-1.5 pl-3">
+                  <RoleSelect
+                    value={roleOf(u.id, c.key)}
+                    onChange={async (v) => {
+                      try {
+                        await setRoleFn({
+                          data: { userId: u.id, crmKey: c.key, role: (v || null) as CrmRole | null },
+                          headers: await getAuthHeaders(),
+                        });
+                        await qc.invalidateQueries({ queryKey: ["crm_members"] });
+                      } catch (err: any) { toast.error(err?.message ?? "שגיאה"); }
+                    }}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+/** Per-CRM permissions: every user and their role inside this single CRM. */
+export function CrmPermissionsPanel({ crmKey }: { crmKey: string }) {
+  const qc = useQueryClient();
+  const membersFn = useServerFn(listCrmMembers);
+  const setRoleFn = useServerFn(setCrmUserRole);
+  const { data: members, isLoading } = useQuery({
+    queryKey: ["crm_members"],
+    queryFn: async () => membersFn({ headers: await getAuthHeaders() }),
+  });
+
+  const roleOf = (userId: string) =>
+    members?.memberships.find((m) => m.userId === userId && m.crmKey === crmKey)?.role ?? "";
+
+  if (isLoading) return <div className="text-sm text-muted-foreground">טוען...</div>;
+
+  return (
+    <section className="rounded-xl border border-border bg-card p-4">
+      <h3 className="text-sm font-semibold mb-3">הרשאות משתמשים במערכת זו</h3>
+      <div className="space-y-1">
+        {(members?.users ?? []).map((u) => (
+          <div key={u.id} className="flex items-center gap-3 border-b border-border py-1.5 last:border-0">
+            <span className="text-sm">{u.displayName}</span>
+            <div className="mr-auto">
+              <RoleSelect
+                value={roleOf(u.id)}
+                onChange={async (v) => {
+                  try {
+                    await setRoleFn({
+                      data: { userId: u.id, crmKey, role: (v || null) as CrmRole | null },
+                      headers: await getAuthHeaders(),
+                    });
+                    await qc.invalidateQueries({ queryKey: ["crm_members"] });
+                    toast.success("עודכן");
+                  } catch (err: any) { toast.error(err?.message ?? "שגיאה"); }
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function RoleSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-lg border border-input bg-background px-2 py-1 text-xs"
+    >
+      {Object.entries(ROLE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+    </select>
   );
 }
 

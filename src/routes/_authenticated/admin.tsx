@@ -20,7 +20,8 @@ import {
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
-import { CrmManagerPanel } from "@/components/CrmManagerPanel";
+import { CrmManagerPanel, CrmPermissionsPanel, CrmFieldBuilder } from "@/components/CrmManagerPanel";
+import { useMyCrms, type CrmSummary } from "@/lib/use-crms";
 import { BackupsPage } from "./backups";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
@@ -122,7 +123,7 @@ function AdminPage() {
 }
 
 /** "כללי" — everything that is shared across all CRMs. */
-function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, boolean>; crms: any[] }) {
+function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, boolean>; crms: CrmSummary[] }) {
   const { canUsers, canGeneral, canPermissions, canBackups, canEmail, canNotifs, canCrms } = flags;
   const first = canUsers ? "users" : canCrms ? "crms" : canGeneral ? "settings" : canNotifs ? "notifications" : canEmail ? "email" : canPermissions ? "permissions" : "backups";
   return (
@@ -1211,7 +1212,7 @@ const ROLE_LABELS: Record<string, string> = {
   viewer: "צופה",
 };
 
-function NotificationsPanel() {
+function NotificationsPanel({ crms = [] }: { crms?: CrmSummary[] }) {
   const listFn = useServerFn(listRoleNotificationDefaults);
   const upFn = useServerFn(updateRoleNotificationDefault);
   const qc = useQueryClient();

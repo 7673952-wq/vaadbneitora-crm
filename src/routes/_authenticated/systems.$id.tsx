@@ -29,6 +29,8 @@ import {
 
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
+import { EmailContentEditor } from "@/components/EmailContentEditor";
+import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 
 
 export const Route = createFileRoute("/_authenticated/systems/$id")({
@@ -187,13 +189,14 @@ function SystemDetail() {
   const [composeSubject, setComposeSubject] = useState("");
   const [composeBody, setComposeBody] = useState("");
   const [composeUseGeneral, setComposeUseGeneral] = useState(false);
+  const [emailCleanupLevel, setEmailCleanupLevel] = useState<EmailCleanupLevel>("standard");
   // Inline quick-reply state (avoids opening a modal for a fast response)
   const [inlineReplyFor, setInlineReplyFor] = useState<string | null>(null);
   const [inlineReplyText, setInlineReplyText] = useState("");
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const sendEmailMut = useMutation({
-    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean }) =>
-      sendEmailFn({ data: { system_id: id, ...v } }),
+    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel }) =>
+      sendEmailFn({ data: { system_id: id, ...v, cleanup_level: v.cleanup_level ?? emailCleanupLevel } }),
     onSuccess: () => {
       toast.success("המייל נשלח");
       qc.invalidateQueries({ queryKey: ["system-email-thread", id] });
@@ -1356,12 +1359,9 @@ function SystemDetail() {
                       {inlineReplyFor === m.id && (
                         <div className="mt-2.5 space-y-1.5 rounded-lg border border-fuchsia-200 bg-white p-2">
                           <div className="text-[10px] text-muted-foreground">השב אל <span className="font-medium text-foreground" dir="ltr">{replyTo || "—"}</span></div>
-                          <textarea
-                            value={inlineReplyText}
-                            onChange={(e) => setInlineReplyText(e.target.value)}
-                            placeholder="כתוב תשובה מהירה..."
-                            rows={3}
-                            className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+                          <EmailContentEditor value={inlineReplyText} onChange={setInlineReplyText} rows={3}
+                            placeholder="כתוב תשובה מהירה..." cleanupLevel={emailCleanupLevel}
+                            onCleanupLevelChange={setEmailCleanupLevel} label="תשובה" />
                           <div className="flex items-center justify-between gap-1.5">
                             <button type="button" onClick={() => openReplyEmail(m)}
                               className="text-[11px] text-muted-foreground hover:text-foreground">פתח בחלון מלא ↗</button>
@@ -1376,6 +1376,7 @@ function SystemDetail() {
                                     subject: m.subject ? (m.subject.startsWith("Re:") ? m.subject : `Re: ${m.subject}`) : "Re: ",
                                     body: inlineReplyText.trim(),
                                     gmail_thread_id: m.gmail_thread_id ?? null,
+                                    cleanup_level: emailCleanupLevel,
                                   }, { onSuccess: () => { setInlineReplyFor(null); setInlineReplyText(""); } });
                                 }}
                                 className="text-[11px] px-3 py-1 rounded-md bg-fuchsia-600 text-white font-medium hover:bg-fuchsia-700 disabled:opacity-50 inline-flex items-center gap-1">
@@ -1420,8 +1421,8 @@ function SystemDetail() {
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
             <input value={composeSubject} onChange={(e) => setComposeSubject(e.target.value)} placeholder="נושא"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            <textarea value={composeBody} onChange={(e) => setComposeBody(e.target.value)} placeholder="תוכן ההודעה" rows={6}
-              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <EmailContentEditor value={composeBody} onChange={setComposeBody} rows={6}
+              cleanupLevel={emailCleanupLevel} onCleanupLevelChange={setEmailCleanupLevel} />
             {emailGeneralName?.generalName && (
               <div className="flex items-center gap-4 text-xs bg-muted/50 rounded-lg px-3 py-2">
                 <span className="font-medium text-muted-foreground">שלח בשם:</span>
@@ -1444,6 +1445,7 @@ function SystemDetail() {
                   to: composeTo.trim(), subject: composeSubject.trim(), body: composeBody.trim(),
                   gmail_thread_id: composeMode === "reply" ? composeThreadId : null,
                   use_general_name: composeUseGeneral,
+                  cleanup_level: emailCleanupLevel,
                 });
               }}
               disabled={sendEmailMut.isPending}

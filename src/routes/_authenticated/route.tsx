@@ -14,6 +14,8 @@ import { CrmTabs } from "@/components/CrmTabs";
 import { KosherButton } from "@/components/KosherButton";
 import { GlobalSearch } from "@/components/GlobalSearch";
 import { NewRecordButton } from "@/components/NewRecordButton";
+import { EmailContentEditor } from "@/components/EmailContentEditor";
+import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 
 
 
@@ -49,6 +51,7 @@ function AuthedLayout() {
   const [sigOpen, setSigOpen] = useState(false);
   const [sigText, setSigText] = useState("");
   const [sigBusy, setSigBusy] = useState(false);
+  const [emailCleanupLevel, setEmailCleanupLevel] = useState<EmailCleanupLevel>("standard");
   const getSigFn = useServerFn(getMyEmailProfile);
   const setSigFn = useServerFn(setMyEmailSignature);
   const { data: mySig } = useQuery({
@@ -60,7 +63,8 @@ function AuthedLayout() {
   async function saveSignature() {
     setSigBusy(true);
     try {
-      await setSigFn({ data: { signature: sigText }, headers: await getAuthHeaders() });
+      const { cleanEmailContent } = await import("@/lib/email-cleanup");
+      await setSigFn({ data: { signature: cleanEmailContent(sigText, emailCleanupLevel) }, headers: await getAuthHeaders() });
       toast.success("החתימה נשמרה");
       setSigOpen(false);
     } catch (e: any) {

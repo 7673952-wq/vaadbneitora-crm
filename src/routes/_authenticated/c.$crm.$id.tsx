@@ -10,6 +10,8 @@ import { listAgents } from "@/lib/systems.functions";
 import { listRecordEmailThread, sendRecordEmail } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { GENERIC_STATUSES } from "./c.$crm.index";
+import { EmailContentEditor } from "@/components/EmailContentEditor";
+import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 
 export const Route = createFileRoute("/_authenticated/c/$crm/$id")({
   component: RecordDetail,
@@ -49,6 +51,7 @@ function RecordDetail() {
   const [mailOpen, setMailOpen] = useState(false);
   const [mailSubject, setMailSubject] = useState("");
   const [mailBody, setMailBody] = useState("");
+  const [emailCleanupLevel, setEmailCleanupLevel] = useState<EmailCleanupLevel>("standard");
   const mentionNames = useMemo(() => agents.map((a: any) => a.display_name).filter(Boolean), [agents]);
 
   function renderMentions(body: string) {
@@ -61,7 +64,7 @@ function RecordDetail() {
   async function sendMail(threadId?: string | null) {
     if (!r.email || !mailBody.trim()) return;
     try {
-      await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId }, headers: await getAuthHeaders() });
+      await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId, cleanup_level: emailCleanupLevel }, headers: await getAuthHeaders() });
       setMailBody(""); setMailOpen(false);
       await qc.invalidateQueries({ queryKey: ["crm_record_emails", id] });
       toast.success("המייל נשלח");
@@ -226,7 +229,8 @@ function RecordDetail() {
         </div>
         {mailOpen && <div className="grid gap-2 mb-3">
           <input value={mailSubject} onChange={(e) => setMailSubject(e.target.value)} placeholder="נושא" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
-          <textarea value={mailBody} onChange={(e) => setMailBody(e.target.value)} rows={4} placeholder="תוכן ההודעה" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          <EmailContentEditor value={mailBody} onChange={setMailBody} rows={4}
+            cleanupLevel={emailCleanupLevel} onCleanupLevelChange={setEmailCleanupLevel} />
           <button onClick={() => sendMail(null)} className="justify-self-start flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"><Send className="h-4 w-4" />שלח</button>
         </div>}
         <div className="space-y-2">

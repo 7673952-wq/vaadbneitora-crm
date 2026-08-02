@@ -34,6 +34,8 @@ import {
   Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks,
   Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing, LayoutGrid,
 } from "lucide-react";
+import { EmailContentEditor } from "@/components/EmailContentEditor";
+import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
@@ -1020,6 +1022,7 @@ function EmailSettingsPanel() {
   });
 
   const [signature, setSignatureLocal] = useState("");
+  const [emailCleanupLevel, setEmailCleanupLevel] = useState<EmailCleanupLevel>("standard");
   useEffect(() => { if (myProfile) setSignatureLocal(myProfile.signature); }, [myProfile]);
   const saveSignatureMut = useMutation({
     mutationFn: async () => setSignatureFn({ data: { signature }, headers: await getAuthHeaders() }),
@@ -1094,9 +1097,9 @@ function EmailSettingsPanel() {
         <p className="text-xs text-muted-foreground">
           תתווסף אוטומטית לסוף כל מייל שאתה שולח מכרטיס מערכת. שם התצוגה שלך ({myProfile?.displayName || "—"}) נלקח מהפרופיל שלך במערכת.
         </p>
-        <textarea value={signature} onChange={(e) => setSignatureLocal(e.target.value)} rows={4}
-          placeholder={"בברכה,\nשם הנציג\nועד בני תורה"}
-          className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+        <EmailContentEditor value={signature} onChange={setSignatureLocal} rows={4}
+          placeholder={"בברכה,\nשם הנציג\nועד בני תורה"} label="חתימה"
+          cleanupLevel={emailCleanupLevel} onCleanupLevelChange={setEmailCleanupLevel} />
         <button onClick={() => saveSignatureMut.mutate()} disabled={saveSignatureMut.isPending}
           className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {saveSignatureMut.isPending ? "שומר..." : "שמור חתימה"}
@@ -1167,8 +1170,9 @@ function EmailSettingsPanel() {
               placeholder="שם התבנית" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
             <input value={editingTemplate.subject} onChange={(e) => setEditingTemplate({ ...editingTemplate, subject: e.target.value })}
               placeholder="נושא" className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
-            <textarea value={editingTemplate.body} onChange={(e) => setEditingTemplate({ ...editingTemplate, body: e.target.value })}
-              placeholder="תוכן ההודעה" rows={5} className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
+            <EmailContentEditor value={editingTemplate.body}
+              onChange={(body) => setEditingTemplate({ ...editingTemplate, body })}
+              rows={5} cleanupLevel={emailCleanupLevel} onCleanupLevelChange={setEmailCleanupLevel} />
             <div className="flex items-center gap-2">
               <button onClick={() => saveTemplateMut.mutate(editingTemplate)} disabled={saveTemplateMut.isPending || !editingTemplate.name}
                 className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">

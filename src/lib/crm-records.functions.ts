@@ -213,6 +213,7 @@ const recordInput = z.object({
   email: z.string().trim().max(200).nullable().default(null),
   source: z.string().trim().max(80).nullable().default(null),
   notes: z.string().max(5000).nullable().default(null),
+  reminderAt: z.string().datetime().nullable().default(null),
   custom: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
 });
 
@@ -243,6 +244,7 @@ export const createRecord = createServerFn({ method: "POST" })
         email: data.email,
         source: data.source,
         notes: data.notes,
+        reminder_at: data.reminderAt,
         custom: data.custom as any,
         created_by: context.userId,
         assigned_agent_id: context.userId,
@@ -292,7 +294,7 @@ export const updateRecord = createServerFn({ method: "POST" })
     if (p.source !== undefined) patch.source = p.source;
     if (p.notes !== undefined) patch.notes = p.notes;
     if (p.custom !== undefined) patch.custom = p.custom;
-    if ((p as any).reminderAt !== undefined) patch.reminder_at = (p as any).reminderAt;
+    if (p.reminderAt !== undefined) patch.reminder_at = p.reminderAt;
 
     const { data: row, error } = await context.supabase
       .from("crm_records")

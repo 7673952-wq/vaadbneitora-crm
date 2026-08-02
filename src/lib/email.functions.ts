@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
+import { stripQuotedEmail } from "@/lib/email-cleanup";
 
 async function ensureCanWrite(userId: string) {
   const { assertCanWrite } = await import("@/lib/permissions.server");
@@ -178,7 +179,20 @@ export const listSystemEmailThread = createServerFn({ method: "POST" })
     const { data: rows, error } = await context.supabase
       .from("email_messages" as any).select("*").eq("system_id", data.system_id).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    return rows ?? [];
+    return (rows ?? []).map((row: any) => ({ ...row, body: stripQuotedEmail(row.body) }));
+  });
+
+export const listRecordEmailThread = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { record_id: string }) => z.object({ record_id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { data: record } = await context.supabase.from("crm_records").select("crm_key").eq("id", data.record_id).maybeSingle();
+    if (!record) throw new Error("הפניה לא נמצאה");
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, (record as any).crm_key);
+    const { data: rows, error } = await context.supabase.from("email_messages" as any).select("*").eq("crm_record_id", data.record_id).order("created_at", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (rows ?? []).map((row: any) => ({ ...row, body: stripQuotedEmail(row.body) }));
   });
 
 // ============= Send / reply =============
@@ -256,4 +270,36 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
     if (insertErr) throw new Error(insertErr.message);
 
     return { ok: true, gmailThreadId };
+  });
+
+export const sendRecordEmail = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { record_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null }) => z.object({
+    record_id: z.string().uuid(), to: z.string().email(), subject: z.string().max(300), body: z.string().min(1).max(20000), gmail_thread_id: z.string().nullable().optional(),
+  }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: record } = await supabaseAdmin.from("crm_records").select("crm_key").eq("id", data.record_id).maybeSingle();
+    if (!record) throw new Error("הפניה לא נמצאה");
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "emails_send", (record as any).crm_key);
+    const [{ data: urlRow }, { data: secretRow }, { data: profile }] = await Promise.all([
+      supabaseAdmin.from("app_settings").select("value").eq("key", RELAY_URL_KEY).maybeSingle(),
+      supabaseAdmin.from("app_settings").select("value").eq("key", RELAY_SECRET_KEY).maybeSingle(),
+      supabaseAdmin.from("profiles").select("display_name, email_signature, email_display_name" as any).eq("id", context.userId).maybeSingle(),
+    ]);
+    const relayUrl = (urlRow?.value as any)?.url;
+    const relaySecret = (secretRow?.value as any)?.secret;
+    if (!relayUrl || !relaySecret) throw new Error("שליחת מייל לא מוגדרת עדיין");
+    const agentName = (profile as any)?.email_display_name || (profile as any)?.display_name || "נציג";
+    const payload = data.gmail_thread_id
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: data.body, agentName, agentSignature: (profile as any)?.email_signature || "" }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: data.body, agentName, agentSignature: (profile as any)?.email_signature || "" };
+    const response = await fetch(relayUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const result: any = await response.json().catch(() => ({}));
+    if (!response.ok || !result?.ok) throw new Error(result?.error || "שליחת המייל נכשלה");
+    if (!data.gmail_thread_id) await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: result.gmailThreadId, crm_record_id: data.record_id });
+    const { error } = await supabaseAdmin.from("email_messages" as any).insert({ crm_record_id: data.record_id, direction: "outbound", gmail_thread_id: result.gmailThreadId, gmail_message_id: result.gmailMessageId ?? null, agent_id: context.userId, agent_name: agentName, to_address: data.to, subject: data.subject, body: data.body });
+    if (error) throw new Error(error.message);
+    return { ok: true, gmailThreadId: result.gmailThreadId as string };
   });

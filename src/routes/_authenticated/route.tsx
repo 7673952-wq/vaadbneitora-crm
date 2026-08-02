@@ -254,9 +254,9 @@ function AuthedLayout() {
             </div>
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">תתווסף אוטומטית לסוף כל מייל שאתה שולח מכרטיס מערכת.</p>
-              <textarea autoFocus value={sigText} onChange={(e) => setSigText(e.target.value)} rows={5}
-                placeholder={"בברכה,\nשם הנציג\nועד בני תורה"}
-                className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+              <EmailContentEditor value={sigText} onChange={setSigText} rows={5}
+                placeholder={"בברכה,\nשם הנציג\nועד בני תורה"} label="חתימה"
+                cleanupLevel={emailCleanupLevel} onCleanupLevelChange={setEmailCleanupLevel} />
               <div className="flex gap-2 pt-2">
                 <button onClick={saveSignature} disabled={sigBusy}
                   className="flex-1 bg-primary text-primary-foreground rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-50">

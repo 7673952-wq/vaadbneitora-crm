@@ -35,7 +35,7 @@ import {
   Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing, LayoutGrid,
 } from "lucide-react";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
-import type { EmailCleanupLevel } from "@/lib/email-cleanup";
+import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),
@@ -1025,14 +1025,14 @@ function EmailSettingsPanel() {
   const [emailCleanupLevel, setEmailCleanupLevel] = useState<EmailCleanupLevel>("standard");
   useEffect(() => { if (myProfile) setSignatureLocal(myProfile.signature); }, [myProfile]);
   const saveSignatureMut = useMutation({
-    mutationFn: async () => setSignatureFn({ data: { signature }, headers: await getAuthHeaders() }),
+    mutationFn: async () => setSignatureFn({ data: { signature: cleanEmailContent(signature, emailCleanupLevel) }, headers: await getAuthHeaders() }),
     onSuccess: () => toast.success("החתימה נשמרה"),
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
 
   const [editingTemplate, setEditingTemplate] = useState<{ id?: string; name: string; subject: string; body: string } | null>(null);
   const saveTemplateMut = useMutation({
-    mutationFn: async (t: { id?: string; name: string; subject: string; body: string }) => upsertTemplateFn({ data: t, headers: await getAuthHeaders() }),
+    mutationFn: async (t: { id?: string; name: string; subject: string; body: string }) => upsertTemplateFn({ data: { ...t, body: cleanEmailContent(t.body, emailCleanupLevel) }, headers: await getAuthHeaders() }),
     onSuccess: () => { toast.success("התבנית נשמרה"); setEditingTemplate(null); qc.invalidateQueries({ queryKey: ["email_templates"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });

@@ -33,8 +33,11 @@ export function cleanEmailContent(text: string, level: EmailCleanupLevel = "stan
     const match = marker.exec(normalized);
     if (match?.index !== undefined) end = Math.min(end, match.index);
   }
-  let cleaned = withoutQuotedLines
+  let cleaned = normalized
     .slice(0, end)
+    .split("\n")
+    .filter((line) => !/^\s*>/.test(line))
+    .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 

@@ -14,6 +14,7 @@ import {
   CALLER_SOURCES, buildDialNumber, buildStatusMaps,
 } from "@/lib/status";
 import { useMemo, useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square, Copy, Check } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail, TrendingUp } from "lucide-react";
@@ -1500,8 +1501,10 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
     } finally { setBusy(false); }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-hidden" onClick={onClose}>
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] bg-background/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-hidden" onClick={onClose}>
       <div className="bg-card border border-border rounded-lg max-w-2xl w-full shadow-xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
         <h2 className="text-lg font-bold px-3 sm:px-4 pt-3 sm:pt-4 pb-2 shrink-0">הוספת מערכת חדשה</h2>
         <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 pb-3 sm:pb-4 content-start">
@@ -1639,7 +1642,8 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

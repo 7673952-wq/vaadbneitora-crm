@@ -1501,10 +1501,10 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-xl font-bold mb-4">הוספת מערכת חדשה</h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-2 sm:p-4 overflow-y-auto" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg max-w-2xl w-full p-3 sm:p-4 shadow-xl max-h-[calc(100dvh-1rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold mb-3">הוספת מערכת חדשה</h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2">
           <div>
             <label className="text-sm font-medium block mb-1">מזהה מערכת (מספר לחיוג)</label>
             <div className="flex items-center gap-2">
@@ -1623,15 +1623,15 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
               {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           </div>
-          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2">
+          <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-2 sm:col-span-2">
             {willCreateAsSub ? "תת־המערכת תיפתח עם הסטטוס שנבחר כאן, בלי לרשת סטטוס מהאב." : "המערכת תיפתח אוטומטית על שמך כנציג המטפל. ניתן לשייך לנציג אחר לאחר הפתיחה."}
           </div>
-          <div>
+          <div className="sm:col-span-2">
             <label className="text-sm font-medium block mb-1">הערות</label>
             <textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={3}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
           </div>
-          <div className="flex gap-2 justify-end pt-2">
+          <div className="flex gap-2 justify-end pt-2 sm:col-span-2 sticky bottom-0 bg-card border-t border-border py-2">
             <button type="button" onClick={onClose} className="px-4 py-2 border border-border rounded-lg text-sm hover:bg-accent">ביטול</button>
             <button type="submit" disabled={busy || !!existingByCode} className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50">
               {busy ? "..." : willCreateAsSub ? "הוסף תת-מערכת" : "הוסף"}

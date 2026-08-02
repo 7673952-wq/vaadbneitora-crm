@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
-import { stripQuotedEmail } from "@/lib/email-cleanup";
+import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 
 async function ensureCanWrite(userId: string) {
   const { assertCanWrite } = await import("@/lib/permissions.server");
@@ -179,7 +179,7 @@ export const listSystemEmailThread = createServerFn({ method: "POST" })
     const { data: rows, error } = await context.supabase
       .from("email_messages" as any).select("*").eq("system_id", data.system_id).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    return (rows ?? []).map((row: any) => ({ ...row, body: stripQuotedEmail(row.body) }));
+    return rows ?? [];
   });
 
 export const listRecordEmailThread = createServerFn({ method: "POST" })
@@ -192,13 +192,13 @@ export const listRecordEmailThread = createServerFn({ method: "POST" })
     await assertCrmAccess(context.userId, (record as any).crm_key);
     const { data: rows, error } = await context.supabase.from("email_messages" as any).select("*").eq("crm_record_id", data.record_id).order("created_at", { ascending: true });
     if (error) throw new Error(error.message);
-    return (rows ?? []).map((row: any) => ({ ...row, body: stripQuotedEmail(row.body) }));
+    return rows ?? [];
   });
 
 // ============= Send / reply =============
 export const sendSystemEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean }) =>
+  .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel }) =>
     z.object({
       system_id: z.string().uuid(),
       to: z.string().email(),
@@ -206,6 +206,7 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
       body: z.string().min(1).max(20000),
       gmail_thread_id: z.string().nullable().optional(),
       use_general_name: z.boolean().optional(),
+      cleanup_level: z.enum(["none", "light", "standard", "strict"]).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -230,9 +231,11 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
     const agentName = (data.use_general_name && generalName) ? generalName : personalName;
     const agentSignature = (profileRow as any)?.email_signature || "";
 
+    const cleanedBody = cleanEmailContent(data.body, data.cleanup_level ?? "standard");
+    if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
     const relayPayload = data.gmail_thread_id
-      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: data.body, agentName, agentSignature }
-      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: data.body, agentName, agentSignature };
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature };
 
     let relayRes: Response;
     try {
@@ -265,7 +268,7 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
       agent_name: agentName,
       to_address: data.to,
       subject: data.subject,
-      body: data.body,
+       body: cleanedBody,
     });
     if (insertErr) throw new Error(insertErr.message);
 
@@ -274,8 +277,8 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
 
 export const sendRecordEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { record_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null }) => z.object({
-    record_id: z.string().uuid(), to: z.string().email(), subject: z.string().max(300), body: z.string().min(1).max(20000), gmail_thread_id: z.string().nullable().optional(),
+  .inputValidator((d: { record_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; cleanup_level?: EmailCleanupLevel }) => z.object({
+    record_id: z.string().uuid(), to: z.string().email(), subject: z.string().max(300), body: z.string().min(1).max(20000), gmail_thread_id: z.string().nullable().optional(), cleanup_level: z.enum(["none", "light", "standard", "strict"]).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -292,14 +295,16 @@ export const sendRecordEmail = createServerFn({ method: "POST" })
     const relaySecret = (secretRow?.value as any)?.secret;
     if (!relayUrl || !relaySecret) throw new Error("שליחת מייל לא מוגדרת עדיין");
     const agentName = (profile as any)?.email_display_name || (profile as any)?.display_name || "נציג";
+    const cleanedBody = cleanEmailContent(data.body, data.cleanup_level ?? "standard");
+    if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
     const payload = data.gmail_thread_id
-      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: data.body, agentName, agentSignature: (profile as any)?.email_signature || "" }
-      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: data.body, agentName, agentSignature: (profile as any)?.email_signature || "" };
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "" }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "" };
     const response = await fetch(relayUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const result: any = await response.json().catch(() => ({}));
     if (!response.ok || !result?.ok) throw new Error(result?.error || "שליחת המייל נכשלה");
     if (!data.gmail_thread_id) await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: result.gmailThreadId, crm_record_id: data.record_id });
-    const { error } = await supabaseAdmin.from("email_messages" as any).insert({ crm_record_id: data.record_id, direction: "outbound", gmail_thread_id: result.gmailThreadId, gmail_message_id: result.gmailMessageId ?? null, agent_id: context.userId, agent_name: agentName, to_address: data.to, subject: data.subject, body: data.body });
+    const { error } = await supabaseAdmin.from("email_messages" as any).insert({ crm_record_id: data.record_id, direction: "outbound", gmail_thread_id: result.gmailThreadId, gmail_message_id: result.gmailMessageId ?? null, agent_id: context.userId, agent_name: agentName, to_address: data.to, subject: data.subject, body: cleanedBody });
     if (error) throw new Error(error.message);
     return { ok: true, gmailThreadId: result.gmailThreadId as string };
   });

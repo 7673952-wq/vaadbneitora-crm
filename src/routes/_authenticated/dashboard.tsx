@@ -1501,10 +1501,10 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-2 sm:p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-card border border-border rounded-lg max-w-2xl w-full p-3 sm:p-4 shadow-xl max-h-[calc(100dvh-1rem)] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-        <h2 className="text-lg font-bold mb-3">הוספת מערכת חדשה</h2>
-        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2">
+    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-hidden" onClick={onClose}>
+      <div className="bg-card border border-border rounded-lg max-w-2xl w-full shadow-xl max-h-[calc(100dvh-1rem)] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+        <h2 className="text-lg font-bold px-3 sm:px-4 pt-3 sm:pt-4 pb-2 shrink-0">הוספת מערכת חדשה</h2>
+        <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-x-3 gap-y-2 flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 pb-3 sm:pb-4 content-start">
           <div>
             <label className="text-sm font-medium block mb-1">מזהה מערכת (מספר לחיוג)</label>
             <div className="flex items-center gap-2">

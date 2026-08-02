@@ -115,8 +115,7 @@ export const listSystems = createServerFn({ method: "POST" })
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const { assertCrmAccess } = await import("@/lib/permissions.server");
     await assertCrmAccess(context.userId, "yemot");
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const db = supabaseAdmin;
+    const db = context.supabase;
     const statusValues = await resolveStatusFilterValues(db, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(db, data.secondaryStatus);
     const primaryStatusValues = primaryStatusFilterValues(statusValues);

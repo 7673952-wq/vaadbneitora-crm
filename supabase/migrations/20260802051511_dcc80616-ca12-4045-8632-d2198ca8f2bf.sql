@@ -1,0 +1,1 @@
+GRANT EXECUTE ON FUNCTION public.has_crm_access(uuid, text) TO authenticated;

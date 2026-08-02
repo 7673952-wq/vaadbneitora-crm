@@ -1,12 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, X } from "lucide-react";
 import { useMyCrms } from "@/lib/use-crms";
-import { createRecord } from "@/lib/crm-records.functions";
-import { createSystem } from "@/lib/systems.functions";
+import { createRecord, listFieldDefs } from "@/lib/crm-records.functions";
+import { listAgents } from "@/lib/systems.functions";
+import { listStatusSettings } from "@/lib/admin.functions";
+import { YemotCreateModal } from "@/routes/_authenticated/dashboard";
 import { getAuthHeaders } from "@/lib/auth-headers";
 
 type Form = { code: string; name: string; phone: string; callerPhone: string; email: string; notes: string };
@@ -21,12 +23,22 @@ export function NewRecordButton() {
   const qc = useQueryClient();
   const { data: crms = [] } = useMyCrms();
   const createRecFn = useServerFn(createRecord);
-  const createSysFn = useServerFn(createSystem);
+  const fieldsFn = useServerFn(listFieldDefs);
+  const agentsFn = useServerFn(listAgents);
+  const statusesFn = useServerFn(listStatusSettings);
 
   const [open, setOpen] = useState(false);
   const [crmKey, setCrmKey] = useState<string | null>(null);
   const [form, setForm] = useState<Form>(EMPTY);
   const [busy, setBusy] = useState(false);
+  const [custom, setCustom] = useState<Record<string, string>>({});
+  const { data: fields = [] } = useQuery({
+    queryKey: ["crm_field_defs", crmKey],
+    queryFn: async () => fieldsFn({ data: { crmKey: crmKey ?? "" }, headers: await getAuthHeaders() }),
+    enabled: !!crmKey && crmKey !== "yemot",
+  });
+  const { data: agents = [] } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), enabled: crmKey === "yemot" });
+  const { data: statuses = [] } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusesFn(), enabled: crmKey === "yemot" });
 
   const writable = crms.filter((c) => c.myRole && c.myRole !== "viewer");
   if (writable.length === 0) return null;
@@ -35,6 +47,7 @@ export function NewRecordButton() {
 
   function start() {
     setForm(EMPTY);
+    setCustom({});
     setCrmKey(writable.length === 1 ? writable[0].key : null);
     setOpen(true);
   }
@@ -44,24 +57,7 @@ export function NewRecordButton() {
     if (!form.code.trim()) { toast.error(`נדרש ${current.idLabel || "מזהה"}`); return; }
     setBusy(true);
     try {
-      if (current.key === "yemot") {
-        const created: any = await createSysFn({
-          data: {
-            system_code: form.code.trim(),
-            name: form.name.trim() || form.code.trim(),
-            status: "open",
-            notes: form.notes || undefined,
-            phone: form.phone || undefined,
-            caller_phone: form.callerPhone || undefined,
-            email: form.email || undefined,
-          },
-          headers: await getAuthHeaders(),
-        });
-        await qc.invalidateQueries({ queryKey: ["systems"] });
-        toast.success("המערכת נפתחה");
-        setOpen(false);
-        if (created?.id) navigate({ to: "/systems/$id", params: { id: created.id } });
-      } else {
+      if (current.key !== "yemot") {
         const created: any = await createRecFn({
           data: {
             crmKey: current.key,
@@ -73,7 +69,7 @@ export function NewRecordButton() {
             email: form.email || null,
             source: null,
             notes: form.notes || null,
-            custom: {},
+            custom,
           },
           headers: await getAuthHeaders(),
         });
@@ -100,6 +96,14 @@ export function NewRecordButton() {
       </button>
 
       {open && (
+        current?.key === "yemot" ? (
+          <YemotCreateModal
+            onClose={() => setOpen(false)}
+            agents={agents}
+            statusOptions={statuses.filter((s: any) => s.is_mandatory !== false).map((s: any) => ({ value: s.status_key, label: s.label }))}
+            onDone={() => { qc.invalidateQueries({ queryKey: ["systems"] }); setOpen(false); }}
+          />
+        ) : (
         <div dir="rtl" className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 p-4 pt-20" onClick={() => !busy && setOpen(false)}>
           <div className="w-full max-w-lg rounded-xl border border-border bg-background shadow-2xl" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -133,6 +137,9 @@ export function NewRecordButton() {
                   <Row label="טלפון" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />
                   <Row label="מספר פונה" value={form.callerPhone} onChange={(v) => setForm({ ...form, callerPhone: v })} />
                   <Row label="מייל" value={form.email} onChange={(v) => setForm({ ...form, email: v })} />
+                  {fields.map((field: any) => (
+                    <Row key={field.id} label={field.label} value={custom[field.fieldKey] ?? ""} onChange={(v) => setCustom({ ...custom, [field.fieldKey]: v })} />
+                  ))}
                   <div>
                     <label className="text-xs font-medium block mb-1">הערות</label>
                     <textarea
@@ -157,6 +164,7 @@ export function NewRecordButton() {
             </div>
           </div>
         </div>
+        )
       )}
     </>
   );

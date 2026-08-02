@@ -51,6 +51,8 @@ export const listFieldDefs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ crmKey: z.string().min(1) }).parse(input))
   .handler(async ({ data, context }) => {
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, data.crmKey);
     const { data: rows, error } = await context.supabase
       .from("crm_field_defs")
       .select("*")
@@ -88,6 +90,8 @@ export const upsertFieldDef = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, data.crmKey);
     const { assertPermission } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "settings_manage");
     const { error } = await context.supabase.from("crm_field_defs").upsert(
@@ -163,6 +167,8 @@ export const getRecord = createServerFn({ method: "GET" })
       .maybeSingle();
     if (error) throw fromSupabase(error);
     if (!row) throw new AppError("הפניה לא נמצאה");
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, (row as any).crm_key);
     const [{ data: notes }, { data: activity }] = await Promise.all([
       context.supabase
         .from("crm_record_notes")
@@ -182,6 +188,7 @@ export const getRecord = createServerFn({ method: "GET" })
         id: n.id as string,
         body: n.body as string,
         authorName: (n.author_name ?? null) as string | null,
+        authorId: (n.author_id ?? null) as string | null,
         createdAt: n.created_at as string,
       })),
       activity: (activity ?? []).map((a: any) => ({
@@ -222,6 +229,8 @@ export const createRecord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => recordInput.parse(input))
   .handler(async ({ data, context }) => {
+    const { assertCanWrite } = await import("@/lib/permissions.server");
+    await assertCanWrite(context.userId, data.crmKey);
     const { data: row, error } = await context.supabase
       .from("crm_records")
       .insert({
@@ -269,6 +278,8 @@ export const updateRecord = createServerFn({ method: "POST" })
       .maybeSingle();
     if (readErr) throw fromSupabase(readErr);
     if (!before) throw new AppError("הפניה לא נמצאה");
+    const { assertCanWrite } = await import("@/lib/permissions.server");
+    await assertCanWrite(context.userId, (before as any).crm_key);
 
     const patch: Record<string, any> = {};
     const p = data.patch;
@@ -281,6 +292,7 @@ export const updateRecord = createServerFn({ method: "POST" })
     if (p.source !== undefined) patch.source = p.source;
     if (p.notes !== undefined) patch.notes = p.notes;
     if (p.custom !== undefined) patch.custom = p.custom;
+    if ((p as any).reminderAt !== undefined) patch.reminder_at = (p as any).reminderAt;
 
     const { data: row, error } = await context.supabase
       .from("crm_records")
@@ -311,6 +323,10 @@ export const deleteRecord = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
+    const { data: row } = await context.supabase.from("crm_records").select("crm_key").eq("id", data.id).maybeSingle();
+    if (!row) throw new AppError("הפניה לא נמצאה");
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "systems_delete", (row as any).crm_key);
     const { error } = await context.supabase.from("crm_records").delete().eq("id", data.id);
     if (error) throw fromSupabase(error);
     return { ok: true };
@@ -322,6 +338,8 @@ export const addRecordNote = createServerFn({ method: "POST" })
     z.object({ recordId: z.string().uuid(), crmKey: z.string().min(1), body: z.string().trim().min(1).max(5000) }).parse(input),
   )
   .handler(async ({ data, context }) => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "notes_write", data.crmKey);
     const { error } = await context.supabase.from("crm_record_notes").insert({
       record_id: data.recordId,
       crm_key: data.crmKey,
@@ -329,6 +347,32 @@ export const addRecordNote = createServerFn({ method: "POST" })
       author_name: await actorName(context),
       body: data.body,
     });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const updateRecordNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid(), body: z.string().trim().min(1).max(5000) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: note } = await context.supabase.from("crm_record_notes").select("crm_key, author_id").eq("id", data.id).maybeSingle();
+    if (!note) throw new AppError("הערה לא נמצאה");
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if ((note as any).author_id !== context.userId && !(await hasPermission(context.userId, "history_edit", (note as any).crm_key))) throw new AppError("אין הרשאה לערוך הערה");
+    const { error } = await context.supabase.from("crm_record_notes").update({ body: data.body, updated_at: new Date().toISOString() }).eq("id", data.id);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+export const deleteRecordNote = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { data: note } = await context.supabase.from("crm_record_notes").select("crm_key, author_id").eq("id", data.id).maybeSingle();
+    if (!note) throw new AppError("הערה לא נמצאה");
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if ((note as any).author_id !== context.userId && !(await hasPermission(context.userId, "history_edit", (note as any).crm_key))) throw new AppError("אין הרשאה למחוק הערה");
+    const { error } = await context.supabase.from("crm_record_notes").delete().eq("id", data.id);
     if (error) throw fromSupabase(error);
     return { ok: true };
   });

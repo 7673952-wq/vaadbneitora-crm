@@ -113,8 +113,12 @@ export const listSystems = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
-    const statusValues = await resolveStatusFilterValues(context.supabase, data.status);
-    const secondaryStatusValues = await resolveStatusFilterValues(context.supabase, data.secondaryStatus);
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, "yemot");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const db = supabaseAdmin;
+    const statusValues = await resolveStatusFilterValues(db, data.status);
+    const secondaryStatusValues = await resolveStatusFilterValues(db, data.secondaryStatus);
     const primaryStatusValues = primaryStatusFilterValues(statusValues);
     if (data.status && statusValues.length === 0 && secondaryStatusValues.length === 0) {
       return { items: [], total: 0, page: data.page ?? 1, pageSize: data.pageSize ?? 1000 };
@@ -152,7 +156,7 @@ export const listSystems = createServerFn({ method: "POST" })
     // the ordering we fetch every row matching the current filters, sort by
     // (waiting-first, then most-recently-updated), and only then slice out
     // the requested page.
-    const { data: statusRows } = await context.supabase
+    const { data: statusRows } = await db
       .from("status_settings").select("status_key, is_handled");
     const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
     if (handledKeys.size === 0) {
@@ -176,7 +180,7 @@ export const listSystems = createServerFn({ method: "POST" })
       const statusSet = new Set(statusValues);
       const secondaryStatusSet = new Set(secondaryStatusValues);
       const pageQuery = (from: number, withCount: boolean) => {
-        let q = context.supabase.from("systems").select(baseSelect, withCount ? { count: "exact" } : {});
+        let q = db.from("systems").select(baseSelect, withCount ? { count: "exact" } : {});
         return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
       };
       const { data: firstRows, error: firstErr, count } = await pageQuery(0, true);
@@ -201,7 +205,7 @@ export const listSystems = createServerFn({ method: "POST" })
         return matchesPrimary && matchesSecondary;
       });
       const orderedRows = sortWaitingFirst(filteredRows);
-      const items = await enrichSystemRows(context.supabase, orderedRows.slice(offset, endTo + 1));
+      const items = await enrichSystemRows(db, orderedRows.slice(offset, endTo + 1));
       return { items, total: orderedRows.length, page, pageSize };
     }
 
@@ -211,7 +215,7 @@ export const listSystems = createServerFn({ method: "POST" })
     // waiting/handled ordering above can be applied across the whole set,
     // then slice out the requested page.
     const buildQuery = (from: number, withCount: boolean) => {
-      let q = context.supabase
+      let q = db
         .from("systems")
         .select(baseSelect, withCount ? { count: "exact" } : {});
       if (primaryStatusValues.length > 0) q = q.in("status", primaryStatusValues as any);
@@ -230,7 +234,7 @@ export const listSystems = createServerFn({ method: "POST" })
       }
     }
     const orderedRows = sortWaitingFirst(allRows);
-    const items = await enrichSystemRows(context.supabase, orderedRows.slice(offset, endTo + 1));
+    const items = await enrichSystemRows(db, orderedRows.slice(offset, endTo + 1));
     return { items, total: total || orderedRows.length, page, pageSize };
   });
 

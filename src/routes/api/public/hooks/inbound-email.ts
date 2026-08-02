@@ -30,7 +30,7 @@ async function handleInboundEmail(request: Request) {
     // first sent a message on this thread (see sendSystemEmail).
     const { data: threadRow } = await supabaseAdmin
       .from("email_threads" as any)
-      .select("system_id")
+      .select("system_id, crm_record_id")
       .eq("gmail_thread_id", gmailThreadId)
       .maybeSingle();
 
@@ -57,17 +57,20 @@ async function handleInboundEmail(request: Request) {
     }
 
     const receivedIso = receivedAt ?? new Date().toISOString();
-    const systemId = (threadRow as any).system_id as string;
+    const systemId = (threadRow as any).system_id as string | null;
+    const recordId = (threadRow as any).crm_record_id as string | null;
+    const { stripQuotedEmail } = await import("@/lib/email-cleanup");
 
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({
       system_id: systemId,
+      crm_record_id: recordId,
       direction: "inbound",
       gmail_thread_id: gmailThreadId,
       gmail_message_id: gmailMessageId ?? null,
       from_address: from ?? null,
       to_address: to ?? null,
       subject: subject ?? null,
-      body: text ?? "",
+      body: stripQuotedEmail(text ?? ""),
       created_at: receivedIso,
     });
     if (error) throw error;
@@ -83,7 +86,8 @@ async function handleInboundEmail(request: Request) {
       .from("app_settings").select("value").eq("key", "unhandled_email_status_key").maybeSingle();
     const nextStatus = (statusCfg?.value as { status_key?: string } | null)?.status_key?.trim();
     if (nextStatus) patch.status = nextStatus;
-    await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+    if (systemId) await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+    if (recordId) await supabaseAdmin.from("crm_records").update({ reminder_at: receivedIso, updated_at: receivedIso }).eq("id", recordId);
 
 
     return new Response(JSON.stringify({ ok: true }), {

@@ -216,25 +216,41 @@ export function isPermissionKey(permission: string): permission is PermissionKey
   return PERMISSION_DEFINITIONS.some((p) => p.key === permission);
 }
 
-export async function hasPermission(userId: string, permission: PermissionKey): Promise<boolean> {
-  const roles = await getUserRoles(userId);
+export async function getCrmRoles(userId: string, crmKey: string): Promise<Role[]> {
+  const globalRoles = await getUserRoles(userId);
+  if (globalRoles.includes("super_admin")) return ["super_admin"];
+  const { data, error } = await supabaseAdmin
+    .from("crm_user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .eq("crm_key", crmKey);
+  if (error) throw new AppError(error.message, { code: "internal", cause: error });
+  return (data ?? []).map((r: any) => r.role as Role).filter((r) => ROLE_HIERARCHY.includes(r));
+}
+
+export async function hasCrmAccess(userId: string, crmKey: string): Promise<boolean> {
+  return (await getCrmRoles(userId, crmKey)).length > 0;
+}
+
+export async function assertCrmAccess(userId: string, crmKey: string): Promise<void> {
+  if (!(await hasCrmAccess(userId, crmKey))) {
+    throw new AppError("אין לך גישה ל-CRM זה", { code: "forbidden" });
+  }
+}
+
+export async function hasPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<boolean> {
+  const roles = await getCrmRoles(userId, crmKey);
   if (!roles.length) return false;
   // A super admin must always retain full management access. Dynamic
   // permission rows can narrow admin/agent/viewer roles, but cannot lock the
   // only top-level administrator out of statuses, permissions, or users.
   if (roles.includes("super_admin")) return true;
 
-  const stored = await getStoredPermissionSettings();
-  const storedOverride = stored.userPermissions.find((r) => r.user_id === userId && r.permission === permission);
-  if (typeof storedOverride?.allowed === "boolean") return storedOverride.allowed;
-  const storedRoleRows = stored.rolePermissions.filter((r) => r.permission === permission && roles.includes(r.role as Role));
-  if (storedRoleRows.some((r) => r.allowed === true)) return true;
-  if (storedRoleRows.some((r) => r.allowed === false)) return false;
-
   const { data: userOverride, error: overrideError } = await supabaseAdmin
     .from("user_permissions")
     .select("allowed")
     .eq("user_id", userId)
+    .eq("crm_key", crmKey)
     .eq("permission", permission)
     .maybeSingle();
   if (overrideError && overrideError.code !== "PGRST116") {
@@ -246,6 +262,7 @@ export async function hasPermission(userId: string, permission: PermissionKey): 
   const { data: roleRows, error: roleError } = await supabaseAdmin
     .from("role_permissions")
     .select("role, allowed")
+    .eq("crm_key", crmKey)
     .eq("permission", permission)
     .in("role", roles as any);
   if (roleError) {
@@ -260,13 +277,13 @@ export async function hasPermission(userId: string, permission: PermissionKey): 
   return defaultPermissionForRoles(roles, permission);
 }
 
-export async function getUserPermissionMap(userId: string): Promise<Record<PermissionKey, boolean>> {
-  const pairs = await Promise.all(PERMISSION_DEFINITIONS.map(async (p) => [p.key, await hasPermission(userId, p.key)] as const));
+export async function getUserPermissionMap(userId: string, crmKey = "yemot"): Promise<Record<PermissionKey, boolean>> {
+  const pairs = await Promise.all(PERMISSION_DEFINITIONS.map(async (p) => [p.key, await hasPermission(userId, p.key, crmKey)] as const));
   return Object.fromEntries(pairs) as Record<PermissionKey, boolean>;
 }
 
-export async function assertPermission(userId: string, permission: PermissionKey): Promise<void> {
-  const ok = await hasPermission(userId, permission);
+export async function assertPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<void> {
+  const ok = await hasPermission(userId, permission, crmKey);
   if (!ok) {
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
@@ -283,8 +300,8 @@ export async function assertAnyPermission(userId: string, permissions: Permissio
  * Throws when the caller is read-only (viewer or no role). Use at the top of
  * EVERY write server fn so viewers can never mutate data even if RLS permits it.
  */
-export async function assertCanWrite(userId: string): Promise<void> {
-  const ok = await hasPermission(userId, "systems_write");
+export async function assertCanWrite(userId: string, crmKey = "yemot"): Promise<void> {
+  const ok = await hasPermission(userId, "systems_write", crmKey);
   if (!ok) {
     throw new AppError("אין הרשאת עריכה למערכות", { code: "forbidden" });
   }

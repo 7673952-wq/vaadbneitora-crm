@@ -83,13 +83,14 @@ function statusValueMatches(value: string | null | undefined, accepted: Set<stri
 // All authorization in this file goes through `assertRole` / `hasRole`
 // from @/lib/permissions.server — single source of truth.
 async function userHasRole(userId: string, role: "agent" | "admin" | "super_admin") {
-  const { hasRole } = await import("@/lib/permissions.server");
-  return hasRole(userId, role);
+  const { getCrmRoles, ROLE_HIERARCHY } = await import("@/lib/permissions.server");
+  const roles = await getCrmRoles(userId, "yemot");
+  return roles.some((r) => ROLE_HIERARCHY.indexOf(r) <= ROLE_HIERARCHY.indexOf(role));
 }
 // Read-only viewers cannot mutate anything — call at the top of every write handler.
 async function ensureCanWrite(userId: string) {
   const { assertCanWrite } = await import("@/lib/permissions.server");
-  await assertCanWrite(userId);
+  await assertCanWrite(userId, "yemot");
 }
 
 

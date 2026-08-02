@@ -133,7 +133,6 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         {canCrms && <TabsTrigger value="crms" className="flex items-center gap-1.5"><LayoutGrid className="h-3.5 w-3.5" />מערכות CRM</TabsTrigger>}
         {canGeneral && <TabsTrigger value="settings" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />הגדרות כלליות</TabsTrigger>}
         {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />פעמון התראות</TabsTrigger>}
-        {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות מערכת</TabsTrigger>}
         {canEmail && <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />הגדרות מייל</TabsTrigger>}
         {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
       </TabsList>
@@ -147,7 +146,6 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         <BackupSchedulePanel />
       </TabsContent>}
       {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel crms={crms} /></TabsContent>}
-      {canPermissions && <TabsContent value="permissions" className="mt-4"><PermissionsPanel /></TabsContent>}
       {canEmail && <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>}
       {canBackups && <TabsContent value="backups" className="mt-4"><BackupsPage embedded /></TabsContent>}
     </Tabs>
@@ -163,11 +161,13 @@ function YemotAdminTabs({ flags }: { flags: Record<string, boolean> }) {
       <TabsList className="flex flex-wrap gap-1 h-auto">
         {canStatuses && <TabsTrigger value="statuses" className="flex items-center gap-1.5"><Palette className="h-3.5 w-3.5" />סטטוסים</TabsTrigger>}
         {canCrms && <TabsTrigger value="access" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות למערכת</TabsTrigger>}
+        {canCrms && <TabsTrigger value="actions" className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" />הרשאות פעולות</TabsTrigger>}
         {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
         {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
       </TabsList>
       {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
       {canCrms && <TabsContent value="access" className="mt-4"><CrmPermissionsPanel crmKey="yemot" /></TabsContent>}
+      {canCrms && <TabsContent value="actions" className="mt-4"><PermissionsPanel crmKey="yemot" /></TabsContent>}
       {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
       {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
     </Tabs>
@@ -182,6 +182,7 @@ function GenericCrmAdminTabs({ crmKey, canCrms }: { crmKey: string; canCrms: boo
       <TabsList className="flex flex-wrap gap-1 h-auto">
         <TabsTrigger value="access" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות למערכת</TabsTrigger>
         <TabsTrigger value="fields" className="flex items-center gap-1.5"><ListChecks className="h-3.5 w-3.5" />שדות מותאמים</TabsTrigger>
+        <TabsTrigger value="actions" className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" />הרשאות פעולות</TabsTrigger>
       </TabsList>
       <TabsContent value="access" className="mt-4"><CrmPermissionsPanel crmKey={crmKey} /></TabsContent>
       <TabsContent value="fields" className="mt-4">
@@ -190,6 +191,7 @@ function GenericCrmAdminTabs({ crmKey, canCrms }: { crmKey: string; canCrms: boo
           <CrmFieldBuilder crmKey={crmKey} />
         </div>
       </TabsContent>
+      <TabsContent value="actions" className="mt-4"><PermissionsPanel crmKey={crmKey} /></TabsContent>
     </Tabs>
   );
 }
@@ -858,16 +860,16 @@ function SeriesSettingsPanel() {
 }
 
 // ============= Permissions =============
-function PermissionsPanel() {
+function PermissionsPanel({ crmKey }: { crmKey: string }) {
   const qc = useQueryClient();
   const listFn = useServerFn(listPermissionSettings);
   const roleFn = useServerFn(setRolePermission);
   const userFn = useServerFn(setUserPermission);
   const clearFn = useServerFn(deleteUserPermission);
-  const { data, error, isLoading } = useQuery({ queryKey: ["permission_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
+  const { data, error, isLoading } = useQuery({ queryKey: ["permission_settings", crmKey], queryFn: async () => listFn({ data: { crmKey }, headers: await getAuthHeaders() }) });
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [search, setSearch] = useState("");
-  const refresh = () => { qc.invalidateQueries({ queryKey: ["permission_settings"] }); qc.invalidateQueries({ queryKey: ["me"] }); };
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["permission_settings", crmKey] }); qc.invalidateQueries({ queryKey: ["me"] }); };
   const roleMut = useMutation({ mutationFn: async (vars: any) => roleFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("הרשאת תפקיד עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
   const userMut = useMutation({ mutationFn: async (vars: any) => userFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("הרשאת משתמש עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
   const clearMut = useMutation({ mutationFn: async (vars: any) => clearFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("חריגה הוסרה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
@@ -910,7 +912,7 @@ function PermissionsPanel() {
                   const active = roleAllowed(r, p.key);
                   return (
                     <td key={`${r}:${p.key}`} className="px-4 py-3 text-center">
-                      <button onClick={() => roleMut.mutate({ data: { role: r, permission: p.key, allowed: !active } })}
+                      <button onClick={() => roleMut.mutate({ data: { crmKey, role: r, permission: p.key, allowed: !active } })}
                         disabled={roleMut.isPending}
                         className={`inline-flex items-center justify-center w-10 h-6 rounded-full border text-xs font-bold ${active ? "bg-emerald-600 text-white border-emerald-600" : "bg-background text-muted-foreground border-input"}`}>
                         {active ? "כן" : "לא"}
@@ -947,8 +949,8 @@ function PermissionsPanel() {
                     <td className="px-4 py-3 text-left">
                       <select value={override === undefined ? "inherit" : override ? "allow" : "deny"}
                         onChange={(e) => {
-                          if (e.target.value === "inherit") clearMut.mutate({ data: { user_id: selected.id, permission: p.key } });
-                          else userMut.mutate({ data: { user_id: selected.id, permission: p.key, allowed: e.target.value === "allow" } });
+                          if (e.target.value === "inherit") clearMut.mutate({ data: { crmKey, user_id: selected.id, permission: p.key } });
+                          else userMut.mutate({ data: { crmKey, user_id: selected.id, permission: p.key, allowed: e.target.value === "allow" } });
                         }}
                         className="rounded-md border border-input bg-background px-2 py-1 text-sm">
                         <option value="inherit">לפי תפקיד</option>

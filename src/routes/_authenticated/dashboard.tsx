@@ -873,7 +873,7 @@ function Dashboard() {
 
 
       {showCreate && me?.isAgent && (
-        <CreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} statusOptions={regularStatusOptions} onDone={() => {
+        <YemotCreateModal initial={createInitial} onClose={() => setShowCreate(false)} agents={agents ?? []} statusOptions={regularStatusOptions} onDone={() => {
           qc.invalidateQueries({ queryKey: ["systems"] });
           setShowCreate(false);
           setCreateInitial({});

@@ -216,7 +216,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { getUserPermissionMap } = await import("@/lib/permissions.server");
+    const { getUserPermissionMap, getCrmRoles } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
       context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
       context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
@@ -226,8 +226,9 @@ export const getMyRole = createServerFn({ method: "GET" })
       r === "super_admin" || r === "admin" || r === "agent" || r === "viewer",
     );
     const isSuperAdmin = roles.includes("super_admin");
-    const isAdmin = isSuperAdmin || roles.includes("admin");
-    const isAgent = isAdmin || roles.includes("agent");
+    const yemotRoles = await getCrmRoles(context.userId, "yemot");
+    const isAdmin = isSuperAdmin || yemotRoles.includes("admin") || yemotRoles.includes("super_admin");
+    const isAgent = isAdmin || yemotRoles.includes("agent");
     // A user is "viewer" only when they have ONLY the viewer role (no agent/admin).
     const isViewer = !isAgent && roles.includes("viewer");
     if (isAdmin && !roles.includes("admin")) roles.push("admin");
@@ -425,14 +426,14 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
 
 export const listPermissionSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .handler(async ({ context }) => {
+  .inputValidator((input: unknown) => z.object({ crmKey: z.string().min(1).max(60) }).parse(input))
+  .handler(async ({ data, context }) => {
     await assertPermission(context, "permissions_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { PERMISSION_DEFINITIONS } = await import("@/lib/permissions.server");
-    const storedSettings = await readPermissionSettings(supabaseAdmin);
     const [{ data: rolePermissions, error: rpErr }, { data: userPermissions, error: upErr }, { data: profiles }, { data: roles }, usersList] = await Promise.all([
-      supabaseAdmin.from("role_permissions").select("role, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
-      supabaseAdmin.from("user_permissions").select("user_id, permission, allowed, updated_at, updated_by").order("permission", { ascending: true }),
+      supabaseAdmin.from("role_permissions").select("role, permission, allowed, updated_at, updated_by").eq("crm_key", data.crmKey).order("permission", { ascending: true }),
+      supabaseAdmin.from("user_permissions").select("user_id, permission, allowed, updated_at, updated_by").eq("crm_key", data.crmKey).order("permission", { ascending: true }),
       supabaseAdmin.from("profiles").select("id, display_name, created_at"),
       supabaseAdmin.from("user_roles").select("user_id, role"),
       supabaseAdmin.auth.admin.listUsers(),
@@ -461,16 +462,17 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
     return {
       roles: ROLES,
       permissions: PERMISSION_DEFINITIONS,
-      rolePermissions: storedSettings.rolePermissions.length ? storedSettings.rolePermissions : (rpErr ? DEFAULT_ROLE_PERMISSION_ROWS : rolePermissions ?? []),
-      userPermissions: storedSettings.userPermissions.length ? storedSettings.userPermissions : (upErr ? [] : userPermissions ?? []),
+      rolePermissions: rpErr ? DEFAULT_ROLE_PERMISSION_ROWS : rolePermissions ?? [],
+      userPermissions: upErr ? [] : userPermissions ?? [],
       users,
     };
   });
 
 export const setRolePermission = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { role: string; permission: string; allowed: boolean }) =>
+  .inputValidator((d: { crmKey: string; role: string; permission: string; allowed: boolean }) =>
     z.object({
+      crmKey: z.string().min(1).max(60),
       role: z.enum(ROLES),
       permission: z.enum(PERMISSION_KEYS),
       allowed: z.boolean(),
@@ -482,19 +484,16 @@ export const setRolePermission = createServerFn({ method: "POST" })
       throw new AppError("לא ניתן להסיר הרשאת ניהול הרשאות ממנהל ראשי", { code: "bad_request" });
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const settings = await readPermissionSettings(supabaseAdmin);
-    const row = { role: data.role, permission: data.permission, allowed: data.allowed, updated_at: new Date().toISOString(), updated_by: context.userId };
-    const idx = settings.rolePermissions.findIndex((r) => r.role === data.role && r.permission === data.permission);
-    if (idx >= 0) settings.rolePermissions[idx] = row;
-    else settings.rolePermissions.push(row);
-    await writePermissionSettings(supabaseAdmin, settings, context.userId);
+    const { error } = await supabaseAdmin.from("role_permissions").upsert({ crm_key: data.crmKey, role: data.role, permission: data.permission, allowed: data.allowed, updated_at: new Date().toISOString(), updated_by: context.userId }, { onConflict: "crm_key,role,permission" });
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
 export const setUserPermission = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { user_id: string; permission: string; allowed: boolean }) =>
+  .inputValidator((d: { crmKey: string; user_id: string; permission: string; allowed: boolean }) =>
     z.object({
+      crmKey: z.string().min(1).max(60),
       user_id: z.string().uuid(),
       permission: z.enum(PERMISSION_KEYS),
       allowed: z.boolean(),
@@ -506,26 +505,21 @@ export const setUserPermission = createServerFn({ method: "POST" })
       throw new AppError("לא ניתן להסיר מעצמך הרשאת ניהול הרשאות", { code: "bad_request" });
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const settings = await readPermissionSettings(supabaseAdmin);
-    const row = { user_id: data.user_id, permission: data.permission, allowed: data.allowed, updated_at: new Date().toISOString(), updated_by: context.userId };
-    const idx = settings.userPermissions.findIndex((r) => r.user_id === data.user_id && r.permission === data.permission);
-    if (idx >= 0) settings.userPermissions[idx] = row;
-    else settings.userPermissions.push(row);
-    await writePermissionSettings(supabaseAdmin, settings, context.userId);
+    const { error } = await supabaseAdmin.from("user_permissions").upsert({ crm_key: data.crmKey, user_id: data.user_id, permission: data.permission, allowed: data.allowed, updated_at: new Date().toISOString(), updated_by: context.userId }, { onConflict: "crm_key,user_id,permission" });
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 
 export const deleteUserPermission = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { user_id: string; permission: string }) =>
-    z.object({ user_id: z.string().uuid(), permission: z.enum(PERMISSION_KEYS) }).parse(d),
+  .inputValidator((d: { crmKey: string; user_id: string; permission: string }) =>
+    z.object({ crmKey: z.string().min(1).max(60), user_id: z.string().uuid(), permission: z.enum(PERMISSION_KEYS) }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertPermission(context, "permissions_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const settings = await readPermissionSettings(supabaseAdmin);
-    settings.userPermissions = settings.userPermissions.filter((r) => !(r.user_id === data.user_id && r.permission === data.permission));
-    await writePermissionSettings(supabaseAdmin, settings, context.userId);
+    const { error } = await supabaseAdmin.from("user_permissions").delete().eq("crm_key", data.crmKey).eq("user_id", data.user_id).eq("permission", data.permission);
+    if (error) throw fromSupabase(error);
     return { ok: true };
   });
 

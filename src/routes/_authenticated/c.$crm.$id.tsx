@@ -1,11 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { ArrowRight, Phone, Save, Trash2 } from "lucide-react";
+import { ArrowRight, Clock, Mail, Phone, Save, Send, Trash2 } from "lucide-react";
 import { useMyCrms } from "@/lib/use-crms";
-import { getRecord, updateRecord, addRecordNote, deleteRecord, listFieldDefs } from "@/lib/crm-records.functions";
+import { getRecord, updateRecord, addRecordNote, deleteRecord, deleteRecordNote, listFieldDefs, updateRecordNote } from "@/lib/crm-records.functions";
+import { listAgents } from "@/lib/systems.functions";
+import { listRecordEmailThread, sendRecordEmail } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { GENERIC_STATUSES } from "./c.$crm.index";
 
@@ -25,6 +27,11 @@ function RecordDetail() {
   const noteFn = useServerFn(addRecordNote);
   const delFn = useServerFn(deleteRecord);
   const fieldsFn = useServerFn(listFieldDefs);
+  const agentsFn = useServerFn(listAgents);
+  const emailFn = useServerFn(listRecordEmailThread);
+  const sendEmailFn = useServerFn(sendRecordEmail);
+  const editNoteFn = useServerFn(updateRecordNote);
+  const deleteNoteFn = useServerFn(deleteRecordNote);
 
   const { data, isLoading } = useQuery({
     queryKey: ["crm_record", id],
@@ -34,9 +41,32 @@ function RecordDetail() {
     queryKey: ["crm_field_defs", crm],
     queryFn: async () => fieldsFn({ data: { crmKey: crm }, headers: await getAuthHeaders() }),
   });
+  const { data: agents = [] } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: 5 * 60_000 });
+  const { data: emails = [] } = useQuery({ queryKey: ["crm_record_emails", id], queryFn: async () => emailFn({ data: { record_id: id }, headers: await getAuthHeaders() }) });
 
   const [noteText, setNoteText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mailOpen, setMailOpen] = useState(false);
+  const [mailSubject, setMailSubject] = useState("");
+  const [mailBody, setMailBody] = useState("");
+  const mentionNames = useMemo(() => agents.map((a: any) => a.display_name).filter(Boolean), [agents]);
+
+  function renderMentions(body: string) {
+    const parts = body.split(/(@[^\s@]+)/g);
+    return parts.map((part, index) => part.startsWith("@")
+      ? <span key={index} className="inline-flex rounded-full bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">{part}</span>
+      : part);
+  }
+
+  async function sendMail(threadId?: string | null) {
+    if (!r.email || !mailBody.trim()) return;
+    try {
+      await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId }, headers: await getAuthHeaders() });
+      setMailBody(""); setMailOpen(false);
+      await qc.invalidateQueries({ queryKey: ["crm_record_emails", id] });
+      toast.success("המייל נשלח");
+    } catch (e: any) { toast.error(e?.message ?? "שליחת המייל נכשלה"); }
+  }
 
   async function patch(p: Record<string, any>) {
     setBusy(true);
@@ -89,6 +119,9 @@ function RecordDetail() {
             <Phone className="h-3.5 w-3.5" /> חייג
           </a>
         )}
+        <button onClick={() => setMailOpen((v) => !v)} disabled={!r.email} className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-40">
+          <Mail className="h-3.5 w-3.5" /> מייל
+        </button>
         {current?.myRole === "admin" || current?.myRole === "super_admin" ? (
           <button
             onClick={async () => {
@@ -115,6 +148,12 @@ function RecordDetail() {
               <Editable label="מספר פונה" value={r.callerPhone ?? ""} disabled={!canWrite} onSave={(v) => patch({ callerPhone: v || null })} />
               <Editable label="מייל" value={r.email ?? ""} disabled={!canWrite} onSave={(v) => patch({ email: v || null })} />
               <Editable label="מקור" value={r.source ?? ""} disabled={!canWrite} onSave={(v) => patch({ source: v || null })} />
+              <div>
+                <label className="text-xs font-medium block mb-1">תזכורת</label>
+                <input type="datetime-local" value={r.reminderAt ? new Date(r.reminderAt).toISOString().slice(0, 16) : ""} disabled={!canWrite}
+                  onChange={(e) => patch({ reminderAt: e.target.value ? new Date(e.target.value).toISOString() : null })}
+                  className="w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm disabled:opacity-60" />
+              </div>
               {fields.map((f) => (
                 <Editable
                   key={f.id}
@@ -136,8 +175,10 @@ function RecordDetail() {
                   onChange={(e) => setNoteText(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") addNote(); }}
                   placeholder="הוסף הערה..."
+                  list="crm-mention-options"
                   className="flex-1 rounded-lg border border-input bg-background px-3 py-1.5 text-sm"
                 />
+                <datalist id="crm-mention-options">{mentionNames.map((name) => <option key={name} value={`@${name}`} />)}</datalist>
                 <button onClick={addNote} className="rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm">הוסף</button>
               </div>
             )}
@@ -145,10 +186,14 @@ function RecordDetail() {
               {data.notes.length === 0 && <p className="text-xs text-muted-foreground">אין הערות</p>}
               {data.notes.map((n) => (
                 <div key={n.id} className="rounded-lg border border-border p-2">
-                  <p className="text-sm whitespace-pre-wrap">{n.body}</p>
+                  <p className="text-sm whitespace-pre-wrap">{renderMentions(n.body)}</p>
                   <div className="text-[11px] text-muted-foreground mt-1">
                     {n.authorName ?? "—"} · {new Date(n.createdAt).toLocaleString("he-IL")}
                   </div>
+                  {canWrite && <div className="flex gap-2 mt-1 text-[11px]">
+                    <button onClick={async () => { const body = prompt("עריכת הערה", n.body); if (!body?.trim()) return; await editNoteFn({ data: { id: n.id, body }, headers: await getAuthHeaders() }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-primary">ערוך</button>
+                    <button onClick={async () => { if (!confirm("למחוק הערה?")) return; await deleteNoteFn({ data: { id: n.id }, headers: await getAuthHeaders() }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-destructive">מחק</button>
+                  </div>}
                 </div>
               ))}
             </div>
@@ -173,6 +218,27 @@ function RecordDetail() {
           </div>
         </section>
       </div>
+
+      <section className="rounded-xl border border-border bg-card p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold flex items-center gap-2"><Mail className="h-4 w-4" />התכתבות במייל</h2>
+          {r.reminderAt && <span className="text-xs text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(r.reminderAt).toLocaleString("he-IL")}</span>}
+        </div>
+        {mailOpen && <div className="grid gap-2 mb-3">
+          <input value={mailSubject} onChange={(e) => setMailSubject(e.target.value)} placeholder="נושא" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          <textarea value={mailBody} onChange={(e) => setMailBody(e.target.value)} rows={4} placeholder="תוכן ההודעה" className="rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+          <button onClick={() => sendMail(null)} className="justify-self-start flex items-center gap-1 rounded-lg bg-primary px-3 py-2 text-sm text-primary-foreground"><Send className="h-4 w-4" />שלח</button>
+        </div>}
+        <div className="space-y-2">
+          {emails.length === 0 && <p className="text-xs text-muted-foreground">אין עדיין התכתבות</p>}
+          {emails.map((message: any) => <div key={message.id} className={`rounded-lg border p-3 ${message.direction === "outbound" ? "mr-8 bg-accent/30" : "ml-8 bg-background"}`}>
+            <div className="flex justify-between gap-2 text-xs text-muted-foreground"><span>{message.direction === "outbound" ? message.agent_name ?? "נציג" : message.from_address}</span><span>{new Date(message.created_at).toLocaleString("he-IL")}</span></div>
+            {message.subject && <div className="font-medium text-sm mt-1">{message.subject}</div>}
+            <p className="text-sm whitespace-pre-wrap mt-1">{message.body}</p>
+            {message.direction === "inbound" && canWrite && <button onClick={() => { setMailOpen(true); setMailSubject(message.subject?.startsWith("Re:") ? message.subject : `Re: ${message.subject ?? ""}`); setMailBody(""); }} className="text-xs text-primary mt-2">השב</button>}
+          </div>)}
+        </div>
+      </section>
     </div>
   );
 }

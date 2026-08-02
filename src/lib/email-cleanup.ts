@@ -21,7 +21,6 @@ export function cleanEmailContent(text: string, level: EmailCleanupLevel = "stan
     .join("\n");
   if (level === "light") return withoutQuotedLines.replace(/\n{3,}/g, "\n\n").trim();
 
-  const normalized = String(text ?? "").replace(/\r\n/g, "\n").trim();
   const markers = [
     /^On .+wrote:$/im,
     /^בתאריך .+ כתב(?:ה)?:$/im,

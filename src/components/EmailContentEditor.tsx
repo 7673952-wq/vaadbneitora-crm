@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cleanEmailContent, EMAIL_CLEANUP_LEVELS, type EmailCleanupLevel } from "@/lib/email-cleanup";
@@ -23,6 +23,7 @@ export function EmailContentEditor({
   label = "תוכן המייל",
 }: EmailContentEditorProps) {
   const [showPreview, setShowPreview] = useState(false);
+  const cleanupSelectId = useId();
   const preview = useMemo(() => cleanEmailContent(value, cleanupLevel), [value, cleanupLevel]);
 
   return (
@@ -30,9 +31,9 @@ export function EmailContentEditor({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <label className="text-xs font-medium">{label}</label>
         <div className="flex items-center gap-2">
-          <label className="text-[11px] text-muted-foreground" htmlFor="email-cleanup-level">רמת ניקוי</label>
+          <label className="text-[11px] text-muted-foreground" htmlFor={cleanupSelectId}>רמת ניקוי</label>
           <select
-            id="email-cleanup-level"
+            id={cleanupSelectId}
             value={cleanupLevel}
             onChange={(event) => onCleanupLevelChange(event.target.value as EmailCleanupLevel)}
             className="h-8 rounded-md border border-input bg-background px-2 text-xs"

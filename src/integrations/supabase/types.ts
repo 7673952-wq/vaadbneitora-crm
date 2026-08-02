@@ -401,6 +401,7 @@ export type Database = {
           agent_name: string | null
           body: string
           created_at: string
+          crm_record_id: string | null
           direction: string
           from_address: string | null
           gmail_message_id: string | null
@@ -408,7 +409,7 @@ export type Database = {
           id: string
           in_reply_to: string | null
           subject: string | null
-          system_id: string
+          system_id: string | null
           to_address: string | null
         }
         Insert: {
@@ -416,6 +417,7 @@ export type Database = {
           agent_name?: string | null
           body?: string
           created_at?: string
+          crm_record_id?: string | null
           direction: string
           from_address?: string | null
           gmail_message_id?: string | null
@@ -423,7 +425,7 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           subject?: string | null
-          system_id: string
+          system_id?: string | null
           to_address?: string | null
         }
         Update: {
@@ -431,6 +433,7 @@ export type Database = {
           agent_name?: string | null
           body?: string
           created_at?: string
+          crm_record_id?: string | null
           direction?: string
           from_address?: string | null
           gmail_message_id?: string | null
@@ -438,10 +441,17 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           subject?: string | null
-          system_id?: string
+          system_id?: string | null
           to_address?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "email_messages_crm_record_id_fkey"
+            columns: ["crm_record_id"]
+            isOneToOne: false
+            referencedRelation: "crm_records"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "email_messages_system_id_fkey"
             columns: ["system_id"]
@@ -481,20 +491,30 @@ export type Database = {
       email_threads: {
         Row: {
           created_at: string
+          crm_record_id: string | null
           gmail_thread_id: string
-          system_id: string
+          system_id: string | null
         }
         Insert: {
           created_at?: string
+          crm_record_id?: string | null
           gmail_thread_id: string
-          system_id: string
+          system_id?: string | null
         }
         Update: {
           created_at?: string
+          crm_record_id?: string | null
           gmail_thread_id?: string
-          system_id?: string
+          system_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "email_threads_crm_record_id_fkey"
+            columns: ["crm_record_id"]
+            isOneToOne: false
+            referencedRelation: "crm_records"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "email_threads_system_id_fkey"
             columns: ["system_id"]
@@ -609,6 +629,7 @@ export type Database = {
       role_permissions: {
         Row: {
           allowed: boolean
+          crm_key: string
           permission: string
           role: Database["public"]["Enums"]["app_role"]
           updated_at: string
@@ -616,6 +637,7 @@ export type Database = {
         }
         Insert: {
           allowed?: boolean
+          crm_key?: string
           permission: string
           role: Database["public"]["Enums"]["app_role"]
           updated_at?: string
@@ -623,6 +645,7 @@ export type Database = {
         }
         Update: {
           allowed?: boolean
+          crm_key?: string
           permission?: string
           role?: Database["public"]["Enums"]["app_role"]
           updated_at?: string
@@ -925,6 +948,7 @@ export type Database = {
       user_permissions: {
         Row: {
           allowed: boolean
+          crm_key: string
           permission: string
           updated_at: string
           updated_by: string | null
@@ -932,6 +956,7 @@ export type Database = {
         }
         Insert: {
           allowed?: boolean
+          crm_key?: string
           permission: string
           updated_at?: string
           updated_by?: string | null
@@ -939,6 +964,7 @@ export type Database = {
         }
         Update: {
           allowed?: boolean
+          crm_key?: string
           permission?: string
           updated_at?: string
           updated_by?: string | null

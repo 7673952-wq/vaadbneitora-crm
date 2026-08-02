@@ -1641,7 +1641,8 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 

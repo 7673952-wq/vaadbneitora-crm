@@ -4,6 +4,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const getManagerDashboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "systems_read", "yemot");
     const sb = context.supabase;
     const now = new Date();
     const weekAgo = new Date(now);

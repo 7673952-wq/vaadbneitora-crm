@@ -21,6 +21,7 @@ export const globalSearch = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ q: z.string().trim().min(2).max(120) }).parse(input))
   .handler(async ({ data, context }): Promise<GlobalSearchHit[]> => {
+    const { hasCrmAccess } = await import("@/lib/permissions.server");
     const q = data.q;
     const like = `%${q.replace(/[%_]/g, "")}%`;
     const digits = q.replace(/\D/g, "");
@@ -66,7 +67,7 @@ export const globalSearch = createServerFn({ method: "GET" })
 
     const hits: GlobalSearchHit[] = [];
     const yemot = meta.get("yemot") ?? { name: "ימות המשיח", color: "#2563eb" };
-    for (const s of (systemsRes.data ?? []) as any[]) {
+    if (await hasCrmAccess(context.userId, "yemot")) for (const s of (systemsRes.data ?? []) as any[]) {
       hits.push({
         crmKey: "yemot",
         crmName: yemot.name,

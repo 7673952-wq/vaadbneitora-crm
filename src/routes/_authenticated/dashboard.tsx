@@ -630,6 +630,9 @@ function Dashboard() {
           )}
           {me?.isAdmin && (
             <>
+              <Link to="/manager-dashboard" className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
+                <TrendingUp className="h-4 w-4" />דשבורד מנהלים
+              </Link>
               {me?.isSuperAdmin && (
                 <Link to="/admin" className="flex items-center gap-2 px-4 py-2 border border-border rounded-lg text-sm font-medium hover:bg-accent">
                   ניהול
@@ -661,12 +664,6 @@ function Dashboard() {
               <BarChart3 className="h-4 w-4 text-indigo-600" />תרשימים וניתוח נתונים
             </div>
             <div className="flex items-center gap-1.5">
-              {me?.isAdmin && (
-                <Link to="/manager-dashboard"
-                  className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100 shadow-sm">
-                  <TrendingUp className="h-3 w-3" />דשבורד מנהלים
-                </Link>
-              )}
               <Link to="/charts" target="_blank" rel="noreferrer"
                 className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md border border-input bg-white hover:bg-accent shadow-sm">
                 <ExternalLink className="h-3 w-3" />פתח בלשונית נפרדת
@@ -1346,7 +1343,7 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
 }
 
 
-function CreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
+export function YemotCreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "", is_blocking_number: false });
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);

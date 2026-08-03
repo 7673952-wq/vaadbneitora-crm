@@ -194,12 +194,14 @@ function AuditPage() {
               <th className="text-right p-2">השוואה לפני / אחרי</th>
               <th className="text-right p-2">סיבה</th>
               <th className="text-right p-2 whitespace-nowrap">מערכת</th>
+              <th className="text-right p-2 whitespace-nowrap">ביטול</th>
             </tr>
           </thead>
           <tbody>
             {list.map((r: any) => {
               const hasOld = r.old_display !== null && r.old_display !== undefined && r.old_display !== "";
               const hasNew = r.new_display !== null && r.new_display !== undefined && r.new_display !== "";
+              const canRevert = isRevertibleEntry(r) && latestIds.has(r.id);
               return (
                 <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
                   <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>
@@ -235,12 +237,29 @@ function AuditPage() {
                       </Link>
                     ) : "—"}
                   </td>
+                  <td className="p-2 whitespace-nowrap">
+                    {canRevert ? (
+                      <button
+                        onClick={() => {
+                          if (confirm("לבטל את הפעולה ולהחזיר את הערך הקודם?")) revertMut.mutate(r.id);
+                        }}
+                        disabled={revertMut.isPending}
+                        className="flex items-center gap-1 px-2 py-1 border border-border rounded-md text-xs hover:bg-accent disabled:opacity-50"
+                        title="ביטול הפעולה האחרונה"
+                      >
+                        <Undo2 className="h-3.5 w-3.5" /> ביטול
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {!isLoading && list.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
+              <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
             )}
+
           </tbody>
         </table>
       </div>

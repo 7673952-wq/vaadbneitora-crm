@@ -102,6 +102,19 @@ function AuditPage() {
 
   const list = rows ?? [];
 
+  const qc = useQueryClient();
+  const revertFn = useServerFn(revertAuditEntry);
+  const revertMut = useMutation({
+    mutationFn: async (id: string) => revertFn({ data: { id }, headers: await getAuthHeaders() }),
+    onSuccess: () => {
+      toast.success("הפעולה בוטלה");
+      qc.invalidateQueries({ queryKey: ["audit-log"] });
+      qc.invalidateQueries({ queryKey: ["systems"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בביטול הפעולה"),
+  });
+
+
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4" dir="rtl">
       <div className="flex items-center justify-between gap-3 flex-wrap">

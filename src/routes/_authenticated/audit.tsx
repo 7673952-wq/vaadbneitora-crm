@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { listAuditLog, listAuditActors } from "@/lib/audit.functions";
+import { listAuditLog, listAuditActors, revertAuditEntry, isRevertibleEntry } from "@/lib/audit.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Download, Search, ArrowRight } from "lucide-react";
+import { Download, Search, ArrowRight, Undo2 } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/audit")({
   head: () => ({ meta: [{ title: "יומן בקרה | CRM" }] }),
@@ -17,12 +18,14 @@ const ACTION_LABELS: Record<string, string> = {
   updated: "עדכון",
   deleted: "מחיקה",
   restored: "שחזור",
+  reverted: "ביטול פעולה",
   role_granted: "הענקת הרשאה",
   role_revoked: "הסרת הרשאה",
   backup_restore_started: "התחלת שחזור גיבוי",
   backup_restore_completed: "שחזור גיבוי הושלם",
   backup_restore_failed: "שחזור גיבוי נכשל",
 };
+
 
 const FIELD_LABELS: Record<string, string> = {
   status: "סטטוס",

@@ -427,15 +427,12 @@ function SystemDetail() {
   const askedReminderKeyRef = useRef<string | null>(null);
   useEffect(() => {
     const sys: any = data?.system;
-    const myId = (me as any)?.userId as string | undefined;
-    if (!sys?.reminder_at || !myId) return;
-    const ids: string[] = sys.reminder_agent_ids ?? [];
-    if (ids.length > 0 && !ids.includes(myId)) return;
+    if (!sys?.id || !sys?.reminder_at) return;
     const key = `${sys.id}:${sys.reminder_at}`;
     if (askedReminderKeyRef.current === key) return;
     askedReminderKeyRef.current = key;
     setAskCancelReminder(true);
-  }, [data?.system?.id, data?.system?.reminder_at, (me as any)?.userId]);
+  }, [data?.system?.id, data?.system?.reminder_at]);
 
   const allMentionOptions = useMemo(() => [
     { id: "__all", label: "כולם" },

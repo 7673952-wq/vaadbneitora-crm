@@ -225,7 +225,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { getUserPermissionMap, getCrmRoles } = await import("@/lib/permissions.server");
+    const { getUserPermissionMap, getGlobalPermissionMap, getCrmRoles } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
       context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
       context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
@@ -250,6 +250,9 @@ export const getMyRole = createServerFn({ method: "GET" })
       isAgent,
       isViewer,
       permissions: await getUserPermissionMap(context.userId),
+      // Union across every CRM the user belongs to — drives the shared
+      // "כללי" admin tab, which applies to all CRMs.
+      globalPermissions: await getGlobalPermissionMap(context.userId),
       displayName: (prof as any)?.display_name ?? null,
     };
   });

@@ -102,6 +102,20 @@ function AuditPage() {
 
   const list = rows ?? [];
 
+  // Only the most recent change per (system, field) may be undone.
+  const latestIds = useMemo(() => {
+    const seen = new Set<string>();
+    const ids = new Set<string>();
+    for (const r of list as any[]) {
+      const key = `${r.system_id}|${r.field}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ids.add(r.id);
+    }
+    return ids;
+  }, [list]);
+
+
   const qc = useQueryClient();
   const revertFn = useServerFn(revertAuditEntry);
   const revertMut = useMutation({

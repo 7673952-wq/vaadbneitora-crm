@@ -607,7 +607,13 @@ function SystemDetail() {
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
 
-      {askCancelReminder && s?.reminder_at && (
+      {askCancelReminder && s?.reminder_at && (() => {
+        const targetIds: string[] = (s as any).reminder_agent_ids ?? [];
+        const targetNames = targetIds
+          .map((tid) => (agents ?? []).find((a: any) => a.id === tid)?.display_name)
+          .filter(Boolean) as string[];
+        const multiple = targetIds.length > 1;
+        return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
           onClick={() => setAskCancelReminder(false)}>
           <div className="w-full max-w-md rounded-xl border border-border bg-background p-5 shadow-2xl"
@@ -616,33 +622,41 @@ function SystemDetail() {
               <Bell className="h-5 w-5 text-amber-600" />
               <h2 className="text-lg font-semibold">למערכת יש תזכורת פעילה</h2>
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
+            <p className="text-sm text-muted-foreground mb-1">
               תזכורת ל-<strong className="text-foreground">{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>.
               האם לבטל אותה?
             </p>
-            <div className="flex flex-col gap-2">
+            {targetNames.length > 0 && (
+              <p className="text-xs text-muted-foreground mb-3">
+                מוגדרת עבור: <span className="text-foreground">{targetNames.join(", ")}</span>
+              </p>
+            )}
+            <div className="flex flex-col gap-2 mt-3">
               <button
                 onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "all" } }); setAskCancelReminder(false); }}
                 className="w-full rounded-lg bg-red-600 text-white px-3 py-2 text-sm font-medium hover:bg-red-700"
               >
-                בטל את התזכורת לכולם
+                {multiple ? "בטל את התזכורת לכל הנציגים" : "כן, בטל את התזכורת"}
               </button>
-              <button
-                onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "me" } }); setAskCancelReminder(false); }}
-                className="w-full rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
-              >
-                בטל רק עבורי ({me?.displayName || "המשתמש הנוכחי"})
-              </button>
+              {multiple && (
+                <button
+                  onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "me" } }); setAskCancelReminder(false); }}
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+                >
+                  בטל רק עבורי ({me?.displayName || "המשתמש הנוכחי"})
+                </button>
+              )}
               <button
                 onClick={() => setAskCancelReminder(false)}
                 className="w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
               >
-                השאר את התזכורת
+                לא, השאר את התזכורת
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {me?.userId && (
         <SystemPresence

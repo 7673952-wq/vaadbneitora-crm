@@ -896,9 +896,41 @@ export const setReminder = createServerFn({ method: "POST" })
 
 export const dismissReminder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
+  .inputValidator((d: { system_id: string; scope?: "all" | "me" }) =>
+    z.object({ system_id: z.string().uuid(), scope: z.enum(["all", "me"]).optional() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
+
+    // scope="me": keep the reminder alive for the other targeted agents and
+    // only remove the current user from its recipient list.
+    if (data.scope === "me") {
+      const { data: row, error: readErr } = await context.supabase
+        .from("systems")
+        .select("id, reminder_agent_ids")
+        .eq("id", data.system_id)
+        .maybeSingle();
+      if (readErr) throw new Error(readErr.message);
+      if (row) {
+        const current: string[] = (row as any).reminder_agent_ids ?? [];
+        let next: string[];
+        if (current.length === 0) {
+          // Empty list means "everyone" — materialise it as every other agent.
+          const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+          const { data: profiles } = await supabaseAdmin.from("profiles").select("id");
+          next = ((profiles ?? []) as any[]).map((p) => p.id as string).filter((uid) => uid !== context.userId);
+        } else {
+          next = current.filter((uid) => uid !== context.userId);
+        }
+        // Nobody left to remind → clear the reminder entirely.
+        const patch = next.length === 0
+          ? { reminder_at: null, reminder_agent_ids: [], reminder_handled: true, snoozed_until: null }
+          : { reminder_agent_ids: next };
+        const { error } = await context.supabase.from("systems").update(patch).eq("id", data.system_id);
+        if (error) throw new Error(error.message);
+        return { ok: true, scope: "me" as const, remaining: next.length };
+      }
+    }
+
     const { data: updated, error } = await context.supabase
       .from("systems")
       .update({ reminder_at: null, reminder_agent_ids: [], reminder_handled: true, snoozed_until: null })

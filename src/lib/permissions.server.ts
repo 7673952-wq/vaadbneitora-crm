@@ -331,8 +331,9 @@ export async function getGlobalPermissionMap(userId: string): Promise<Record<Per
 }
 
 export async function assertAnyPermission(userId: string, permissions: PermissionKey[]): Promise<void> {
+  // Shared/global admin areas: the permission may come from ANY CRM.
   for (const permission of permissions) {
-    if (await hasPermission(userId, permission)) return;
+    if (await hasPermissionInAnyCrm(userId, permission)) return;
   }
   throw new AppError("אין הרשאה לביצוע פעולה זו", { code: "forbidden" });
 }

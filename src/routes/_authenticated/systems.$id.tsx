@@ -421,6 +421,22 @@ function SystemDetail() {
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
 
+  // When a system carries an active reminder, ask on entry whether to cancel it
+  // (for everyone, or only for the agent currently viewing it).
+  const [askCancelReminder, setAskCancelReminder] = useState(false);
+  const askedReminderKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const sys: any = data?.system;
+    const myId = (me as any)?.userId as string | undefined;
+    if (!sys?.reminder_at || !myId) return;
+    const ids: string[] = sys.reminder_agent_ids ?? [];
+    if (ids.length > 0 && !ids.includes(myId)) return;
+    const key = `${sys.id}:${sys.reminder_at}`;
+    if (askedReminderKeyRef.current === key) return;
+    askedReminderKeyRef.current = key;
+    setAskCancelReminder(true);
+  }, [data?.system?.id, data?.system?.reminder_at, (me as any)?.userId]);
+
   const allMentionOptions = useMemo(() => [
     { id: "__all", label: "כולם" },
     ...(agents ?? []).map((a: any) => ({ id: a.id as string, label: a.display_name as string })),
@@ -593,6 +609,43 @@ function SystemDetail() {
       <Link to="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
+
+      {askCancelReminder && s?.reminder_at && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setAskCancelReminder(false)}>
+          <div className="w-full max-w-md rounded-xl border border-border bg-background p-5 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-2 mb-2">
+              <Bell className="h-5 w-5 text-amber-600" />
+              <h2 className="text-lg font-semibold">למערכת יש תזכורת פעילה</h2>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              תזכורת ל-<strong className="text-foreground">{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>.
+              האם לבטל אותה?
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "all" } }); setAskCancelReminder(false); }}
+                className="w-full rounded-lg bg-red-600 text-white px-3 py-2 text-sm font-medium hover:bg-red-700"
+              >
+                בטל את התזכורת לכולם
+              </button>
+              <button
+                onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "me" } }); setAskCancelReminder(false); }}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                בטל רק עבורי ({me?.displayName || "המשתמש הנוכחי"})
+              </button>
+              <button
+                onClick={() => setAskCancelReminder(false)}
+                className="w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
+              >
+                השאר את התזכורת
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {me?.userId && (
         <SystemPresence

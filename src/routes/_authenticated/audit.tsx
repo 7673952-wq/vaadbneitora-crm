@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { listAuditLog, listAuditActors } from "@/lib/audit.functions";
+import { listAuditLog, listAuditActors, revertAuditEntry, isRevertibleEntry } from "@/lib/audit.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Download, Search, ArrowRight } from "lucide-react";
+import { Download, Search, ArrowRight, Undo2 } from "lucide-react";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/_authenticated/audit")({
   head: () => ({ meta: [{ title: "יומן בקרה | CRM" }] }),
@@ -17,12 +18,14 @@ const ACTION_LABELS: Record<string, string> = {
   updated: "עדכון",
   deleted: "מחיקה",
   restored: "שחזור",
+  reverted: "ביטול פעולה",
   role_granted: "הענקת הרשאה",
   role_revoked: "הסרת הרשאה",
   backup_restore_started: "התחלת שחזור גיבוי",
   backup_restore_completed: "שחזור גיבוי הושלם",
   backup_restore_failed: "שחזור גיבוי נכשל",
 };
+
 
 const FIELD_LABELS: Record<string, string> = {
   status: "סטטוס",
@@ -98,6 +101,33 @@ function AuditPage() {
   });
 
   const list = rows ?? [];
+
+  // Only the most recent change per (system, field) may be undone.
+  const latestIds = useMemo(() => {
+    const seen = new Set<string>();
+    const ids = new Set<string>();
+    for (const r of list as any[]) {
+      const key = `${r.system_id}|${r.field}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      ids.add(r.id);
+    }
+    return ids;
+  }, [list]);
+
+
+  const qc = useQueryClient();
+  const revertFn = useServerFn(revertAuditEntry);
+  const revertMut = useMutation({
+    mutationFn: async (id: string) => revertFn({ data: { id }, headers: await getAuthHeaders() }),
+    onSuccess: () => {
+      toast.success("הפעולה בוטלה");
+      qc.invalidateQueries({ queryKey: ["audit-log"] });
+      qc.invalidateQueries({ queryKey: ["systems"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בביטול הפעולה"),
+  });
+
 
   return (
     <div className="p-4 md:p-6 max-w-7xl mx-auto space-y-4" dir="rtl">
@@ -178,12 +208,14 @@ function AuditPage() {
               <th className="text-right p-2">השוואה לפני / אחרי</th>
               <th className="text-right p-2">סיבה</th>
               <th className="text-right p-2 whitespace-nowrap">מערכת</th>
+              <th className="text-right p-2 whitespace-nowrap">ביטול</th>
             </tr>
           </thead>
           <tbody>
             {list.map((r: any) => {
               const hasOld = r.old_display !== null && r.old_display !== undefined && r.old_display !== "";
               const hasNew = r.new_display !== null && r.new_display !== undefined && r.new_display !== "";
+              const canRevert = isRevertibleEntry(r) && latestIds.has(r.id);
               return (
                 <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
                   <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>
@@ -219,12 +251,29 @@ function AuditPage() {
                       </Link>
                     ) : "—"}
                   </td>
+                  <td className="p-2 whitespace-nowrap">
+                    {canRevert ? (
+                      <button
+                        onClick={() => {
+                          if (confirm("לבטל את הפעולה ולהחזיר את הערך הקודם?")) revertMut.mutate(r.id);
+                        }}
+                        disabled={revertMut.isPending}
+                        className="flex items-center gap-1 px-2 py-1 border border-border rounded-md text-xs hover:bg-accent disabled:opacity-50"
+                        title="ביטול הפעולה האחרונה"
+                      >
+                        <Undo2 className="h-3.5 w-3.5" /> ביטול
+                      </button>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {!isLoading && list.length === 0 && (
-              <tr><td colSpan={7} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
+              <tr><td colSpan={8} className="p-6 text-center text-muted-foreground">לא נמצאו רשומות</td></tr>
             )}
+
           </tbody>
         </table>
       </div>

@@ -22,9 +22,9 @@ async function assertSuperAdmin(context: { userId: string }) {
   await assertAnyPermission(context.userId, ["users_manage", "permissions_manage"]);
 }
 
-async function assertPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey) {
+async function assertPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey, crmKey?: string) {
   const { assertPermission } = await import("@/lib/permissions.server");
-  await assertPermission(context.userId, permission);
+  await assertPermission(context.userId, permission, crmKey ?? "yemot");
 }
 
 async function assertAnyPermission(context: { userId: string }, permissions: import("@/lib/permissions.server").PermissionKey[]) {
@@ -428,7 +428,7 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ crmKey: z.string().min(1).max(60) }).parse(input))
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "permissions_manage");
+    await assertPermission(context, "permissions_manage", data.crmKey);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { PERMISSION_DEFINITIONS } = await import("@/lib/permissions.server");
     const [{ data: rolePermissions, error: rpErr }, { data: userPermissions, error: upErr }, { data: profiles }, { data: roles }, usersList] = await Promise.all([
@@ -479,7 +479,7 @@ export const setRolePermission = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "permissions_manage");
+    await assertPermission(context, "permissions_manage", data.crmKey);
     if (data.role === "super_admin" && data.permission === "permissions_manage" && data.allowed === false) {
       throw new AppError("לא ניתן להסיר הרשאת ניהול הרשאות ממנהל ראשי", { code: "bad_request" });
     }
@@ -500,7 +500,7 @@ export const setUserPermission = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "permissions_manage");
+    await assertPermission(context, "permissions_manage", data.crmKey);
     if (data.user_id === context.userId && data.permission === "permissions_manage" && data.allowed === false) {
       throw new AppError("לא ניתן להסיר מעצמך הרשאת ניהול הרשאות", { code: "bad_request" });
     }
@@ -516,7 +516,7 @@ export const deleteUserPermission = createServerFn({ method: "POST" })
     z.object({ crmKey: z.string().min(1).max(60), user_id: z.string().uuid(), permission: z.enum(PERMISSION_KEYS) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "permissions_manage");
+    await assertPermission(context, "permissions_manage", data.crmKey);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("user_permissions").delete().eq("crm_key", data.crmKey).eq("user_id", data.user_id).eq("permission", data.permission);
     if (error) throw fromSupabase(error);

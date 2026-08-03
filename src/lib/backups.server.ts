@@ -103,6 +103,10 @@ export async function runBackup(): Promise<BackupResult> {
     "profiles", "user_roles", "role_permissions", "user_permissions",
     "status_settings", "app_settings", "voice_message_log",
     "email_messages", "email_threads", "email_templates",
+    // Multi-CRM data — the general backup covers every CRM, not just Yemot.
+    "crms", "crm_field_defs", "crm_user_roles", "crm_settings",
+    "crm_records", "crm_record_notes", "crm_record_activity",
+    "kosher_instructions", "notification_role_defaults", "notification_user_overrides",
   ];
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const folder = ts;
@@ -334,6 +338,9 @@ export async function runRestore(files: RestoreInput, mode: "merge" | "replace" 
     "profiles", "user_roles", "role_permissions", "user_permissions",
     "status_settings", "app_settings", "systems", "system_files",
     "system_notes", "system_transfers", "system_activity_log",
+    "crms", "crm_field_defs", "crm_user_roles", "crm_settings",
+    "crm_records", "crm_record_notes", "crm_record_activity",
+    "kosher_instructions", "notification_role_defaults", "notification_user_overrides",
   ];
   const sorted = [...files].sort((a, b) => order.indexOf(a.table) - order.indexOf(b.table));
   const results: RestoreResult = [];

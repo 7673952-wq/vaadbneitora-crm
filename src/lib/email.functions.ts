@@ -42,8 +42,8 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "backup_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date().toISOString();
     const upserts = [
@@ -115,8 +115,8 @@ export const upsertEmailTemplate = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "settings_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "settings_manage");
     const row = {
       name: sanitizeText(data.name), subject: sanitizeOptional(data.subject) ?? "",
       body: sanitizeOptional(data.body) ?? "", updated_at: new Date().toISOString(),
@@ -132,8 +132,8 @@ export const deleteEmailTemplate = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "settings_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "settings_manage");
     const { error } = await context.supabase.from("email_templates" as any).delete().eq("id", data.id);
     if (error) throw new Error(error.message);
     return { ok: true };
@@ -145,8 +145,8 @@ export const deleteEmailTemplate = createServerFn({ method: "POST" })
 export const listAgentEmailNames = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "users_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("profiles").select("id, display_name, email_display_name" as any).order("display_name", { ascending: true });
@@ -160,8 +160,8 @@ export const setAgentEmailDisplayName = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), email_display_name: z.string().max(200) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "users_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin
       .from("profiles" as any)

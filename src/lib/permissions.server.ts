@@ -289,9 +289,51 @@ export async function assertPermission(userId: string, permission: PermissionKey
   }
 }
 
+/**
+ * The "כללי" (General) admin tab holds settings that apply to EVERY CRM
+ * (auto-snooze, stale warning, backups, mail relay, notification bell).
+ * Access to them must therefore be granted by the permission in ANY CRM the
+ * user belongs to — not only in the original "yemot" CRM.
+ */
+export async function listUserCrmKeys(userId: string): Promise<string[]> {
+  const globalRoles = await getUserRoles(userId);
+  if (globalRoles.includes("super_admin")) {
+    const { data } = await supabaseAdmin.from("crms").select("key");
+    return (data ?? []).map((c: any) => c.key as string);
+  }
+  const { data, error } = await supabaseAdmin
+    .from("crm_user_roles").select("crm_key").eq("user_id", userId);
+  if (error) throw new AppError(error.message, { code: "internal", cause: error });
+  return Array.from(new Set((data ?? []).map((r: any) => r.crm_key as string)));
+}
+
+/** True when the permission is granted in at least one of the user's CRMs. */
+export async function hasPermissionInAnyCrm(userId: string, permission: PermissionKey): Promise<boolean> {
+  const keys = await listUserCrmKeys(userId);
+  if (!keys.length) return false;
+  const results = await Promise.all(keys.map((k) => hasPermission(userId, permission, k)));
+  return results.some(Boolean);
+}
+
+export async function assertPermissionInAnyCrm(userId: string, permission: PermissionKey): Promise<void> {
+  if (!(await hasPermissionInAnyCrm(userId, permission))) {
+    throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
+  }
+}
+
+/** Union of the permission maps across every CRM the user belongs to. */
+export async function getGlobalPermissionMap(userId: string): Promise<Record<PermissionKey, boolean>> {
+  const keys = await listUserCrmKeys(userId);
+  const maps = await Promise.all(keys.map((k) => getUserPermissionMap(userId, k)));
+  const out = Object.fromEntries(PERMISSION_DEFINITIONS.map((p) => [p.key, false])) as Record<PermissionKey, boolean>;
+  for (const m of maps) for (const p of PERMISSION_DEFINITIONS) if (m[p.key]) out[p.key] = true;
+  return out;
+}
+
 export async function assertAnyPermission(userId: string, permissions: PermissionKey[]): Promise<void> {
+  // Shared/global admin areas: the permission may come from ANY CRM.
   for (const permission of permissions) {
-    if (await hasPermission(userId, permission)) return;
+    if (await hasPermissionInAnyCrm(userId, permission)) return;
   }
   throw new AppError("אין הרשאה לביצוע פעולה זו", { code: "forbidden" });
 }

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Plus, Search, Phone, Mail, X } from "lucide-react";
 import { useMyCrms } from "@/lib/use-crms";
 import { listRecords, createRecord, listFieldDefs } from "@/lib/crm-records.functions";
+import { getStaleWarningHours } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 
 export const Route = createFileRoute("/_authenticated/c/$crm/")({
@@ -44,6 +45,15 @@ function CrmHome() {
     queryKey: ["crm_field_defs", crm],
     queryFn: async () => fieldsFn({ data: { crmKey: crm }, headers: await getAuthHeaders() }),
   });
+
+  // "צביעת אזהרה — זמן ללא טיפול" is a general setting, so it applies here too.
+  const staleHoursFn = useServerFn(getStaleWarningHours);
+  const { data: staleSetting } = useQuery({
+    queryKey: ["stale_warning_hours"],
+    queryFn: async () => staleHoursFn({ headers: await getAuthHeaders() }),
+    staleTime: 5 * 60_000,
+  });
+  const staleHours = staleSetting?.hours ?? 0;
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -148,8 +158,12 @@ function CrmHome() {
             )}
             {filtered.map((r) => {
               const st = statusOf(r.status);
+              const isStale = staleHours > 0 && r.status !== "closed" && r.updatedAt
+                && Date.now() - new Date(r.updatedAt).getTime() > staleHours * 3600_000;
               return (
-                <tr key={r.id} className="border-t border-border hover:bg-accent/40 transition">
+                <tr key={r.id}
+                  title={isStale ? `פניה ללא טיפול מעל ${staleHours} שעות` : undefined}
+                  className={`border-t border-border hover:bg-accent/40 transition ${isStale ? "bg-red-50 ring-1 ring-inset ring-red-400" : ""}`}>
                   <td className="px-3 py-2 font-medium">
                     <Link to="/c/$crm/$id" params={{ crm, id: r.id }} className="hover:underline">{r.recordCode}</Link>
                   </td>

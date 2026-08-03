@@ -27,6 +27,15 @@ async function assertPermission(context: { userId: string }, permission: import(
   await assertPermission(context.userId, permission, crmKey ?? "yemot");
 }
 
+/**
+ * Settings under the "כללי" tab apply to every CRM, so the permission may come
+ * from ANY CRM the user belongs to (not just "yemot").
+ */
+async function assertGlobalPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey) {
+  const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+  await assertPermissionInAnyCrm(context.userId, permission);
+}
+
 async function assertAnyPermission(context: { userId: string }, permissions: import("@/lib/permissions.server").PermissionKey[]) {
   const { assertAnyPermission } = await import("@/lib/permissions.server");
   await assertAnyPermission(context.userId, permissions);
@@ -125,7 +134,7 @@ export const createUser = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -146,7 +155,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -160,7 +169,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
@@ -178,7 +187,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
@@ -193,7 +202,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw fromSupabase(error);
@@ -206,7 +215,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw fromSupabase(error);
@@ -216,7 +225,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { getUserPermissionMap, getCrmRoles } = await import("@/lib/permissions.server");
+    const { getUserPermissionMap, getGlobalPermissionMap, getCrmRoles } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
       context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
       context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
@@ -241,6 +250,9 @@ export const getMyRole = createServerFn({ method: "GET" })
       isAgent,
       isViewer,
       permissions: await getUserPermissionMap(context.userId),
+      // Union across every CRM the user belongs to — drives the shared
+      // "כללי" admin tab, which applies to all CRMs.
+      globalPermissions: await getGlobalPermissionMap(context.userId),
       displayName: (prof as any)?.display_name ?? null,
     };
   });
@@ -249,7 +261,7 @@ export const getMyRole = createServerFn({ method: "GET" })
 export const listUsersForAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
       supabaseAdmin.from("profiles").select("id, display_name, created_at"),
@@ -582,7 +594,7 @@ export const setAutoSnoozeSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "settings_manage");
+    await assertGlobalPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: AUTO_SNOOZE_KEY,
@@ -631,7 +643,7 @@ export const setBackupEmail = createServerFn({ method: "POST" })
     z.object({ emails: z.array(z.string().email().max(200)).max(20) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "backup_manage");
+    await assertGlobalPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // De-dupe, case-insensitively, while preserving the order the admin typed them in.
     const seen = new Set<string>();
@@ -691,7 +703,7 @@ export const setBackupSchedule = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "backup_manage");
+    await assertGlobalPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: BACKUP_SCHEDULE_KEY,
@@ -728,7 +740,7 @@ export const setBackupWebhookConfig = createServerFn({ method: "POST" })
     z.object({ url: z.string().max(300).refine((v) => v === "" || /^https?:\/\//.test(v), "כתובת חייבת להתחיל ב-http/https"), secret: z.string().max(300).optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "backup_manage");
+    await assertGlobalPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date().toISOString();
     const { error: urlErr } = await supabaseAdmin.from("app_settings").upsert({
@@ -771,7 +783,7 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
     z.object({ hours: z.number().int().min(0).max(8760) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "settings_manage");
+    await assertGlobalPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: STALE_HOURS_KEY,
@@ -871,6 +883,59 @@ export const listMyNotifications = createServerFn({ method: "GET" })
         reason: (e.subject ? `${e.subject} — ` : "") + String(e.body ?? "").slice(0, 100),
       });
     }
+    // ===== Records from every other CRM (shared bell) =====
+    const { data: myRecords } = await context.supabase
+      .from("crm_records").select("id, crm_key, record_code, name").eq("assigned_agent_id", me);
+    const recMap = new Map<string, { crm: string; code: string; name: string }>(
+      ((myRecords ?? []) as any[]).map((r) => [r.id, { crm: r.crm_key, code: r.record_code, name: r.name }]),
+    );
+
+    const { data: crmNoteRows } = await context.supabase
+      .from("crm_record_notes")
+      .select("id, record_id, crm_key, body, author_id, created_at")
+      .neq("author_id", me)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    const crmMentions = ((crmNoteRows ?? []) as any[]).filter((n) => isMentioned(n.body));
+
+    const extraRecIds = Array.from(new Set(
+      crmMentions.map((n: any) => n.record_id).filter((id: string) => id && !recMap.has(id)),
+    ));
+    if (extraRecIds.length) {
+      const { data: extra } = await context.supabase
+        .from("crm_records").select("id, crm_key, record_code, name").in("id", extraRecIds);
+      for (const r of (extra ?? []) as any[]) recMap.set(r.id, { crm: r.crm_key, code: r.record_code, name: r.name });
+    }
+
+    for (const n of crmMentions) {
+      const rec = recMap.get(n.record_id);
+      items.push({
+        id: `cm:${n.id}`, kind: "mention", system_id: n.record_id, crm_key: rec?.crm ?? n.crm_key,
+        system_code: rec?.code, system_name: rec?.name, created_at: n.created_at,
+        title: String(n.body ?? "").includes("@כולם") ? "תיוג לכל הנציגים" : "תויגת בהערה",
+        detail: pmap.get(n.author_id) ?? "לא ידוע",
+        reason: (n.body ?? "").slice(0, 120),
+      });
+    }
+
+    const myRecIds = Array.from(recMap.keys());
+    if (myRecIds.length) {
+      const { data: crmEmails } = await context.supabase.from("email_messages" as any)
+        .select("id, crm_record_id, from_address, subject, body, created_at")
+        .in("crm_record_id", myRecIds).eq("direction", "inbound").gte("created_at", since)
+        .order("created_at", { ascending: false }).limit(50);
+      for (const e of ((crmEmails as any[]) ?? [])) {
+        const rec = recMap.get(e.crm_record_id);
+        items.push({
+          id: `ce:${e.id}`, kind: "email", system_id: e.crm_record_id, crm_key: rec?.crm,
+          system_code: rec?.code, system_name: rec?.name, created_at: e.created_at,
+          title: "מייל חדש", detail: e.from_address ?? "פונה",
+          reason: (e.subject ? `${e.subject} — ` : "") + String(e.body ?? "").slice(0, 100),
+        });
+      }
+    }
+
     items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return items.slice(0, 50);
   });

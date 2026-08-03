@@ -899,11 +899,18 @@ export const dismissReminder = createServerFn({ method: "POST" })
   .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const { error } = await context.supabase
+    const { data: updated, error } = await context.supabase
       .from("systems")
       .update({ reminder_at: null, reminder_agent_ids: [], reminder_handled: true, snoozed_until: null })
-      .eq("id", data.system_id);
+      .eq("id", data.system_id)
+      .select("id");
     if (error) throw new Error(error.message);
+    // The bell is shared across every CRM — the same id may be a CRM record.
+    if (!updated || updated.length === 0) {
+      const { error: crmErr } = await context.supabase
+        .from("crm_records").update({ reminder_at: null }).eq("id", data.system_id);
+      if (crmErr) throw new Error(crmErr.message);
+    }
     return { ok: true };
   });
 
@@ -1018,6 +1025,43 @@ export const listDueReminders = createServerFn({ method: "GET" })
       if (!notSnoozed(r)) continue;
       if (!seen.has(r.id)) { seen.add(r.id); out.push({ ...r, source: "stale" }); }
     }
+
+    // ===== Records from every other CRM =====
+    // The general settings (auto-snooze threshold, status handling) apply to
+    // all CRMs, so their pending records feed the same notification bell.
+    const { data: crmManual } = await context.supabase
+      .from("crm_records")
+      .select("id, crm_key, record_code, name, status, reminder_at, assigned_agent_id, updated_at")
+      .not("reminder_at", "is", null)
+      .lte("reminder_at", nowIso)
+      .order("reminder_at", { ascending: true })
+      .limit(200);
+
+    let crmStale: any[] = [];
+    if (thresholdDays > 0 && pendingStatusKeys.length) {
+      const cutoff = new Date(Date.now() - thresholdDays * 86400_000).toISOString();
+      const { data: rows } = await context.supabase
+        .from("crm_records")
+        .select("id, crm_key, record_code, name, status, reminder_at, assigned_agent_id, updated_at")
+        .eq("assigned_agent_id", context.userId)
+        .in("status", pendingStatusKeys as any)
+        .lt("updated_at", cutoff)
+        .order("updated_at", { ascending: true })
+        .limit(500);
+      crmStale = rows ?? [];
+    }
+
+    const pushCrm = (r: any, source: string) => {
+      if (seen.has(r.id)) return;
+      seen.add(r.id);
+      out.push({
+        id: r.id, crm_key: r.crm_key, system_code: r.record_code, name: r.name,
+        status: r.status, reminder_at: r.reminder_at, source,
+      });
+    };
+    for (const r of (crmManual ?? []) as any[]) pushCrm(r, "manual");
+    for (const r of crmStale) pushCrm(r, "stale");
+
     return out;
   });
 

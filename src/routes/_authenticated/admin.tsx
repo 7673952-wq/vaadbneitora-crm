@@ -58,16 +58,20 @@ function AdminPage() {
   if (meError) return <AdminError message={meError.message} />;
 
   const perms = (me?.permissions ?? {}) as Record<string, boolean>;
-  const canUsers = !!perms.users_manage;
-  const canGeneral = !!(perms.settings_manage || perms.backup_manage);
+  // "כללי" applies to every CRM, so its tabs open when the permission exists
+  // in ANY CRM the user belongs to — not only in "ימות המשיח".
+  const gperms = ((me as any)?.globalPermissions ?? perms) as Record<string, boolean>;
+  const canUsers = !!gperms.users_manage;
+  const canGeneral = !!(gperms.settings_manage || gperms.backup_manage);
   const canStatuses = !!perms.settings_manage;
   const canSeries = !!perms.series_manage;
-  const canPermissions = !!perms.permissions_manage;
+  const canPermissions = !!gperms.permissions_manage;
   const canVoiceLog = !!perms.settings_manage;
   const canBackups = !!me?.isSuperAdmin;
-  const canEmail = !!(perms.settings_manage || perms.backup_manage);
-  const canNotifs = !!(perms.settings_manage || perms.users_manage || perms.permissions_manage);
-  const canCrms = !!(perms.settings_manage || perms.permissions_manage || me?.isSuperAdmin);
+  const canEmail = !!(gperms.settings_manage || gperms.backup_manage);
+  const canNotifs = !!(gperms.settings_manage || gperms.users_manage || gperms.permissions_manage);
+  const canCrms = !!(gperms.settings_manage || gperms.permissions_manage || me?.isSuperAdmin);
+
 
   const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
 

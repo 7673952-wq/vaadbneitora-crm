@@ -883,6 +883,59 @@ export const listMyNotifications = createServerFn({ method: "GET" })
         reason: (e.subject ? `${e.subject} — ` : "") + String(e.body ?? "").slice(0, 100),
       });
     }
+    // ===== Records from every other CRM (shared bell) =====
+    const { data: myRecords } = await context.supabase
+      .from("crm_records").select("id, crm_key, record_code, name").eq("assigned_agent_id", me);
+    const recMap = new Map<string, { crm: string; code: string; name: string }>(
+      ((myRecords ?? []) as any[]).map((r) => [r.id, { crm: r.crm_key, code: r.record_code, name: r.name }]),
+    );
+
+    const { data: crmNoteRows } = await context.supabase
+      .from("crm_record_notes")
+      .select("id, record_id, crm_key, body, author_id, created_at")
+      .neq("author_id", me)
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(100);
+    const crmMentions = ((crmNoteRows ?? []) as any[]).filter((n) => isMentioned(n.body));
+
+    const extraRecIds = Array.from(new Set(
+      crmMentions.map((n: any) => n.record_id).filter((id: string) => id && !recMap.has(id)),
+    ));
+    if (extraRecIds.length) {
+      const { data: extra } = await context.supabase
+        .from("crm_records").select("id, crm_key, record_code, name").in("id", extraRecIds);
+      for (const r of (extra ?? []) as any[]) recMap.set(r.id, { crm: r.crm_key, code: r.record_code, name: r.name });
+    }
+
+    for (const n of crmMentions) {
+      const rec = recMap.get(n.record_id);
+      items.push({
+        id: `cm:${n.id}`, kind: "mention", system_id: n.record_id, crm_key: rec?.crm ?? n.crm_key,
+        system_code: rec?.code, system_name: rec?.name, created_at: n.created_at,
+        title: String(n.body ?? "").includes("@כולם") ? "תיוג לכל הנציגים" : "תויגת בהערה",
+        detail: pmap.get(n.author_id) ?? "לא ידוע",
+        reason: (n.body ?? "").slice(0, 120),
+      });
+    }
+
+    const myRecIds = Array.from(recMap.keys());
+    if (myRecIds.length) {
+      const { data: crmEmails } = await context.supabase.from("email_messages" as any)
+        .select("id, crm_record_id, from_address, subject, body, created_at")
+        .in("crm_record_id", myRecIds).eq("direction", "inbound").gte("created_at", since)
+        .order("created_at", { ascending: false }).limit(50);
+      for (const e of ((crmEmails as any[]) ?? [])) {
+        const rec = recMap.get(e.crm_record_id);
+        items.push({
+          id: `ce:${e.id}`, kind: "email", system_id: e.crm_record_id, crm_key: rec?.crm,
+          system_code: rec?.code, system_name: rec?.name, created_at: e.created_at,
+          title: "מייל חדש", detail: e.from_address ?? "פונה",
+          reason: (e.subject ? `${e.subject} — ` : "") + String(e.body ?? "").slice(0, 100),
+        });
+      }
+    }
+
     items.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     return items.slice(0, 50);
   });

@@ -299,8 +299,12 @@ export type RestoreResult = { table: string; inserted: number; skipped: number; 
 const PK_COLUMN: Record<string, string> = {
   status_settings: "status_key",
   app_settings: "key",
-  role_permissions: "role,permission",
-  user_permissions: "user_id,permission",
+  role_permissions: "crm_key,role,permission",
+  user_permissions: "crm_key,user_id,permission",
+  crms: "key",
+  crm_settings: "crm_key,key",
+  notification_role_defaults: "role,event_key",
+  notification_user_overrides: "user_id,event_key",
 };
 const pkOf = (t: string) => PK_COLUMN[t] ?? "id";
 
@@ -361,25 +365,27 @@ export async function runRestore(files: RestoreInput, mode: "merge" | "replace" 
       // `systems` has a self-FK on parent_system_id. Insert all rows with the
       // parent reference nulled out, then patch parent_system_id in a second
       // pass so order between parent/child rows doesn't matter.
-      if (f.table === "systems") {
+      const selfFk = f.table === "systems" ? "parent_system_id"
+        : f.table === "crm_records" ? "parent_record_id" : null;
+      if (selfFk) {
         const parentMap = new Map<string, string | null>();
         const flat = rows.map((r) => {
-          if (r.parent_system_id) parentMap.set(r.id, r.parent_system_id);
-          return { ...r, parent_system_id: null };
+          if (r[selfFk]) parentMap.set(r.id, r[selfFk]);
+          return { ...r, [selfFk]: null };
         });
-        const pass1 = await upsertResilient("systems", flat);
+        const pass1 = await upsertResilient(f.table, flat);
         // Second pass — restore parent_system_id values.
         let patched = 0;
         const patchDetails: string[] = [];
         for (const [id, parentId] of parentMap.entries()) {
-          const { error } = await (supabaseAdmin as any).from("systems")
-            .update({ parent_system_id: parentId }).eq("id", id);
+          const { error } = await (supabaseAdmin as any).from(f.table)
+            .update({ [selfFk]: parentId }).eq("id", id);
           if (error) {
             if (patchDetails.length < 5) patchDetails.push(`${id} parent: ${error.message}`);
           } else patched++;
         }
         results.push({
-          table: "systems",
+          table: f.table,
           inserted: pass1.inserted,
           skipped: pass1.skipped,
           details: [...pass1.details, ...patchDetails],

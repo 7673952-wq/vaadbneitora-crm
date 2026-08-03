@@ -27,6 +27,15 @@ async function assertPermission(context: { userId: string }, permission: import(
   await assertPermission(context.userId, permission, crmKey ?? "yemot");
 }
 
+/**
+ * Settings under the "כללי" tab apply to every CRM, so the permission may come
+ * from ANY CRM the user belongs to (not just "yemot").
+ */
+async function assertGlobalPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey) {
+  const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+  await assertPermissionInAnyCrm(context.userId, permission);
+}
+
 async function assertAnyPermission(context: { userId: string }, permissions: import("@/lib/permissions.server").PermissionKey[]) {
   const { assertAnyPermission } = await import("@/lib/permissions.server");
   await assertAnyPermission(context.userId, permissions);

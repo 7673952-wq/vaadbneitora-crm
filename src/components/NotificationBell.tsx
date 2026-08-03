@@ -147,8 +147,11 @@ export function NotificationBell() {
                 {reminders.map((r) => (
                   <li key={r.id} className="flex items-stretch">
                     <Link
-                      to="/systems/$id"
-                      params={{ id: r.id }}
+                      // Reminders now arrive from every CRM — route to the
+                      // generic record page when the item isn't a Yemot system.
+                      {...((r as any).crm_key && (r as any).crm_key !== "yemot"
+                        ? { to: "/c/$crm/$id" as const, params: { crm: (r as any).crm_key, id: r.id } }
+                        : { to: "/systems/$id" as const, params: { id: r.id } })}
                       onClick={() => setOpen(false)}
                       className="flex-1 flex gap-2 p-3 text-sm hover:bg-red-100/60"
                     >
@@ -193,8 +196,9 @@ export function NotificationBell() {
                 return (
                   <li key={n.id} className={isUnread ? "bg-amber-50/60" : ""}>
                     <Link
-                      to="/systems/$id"
-                      params={{ id: n.system_id }}
+                      {...((n as any).crm_key && (n as any).crm_key !== "yemot"
+                        ? { to: "/c/$crm/$id" as const, params: { crm: (n as any).crm_key, id: n.system_id } }
+                        : { to: "/systems/$id" as const, params: { id: n.system_id } })}
                       onClick={() => setOpen(false)}
                       className="flex gap-2 p-3 text-sm hover:bg-accent"
                     >

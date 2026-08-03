@@ -134,7 +134,7 @@ export const createUser = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -155,7 +155,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -169,7 +169,7 @@ export const setUserRole = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
@@ -187,7 +187,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
@@ -202,7 +202,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw fromSupabase(error);
@@ -215,7 +215,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
     z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw fromSupabase(error);
@@ -258,7 +258,7 @@ export const getMyRole = createServerFn({ method: "GET" })
 export const listUsersForAdmin = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    await assertPermission(context, "users_manage");
+    await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: profiles }, { data: roles }, { data: usersList }] = await Promise.all([
       supabaseAdmin.from("profiles").select("id, display_name, created_at"),
@@ -591,7 +591,7 @@ export const setAutoSnoozeSetting = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "settings_manage");
+    await assertGlobalPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: AUTO_SNOOZE_KEY,
@@ -640,7 +640,7 @@ export const setBackupEmail = createServerFn({ method: "POST" })
     z.object({ emails: z.array(z.string().email().max(200)).max(20) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "backup_manage");
+    await assertGlobalPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // De-dupe, case-insensitively, while preserving the order the admin typed them in.
     const seen = new Set<string>();
@@ -700,7 +700,7 @@ export const setBackupSchedule = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "backup_manage");
+    await assertGlobalPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: BACKUP_SCHEDULE_KEY,
@@ -737,7 +737,7 @@ export const setBackupWebhookConfig = createServerFn({ method: "POST" })
     z.object({ url: z.string().max(300).refine((v) => v === "" || /^https?:\/\//.test(v), "כתובת חייבת להתחיל ב-http/https"), secret: z.string().max(300).optional() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "backup_manage");
+    await assertGlobalPermission(context, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date().toISOString();
     const { error: urlErr } = await supabaseAdmin.from("app_settings").upsert({
@@ -780,7 +780,7 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
     z.object({ hours: z.number().int().min(0).max(8760) }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertPermission(context, "settings_manage");
+    await assertGlobalPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: STALE_HOURS_KEY,

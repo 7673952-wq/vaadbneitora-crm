@@ -150,3 +150,68 @@ export const listAuditActors = createServerFn({ method: "GET" })
     if (error) throw new Error(error.message);
     return data ?? [];
   });
+
+// ============= ביטול פעולה (Undo) =============
+
+// Only plain column updates on `systems` can be reverted safely.
+const REVERTIBLE_FIELDS = [
+  "status", "secondary_status", "assigned_agent_id", "name", "system_code",
+  "notes", "phone", "caller_phone", "source", "email", "reminder_at",
+  "parent_system_id", "is_blocking_number",
+] as const;
+
+export function isRevertibleEntry(row: { action?: string | null; field?: string | null; system_id?: string | null }): boolean {
+  return row.action === "updated"
+    && !!row.system_id
+    && !!row.field
+    && (REVERTIBLE_FIELDS as readonly string[]).includes(row.field);
+}
+
+export const revertAuditEntry = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { assertRole } = await import("@/lib/permissions.server");
+    await assertRole(context.userId, "super_admin");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: entry, error } = await supabaseAdmin
+      .from("system_activity_log")
+      .select("id, system_id, action, field, old_value, new_value")
+      .eq("id", data.id)
+      .maybeSingle();
+    if (error) throw new Error(error.message);
+    if (!entry) throw new Error("שורת יומן לא נמצאה");
+    if (!isRevertibleEntry(entry as any)) throw new Error("לא ניתן לבטל פעולה מסוג זה");
+
+    const field = entry.field as string;
+    const raw = entry.old_value;
+    let value: any = raw === null || raw === "" ? null : raw;
+    if (field === "is_blocking_number") value = raw === "true";
+
+    const { data: current } = await supabaseAdmin
+      .from("systems").select(`id, ${field}`).eq("id", entry.system_id!).maybeSingle();
+    if (!current) throw new Error("המערכת נמחקה — לא ניתן לבטל");
+    const currentValue = (current as any)[field];
+    const currentStr = currentValue === null || currentValue === undefined ? null : String(currentValue);
+    const newStr = entry.new_value === null || entry.new_value === "" ? null : entry.new_value;
+    if (currentStr !== newStr) {
+      throw new Error("הערך שונה מאז — יש לבטל את הפעולה האחרונה בלבד");
+    }
+
+    const { error: updErr } = await supabaseAdmin
+      .from("systems").update({ [field]: value } as any).eq("id", entry.system_id!);
+    if (updErr) throw new Error(updErr.message);
+
+    await supabaseAdmin.from("system_activity_log").insert({
+      system_id: entry.system_id,
+      actor_id: context.userId,
+      action: "reverted",
+      field,
+      old_value: entry.new_value,
+      new_value: entry.old_value,
+      reason: "ביטול פעולה מיומן הבקרה",
+    } as any);
+
+    return { ok: true };
+  });

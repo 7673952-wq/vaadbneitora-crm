@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
 import { getMyEmailProfile, setMyEmailSignature } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LogOut, KeyRound, X, Mail } from "lucide-react";
+import { LogOut, KeyRound, X, Mail, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";

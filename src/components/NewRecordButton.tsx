@@ -89,7 +89,7 @@ export function NewRecordButton() {
     <>
       <button
         onClick={start}
-        className="flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3 py-1.5 text-sm font-medium hover:bg-primary/90 whitespace-nowrap"
+        className="flex items-center gap-1.5 rounded-xl bg-primary text-primary-foreground px-3.5 py-1.5 text-sm font-medium hover:bg-primary/90 hover:shadow-md transition-all whitespace-nowrap"
       >
         <Plus className="h-4 w-4" />
         <span className="hidden lg:inline">פתיחת פניה</span>

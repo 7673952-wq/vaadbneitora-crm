@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
 import { getMyEmailProfile, setMyEmailSignature } from "@/lib/email.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { LogOut, KeyRound, X, Mail } from "lucide-react";
+import { LogOut, KeyRound, X, Mail, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -148,22 +148,34 @@ function AuthedLayout() {
     <div dir="rtl" className="min-h-screen bg-background">
       <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
         <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-3">
-          <Link to="/dashboard" className="flex items-center gap-2 shrink-0">
+          {/* Logo with separator */}
+          <Link to="/dashboard" className="flex items-center gap-2 shrink-0 border-l border-border pl-4">
             <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground font-bold flex items-center justify-center">C</div>
             <span className="font-semibold tracking-tight hidden md:inline">CRM</span>
           </Link>
 
+          {/* CRM navigation tabs */}
           <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} />
 
-          <div className="mr-auto flex items-center gap-2 relative shrink-0">
-            {sessionReady && <GlobalSearch />}
+          {/* Spacer */}
+          <div className="flex-grow" />
+
+          {/* Global search */}
+          {sessionReady && <GlobalSearch />}
+
+          {/* Action cluster */}
+          <div className="flex items-center gap-2 shrink-0">
             {sessionReady && <NewRecordButton />}
             {sessionReady && <KosherButton />}
             {sessionReady && <NotificationBell />}
 
+            {/* Divider before avatar */}
+            <div className="w-px h-6 bg-border mx-0.5" />
+
+            {/* User avatar pill with dropdown */}
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-accent transition"
+              className="flex items-center gap-2 rounded-full pl-1 pr-2 py-1 hover:bg-accent transition border border-transparent hover:border-border"
               title={displayName}
             >
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">
@@ -173,11 +185,12 @@ function AuthedLayout() {
                 <div className="font-medium">{displayName}</div>
                 <div className="text-[11px] text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
               </span>
+              <ChevronDown className="h-4 w-4 text-muted-foreground hidden xl:block" />
             </button>
             {userMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover shadow-lg py-1">
+                <div className="absolute left-4 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover shadow-lg py-1">
                   <button
                     onClick={() => { setUserMenuOpen(false); setSigOpen(true); }}
                     className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"

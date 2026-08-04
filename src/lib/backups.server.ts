@@ -162,7 +162,7 @@ export async function runBackup(): Promise<BackupResult> {
 // separate transactional-email account needed. Falls back to Resend
 // (RESEND_API_KEY) if the relay isn't set up. Returns a short status
 // string for logging; never throws.
-export async function sendBackupEmail(result: BackupResult, kind: "daily" | "weekly"): Promise<string> {
+export async function sendBackupEmail(result: BackupResult, kind: "daily" | "weekly" | "manual"): Promise<string> {
   const { data: setting } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
   const v = (setting?.value as { email?: string; emails?: string[] } | null) ?? null;
@@ -174,7 +174,7 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
 
   let zipBuf: Uint8Array;
   let filename: string;
-  const subjectLabel = kind === "weekly" ? "שבועי" : "יומי";
+  const subjectLabel = kind === "weekly" ? "שבועי" : kind === "daily" ? "יומי" : "ידני";
   try {
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();

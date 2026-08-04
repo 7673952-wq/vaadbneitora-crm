@@ -22,10 +22,9 @@ export function KosherButton() {
       <button
         onClick={() => setOpen(true)}
         title="הוראות כשרות"
-        className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition"
+        className="flex items-center justify-center rounded-xl p-2 text-muted-foreground hover:text-foreground hover:bg-accent transition"
       >
-        <ShieldCheck className="h-4 w-4" />
-        <span className="hidden lg:inline">הוראות כשרות</span>
+        <ShieldCheck className="h-5 w-5" />
       </button>
       {open && <KosherDialog onClose={() => setOpen(false)} />}
     </>

@@ -29,8 +29,8 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
         <Link
           key={t.key}
           to={t.to}
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
-            t.active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+          className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            t.active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
           }`}
         >
           <span className="h-2 w-2 rounded-full shrink-0" style={{ background: t.color }} />
@@ -40,8 +40,8 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
       {isAdmin && (
         <Link
           to="/admin"
-          className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
-            path.startsWith("/admin") ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground hover:bg-accent/50"
+          className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            path.startsWith("/admin") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
           }`}
         >
           <Settings2 className="h-4 w-4" />

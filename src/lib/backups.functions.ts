@@ -214,9 +214,9 @@ export const restoreBackup = createServerFn({ method: "POST" })
     return result;
   });
 
-// Build (or reuse) the folder's ZIP and email it as an actual attachment via
-// Resend. Recipient is configured under "ניהול ראשי → מייל לגיבויים".
-// Requires RESEND_API_KEY in env.
+// Send an existing backup folder through the same configured Gmail relay used
+// by scheduled backups. Keeping one delivery path prevents the manual button
+// from silently bypassing a healthy Apps Script connection and using Resend.
 export const sendBackupByEmail = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { folder: string }) =>
@@ -225,54 +225,23 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-
-    const { data: setting } = await supabaseAdmin
-      .from("app_settings").select("value").eq("key", "backup_email").maybeSingle();
-    const v = (setting?.value as { email?: string; emails?: string[] } | null) ?? null;
-    const emails = (Array.isArray(v?.emails) && v.emails.length ? v.emails : (v?.email ? [v.email] : []))
-      .map((e) => e.trim()).filter(Boolean);
-    if (emails.length === 0) {
-      throw new Error("לא הוגדר מייל לגיבויים. הגדר תחת 'ניהול ראשי → מייל לגיבויים'.");
-    }
-
-    const apiKey = process.env.RESEND_API_KEY;
-    if (!apiKey) throw new Error("חסר RESEND_API_KEY בהגדרות השרת");
-
-    const JSZip = (await import("jszip")).default;
     const { data: files, error: listErr } = await supabaseAdmin.storage
       .from("backups").list(data.folder, { limit: 100 });
     if (listErr) throw new Error(listErr.message);
     if (!files || files.length === 0) throw new Error("אין קבצים בגיבוי");
+    const backupFiles = files
+      .filter((file) => file.name && !file.name.endsWith(".zip"))
+      .map((file) => ({ name: file.name, path: `${data.folder}/${file.name}`, rows: 0 }));
+    if (backupFiles.length === 0) throw new Error("אין קבצים בגיבוי");
 
-    const zip = new JSZip();
-    for (const f of files) {
-      if (!f.name || f.name.endsWith(".zip")) continue;
-      const { data: blob, error } = await supabaseAdmin.storage
-        .from("backups").download(`${data.folder}/${f.name}`);
-      if (error) throw new Error(`${f.name}: ${error.message}`);
-      zip.file(f.name, await blob.arrayBuffer());
+    const { sendBackupEmail } = await import("@/lib/backups.server");
+    const deliveryStatus = await sendBackupEmail({ folder: data.folder, files: backupFiles }, "manual");
+    if (deliveryStatus !== "sent (gmail relay)") {
+      if (deliveryStatus.includes("unknown action")) {
+        throw new Error("החיבור ל-Google Script עובד, אך הגרסה שפורסמה אינה תומכת בשליחת גיבויים. יש לפרסם מחדש את הסקריפט המעודכן כ-Web App.");
+      }
+      throw new Error(`שליחת הגיבוי דרך Google Script נכשלה: ${deliveryStatus}`);
     }
-    const zipBuf = await zip.generateAsync({ type: "uint8array" });
-    const base64 = Buffer.from(zipBuf).toString("base64");
-    const filename = `backup-${data.folder}.zip`;
 
-    const resp = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        from: "CRM Backups <onboarding@resend.dev>",
-        to: emails,
-        subject: `גיבוי CRM — ${data.folder}`,
-        text: `מצורף קובץ הגיבוי של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
-        attachments: [{ filename, content: base64 }],
-      }),
-    });
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => "");
-      throw new Error(`Resend נכשל (${resp.status}): ${errText.slice(0, 200)}`);
-    }
-    return { emails, folder: data.folder, sizeKb: Math.round(zipBuf.length / 1024) };
+    return { folder: data.folder, delivery: "gmail relay" };
   });

@@ -167,7 +167,7 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
     try {
       setEmailing(folder);
       const res = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
-      toast.success(`נשלח אל ${res.emails.join(", ")} (${res.sizeKb} KB)`);
+      toast.success(`הגיבוי נשלח בהצלחה דרך Google Script`);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשליחת מייל");
     } finally {

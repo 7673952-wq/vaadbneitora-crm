@@ -38,13 +38,13 @@ export function GlobalSearch() {
 
   return (
     <div ref={boxRef} className="relative hidden md:block">
-      <Search className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
       <input
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
-        placeholder="חיפוש בכל המערכות..."
-        className="w-72 rounded-lg border border-input bg-background pr-8 pl-3 py-1.5 text-sm"
+        placeholder="חיפוש כללי..."
+        className="w-56 rounded-xl border-none bg-muted pr-9 pl-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all outline-none"
       />
       {isFetching && <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />}
       {open && debounced.length >= 2 && (

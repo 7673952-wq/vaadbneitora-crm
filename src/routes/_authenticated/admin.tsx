@@ -1432,7 +1432,31 @@ function MailboxAdminPanel() {
               לאפשר לנציגים לערוך חתימה אישית
             </label>
           </div>
+          <div>
+            <label className="text-xs font-medium">תווית ב-Gmail למיילים ולשרשורים (ריק = דואר נכנס רגיל)</label>
+            <input
+              type="text"
+              dir="ltr"
+              placeholder="CRM/מיילים"
+              value={draft.gmailLabel}
+              onChange={(e) => setDraft({ ...draft, gmailLabel: e.target.value })}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+            <p className="mt-1 text-[11px] text-muted-foreground">התווית תוחל על השרשור כולו (כולל תשובות נכנסות) בצד Gmail.</p>
+          </div>
+          <div className="pt-5">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.gmailArchive}
+                onChange={(e) => setDraft({ ...draft, gmailArchive: e.target.checked })}
+                className="h-4 w-4 accent-primary"
+              />
+              להוציא את השרשור מהדואר הנכנס (ארכיון) לאחר התיוג
+            </label>
+          </div>
         </div>
+
 
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>שמירת הגדרות</Button>

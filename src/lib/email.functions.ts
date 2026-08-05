@@ -101,7 +101,7 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     if (readError) throw new Error(readError.message);
     const savedUrl = (saved?.value as { url?: string } | null)?.url;
     if (savedUrl !== normalizedUrl) throw new Error("כתובת ה-Web App לא נשמרה. נסה שוב.");
-    return { ok: true, url: savedUrl, relayVersion: relayResult.version ?? null };
+    return { ok: true, url: savedUrl, relayVersion: relayResult?.version ?? null };
   });
 
 // Lightweight, non-admin-gated: any agent composing an email needs to know

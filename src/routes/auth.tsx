@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/auth")({
-  ssr: false,
   head: () => ({ meta: [{ title: "התחברות | CRM" }] }),
   component: AuthPage,
 });

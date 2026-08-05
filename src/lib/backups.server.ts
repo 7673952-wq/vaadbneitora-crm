@@ -218,6 +218,9 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
       if (!json) {
         return `failed (gmail relay):${resp.status}: הממסר החזיר תשובה שאינה JSON (כנראה נדרש Who has access: Anyone)`;
       }
+      if (json?.error?.toLowerCase() === "unauthorized") {
+        return "failed (gmail relay):200: הסוד ב-Web App הפעיל אינו תואם. ב-Apps Script יש לבצע Deploy → Manage deployments → Edit → New version, ואז לשמור שוב את החיבור בניהול → מיילים";
+      }
       return `failed (gmail relay):${resp.status}:${json?.error ?? ""}`.slice(0, 250);
 
     } catch (e: any) {

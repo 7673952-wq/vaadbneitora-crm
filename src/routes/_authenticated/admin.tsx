@@ -17,6 +17,9 @@ import {
   listEmailTemplates, upsertEmailTemplate, deleteEmailTemplate,
   listAgentEmailNames, setAgentEmailDisplayName,
 } from "@/lib/email.functions";
+import { getMailboxPrefs, setMailboxPrefs } from "@/lib/mail.functions";
+import { MAILBOX_PREFS_DEFAULTS, type MailboxPrefs } from "@/lib/mailbox-prefs";
+import { Button } from "@/components/ui/button";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
@@ -32,7 +35,7 @@ import {
 import {
   UserPlus, Trash2, Shield, User as UserIcon, Pencil, Mail, Key, Check, X,
   Palette, Plus, Clock, FileText, Database, Users, Settings, ListChecks,
-  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing, LayoutGrid,
+  Search as SearchIcon, ArrowUp, ArrowDown, LockKeyhole, Volume2, BellRing, LayoutGrid, Inbox,
 } from "lucide-react";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
@@ -140,6 +143,7 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         {canGeneral && <TabsTrigger value="settings" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />הגדרות כלליות</TabsTrigger>}
         {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />פעמון התראות</TabsTrigger>}
         {canEmail && <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />הגדרות מייל</TabsTrigger>}
+        {canEmail && <TabsTrigger value="mailbox" className="flex items-center gap-1.5"><Inbox className="h-3.5 w-3.5" />תיבת דואר</TabsTrigger>}
         {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
       </TabsList>
 
@@ -153,6 +157,7 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
       </TabsContent>}
       {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel crms={crms} /></TabsContent>}
       {canEmail && <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>}
+      {canEmail && <TabsContent value="mailbox" className="mt-4"><MailboxAdminPanel /></TabsContent>}
       {canBackups && <TabsContent value="backups" className="mt-4"><BackupsPage embedded /></TabsContent>}
     </Tabs>
   );
@@ -1323,3 +1328,117 @@ function NotificationsGrid({ data, mut }: { data: any; mut: any }) {
   );
 }
 
+
+/** ניהול תיבת הדואר: ברירות מחדל והרשאות תצוגה עבור מסך "מיילים". */
+function MailboxAdminPanel() {
+  const qc = useQueryClient();
+  const getPrefsFn = useServerFn(getMailboxPrefs);
+  const setPrefsFn = useServerFn(setMailboxPrefs);
+  const getConfigFn = useServerFn(getEmailRelayConfig);
+
+  const { data: prefs } = useQuery({
+    queryKey: ["mailbox_prefs"],
+    queryFn: async () => getPrefsFn({ headers: await getAuthHeaders() }),
+  });
+  const { data: config } = useQuery({
+    queryKey: ["email_relay_config"],
+    queryFn: async () => getConfigFn({ headers: await getAuthHeaders() }),
+  });
+
+  const [draft, setDraft] = useState<MailboxPrefs>(MAILBOX_PREFS_DEFAULTS);
+  useEffect(() => { if (prefs) setDraft(prefs); }, [prefs]);
+
+  const save = useMutation({
+    mutationFn: async () => setPrefsFn({ data: draft, headers: await getAuthHeaders() }),
+    onSuccess: () => {
+      toast.success("הגדרות תיבת הדואר נשמרו");
+      qc.invalidateQueries({ queryKey: ["mailbox_prefs"] });
+      qc.invalidateQueries({ queryKey: ["mailbox_settings"] });
+    },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
+  });
+
+  const configured = !!config?.url && !!config?.hasSecret;
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-card border border-border p-5 rounded-xl shadow-sm space-y-4">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Inbox className="h-5 w-5 text-primary" />
+          תיבת הדואר (מסך „מיילים")
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${configured ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"}`}>
+            {configured ? "חיבור פעיל" : "החיבור לא מוגדר"}
+          </span>
+        </h2>
+        <p className="text-xs text-muted-foreground">
+          ההגדרות כאן חלות על כל המשתמשים בתיבת הדואר. את פרטי החיבור ל-Gmail מגדירים בלשונית „הגדרות מייל".
+        </p>
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label className="text-xs font-medium">תצוגה ראשונית</label>
+            <select
+              value={draft.defaultFilter}
+              onChange={(e) => setDraft({ ...draft, defaultFilter: e.target.value as MailboxPrefs["defaultFilter"] })}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="all">הכל</option>
+              <option value="unread">לא נקראו</option>
+              <option value="inbox">נכנס</option>
+              <option value="sent">יוצא</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium">רמת ניקוי ציטוטים כברירת מחדל</label>
+            <select
+              value={draft.defaultCleanupLevel}
+              onChange={(e) => setDraft({ ...draft, defaultCleanupLevel: e.target.value as MailboxPrefs["defaultCleanupLevel"] })}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="none">ללא ניקוי</option>
+              <option value="light">קל</option>
+              <option value="standard">רגיל</option>
+              <option value="strict">מחמיר</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-medium">רענון אוטומטי (שניות, 0 = כבוי)</label>
+            <input
+              type="number"
+              min={0}
+              max={3600}
+              value={draft.refreshSeconds}
+              onChange={(e) => setDraft({ ...draft, refreshSeconds: Number(e.target.value) || 0 })}
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="space-y-2 pt-5">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.defaultUseGeneralName}
+                onChange={(e) => setDraft({ ...draft, defaultUseGeneralName: e.target.checked })}
+                className="h-4 w-4 accent-primary"
+              />
+              שליחה בשם הכללי כברירת מחדל
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft.allowPersonalSignature}
+                onChange={(e) => setDraft({ ...draft, allowPersonalSignature: e.target.checked })}
+                className="h-4 w-4 accent-primary"
+              />
+              לאפשר לנציגים לערוך חתימה אישית
+            </label>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>שמירת הגדרות</Button>
+          <Button size="sm" variant="outline" onClick={() => setDraft(MAILBOX_PREFS_DEFAULTS)}>איפוס לברירת מחדל</Button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -9,6 +9,7 @@ import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import { listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead, getMailboxSettings } from "@/lib/mail.functions";
 import { setMyEmailSignature } from "@/lib/email.functions";
+import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/mail")({
@@ -51,6 +52,14 @@ function MailboxPage() {
   const readFn = useServerFn(markMailThreadRead);
   const settingsFn = useServerFn(getMailboxSettings);
   const signatureFn = useServerFn(setMyEmailSignature);
+  const roleFn = useServerFn(getMyRole);
+
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
+    staleTime: 5 * 60_000,
+  });
+  const canManageMail = Boolean((me?.permissions as any)?.settings_manage || (me?.permissions as any)?.backup_manage);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -72,12 +81,21 @@ function MailboxPage() {
     staleTime: 60_000,
   });
   useEffect(() => { if (settings?.signature != null) setSignature(settings.signature); }, [settings?.signature]);
+  // Admin-managed defaults (ניהול → תיבת דואר)
+  useEffect(() => {
+    if (!settings?.prefs) return;
+    setCleanup(settings.prefs.defaultCleanupLevel as EmailCleanupLevel);
+    setUseGeneral(settings.prefs.defaultUseGeneralName);
+    setFilter(settings.prefs.defaultFilter as Filter);
+  }, [settings?.prefs]);
 
+  const refreshMs = (settings?.prefs?.refreshSeconds ?? 60) * 1000;
   const { data: threads = [], isFetching, refetch } = useQuery({
     queryKey: ["mail_threads", filter, search],
     queryFn: async () => listFn({ data: { filter, search: search || undefined }, headers: await getAuthHeaders() }),
-    refetchInterval: 60_000,
+    refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
+
 
   const { data: messages = [] } = useQuery({
     queryKey: ["mail_thread", selected],
@@ -158,20 +176,34 @@ function MailboxPage() {
             <div><div className="text-xs text-muted-foreground">השם שלי במיילים</div>{settings?.myName || "—"}</div>
             <div><div className="text-xs text-muted-foreground">שם כללי</div>{settings?.generalName || "—"}</div>
           </div>
-          <div>
-            <label className="text-xs font-medium">חתימה אישית</label>
-            <textarea
-              value={signature}
-              onChange={(e) => setSignature(e.target.value)}
-              rows={4}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              placeholder="החתימה שתתווסף בסוף כל מייל שאשלח"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => saveSignature.mutate()} disabled={saveSignature.isPending}>שמירת חתימה</Button>
-            <a href="/admin" className="text-xs text-primary underline">הגדרות חיבור Gmail (ניהול → מיילים)</a>
-          </div>
+          {settings?.prefs?.allowPersonalSignature !== false ? (
+            <>
+              <div>
+                <label className="text-xs font-medium">חתימה אישית</label>
+                <textarea
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="החתימה שתתווסף בסוף כל מייל שאשלח"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => saveSignature.mutate()} disabled={saveSignature.isPending}>שמירת חתימה</Button>
+                {canManageMail && (
+                  <a href="/admin" className="text-xs text-primary underline">הגדרות תיבת הדואר (ניהול → תיבת דואר)</a>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              עריכת חתימה אישית מושבתת על ידי מנהל המערכת.
+              {canManageMail && (
+                <a href="/admin" className="text-primary underline">ניהול → תיבת דואר</a>
+              )}
+            </div>
+          )}
+
         </div>
       )}
 

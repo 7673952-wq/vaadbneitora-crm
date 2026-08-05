@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
+import { parseMailboxPrefs, type MailboxPrefs } from "@/lib/mailbox-prefs";
 
 export type MailThread = {
   threadId: string;
@@ -215,6 +216,43 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
     return { ok: true, threadId: gmailThreadId };
   });
 
+// ============= Mailbox preferences (managed in ניהול → תיבת דואר) =============
+
+export const getMailboxPrefs = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<MailboxPrefs> => {
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", "mailbox_prefs").maybeSingle();
+    return parseMailboxPrefs(data?.value);
+  });
+
+export const setMailboxPrefs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        defaultCleanupLevel: z.enum(["none", "light", "standard", "strict"]),
+        defaultUseGeneralName: z.boolean(),
+        refreshSeconds: z.number().int().min(0).max(3600),
+        defaultFilter: z.enum(["all", "unread", "inbox", "sent"]),
+        allowPersonalSignature: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "settings_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: "mailbox_prefs",
+      value: data,
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
 /** Everything the mailbox UI needs to know about the current setup. */
 export const getMailboxSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -222,7 +260,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
     const { data } = await context.supabase
       .from("app_settings")
       .select("key, value")
-      .in("key", ["email_relay_url", "email_relay_address", "email_general_name"]);
+      .in("key", ["email_relay_url", "email_relay_address", "email_general_name", "mailbox_prefs"]);
     const get = (k: string) => (data ?? []).find((r: any) => r.key === k)?.value as Record<string, string> | undefined;
     const { data: profile } = await context.supabase
       .from("profiles")
@@ -235,5 +273,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
       generalName: get("email_general_name")?.name ?? "",
       myName: (profile as any)?.email_display_name || (profile as any)?.display_name || "",
       signature: (profile as any)?.email_signature ?? "",
+      prefs: parseMailboxPrefs((data ?? []).find((r: any) => r.key === "mailbox_prefs")?.value),
     };
   });
+

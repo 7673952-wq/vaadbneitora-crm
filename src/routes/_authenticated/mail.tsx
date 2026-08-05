@@ -59,7 +59,8 @@ function MailboxPage() {
     queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
     staleTime: 5 * 60_000,
   });
-  const canManageMail = Boolean((me?.permissions as any)?.settings_manage || (me?.permissions as any)?.backup_manage);
+  const canManageMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.settings_manage);
+  const canViewMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.mailbox_view);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");

@@ -39,6 +39,18 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
           {t.label}
         </Link>
       ))}
+      <Link
+        to="/mail"
+        className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+          path.startsWith("/mail")
+            ? "bg-background text-foreground shadow-sm"
+            : "text-background/55 hover:text-background hover:bg-background/10"
+        }`}
+      >
+        <Mail className="h-4 w-4" />
+        מיילים
+      </Link>
+
       {isAdmin && (
         <Link
           to="/admin"

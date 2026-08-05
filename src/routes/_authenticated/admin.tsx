@@ -1030,8 +1030,10 @@ function EmailSettingsPanel() {
       setWebAppUrl(saved.url);
       setSecret("");
       await qc.invalidateQueries({ queryKey: ["email_relay_config"] });
-      toast.success("כתובת ה-Web App נשמרה ואומתה");
+      if (saved.warning) toast.warning(saved.warning, { duration: 12000 });
+      else toast.success("כתובת ה-Web App נשמרה ואומתה");
     },
+
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
 

@@ -2,103 +2,238 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fromSupabase } from "@/lib/errors";
+import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 
-export type MailContact = {
+export type MailThread = {
+  threadId: string;
   address: string;
-  lastSubject: string | null;
+  subject: string | null;
+  snippet: string;
   lastAt: string;
   count: number;
-  unread: boolean;
-  systemIds: string[];
+  unread: number;
+  lastDirection: string;
+  systemId: string | null;
+  recordId: string | null;
 };
 
 export type MailMessage = {
   id: string;
+  threadId: string | null;
   systemId: string | null;
+  recordId: string | null;
   direction: string;
   subject: string | null;
   body: string;
   fromAddress: string | null;
   toAddress: string | null;
   agentName: string | null;
+  readAt: string | null;
   createdAt: string;
 };
 
-function counterpart(m: any): string | null {
-  const addr = m.direction === "in" || m.direction === "inbound" ? m.from_address : m.to_address;
-  return addr ? String(addr).trim().toLowerCase() : null;
-}
-
-/** Unified mail inbox: one conversation per email address, across all CRMs. */
-export const listMailContacts = createServerFn({ method: "GET" })
+/** Mailbox: conversations grouped by Gmail thread, across the whole CRM. */
+export const listMailThreads = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ search: z.string().max(120).optional() }).parse(input ?? {}))
-  .handler(async ({ data, context }): Promise<MailContact[]> => {
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        search: z.string().max(120).optional(),
+        filter: z.enum(["all", "unread", "inbox", "sent"]).optional(),
+      })
+      .parse(input ?? {}),
+  )
+  .handler(async ({ data, context }): Promise<MailThread[]> => {
     const { data: rows, error } = await context.supabase
       .from("email_messages")
-      .select("id, system_id, direction, subject, from_address, to_address, created_at")
+      .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, gmail_thread_id, read_at, created_at")
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .limit(2000);
     if (error) throw fromSupabase(error);
 
-    const map = new Map<string, MailContact>();
+    const isInbound = (d: string) => d === "in" || d === "inbound";
+    const map = new Map<string, MailThread>();
     for (const m of (rows ?? []) as any[]) {
-      const addr = counterpart(m);
-      if (!addr) continue;
-      const existing = map.get(addr);
+      const key = m.gmail_thread_id || `msg:${m.id}`;
+      const addr = String((isInbound(m.direction) ? m.from_address : m.to_address) ?? "").trim().toLowerCase();
+      const existing = map.get(key);
       if (existing) {
         existing.count += 1;
-        if (m.system_id && !existing.systemIds.includes(m.system_id)) existing.systemIds.push(m.system_id);
+        if (isInbound(m.direction) && !m.read_at) existing.unread += 1;
+        if (!existing.address && addr) existing.address = addr;
+        if (!existing.subject && m.subject) existing.subject = m.subject;
+        if (!existing.systemId && m.system_id) existing.systemId = m.system_id;
+        if (!existing.recordId && m.crm_record_id) existing.recordId = m.crm_record_id;
       } else {
-        map.set(addr, {
+        map.set(key, {
+          threadId: key,
           address: addr,
-          lastSubject: m.subject ?? null,
+          subject: m.subject ?? null,
+          snippet: String(m.body ?? "").replace(/\s+/g, " ").slice(0, 120),
           lastAt: m.created_at,
           count: 1,
-          unread: false,
-          systemIds: m.system_id ? [m.system_id] : [],
+          unread: isInbound(m.direction) && !m.read_at ? 1 : 0,
+          lastDirection: m.direction,
+          systemId: m.system_id ?? null,
+          recordId: m.crm_record_id ?? null,
         });
       }
     }
 
-    const systemIds = [...new Set([...map.values()].flatMap((c) => c.systemIds))];
-    if (systemIds.length) {
-      const { data: sys } = await context.supabase
-        .from("systems")
-        .select("id, has_unread_email")
-        .in("id", systemIds.slice(0, 500));
-      const unreadSet = new Set((sys ?? []).filter((s: any) => s.has_unread_email).map((s: any) => s.id));
-      for (const c of map.values()) c.unread = c.systemIds.some((id) => unreadSet.has(id));
-    }
-
     let list = [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+    const filter = data.filter ?? "all";
+    if (filter === "unread") list = list.filter((t) => t.unread > 0);
+    if (filter === "inbox") list = list.filter((t) => t.lastDirection === "in" || t.lastDirection === "inbound");
+    if (filter === "sent") list = list.filter((t) => t.lastDirection === "out" || t.lastDirection === "outbound");
     const q = data.search?.trim().toLowerCase();
-    if (q) list = list.filter((c) => c.address.includes(q) || (c.lastSubject ?? "").toLowerCase().includes(q));
-    return list.slice(0, 200);
+    if (q) {
+      list = list.filter((t) =>
+        [t.address, t.subject ?? "", t.snippet].join(" ").toLowerCase().includes(q),
+      );
+    }
+    return list.slice(0, 300);
   });
 
-/** All messages exchanged with one email address. */
-export const getMailConversation = createServerFn({ method: "GET" })
+/** All messages in one conversation. */
+export const getMailThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ address: z.string().trim().min(3).max(200) }).parse(input))
+  .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
   .handler(async ({ data, context }): Promise<MailMessage[]> => {
-    const addr = data.address.toLowerCase();
-    const { data: rows, error } = await context.supabase
+    const single = data.threadId.startsWith("msg:");
+    const query = context.supabase
       .from("email_messages")
-      .select("id, system_id, direction, subject, body, from_address, to_address, agent_name, created_at")
-      .or(`from_address.ilike.${addr},to_address.ilike.${addr}`)
+      .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, agent_name, gmail_thread_id, read_at, created_at")
       .order("created_at", { ascending: true })
       .limit(300);
+    const { data: rows, error } = single
+      ? await query.eq("id", data.threadId.slice(4))
+      : await query.eq("gmail_thread_id", data.threadId);
     if (error) throw fromSupabase(error);
     return (rows ?? []).map((m: any) => ({
       id: m.id,
+      threadId: m.gmail_thread_id ?? null,
       systemId: m.system_id ?? null,
+      recordId: m.crm_record_id ?? null,
       direction: m.direction,
       subject: m.subject ?? null,
       body: m.body ?? "",
       fromAddress: m.from_address ?? null,
       toAddress: m.to_address ?? null,
       agentName: m.agent_name ?? null,
+      readAt: m.read_at ?? null,
       createdAt: m.created_at,
     }));
+  });
+
+/** Marks every inbound message in a conversation as read. */
+export const markMailThreadRead = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const now = new Date().toISOString();
+    const { error } = await context.supabase
+      .from("email_messages")
+      .update({ read_at: now })
+      .eq("gmail_thread_id", data.threadId)
+      .is("read_at", null);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+/**
+ * Sends a standalone mailbox message (new conversation or reply) through the
+ * Gmail relay, exactly like the per-system mail — but without needing a card.
+ */
+export const sendMailboxMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        to: z.string().email(),
+        subject: z.string().max(300).optional(),
+        body: z.string().min(1).max(20000),
+        threadId: z.string().max(200).nullable().optional(),
+        useGeneralName: z.boolean().optional(),
+        cleanupLevel: z.enum(["none", "light", "standard", "strict"]).optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "emails_send");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const [{ data: urlRow }, { data: secretRow }, { data: profile }, { data: generalRow }] = await Promise.all([
+      supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_url").maybeSingle(),
+      supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_secret").maybeSingle(),
+      supabaseAdmin.from("profiles").select("display_name, email_signature, email_display_name" as any).eq("id", context.userId).maybeSingle(),
+      supabaseAdmin.from("app_settings").select("value").eq("key", "email_general_name").maybeSingle(),
+    ]);
+    const relayUrl = (urlRow?.value as { url?: string } | null)?.url;
+    const relaySecret = (secretRow?.value as { secret?: string } | null)?.secret;
+    if (!relayUrl || !relaySecret) {
+      throw new Error("שליחת מייל לא מוגדרת עדיין — יש להגדיר את חיבור Gmail תחת ניהול → מיילים");
+    }
+    const personalName = (profile as any)?.email_display_name || (profile as any)?.display_name || "נציג";
+    const generalName = (generalRow?.value as { name?: string } | null)?.name || "";
+    const agentName = data.useGeneralName && generalName ? generalName : personalName;
+    const agentSignature = (profile as any)?.email_signature || "";
+
+    const cleanedBody = cleanEmailContent(data.body, (data.cleanupLevel ?? "standard") as EmailCleanupLevel);
+    if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
+
+    const threadId = data.threadId && !data.threadId.startsWith("msg:") ? data.threadId : null;
+    const payload = threadId
+      ? { secret: relaySecret, action: "reply", gmailThreadId: threadId, body: cleanedBody, agentName, agentSignature }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject ?? "", body: cleanedBody, agentName, agentSignature };
+
+    let res: Response;
+    try {
+      res = await fetch(relayUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    } catch {
+      throw new Error("לא ניתן להתחבר לשרת השליחה (Apps Script) — בדוק את הכתובת בהגדרות");
+    }
+    const json: any = await res.json().catch(() => ({}));
+    if (!res.ok || !json?.ok) throw new Error(json?.error ? `שליחה נכשלה: ${json.error}` : "שליחת המייל נכשלה");
+
+    const gmailThreadId: string = json.gmailThreadId;
+    if (!threadId) {
+      await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: gmailThreadId });
+    }
+    const { error } = await supabaseAdmin.from("email_messages" as any).insert({
+      direction: "outbound",
+      gmail_thread_id: gmailThreadId,
+      gmail_message_id: json.gmailMessageId ?? null,
+      agent_id: context.userId,
+      agent_name: agentName,
+      to_address: data.to,
+      subject: data.subject ?? null,
+      body: cleanedBody,
+      read_at: new Date().toISOString(),
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true, threadId: gmailThreadId };
+  });
+
+/** Everything the mailbox UI needs to know about the current setup. */
+export const getMailboxSettings = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase
+      .from("app_settings")
+      .select("key, value")
+      .in("key", ["email_relay_url", "email_relay_address", "email_general_name"]);
+    const get = (k: string) => (data ?? []).find((r: any) => r.key === k)?.value as Record<string, string> | undefined;
+    const { data: profile } = await context.supabase
+      .from("profiles")
+      .select("display_name, email_signature, email_display_name" as any)
+      .eq("id", context.userId)
+      .maybeSingle();
+    return {
+      configured: !!get("email_relay_url")?.url,
+      address: get("email_relay_address")?.address ?? "",
+      generalName: get("email_general_name")?.name ?? "",
+      myName: (profile as any)?.email_display_name || (profile as any)?.display_name || "",
+      signature: (profile as any)?.email_signature ?? "",
+    };
   });

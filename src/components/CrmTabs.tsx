@@ -6,7 +6,7 @@ import { Settings2, Mail } from "lucide-react";
  * Dark "command console" CRM switcher — an inverted segmented control that
  * contrasts against the floating header. Inverts cleanly in dark mode too.
  */
-export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
+export function CrmTabs({ isAdmin = false, canMail = false }: { isAdmin?: boolean; canMail?: boolean }) {
   const { data: crms = [] } = useMyCrms();
   const path = useRouterState({ select: (s) => s.location.pathname });
 
@@ -39,6 +39,7 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
           {t.label}
         </Link>
       ))}
+      {canMail && (
       <Link
         to="/mail"
         className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
@@ -50,6 +51,7 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
         <Mail className="h-4 w-4" />
         מיילים
       </Link>
+      )}
 
       {isAdmin && (
         <Link

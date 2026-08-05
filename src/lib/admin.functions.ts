@@ -46,7 +46,7 @@ const PERMISSION_KEYS = [
   "systems_read", "systems_write", "systems_delete", "system_name_edit", "system_code_edit",
   "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage",
   "import_export", "series_manage", "backup_manage", "audit_view", "settings_manage", "users_manage", "permissions_manage",
-  "history_edit",
+  "history_edit", "mailbox_view",
 ] as const;
 
 function isSchemaCacheMissing(error: unknown): boolean {
@@ -62,8 +62,8 @@ const DEFAULT_ROLE_PERMISSION_ROWS = ROLES.flatMap((role) => PERMISSION_KEYS.map
   role,
   permission,
   allowed: role === "super_admin"
-    || (role === "admin" && ["systems_read", "systems_write", "system_name_edit", "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage", "import_export", "series_manage", "backup_manage", "settings_manage"].includes(permission))
-    || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage"].includes(permission))
+    || (role === "admin" && ["systems_read", "systems_write", "system_name_edit", "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage", "import_export", "series_manage", "backup_manage", "settings_manage", "mailbox_view"].includes(permission))
+    || (role === "agent" && ["systems_read", "systems_write", "status_change", "agent_transfer", "notes_write", "emails_send", "files_manage", "mailbox_view"].includes(permission))
     || (role === "viewer" && permission === "systems_read"),
 }))) as { role: string; permission: string; allowed: boolean }[];
 const PERMISSION_SETTINGS_KEY = "permission_settings";
@@ -111,8 +111,8 @@ async function seedMissingRolePermissions() {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const defaults: Record<(typeof ROLES)[number], Partial<Record<(typeof PERMISSION_KEYS)[number], boolean>>> = {
     viewer: { systems_read: true },
-    agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, emails_send: true, files_manage: true },
-    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, emails_send: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true, audit_view: true },
+    agent: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, emails_send: true, files_manage: true, mailbox_view: true },
+    admin: { systems_read: true, systems_write: true, status_change: true, agent_transfer: true, notes_write: true, emails_send: true, files_manage: true, import_export: true, series_manage: true, backup_manage: true, settings_manage: true, audit_view: true, mailbox_view: true },
     super_admin: Object.fromEntries(PERMISSION_KEYS.map((p) => [p, true])) as Record<(typeof PERMISSION_KEYS)[number], boolean>,
   };
   const rows = ROLES.flatMap((role) => PERMISSION_KEYS.map((permission) => ({

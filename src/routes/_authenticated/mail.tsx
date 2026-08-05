@@ -59,7 +59,8 @@ function MailboxPage() {
     queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
     staleTime: 5 * 60_000,
   });
-  const canManageMail = Boolean((me?.permissions as any)?.settings_manage || (me?.permissions as any)?.backup_manage);
+  const canManageMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.settings_manage);
+  const canViewMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.mailbox_view);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -134,6 +135,14 @@ function MailboxPage() {
     onSuccess: () => { toast.success("החתימה נשמרה"); qc.invalidateQueries({ queryKey: ["mailbox_settings"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שמירה נכשלה"),
   });
+
+  if (me && !canViewMail) {
+    return (
+      <div dir="rtl" className="rounded-xl border border-border p-8 text-center text-sm text-muted-foreground">
+        אין לך הרשאה לצפות בתיבת הדואר. פנה למנהל המערכת.
+      </div>
+    );
+  }
 
   return (
     <div dir="rtl" className="space-y-3">

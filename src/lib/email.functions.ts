@@ -45,11 +45,15 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
     await assertPermissionInAnyCrm(context.userId, "backup_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const normalizedUrl = data.url.trim().replace(/\/+$/, "");
+    if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(normalizedUrl)) {
+      throw new Error("יש להדביק את כתובת ה-Web App המלאה שמסתיימת ב-/exec");
+    }
     const now = new Date().toISOString();
     const upserts = [
-      { key: RELAY_URL_KEY, value: { url: data.url.replace(/\/$/, "") } },
-      { key: RELAY_ADDRESS_KEY, value: { address: data.address } },
-      { key: GENERAL_NAME_KEY, value: { name: data.generalName ?? "" } },
+      { key: RELAY_URL_KEY, value: { url: normalizedUrl } },
+      { key: RELAY_ADDRESS_KEY, value: { address: data.address.trim() } },
+      { key: GENERAL_NAME_KEY, value: { name: data.generalName?.trim() ?? "" } },
     ];
     for (const row of upserts) {
       const { error } = await supabaseAdmin.from("app_settings").upsert({ ...row, updated_at: now, updated_by: context.userId });
@@ -61,7 +65,15 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
       });
       if (error) throw new Error(error.message);
     }
-    return { ok: true };
+    const { data: saved, error: readError } = await supabaseAdmin
+      .from("app_settings")
+      .select("value")
+      .eq("key", RELAY_URL_KEY)
+      .maybeSingle();
+    if (readError) throw new Error(readError.message);
+    const savedUrl = (saved?.value as { url?: string } | null)?.url;
+    if (savedUrl !== normalizedUrl) throw new Error("כתובת ה-Web App לא נשמרה. נסה שוב.");
+    return { ok: true, url: savedUrl };
   });
 
 // Lightweight, non-admin-gated: any agent composing an email needs to know

@@ -49,6 +49,34 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(normalizedUrl)) {
       throw new Error("יש להדביק את כתובת ה-Web App המלאה שמסתיימת ב-/exec");
     }
+    const { data: currentSecretRow, error: secretReadError } = await supabaseAdmin
+      .from("app_settings")
+      .select("value")
+      .eq("key", RELAY_SECRET_KEY)
+      .maybeSingle();
+    if (secretReadError) throw new Error(secretReadError.message);
+    const savedSecret = (currentSecretRow?.value as { secret?: string } | null)?.secret?.trim() ?? "";
+    const effectiveSecret = data.secret?.trim() || savedSecret;
+    if (!effectiveSecret) throw new Error("יש להזין סוד משותף לפני שמירת החיבור");
+
+    let relayResponse: Response;
+    try {
+      const { postToRelay } = await import("@/lib/relay.server");
+      relayResponse = await postToRelay(normalizedUrl, { action: "ping", secret: effectiveSecret });
+    } catch {
+      throw new Error("לא ניתן להגיע ל-Web App. בדוק שהכתובת מסתיימת ב-/exec ושהגישה מוגדרת ל-Anyone");
+    }
+    const relayText = await relayResponse.text().catch(() => "");
+    let relayResult: { ok?: boolean; error?: string; version?: number } | null = null;
+    try { relayResult = JSON.parse(relayText); } catch { /* handled below */ }
+    if (relayResult?.error?.toLowerCase() === "unauthorized") {
+      throw new Error("הסוד ב-Web App הפעיל אינו תואם לסוד במערכת. ב-Apps Script יש לבצע Deploy → Manage deployments → Edit → New version, ואז לשמור שוב");
+    }
+    if (!relayResponse.ok || !relayResult?.ok) {
+      throw new Error(relayResult?.error
+        ? `בדיקת החיבור נכשלה: ${relayResult.error}`
+        : "ה-Web App לא החזיר תשובה תקינה. יש לפרוס את גרסת הסקריפט העדכנית כ-New version");
+    }
     const now = new Date().toISOString();
     const upserts = [
       { key: RELAY_URL_KEY, value: { url: normalizedUrl } },
@@ -59,9 +87,9 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
       const { error } = await supabaseAdmin.from("app_settings").upsert({ ...row, updated_at: now, updated_by: context.userId });
       if (error) throw new Error(error.message);
     }
-    if (data.secret) {
+    if (data.secret?.trim()) {
       const { error } = await supabaseAdmin.from("app_settings").upsert({
-        key: RELAY_SECRET_KEY, value: { secret: data.secret }, updated_at: now, updated_by: context.userId,
+        key: RELAY_SECRET_KEY, value: { secret: effectiveSecret }, updated_at: now, updated_by: context.userId,
       });
       if (error) throw new Error(error.message);
     }
@@ -73,7 +101,7 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     if (readError) throw new Error(readError.message);
     const savedUrl = (saved?.value as { url?: string } | null)?.url;
     if (savedUrl !== normalizedUrl) throw new Error("כתובת ה-Web App לא נשמרה. נסה שוב.");
-    return { ok: true, url: savedUrl };
+    return { ok: true, url: savedUrl, relayVersion: relayResult.version ?? null };
   });
 
 // Lightweight, non-admin-gated: any agent composing an email needs to know

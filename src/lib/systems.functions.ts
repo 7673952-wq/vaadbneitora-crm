@@ -983,24 +983,33 @@ export const listDueReminders = createServerFn({ method: "GET" })
       .filter((s: any) => s.is_handled === false && Array.isArray(s.assigned_agent_ids) && s.assigned_agent_ids.includes(context.userId))
       .map((s: any) => s.status_key);
 
+    // The "auto snooze" threshold decides how long a pending system may sit
+    // untouched before it becomes a reminder. When it is configured, status
+    // based reminders must respect it instead of firing immediately.
+    const { data: settingRow } = await context.supabase
+      .from("app_settings").select("value").eq("key", "auto_snooze").maybeSingle();
+    const thresholdDays = Number((settingRow?.value as any)?.threshold_days ?? 0);
+    const thresholdCutoff =
+      thresholdDays > 0 ? new Date(Date.now() - thresholdDays * 86400_000).toISOString() : null;
+
     let derived: any[] = [];
     if (myWaitingStatuses.length) {
-      const { data: rows, error: e3 } = await context.supabase
+      let q = context.supabase
         .from("systems")
         .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at, assigned_agent_id")
         .in("status", myWaitingStatuses as any)
-        .eq("reminder_handled", false)
-        .order("updated_at", { ascending: false })
-        .limit(500);
+        .eq("reminder_handled", false);
+      if (thresholdCutoff) q = q.lt("updated_at", thresholdCutoff);
+      const { data: rows, error: e3 } = await q.order("updated_at", { ascending: false }).limit(500);
       if (e3) throw new Error(e3.message);
       derived = rows ?? [];
     }
 
-    // Waiting for the currently assigned representative: every untreated
-    // non-handled status assigned to me should appear in the bell immediately,
-    // not only after the stale threshold passes.
+    // Waiting for the currently assigned representative. Only surfaced right
+    // away when no threshold is configured; otherwise the stale query below
+    // covers it after the configured number of days.
     let assignedWaiting: any[] = [];
-    if (pendingStatusKeys.length) {
+    if (pendingStatusKeys.length && !thresholdCutoff) {
       const { data: rows, error: eAssigned } = await context.supabase
         .from("systems")
         .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at, assigned_agent_id")
@@ -1015,23 +1024,20 @@ export const listDueReminders = createServerFn({ method: "GET" })
 
     // Stale: systems assigned to me, pending, untreated for >= threshold days
     let stale: any[] = [];
-    const { data: settingRow } = await context.supabase
-      .from("app_settings").select("value").eq("key", "auto_snooze").maybeSingle();
-    const thresholdDays = Number((settingRow?.value as any)?.threshold_days ?? 0);
-    if (thresholdDays > 0 && pendingStatusKeys.length) {
-      const cutoff = new Date(Date.now() - thresholdDays * 86400_000).toISOString();
+    if (thresholdCutoff && pendingStatusKeys.length) {
       const { data: rows, error: e4 } = await context.supabase
         .from("systems")
         .select("id, system_code, name, status, reminder_at, reminder_agent_ids, reminder_handled, snoozed_until, updated_at, assigned_agent_id")
         .eq("assigned_agent_id", context.userId)
         .in("status", pendingStatusKeys as any)
-        .lt("updated_at", cutoff)
+        .lt("updated_at", thresholdCutoff)
         .eq("reminder_handled", false)
         .order("updated_at", { ascending: true })
         .limit(500);
       if (e4) throw new Error(e4.message);
       stale = rows ?? [];
     }
+
 
     const now = Date.now();
     const notSnoozed = (r: any) => !r.snoozed_until || new Date(r.snoozed_until).getTime() <= now;

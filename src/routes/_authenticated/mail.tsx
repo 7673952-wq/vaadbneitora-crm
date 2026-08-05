@@ -176,20 +176,34 @@ function MailboxPage() {
             <div><div className="text-xs text-muted-foreground">השם שלי במיילים</div>{settings?.myName || "—"}</div>
             <div><div className="text-xs text-muted-foreground">שם כללי</div>{settings?.generalName || "—"}</div>
           </div>
-          <div>
-            <label className="text-xs font-medium">חתימה אישית</label>
-            <textarea
-              value={signature}
-              onChange={(e) => setSignature(e.target.value)}
-              rows={4}
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              placeholder="החתימה שתתווסף בסוף כל מייל שאשלח"
-            />
-          </div>
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={() => saveSignature.mutate()} disabled={saveSignature.isPending}>שמירת חתימה</Button>
-            <a href="/admin" className="text-xs text-primary underline">הגדרות חיבור Gmail (ניהול → מיילים)</a>
-          </div>
+          {settings?.prefs?.allowPersonalSignature !== false ? (
+            <>
+              <div>
+                <label className="text-xs font-medium">חתימה אישית</label>
+                <textarea
+                  value={signature}
+                  onChange={(e) => setSignature(e.target.value)}
+                  rows={4}
+                  className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  placeholder="החתימה שתתווסף בסוף כל מייל שאשלח"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" onClick={() => saveSignature.mutate()} disabled={saveSignature.isPending}>שמירת חתימה</Button>
+                {canManageMail && (
+                  <a href="/admin" className="text-xs text-primary underline">הגדרות תיבת הדואר (ניהול → תיבת דואר)</a>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              עריכת חתימה אישית מושבתת על ידי מנהל המערכת.
+              {canManageMail && (
+                <a href="/admin" className="text-primary underline">ניהול → תיבת דואר</a>
+              )}
+            </div>
+          )}
+
         </div>
       )}
 

@@ -180,13 +180,15 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
     const agentName = data.useGeneralName && generalName ? generalName : personalName;
     const agentSignature = (profile as any)?.email_signature || "";
 
+    const { getGmailLabelRouting } = await import("@/lib/mail-label.server");
+    const gmailRouting = await getGmailLabelRouting();
     const cleanedBody = cleanEmailContent(data.body, (data.cleanupLevel ?? "standard") as EmailCleanupLevel);
     if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
 
     const threadId = data.threadId && !data.threadId.startsWith("msg:") ? data.threadId : null;
     const payload = threadId
-      ? { secret: relaySecret, action: "reply", gmailThreadId: threadId, body: cleanedBody, agentName, agentSignature }
-      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject ?? "", body: cleanedBody, agentName, agentSignature };
+      ? { secret: relaySecret, action: "reply", gmailThreadId: threadId, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject ?? "", body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive };
 
     let res: Response;
     try {
@@ -236,6 +238,8 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
         refreshSeconds: z.number().int().min(0).max(3600),
         defaultFilter: z.enum(["all", "unread", "inbox", "sent"]),
         allowPersonalSignature: z.boolean(),
+        gmailLabel: z.string().max(100),
+        gmailArchive: z.boolean(),
       })
       .parse(input),
   )

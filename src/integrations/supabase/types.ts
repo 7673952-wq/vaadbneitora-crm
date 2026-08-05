@@ -401,6 +401,7 @@ export type Database = {
           agent_name: string | null
           body: string
           created_at: string
+          crm_key: string | null
           crm_record_id: string | null
           direction: string
           from_address: string | null
@@ -408,6 +409,7 @@ export type Database = {
           gmail_thread_id: string | null
           id: string
           in_reply_to: string | null
+          read_at: string | null
           subject: string | null
           system_id: string | null
           to_address: string | null
@@ -417,6 +419,7 @@ export type Database = {
           agent_name?: string | null
           body?: string
           created_at?: string
+          crm_key?: string | null
           crm_record_id?: string | null
           direction: string
           from_address?: string | null
@@ -424,6 +427,7 @@ export type Database = {
           gmail_thread_id?: string | null
           id?: string
           in_reply_to?: string | null
+          read_at?: string | null
           subject?: string | null
           system_id?: string | null
           to_address?: string | null
@@ -433,6 +437,7 @@ export type Database = {
           agent_name?: string | null
           body?: string
           created_at?: string
+          crm_key?: string | null
           crm_record_id?: string | null
           direction?: string
           from_address?: string | null
@@ -440,6 +445,7 @@ export type Database = {
           gmail_thread_id?: string | null
           id?: string
           in_reply_to?: string | null
+          read_at?: string | null
           subject?: string | null
           system_id?: string | null
           to_address?: string | null

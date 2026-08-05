@@ -218,13 +218,11 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
 
 // ============= Mailbox preferences (managed in ניהול → תיבת דואר) =============
 
-const MAILBOX_PREFS_KEY = "mailbox_prefs";
-
 export const getMailboxPrefs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MailboxPrefs> => {
     const { data } = await context.supabase
-      .from("app_settings").select("value").eq("key", MAILBOX_PREFS_KEY).maybeSingle();
+      .from("app_settings").select("value").eq("key", "mailbox_prefs").maybeSingle();
     return parseMailboxPrefs(data?.value);
   });
 
@@ -246,7 +244,7 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
     await assertPermissionInAnyCrm(context.userId, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
-      key: MAILBOX_PREFS_KEY,
+      key: "mailbox_prefs",
       value: data,
       updated_at: new Date().toISOString(),
       updated_by: context.userId,
@@ -262,7 +260,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
     const { data } = await context.supabase
       .from("app_settings")
       .select("key, value")
-      .in("key", ["email_relay_url", "email_relay_address", "email_general_name", MAILBOX_PREFS_KEY]);
+      .in("key", ["email_relay_url", "email_relay_address", "email_general_name", "mailbox_prefs"]);
     const get = (k: string) => (data ?? []).find((r: any) => r.key === k)?.value as Record<string, string> | undefined;
     const { data: profile } = await context.supabase
       .from("profiles")
@@ -275,7 +273,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
       generalName: get("email_general_name")?.name ?? "",
       myName: (profile as any)?.email_display_name || (profile as any)?.display_name || "",
       signature: (profile as any)?.email_signature ?? "",
-      prefs: parseMailboxPrefs((data ?? []).find((r: any) => r.key === MAILBOX_PREFS_KEY)?.value),
+      prefs: parseMailboxPrefs((data ?? []).find((r: any) => r.key === "mailbox_prefs")?.value),
     };
   });
 

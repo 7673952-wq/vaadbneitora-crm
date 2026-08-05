@@ -169,13 +169,10 @@ function AuthedLayout() {
             {sessionReady && <KosherButton />}
             {sessionReady && <NotificationBell />}
 
-            {/* Divider before avatar */}
-            <div className="w-px h-6 bg-border mx-0.5" />
-
-            {/* User avatar pill with dropdown */}
+            {/* Identity node — avatar pill */}
             <button
               onClick={() => setUserMenuOpen((v) => !v)}
-              className="flex items-center gap-2 rounded-full pl-1 pr-2 py-1 hover:bg-accent transition border border-transparent hover:border-border"
+              className="flex items-center gap-2 rounded-full border border-border pl-1 pr-2.5 py-1 hover:bg-accent hover:shadow-sm transition"
               title={displayName}
             >
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">

@@ -1026,7 +1026,12 @@ function EmailSettingsPanel() {
 
   const saveConfigMut = useMutation({
     mutationFn: async () => setConfigFn({ data: { url: webAppUrl, address, generalName, secret: secret || undefined }, headers: await getAuthHeaders() }),
-    onSuccess: () => { toast.success("החיבור נשמר"); setSecret(""); qc.invalidateQueries({ queryKey: ["email_relay_config"] }); },
+    onSuccess: async (saved) => {
+      setWebAppUrl(saved.url);
+      setSecret("");
+      await qc.invalidateQueries({ queryKey: ["email_relay_config"] });
+      toast.success("כתובת ה-Web App נשמרה ואומתה");
+    },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
 
@@ -1094,7 +1099,7 @@ function EmailSettingsPanel() {
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm" />
           </div>
         </div>
-        <button onClick={() => saveConfigMut.mutate()} disabled={saveConfigMut.isPending || !webAppUrl}
+        <button onClick={() => saveConfigMut.mutate()} disabled={saveConfigMut.isPending || !webAppUrl.trim()}
           className="px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {saveConfigMut.isPending ? "שומר..." : "שמור"}
         </button>

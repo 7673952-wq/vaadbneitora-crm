@@ -198,10 +198,8 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
   const relaySecret = (relaySecretRow?.value as { secret?: string } | null)?.secret;
   if (relayUrl && relaySecret) {
     try {
-      const resp = await fetch(relayUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const { postToRelay } = await import("@/lib/relay.server");
+      const resp = await postToRelay(relayUrl, {
           secret: relaySecret,
           action: "send_backup",
           to: recipient,
@@ -209,7 +207,6 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
           body: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
           attachmentBase64: Buffer.from(zipBuf).toString("base64"),
           attachmentName: filename,
-        }),
       });
       const raw = await resp.text().catch(() => "");
       let json: any = null;

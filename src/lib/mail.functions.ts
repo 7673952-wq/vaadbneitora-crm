@@ -215,6 +215,66 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
     return { ok: true, threadId: gmailThreadId };
   });
 
+// ============= Mailbox preferences (managed in ניהול → תיבת דואר) =============
+
+const MAILBOX_PREFS_KEY = "mailbox_prefs";
+
+export type MailboxPrefs = {
+  defaultCleanupLevel: "none" | "light" | "standard" | "strict";
+  defaultUseGeneralName: boolean;
+  refreshSeconds: number;
+  defaultFilter: "all" | "unread" | "inbox" | "sent";
+  allowPersonalSignature: boolean;
+};
+
+export const MAILBOX_PREFS_DEFAULTS: MailboxPrefs = {
+  defaultCleanupLevel: "standard",
+  defaultUseGeneralName: false,
+  refreshSeconds: 60,
+  defaultFilter: "all",
+  allowPersonalSignature: true,
+};
+
+function parsePrefs(value: unknown): MailboxPrefs {
+  const v = (value ?? {}) as Partial<MailboxPrefs>;
+  return { ...MAILBOX_PREFS_DEFAULTS, ...v };
+}
+
+export const getMailboxPrefs = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }): Promise<MailboxPrefs> => {
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", MAILBOX_PREFS_KEY).maybeSingle();
+    return parsePrefs(data?.value);
+  });
+
+export const setMailboxPrefs = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        defaultCleanupLevel: z.enum(["none", "light", "standard", "strict"]),
+        defaultUseGeneralName: z.boolean(),
+        refreshSeconds: z.number().int().min(0).max(3600),
+        defaultFilter: z.enum(["all", "unread", "inbox", "sent"]),
+        allowPersonalSignature: z.boolean(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "settings_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: MAILBOX_PREFS_KEY,
+      value: data,
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
 /** Everything the mailbox UI needs to know about the current setup. */
 export const getMailboxSettings = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -222,7 +282,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
     const { data } = await context.supabase
       .from("app_settings")
       .select("key, value")
-      .in("key", ["email_relay_url", "email_relay_address", "email_general_name"]);
+      .in("key", ["email_relay_url", "email_relay_address", "email_general_name", MAILBOX_PREFS_KEY]);
     const get = (k: string) => (data ?? []).find((r: any) => r.key === k)?.value as Record<string, string> | undefined;
     const { data: profile } = await context.supabase
       .from("profiles")
@@ -235,5 +295,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
       generalName: get("email_general_name")?.name ?? "",
       myName: (profile as any)?.email_display_name || (profile as any)?.display_name || "",
       signature: (profile as any)?.email_signature ?? "",
+      prefs: parsePrefs((data ?? []).find((r: any) => r.key === MAILBOX_PREFS_KEY)?.value),
     };
   });
+

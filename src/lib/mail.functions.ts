@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
+import { parseMailboxPrefs, type MailboxPrefs } from "@/lib/mailbox-prefs";
 
 export type MailThread = {
   threadId: string;
@@ -219,33 +220,12 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
 
 const MAILBOX_PREFS_KEY = "mailbox_prefs";
 
-export type MailboxPrefs = {
-  defaultCleanupLevel: "none" | "light" | "standard" | "strict";
-  defaultUseGeneralName: boolean;
-  refreshSeconds: number;
-  defaultFilter: "all" | "unread" | "inbox" | "sent";
-  allowPersonalSignature: boolean;
-};
-
-export const MAILBOX_PREFS_DEFAULTS: MailboxPrefs = {
-  defaultCleanupLevel: "standard",
-  defaultUseGeneralName: false,
-  refreshSeconds: 60,
-  defaultFilter: "all",
-  allowPersonalSignature: true,
-};
-
-function parsePrefs(value: unknown): MailboxPrefs {
-  const v = (value ?? {}) as Partial<MailboxPrefs>;
-  return { ...MAILBOX_PREFS_DEFAULTS, ...v };
-}
-
 export const getMailboxPrefs = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<MailboxPrefs> => {
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", MAILBOX_PREFS_KEY).maybeSingle();
-    return parsePrefs(data?.value);
+    return parseMailboxPrefs(data?.value);
   });
 
 export const setMailboxPrefs = createServerFn({ method: "POST" })
@@ -295,7 +275,7 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
       generalName: get("email_general_name")?.name ?? "",
       myName: (profile as any)?.email_display_name || (profile as any)?.display_name || "",
       signature: (profile as any)?.email_signature ?? "",
-      prefs: parsePrefs((data ?? []).find((r: any) => r.key === MAILBOX_PREFS_KEY)?.value),
+      prefs: parseMailboxPrefs((data ?? []).find((r: any) => r.key === MAILBOX_PREFS_KEY)?.value),
     };
   });
 

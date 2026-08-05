@@ -17,7 +17,9 @@ import {
   listEmailTemplates, upsertEmailTemplate, deleteEmailTemplate,
   listAgentEmailNames, setAgentEmailDisplayName,
 } from "@/lib/email.functions";
-import { getMailboxPrefs, setMailboxPrefs, MAILBOX_PREFS_DEFAULTS, type MailboxPrefs } from "@/lib/mail.functions";
+import { getMailboxPrefs, setMailboxPrefs } from "@/lib/mail.functions";
+import { MAILBOX_PREFS_DEFAULTS, type MailboxPrefs } from "@/lib/mailbox-prefs";
+import { Button } from "@/components/ui/button";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";

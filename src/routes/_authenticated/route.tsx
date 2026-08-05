@@ -48,6 +48,7 @@ function AuthedLayout() {
     staleTime: 5 * 60_000,
   });
   const [displayName, setDisplayName] = useState<string>("");
+  const { prefs: headerPrefs, toggle: toggleHeaderPref, reset: resetHeaderPrefs } = useHeaderPrefs();
   const [pwOpen, setPwOpen] = useState(false);
   const [sigOpen, setSigOpen] = useState(false);
   const [sigText, setSigText] = useState("");

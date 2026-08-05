@@ -236,6 +236,8 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
         refreshSeconds: z.number().int().min(0).max(3600),
         defaultFilter: z.enum(["all", "unread", "inbox", "sent"]),
         allowPersonalSignature: z.boolean(),
+        gmailLabel: z.string().max(100),
+        gmailArchive: z.boolean(),
       })
       .parse(input),
   )

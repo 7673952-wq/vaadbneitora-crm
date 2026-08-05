@@ -51,6 +51,14 @@ function MailboxPage() {
   const readFn = useServerFn(markMailThreadRead);
   const settingsFn = useServerFn(getMailboxSettings);
   const signatureFn = useServerFn(setMyEmailSignature);
+  const roleFn = useServerFn(getMyRole);
+
+  const { data: me } = useQuery({
+    queryKey: ["me"],
+    queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
+    staleTime: 5 * 60_000,
+  });
+  const canManageMail = Boolean((me?.permissions as any)?.settings_manage || (me?.permissions as any)?.backup_manage);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -72,12 +80,21 @@ function MailboxPage() {
     staleTime: 60_000,
   });
   useEffect(() => { if (settings?.signature != null) setSignature(settings.signature); }, [settings?.signature]);
+  // Admin-managed defaults (ניהול → תיבת דואר)
+  useEffect(() => {
+    if (!settings?.prefs) return;
+    setCleanup(settings.prefs.defaultCleanupLevel as EmailCleanupLevel);
+    setUseGeneral(settings.prefs.defaultUseGeneralName);
+    setFilter(settings.prefs.defaultFilter as Filter);
+  }, [settings?.prefs]);
 
+  const refreshMs = (settings?.prefs?.refreshSeconds ?? 60) * 1000;
   const { data: threads = [], isFetching, refetch } = useQuery({
     queryKey: ["mail_threads", filter, search],
     queryFn: async () => listFn({ data: { filter, search: search || undefined }, headers: await getAuthHeaders() }),
-    refetchInterval: 60_000,
+    refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
+
 
   const { data: messages = [] } = useQuery({
     queryKey: ["mail_thread", selected],

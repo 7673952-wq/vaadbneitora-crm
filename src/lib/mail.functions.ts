@@ -196,7 +196,8 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
 
     let res: Response;
     try {
-      res = await fetch(relayUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const { postToRelay } = await import("@/lib/relay.server");
+      res = await postToRelay(relayUrl, payload);
     } catch {
       throw new Error("לא ניתן להתחבר לשרת השליחה (Apps Script) — בדוק את הכתובת בהגדרות");
     }

@@ -253,11 +253,8 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
 
     let relayRes: Response;
     try {
-      relayRes = await fetch(relayUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(relayPayload),
-      });
+      const { postToRelay } = await import("@/lib/relay.server");
+      relayRes = await postToRelay(relayUrl, relayPayload);
     } catch {
       throw new Error("לא ניתן להתחבר לשרת השליחה (Apps Script) — בדוק את הכתובת בהגדרות");
     }
@@ -316,7 +313,8 @@ export const sendRecordEmail = createServerFn({ method: "POST" })
     const payload = data.gmail_thread_id
       ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive };
-    const response = await fetch(relayUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+    const { postToRelay } = await import("@/lib/relay.server");
+    const response = await postToRelay(relayUrl, payload);
     const result: any = await response.json().catch(() => ({}));
     if (!response.ok || !result?.ok) throw new Error(result?.error || "שליחת המייל נכשלה");
     if (!data.gmail_thread_id) await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: result.gmailThreadId, crm_record_id: data.record_id });

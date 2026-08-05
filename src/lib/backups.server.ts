@@ -211,9 +211,18 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
           attachmentName: filename,
         }),
       });
-      const json: any = await resp.json().catch(() => ({}));
+      const raw = await resp.text().catch(() => "");
+      let json: any = null;
+      try { json = JSON.parse(raw); } catch { /* not json */ }
       if (resp.ok && json?.ok) return "sent (gmail relay)";
+      if (resp.status === 404) {
+        return "failed (gmail relay):404: כתובת ה-Web App לא נמצאה — צריך Deploy חדש ב-Apps Script ולהעתיק את כתובת ה-/exec לניהול → מיילים";
+      }
+      if (!json) {
+        return `failed (gmail relay):${resp.status}: הממסר החזיר תשובה שאינה JSON (כנראה נדרש Who has access: Anyone)`;
+      }
       return `failed (gmail relay):${resp.status}:${json?.error ?? ""}`.slice(0, 250);
+
     } catch (e: any) {
       return `error (gmail relay):${e?.message ?? "unknown"}`;
     }

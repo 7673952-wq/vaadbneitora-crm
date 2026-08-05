@@ -9,6 +9,7 @@ import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import { listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead, getMailboxSettings } from "@/lib/mail.functions";
 import { setMyEmailSignature } from "@/lib/email.functions";
+import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/_authenticated/mail")({

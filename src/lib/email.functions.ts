@@ -231,11 +231,13 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
     const agentName = (data.use_general_name && generalName) ? generalName : personalName;
     const agentSignature = (profileRow as any)?.email_signature || "";
 
+    const { getGmailLabelRouting } = await import("@/lib/mail-label.server");
+    const gmailRouting = await getGmailLabelRouting();
     const cleanedBody = cleanEmailContent(data.body, data.cleanup_level ?? "standard");
     if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
     const relayPayload = data.gmail_thread_id
-      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature }
-      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature };
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive };
 
     let relayRes: Response;
     try {
@@ -295,11 +297,13 @@ export const sendRecordEmail = createServerFn({ method: "POST" })
     const relaySecret = (secretRow?.value as any)?.secret;
     if (!relayUrl || !relaySecret) throw new Error("שליחת מייל לא מוגדרת עדיין");
     const agentName = (profile as any)?.email_display_name || (profile as any)?.display_name || "נציג";
+    const { getGmailLabelRouting } = await import("@/lib/mail-label.server");
+    const gmailRouting = await getGmailLabelRouting();
     const cleanedBody = cleanEmailContent(data.body, data.cleanup_level ?? "standard");
     if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
     const payload = data.gmail_thread_id
-      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "" }
-      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "" };
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive }
+      : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive };
     const response = await fetch(relayUrl, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
     const result: any = await response.json().catch(() => ({}));
     if (!response.ok || !result?.ok) throw new Error(result?.error || "שליחת המייל נכשלה");

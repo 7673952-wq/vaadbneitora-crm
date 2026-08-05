@@ -59,7 +59,8 @@ function MailboxPage() {
     queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
     staleTime: 5 * 60_000,
   });
-  const canManageMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.settings_manage);
+  // רק מנהל-על רואה את הקישור להגדרות תיבת הדואר בניהול
+  const canManageMail = Boolean(me?.isSuperAdmin);
   const canViewMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.mailbox_view);
 
   const [filter, setFilter] = useState<Filter>("all");

@@ -161,13 +161,13 @@ function AuthedLayout() {
           <div className="flex-grow" />
 
           {/* Global search */}
-          {sessionReady && <GlobalSearch />}
+          {sessionReady && headerPrefs.search && <GlobalSearch />}
 
           {/* Action cluster */}
           <div className="flex items-center gap-1 shrink-0">
-            {sessionReady && <NewRecordButton />}
-            {sessionReady && <KosherButton />}
-            {sessionReady && <NotificationBell />}
+            {sessionReady && headerPrefs.newRecord && <NewRecordButton />}
+            {sessionReady && headerPrefs.kosher && <KosherButton />}
+            {sessionReady && headerPrefs.bell && <NotificationBell />}
 
             {/* Identity node — avatar pill */}
             <button
@@ -178,16 +178,18 @@ function AuthedLayout() {
               <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-semibold">
                 {getInitials(displayName)}
               </span>
-              <span className="text-sm text-right hidden xl:block leading-tight">
-                <div className="font-medium">{displayName}</div>
-                <div className="text-[11px] text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
-              </span>
+              {headerPrefs.avatarName && (
+                <span className="text-sm text-right hidden xl:block leading-tight">
+                  <div className="font-medium">{displayName}</div>
+                  <div className="text-[11px] text-muted-foreground">{me?.isSuperAdmin ? "מנהל ראשי" : me?.isAdmin ? "מנהל" : me?.isAgent ? "נציג" : me?.isViewer ? "צופה" : ""}</div>
+                </span>
+              )}
               <ChevronDown className="h-4 w-4 text-muted-foreground hidden xl:block" />
             </button>
             {userMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setUserMenuOpen(false)} />
-                <div className="absolute left-4 top-full mt-1 z-50 w-48 rounded-lg border border-border bg-popover shadow-lg py-1">
+                <div className="absolute left-4 top-full mt-1 z-50 w-60 rounded-lg border border-border bg-popover shadow-lg py-1">
                   <button
                     onClick={() => { setUserMenuOpen(false); setSigOpen(true); }}
                     className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"
@@ -202,6 +204,34 @@ function AuthedLayout() {
                     <KeyRound className="h-4 w-4" />
                     שנה סיסמה
                   </button>
+
+                  <div className="my-1 border-t border-border" />
+                  <div className="px-3 pt-1 pb-1 flex items-center gap-2 text-[11px] font-semibold text-muted-foreground">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    רכיבים בשורה העליונה
+                  </div>
+                  {HEADER_PREF_ITEMS.map((item) => (
+                    <label
+                      key={item.key}
+                      className="w-full flex items-center gap-2 text-sm px-3 py-1.5 cursor-pointer hover:bg-accent"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={headerPrefs[item.key]}
+                        onChange={() => toggleHeaderPref(item.key)}
+                        className="h-3.5 w-3.5 accent-primary"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  ))}
+                  <button
+                    onClick={resetHeaderPrefs}
+                    className="w-full text-right px-3 py-1.5 text-[11px] text-muted-foreground hover:bg-accent"
+                  >
+                    איפוס לברירת מחדל
+                  </button>
+
+                  <div className="my-1 border-t border-border" />
                   <button
                     onClick={() => { setUserMenuOpen(false); signOut(); }}
                     className="w-full flex items-center gap-2 text-sm px-3 py-2 text-right hover:bg-accent"
@@ -212,6 +242,7 @@ function AuthedLayout() {
                 </div>
               </>
             )}
+
           </div>
         </div>
       </header>

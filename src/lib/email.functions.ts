@@ -59,24 +59,28 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
     const effectiveSecret = data.secret?.trim() || savedSecret;
     if (!effectiveSecret) throw new Error("יש להזין סוד משותף לפני שמירת החיבור");
 
-    let relayResponse: Response;
+    // Connection check is diagnostic only — the URL is saved either way so a
+    // temporarily broken/old deployment can't block configuration.
+    let warning: string | null = null;
+    let relayResult: { ok?: boolean; error?: string; version?: number } | null = null;
     try {
       const { postToRelay } = await import("@/lib/relay.server");
-      relayResponse = await postToRelay(normalizedUrl, { action: "ping", secret: effectiveSecret });
+      const relayResponse = await postToRelay(normalizedUrl, { action: "ping", secret: effectiveSecret });
+      const relayText = (await relayResponse.text().catch(() => "")).trim();
+      try { relayResult = JSON.parse(relayText); } catch { /* handled below */ }
+      if (relayResult?.error?.toLowerCase() === "unauthorized") {
+        warning = "נשמר, אך הסוד ב-Web App הפעיל אינו תואם לסוד במערכת. ב-Apps Script: Deploy → Manage deployments → Edit → New version";
+      } else if (!relayResult) {
+        warning = /<html|accounts\.google\.com|sign in/i.test(relayText)
+          ? "נשמר, אך ה-Web App מחזיר דף התחברות של גוגל. ב-Deploy → Manage deployments יש להגדיר Who has access: Anyone"
+          : `נשמר, אך ה-Web App לא החזיר JSON (קוד ${relayResponse.status}). יש לפרוס גרסה חדשה: Deploy → New version${relayText ? ` — ${relayText.slice(0, 120)}` : ""}`;
+      } else if (!relayResult.ok) {
+        warning = `נשמר, אך בדיקת החיבור נכשלה: ${relayResult.error ?? "שגיאה לא ידועה"}`;
+      }
     } catch {
-      throw new Error("לא ניתן להגיע ל-Web App. בדוק שהכתובת מסתיימת ב-/exec ושהגישה מוגדרת ל-Anyone");
+      warning = "נשמר, אך לא ניתן היה להגיע ל-Web App. בדוק שהכתובת מסתיימת ב-/exec ושהגישה מוגדרת ל-Anyone";
     }
-    const relayText = await relayResponse.text().catch(() => "");
-    let relayResult: { ok?: boolean; error?: string; version?: number } | null = null;
-    try { relayResult = JSON.parse(relayText); } catch { /* handled below */ }
-    if (relayResult?.error?.toLowerCase() === "unauthorized") {
-      throw new Error("הסוד ב-Web App הפעיל אינו תואם לסוד במערכת. ב-Apps Script יש לבצע Deploy → Manage deployments → Edit → New version, ואז לשמור שוב");
-    }
-    if (!relayResponse.ok || !relayResult?.ok) {
-      throw new Error(relayResult?.error
-        ? `בדיקת החיבור נכשלה: ${relayResult.error}`
-        : "ה-Web App לא החזיר תשובה תקינה. יש לפרוס את גרסת הסקריפט העדכנית כ-New version");
-    }
+
     const now = new Date().toISOString();
     const upserts = [
       { key: RELAY_URL_KEY, value: { url: normalizedUrl } },

@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMyCrms } from "@/lib/use-crms";
-import { Settings2 } from "lucide-react";
+import { Settings2, Mail } from "lucide-react";
 
 /**
  * Dark "command console" CRM switcher — an inverted segmented control that

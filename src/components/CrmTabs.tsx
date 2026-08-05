@@ -3,8 +3,8 @@ import { useMyCrms } from "@/lib/use-crms";
 import { Settings2 } from "lucide-react";
 
 /**
- * Inline CRM switcher rendered inside the single top header row.
- * Shows only the CRMs the signed-in user has access to, plus the admin tab.
+ * Dark "command console" CRM switcher — an inverted segmented control that
+ * contrasts against the floating header. Inverts cleanly in dark mode too.
  */
 export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
   const { data: crms = [] } = useMyCrms();
@@ -24,13 +24,15 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
   if (crmTabs.length === 0 && !isAdmin) return null;
 
   return (
-    <nav className="flex items-center gap-1 min-w-0 overflow-x-auto no-scrollbar">
+    <nav className="flex items-center gap-0.5 min-w-0 overflow-x-auto no-scrollbar rounded-full bg-foreground/95 p-1 shadow-sm">
       {crmTabs.map((t) => (
         <Link
           key={t.key}
           to={t.to}
-          className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition ${
-            t.active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            t.active
+              ? "bg-background text-foreground shadow-sm"
+              : "text-background/55 hover:text-background hover:bg-background/10"
           }`}
         >
           <span className="h-2 w-2 rounded-full shrink-0" style={{ background: t.color }} />
@@ -40,8 +42,10 @@ export function CrmTabs({ isAdmin = false }: { isAdmin?: boolean }) {
       {isAdmin && (
         <Link
           to="/admin"
-          className={`flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm font-medium whitespace-nowrap transition ${
-            path.startsWith("/admin") ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent/60"
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            path.startsWith("/admin")
+              ? "bg-background text-foreground shadow-sm"
+              : "text-background/55 hover:text-background hover:bg-background/10"
           }`}
         >
           <Settings2 className="h-4 w-4" />

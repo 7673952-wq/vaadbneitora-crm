@@ -136,6 +136,14 @@ function MailboxPage() {
     onError: (e: any) => toast.error(e?.message ?? "שמירה נכשלה"),
   });
 
+  if (me && !canViewMail) {
+    return (
+      <div dir="rtl" className="rounded-xl border border-border p-8 text-center text-sm text-muted-foreground">
+        אין לך הרשאה לצפות בתיבת הדואר. פנה למנהל המערכת.
+      </div>
+    );
+  }
+
   return (
     <div dir="rtl" className="space-y-3">
       <div className="rounded-xl border border-border p-4 flex flex-wrap items-center gap-3 bg-gradient-to-l from-primary/10 to-transparent">

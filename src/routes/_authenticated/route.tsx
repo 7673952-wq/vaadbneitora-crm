@@ -146,15 +146,15 @@ function AuthedLayout() {
 
   return (
     <div dir="rtl" className="min-h-screen bg-background">
-      <header className="sticky top-0 z-30 border-b border-border bg-background/80 backdrop-blur-lg">
-        <div className="max-w-[1600px] mx-auto px-4 h-14 flex items-center gap-3">
-          {/* Logo with separator */}
-          <Link to="/dashboard" className="flex items-center gap-2 shrink-0 border-l border-border pl-4">
-            <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground font-bold flex items-center justify-center">C</div>
+      <header className="sticky top-0 z-30 px-3 pt-2.5">
+        <div className="max-w-[1600px] mx-auto rounded-2xl border border-border bg-background/75 backdrop-blur-xl shadow-elevated h-14 flex items-center gap-2 px-2.5">
+          {/* Logo — identity node */}
+          <Link to="/dashboard" className="flex items-center gap-2 shrink-0 rounded-xl px-2 py-1 hover:bg-accent/50 transition">
+            <div className="h-8 w-8 rounded-lg bg-primary text-primary-foreground font-bold flex items-center justify-center shadow-sm">C</div>
             <span className="font-semibold tracking-tight hidden md:inline">CRM</span>
           </Link>
 
-          {/* CRM navigation tabs */}
+          {/* CRM navigation — dark command console */}
           <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} />
 
           {/* Spacer */}
@@ -164,7 +164,7 @@ function AuthedLayout() {
           {sessionReady && <GlobalSearch />}
 
           {/* Action cluster */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1 shrink-0">
             {sessionReady && <NewRecordButton />}
             {sessionReady && <KosherButton />}
             {sessionReady && <NotificationBell />}

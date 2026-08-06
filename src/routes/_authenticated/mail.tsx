@@ -99,6 +99,14 @@ function MailboxPage() {
     refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
 
+  const { data: contacts = [] } = useQuery({
+    queryKey: ["mail_contacts", search],
+    enabled: contactsOpen,
+    queryFn: async () => contactsFn({ data: { search: search || undefined }, headers: await getAuthHeaders() }),
+    staleTime: 60_000,
+  });
+
+
 
   const { data: messages = [] } = useQuery({
     queryKey: ["mail_thread", selected],

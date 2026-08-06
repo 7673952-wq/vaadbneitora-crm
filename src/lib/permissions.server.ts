@@ -283,8 +283,32 @@ export async function hasPermission(userId: string, permission: PermissionKey, c
 }
 
 export async function getUserPermissionMap(userId: string, crmKey = "yemot"): Promise<Record<PermissionKey, boolean>> {
-  const pairs = await Promise.all(PERMISSION_DEFINITIONS.map(async (p) => [p.key, await hasPermission(userId, p.key, crmKey)] as const));
-  return Object.fromEntries(pairs) as Record<PermissionKey, boolean>;
+  const roles = await getCrmRoles(userId, crmKey);
+  const out = Object.fromEntries(
+    PERMISSION_DEFINITIONS.map((p) => [p.key, defaultPermissionForRoles(roles, p.key)]),
+  ) as Record<PermissionKey, boolean>;
+  if (!roles.length || roles.includes("super_admin")) return out;
+
+  const [{ data: roleRows, error: roleError }, { data: userRows, error: userError }] = await Promise.all([
+    supabaseAdmin.from("role_permissions").select("permission, allowed").eq("crm_key", crmKey).in("role", roles as any),
+    supabaseAdmin.from("user_permissions").select("permission, allowed").eq("crm_key", crmKey).eq("user_id", userId),
+  ]);
+  if (roleError && !isSchemaCacheMissing(roleError)) throw new AppError(roleError.message, { code: "internal", cause: roleError });
+  if (userError && !isSchemaCacheMissing(userError)) throw new AppError(userError.message, { code: "internal", cause: userError });
+
+  for (const row of roleRows ?? []) {
+    const key = (row as any).permission as PermissionKey;
+    if (isPermissionKey(key) && (row as any).allowed === true) out[key] = true;
+  }
+  for (const row of roleRows ?? []) {
+    const key = (row as any).permission as PermissionKey;
+    if (isPermissionKey(key) && (row as any).allowed === false && !(roleRows ?? []).some((r: any) => r.permission === key && r.allowed === true)) out[key] = false;
+  }
+  for (const row of userRows ?? []) {
+    const key = (row as any).permission as PermissionKey;
+    if (isPermissionKey(key) && typeof (row as any).allowed === "boolean") out[key] = Boolean((row as any).allowed);
+  }
+  return out;
 }
 
 export async function assertPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<void> {
@@ -408,8 +432,22 @@ export async function assertMailPermission(userId: string, permission: Permissio
 }
 
 export async function getMailPermissionMap(userId: string): Promise<Record<string, boolean>> {
-  const pairs = await Promise.all(
-    MAIL_PERMISSION_KEYS.map(async (k) => [k, await hasMailPermission(userId, k as PermissionKey)] as const),
-  );
-  return Object.fromEntries(pairs);
+  const roles = await getEffectiveRoles(userId);
+  const out = Object.fromEntries(
+    MAIL_PERMISSION_KEYS.map((key) => [key, defaultPermissionForRoles(roles, key)]),
+  ) as Record<string, boolean>;
+  if (!roles.length || roles.includes("super_admin")) return out;
+
+  const [{ data: roleRows }, { data: userRows }] = await Promise.all([
+    supabaseAdmin.from("role_permissions").select("permission, allowed").eq("crm_key", MAIL_SCOPE).in("role", roles as any),
+    supabaseAdmin.from("user_permissions").select("permission, allowed").eq("crm_key", MAIL_SCOPE).eq("user_id", userId),
+  ]);
+  for (const key of MAIL_PERMISSION_KEYS) {
+    const matching = (roleRows ?? []).filter((row: any) => row.permission === key);
+    if (matching.some((row: any) => row.allowed === true)) out[key] = true;
+    else if (matching.some((row: any) => row.allowed === false)) out[key] = false;
+    const override = (userRows ?? []).find((row: any) => row.permission === key);
+    if (typeof (override as any)?.allowed === "boolean") out[key] = Boolean((override as any).allowed);
+  }
+  return out;
 }

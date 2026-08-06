@@ -3,11 +3,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Circle } from "lucide-react";
+import { Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Circle, Users } from "lucide-react";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
-import { listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead, getMailboxSettings } from "@/lib/mail.functions";
+import { listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead, getMailboxSettings, listMailContacts } from "@/lib/mail.functions";
 import { setMyEmailSignature } from "@/lib/email.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,7 @@ function fmt(iso: string) {
 function MailboxPage() {
   const qc = useQueryClient();
   const listFn = useServerFn(listMailThreads);
+  const contactsFn = useServerFn(listMailContacts);
   const threadFn = useServerFn(getMailThread);
   const sendFn = useServerFn(sendMailboxMessage);
   const readFn = useServerFn(markMailThreadRead);
@@ -68,6 +69,7 @@ function MailboxPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
 
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");
@@ -97,6 +99,14 @@ function MailboxPage() {
     queryFn: async () => listFn({ data: { filter, search: search || undefined }, headers: await getAuthHeaders() }),
     refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
+
+  const { data: contacts = [] } = useQuery({
+    queryKey: ["mail_contacts", search],
+    enabled: contactsOpen,
+    queryFn: async () => contactsFn({ data: { search: search || undefined }, headers: await getAuthHeaders() }),
+    staleTime: 60_000,
+  });
+
 
 
   const { data: messages = [] } = useQuery({
@@ -171,6 +181,9 @@ function MailboxPage() {
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={isFetching ? "animate-spin" : ""} /> רענון
         </Button>
+        <Button variant={contactsOpen ? "default" : "outline"} size="sm" onClick={() => setContactsOpen((v) => !v)}>
+          <Users /> אנשי קשר
+        </Button>
         <Button variant="outline" size="sm" onClick={() => setSettingsOpen((v) => !v)}>
           <Settings2 /> הגדרות
         </Button>
@@ -217,6 +230,41 @@ function MailboxPage() {
         </div>
       )}
 
+      {contactsOpen && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <Users className="h-4 w-4 text-primary" /> אנשי קשר מהמייל ({contacts.length})
+          </div>
+          {contacts.length === 0 ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">אין עדיין אנשי קשר</div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-[40vh] overflow-y-auto">
+              {contacts.map((c) => (
+                <div key={c.email} className="rounded-lg border border-border p-2.5">
+                  <div className="truncate text-sm font-medium">{c.name || c.email}</div>
+                  <div className="truncate text-[11px] text-muted-foreground" dir="ltr">{c.email}</div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span>{c.messages} הודעות</span>
+                    <span>·</span>
+                    <span>{fmt(c.lastAt)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => { setTo(c.email); setComposing(true); setSelected(null); }}>
+                      <PenSquare /> מייל
+                    </Button>
+                    {c.systemId && (
+                      <a href={`/systems/${c.systemId}`} className="text-[11px] text-primary inline-flex items-center gap-1">
+                        <ArrowUpRight className="h-3 w-3" /> כרטיס
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center gap-1 border-b border-border p-2">
@@ -246,14 +294,18 @@ function MailboxPage() {
               >
                 <div className="flex items-center gap-2">
                   {t.unread > 0 && <Circle className="h-2 w-2 shrink-0 fill-primary text-primary" />}
-                  <span className={`flex-1 truncate text-sm ${t.unread > 0 ? "font-semibold" : ""}`}>{t.address || "—"}</span>
+                  <span className={`flex-1 truncate text-sm ${t.unread > 0 ? "font-semibold" : ""}`}>{t.displayName || t.address || "—"}</span>
                   <span className="text-[11px] text-muted-foreground shrink-0">{fmt(t.lastAt)}</span>
                 </div>
+                {t.displayName && t.address && (
+                  <div className="truncate text-[11px] text-muted-foreground" dir="ltr">{t.address}</div>
+                )}
                 <div className="truncate text-xs mt-0.5">{t.subject || "(ללא נושא)"}</div>
                 <div className="truncate text-[11px] text-muted-foreground mt-0.5">{t.snippet}</div>
               </button>
             ))}
           </div>
+
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4 min-h-[50vh]">
@@ -289,7 +341,10 @@ function MailboxPage() {
               <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2">
                 <div className="flex-1 min-w-[160px]">
                   <div className="text-sm font-semibold">{current?.subject || "(ללא נושא)"}</div>
-                  <div className="text-xs text-muted-foreground">{current?.address}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {current?.displayName ? `${current.displayName} · ` : ""}
+                    <span dir="ltr">{current?.address}</span>
+                  </div>
                 </div>
                 {current?.systemId && (
                   <a href={`/systems/${current.systemId}`} className="text-xs text-primary inline-flex items-center gap-1">
@@ -300,14 +355,22 @@ function MailboxPage() {
               <div className="max-h-[45vh] space-y-2 overflow-y-auto">
                 {messages.map((m) => {
                   const inbound = m.direction === "in" || m.direction === "inbound";
+                  const sender = inbound
+                    ? m.fromName || m.fromAddress || "לא ידוע"
+                    : m.agentName || "נציג";
+                  const recipient = inbound ? (m.toName || m.toAddress || "") : (m.toName || m.toAddress || current?.address || "");
                   return (
                     <div key={m.id} className={`rounded-lg border border-border p-3 text-sm ${inbound ? "bg-muted/40" : "bg-primary/5"}`}>
-                      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>{inbound ? `מ־${m.fromAddress ?? ""}` : `נשלח על ידי ${m.agentName ?? "נציג"}`}</span>
-                        <span>{new Date(m.createdAt).toLocaleString("he-IL")}</span>
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span className="truncate">
+                          <span className="font-medium text-foreground">{sender}</span>
+                          {recipient ? <> ← אל {recipient}</> : null}
+                        </span>
+                        <span className="shrink-0">{new Date(m.createdAt).toLocaleString("he-IL")}</span>
                       </div>
                       <div className="whitespace-pre-wrap">{m.body}</div>
                     </div>
+
                   );
                 })}
               </div>

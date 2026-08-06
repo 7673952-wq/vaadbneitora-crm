@@ -4,10 +4,13 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 import { parseMailboxPrefs, type MailboxPrefs } from "@/lib/mailbox-prefs";
+import { parseEmailAddress } from "@/lib/email-address";
 
 export type MailThread = {
   threadId: string;
   address: string;
+  /** Human name of the other side of the conversation ("דנה לוי"). */
+  displayName: string;
   subject: string | null;
   snippet: string;
   lastAt: string;
@@ -27,11 +30,23 @@ export type MailMessage = {
   subject: string | null;
   body: string;
   fromAddress: string | null;
+  fromName: string | null;
   toAddress: string | null;
+  toName: string | null;
   agentName: string | null;
   readAt: string | null;
   createdAt: string;
 };
+
+export type MailContact = {
+  email: string;
+  name: string;
+  messages: number;
+  lastAt: string;
+  systemId: string | null;
+  recordId: string | null;
+};
+
 
 /** Mailbox: conversations grouped by Gmail thread, across the whole CRM. */
 export const listMailThreads = createServerFn({ method: "GET" })

@@ -45,16 +45,18 @@ async function handleInboundEmail(request: Request) {
 
 
     // Avoid double-inserting if Apps Script retries the same message.
-    const { data: existing } = await supabaseAdmin
-      .from("email_messages" as any)
-      .select("id")
-      .eq("gmail_message_id", gmailMessageId ?? "")
-      .maybeSingle();
-    if (existing) {
-      return new Response(JSON.stringify({ ok: true, duplicate: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+    if (gmailMessageId) {
+      const { data: existing } = await supabaseAdmin
+        .from("email_messages" as any)
+        .select("id")
+        .eq("gmail_message_id", gmailMessageId)
+        .maybeSingle();
+      if (existing) {
+        return new Response(JSON.stringify({ ok: true, duplicate: true }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
     }
 
     const receivedIso = receivedAt ?? new Date().toISOString();

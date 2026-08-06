@@ -57,8 +57,9 @@ async function handleInboundEmail(request: Request) {
     }
 
     const receivedIso = receivedAt ?? new Date().toISOString();
-    const systemId = (threadRow as any).system_id as string | null;
-    const recordId = (threadRow as any).crm_record_id as string | null;
+    const systemId = ((threadRow as any)?.system_id ?? null) as string | null;
+    const recordId = ((threadRow as any)?.crm_record_id ?? null) as string | null;
+
     const { stripQuotedEmail } = await import("@/lib/email-cleanup");
 
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({

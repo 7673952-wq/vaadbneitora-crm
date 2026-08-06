@@ -60,8 +60,8 @@ export const listMailThreads = createServerFn({ method: "GET" })
       .parse(input ?? {}),
   )
   .handler(async ({ data, context }): Promise<MailThread[]> => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "mailbox_view");
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
     const { data: rows, error } = await context.supabase
       .from("email_messages")
       .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, gmail_thread_id, read_at, created_at")
@@ -121,8 +121,8 @@ export const listMailContacts = createServerFn({ method: "GET" })
     z.object({ search: z.string().max(120).optional() }).parse(input ?? {}),
   )
   .handler(async ({ data, context }): Promise<MailContact[]> => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "mailbox_view");
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
     const { data: rows, error } = await context.supabase
       .from("email_messages")
       .select("direction, from_address, to_address, system_id, crm_record_id, created_at")
@@ -164,8 +164,8 @@ export const getMailThread = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
   .handler(async ({ data, context }): Promise<MailMessage[]> => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "mailbox_view");
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
     const single = data.threadId.startsWith("msg:");
     const query = context.supabase
       .from("email_messages")
@@ -228,8 +228,8 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "emails_send");
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "emails_send");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [{ data: urlRow }, { data: secretRow }, { data: profile }, { data: generalRow }] = await Promise.all([
@@ -313,8 +313,8 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
-    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
-    await assertPermissionInAnyCrm(context.userId, "settings_manage");
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("app_settings").upsert({
       key: "mailbox_prefs",

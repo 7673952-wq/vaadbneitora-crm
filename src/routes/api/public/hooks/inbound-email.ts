@@ -35,13 +35,13 @@ async function handleInboundEmail(request: Request) {
       .maybeSingle();
 
     if (!threadRow) {
-      // Not a thread the CRM started/knows about — ignore silently so an
-      // unrelated reply in the shared mailbox doesn't error the webhook.
-      return new Response(JSON.stringify({ ok: true, ignored: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
+      // Unknown thread — this is a shared mailbox, so the message is still
+      // stored (it shows up in "מיילים"), just without a system/record link.
+      await supabaseAdmin
+        .from("email_threads" as any)
+        .upsert({ gmail_thread_id: gmailThreadId }, { onConflict: "gmail_thread_id" });
     }
+
 
     // Avoid double-inserting if Apps Script retries the same message.
     const { data: existing } = await supabaseAdmin
@@ -57,8 +57,9 @@ async function handleInboundEmail(request: Request) {
     }
 
     const receivedIso = receivedAt ?? new Date().toISOString();
-    const systemId = (threadRow as any).system_id as string | null;
-    const recordId = (threadRow as any).crm_record_id as string | null;
+    const systemId = ((threadRow as any)?.system_id ?? null) as string | null;
+    const recordId = ((threadRow as any)?.crm_record_id ?? null) as string | null;
+
     const { stripQuotedEmail } = await import("@/lib/email-cleanup");
 
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({

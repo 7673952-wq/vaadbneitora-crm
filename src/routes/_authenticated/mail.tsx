@@ -62,7 +62,7 @@ function MailboxPage() {
   });
   // רק מנהל-על רואה את הקישור להגדרות תיבת הדואר בניהול
   const canManageMail = Boolean(me?.isSuperAdmin);
-  const canViewMail = Boolean(me?.isSuperAdmin || (me?.permissions as any)?.mailbox_view);
+  const canViewMail = Boolean(me?.isSuperAdmin || (me as any)?.mailPermissions?.mailbox_view);
 
   const [filter, setFilter] = useState<Filter>("all");
   const [search, setSearch] = useState("");
@@ -214,7 +214,7 @@ function MailboxPage() {
               <div className="flex items-center gap-2">
                 <Button size="sm" onClick={() => saveSignature.mutate()} disabled={saveSignature.isPending}>שמירת חתימה</Button>
                 {canManageMail && (
-                  <a href="/admin" className="text-xs text-primary underline">הגדרות תיבת הדואר (ניהול → תיבת דואר)</a>
+                  <a href="/admin" className="text-xs text-primary underline">הגדרות תיבת הדואר (ניהול → מיילים)</a>
                 )}
               </div>
             </>
@@ -222,7 +222,7 @@ function MailboxPage() {
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               עריכת חתימה אישית מושבתת על ידי מנהל המערכת.
               {canManageMail && (
-                <a href="/admin" className="text-primary underline">ניהול → תיבת דואר</a>
+                <a href="/admin" className="text-primary underline">ניהול → מיילים</a>
               )}
             </div>
           )}

@@ -101,6 +101,7 @@ function AdminPage() {
       <Tabs defaultValue="general" dir="rtl">
         <TabsList className="flex flex-wrap gap-1 h-auto">
           <TabsTrigger value="general" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />כללי</TabsTrigger>
+          {canEmail && <TabsTrigger value="mail" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />מיילים</TabsTrigger>}
           {crms.map((c) => (
             <TabsTrigger key={c.key} value={`crm:${c.key}`} className="flex items-center gap-1.5">
               <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
@@ -116,6 +117,12 @@ function AdminPage() {
             crms={crms}
           />
         </TabsContent>
+
+        {canEmail && (
+          <TabsContent value="mail" className="mt-4">
+            <MailAdminTabs canPermissions={canPermissions} />
+          </TabsContent>
+        )}
 
         {crms.map((c) => (
           <TabsContent key={c.key} value={`crm:${c.key}`} className="mt-4">
@@ -134,7 +141,7 @@ function AdminPage() {
 /** "כללי" — everything that is shared across all CRMs. */
 function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, boolean>; crms: CrmSummary[] }) {
   const { canUsers, canGeneral, canPermissions, canBackups, canEmail, canNotifs, canCrms } = flags;
-  const first = canUsers ? "users" : canCrms ? "crms" : canGeneral ? "settings" : canNotifs ? "notifications" : canEmail ? "email" : canPermissions ? "permissions" : "backups";
+  const first = canUsers ? "users" : canCrms ? "crms" : canGeneral ? "settings" : canNotifs ? "notifications" : canPermissions ? "permissions" : "backups";
   return (
     <Tabs defaultValue={first} dir="rtl">
       <TabsList className="flex flex-wrap gap-1 h-auto">
@@ -142,8 +149,6 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         {canCrms && <TabsTrigger value="crms" className="flex items-center gap-1.5"><LayoutGrid className="h-3.5 w-3.5" />מערכות CRM</TabsTrigger>}
         {canGeneral && <TabsTrigger value="settings" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />הגדרות כלליות</TabsTrigger>}
         {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />פעמון התראות</TabsTrigger>}
-        {canEmail && <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />הגדרות מייל</TabsTrigger>}
-        {canEmail && <TabsTrigger value="mailbox" className="flex items-center gap-1.5"><Inbox className="h-3.5 w-3.5" />תיבת דואר</TabsTrigger>}
         {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
       </TabsList>
 
@@ -156,9 +161,33 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         <BackupSchedulePanel />
       </TabsContent>}
       {canNotifs && <TabsContent value="notifications" className="mt-4"><NotificationsPanel crms={crms} /></TabsContent>}
-      {canEmail && <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>}
-      {canEmail && <TabsContent value="mailbox" className="mt-4"><MailboxAdminPanel /></TabsContent>}
       {canBackups && <TabsContent value="backups" className="mt-4"><BackupsPage embedded /></TabsContent>}
+    </Tabs>
+  );
+}
+
+/**
+ * "מיילים" — a top-level area of its own: relay/mailbox configuration plus the
+ * mail permissions, which are global (scope "_mail") and NOT part of any CRM.
+ */
+function MailAdminTabs({ canPermissions }: { canPermissions: boolean }) {
+  return (
+    <Tabs defaultValue="email" dir="rtl">
+      <TabsList className="flex flex-wrap gap-1 h-auto">
+        <TabsTrigger value="email" className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />חיבור והגדרות</TabsTrigger>
+        <TabsTrigger value="mailbox" className="flex items-center gap-1.5"><Inbox className="h-3.5 w-3.5" />תיבת דואר</TabsTrigger>
+        {canPermissions && <TabsTrigger value="permissions" className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" />הרשאות מייל</TabsTrigger>}
+      </TabsList>
+      <TabsContent value="email" className="mt-4"><EmailSettingsPanel /></TabsContent>
+      <TabsContent value="mailbox" className="mt-4"><MailboxAdminPanel /></TabsContent>
+      {canPermissions && (
+        <TabsContent value="permissions" className="mt-4 space-y-3">
+          <div className="rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground">
+            הרשאות אלו חלות על תיבת הדואר בכל המערכות (הן אינן חלק מהרשאות "ימות המשיח").
+          </div>
+          <PermissionsPanel crmKey="_mail" only={["mailbox_view", "emails_send", "settings_manage"]} />
+        </TabsContent>
+      )}
     </Tabs>
   );
 }
@@ -871,7 +900,7 @@ function SeriesSettingsPanel() {
 }
 
 // ============= Permissions =============
-function PermissionsPanel({ crmKey }: { crmKey: string }) {
+function PermissionsPanel({ crmKey, only }: { crmKey: string; only?: string[] }) {
   const qc = useQueryClient();
   const listFn = useServerFn(listPermissionSettings);
   const roleFn = useServerFn(setRolePermission);
@@ -889,7 +918,8 @@ function PermissionsPanel({ crmKey }: { crmKey: string }) {
   if (error) return <AdminError message={error.message} />;
 
   const roles = (data?.roles ?? []) as string[];
-  const permissions = (data?.permissions ?? []) as Array<{ key: string; label: string; description?: string }>;
+  const allPermissions = (data?.permissions ?? []) as Array<{ key: string; label: string; description?: string }>;
+  const permissions = only ? allPermissions.filter((p) => only.includes(p.key)) : allPermissions;
   const roleRows = (data?.rolePermissions ?? []) as Array<{ role: string; permission: string; allowed: boolean }>;
   const userRows = (data?.userPermissions ?? []) as Array<{ user_id: string; permission: string; allowed: boolean }>;
   const users = ((data?.users ?? []) as any[]).filter((u) => !search.trim() || `${u.display_name} ${u.email}`.toLowerCase().includes(search.trim().toLowerCase()));

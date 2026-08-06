@@ -353,3 +353,63 @@ export async function assertCanWrite(userId: string, crmKey = "yemot"): Promise<
     throw new AppError("אין הרשאת עריכה למערכות", { code: "forbidden" });
   }
 }
+
+// ============= Mail scope (global, not tied to a single CRM) =============
+
+/**
+ * The mailbox is a shared, cross-CRM area. Its permissions therefore live in
+ * their own pseudo-CRM scope ("_mail") and are resolved from the user's roles
+ * in ANY CRM — so mail access is never dictated by the "ימות המשיח" CRM.
+ */
+export const MAIL_SCOPE = "_mail";
+
+/** Mail-related permissions surfaced in ניהול → מיילים → הרשאות. */
+export const MAIL_PERMISSION_KEYS = ["mailbox_view", "emails_send", "settings_manage"] as const;
+
+async function getEffectiveRoles(userId: string): Promise<Role[]> {
+  const globalRoles = await getUserRoles(userId);
+  if (globalRoles.includes("super_admin")) return ["super_admin"];
+  const { data } = await supabaseAdmin
+    .from("crm_user_roles").select("role").eq("user_id", userId);
+  const all = [...globalRoles, ...((data ?? []).map((r: any) => r.role as Role))]
+    .filter((r) => ROLE_HIERARCHY.includes(r));
+  return Array.from(new Set(all));
+}
+
+export async function hasMailPermission(userId: string, permission: PermissionKey): Promise<boolean> {
+  const roles = await getEffectiveRoles(userId);
+  if (!roles.length) return false;
+  if (roles.includes("super_admin")) return true;
+
+  const { data: userOverride } = await supabaseAdmin
+    .from("user_permissions")
+    .select("allowed")
+    .eq("user_id", userId)
+    .eq("crm_key", MAIL_SCOPE)
+    .eq("permission", permission)
+    .maybeSingle();
+  if (typeof (userOverride as any)?.allowed === "boolean") return Boolean((userOverride as any).allowed);
+
+  const { data: roleRows } = await supabaseAdmin
+    .from("role_permissions")
+    .select("role, allowed")
+    .eq("crm_key", MAIL_SCOPE)
+    .eq("permission", permission)
+    .in("role", roles as any);
+  if ((roleRows ?? []).some((r: any) => r.allowed === true)) return true;
+  if ((roleRows ?? []).some((r: any) => r.allowed === false)) return false;
+  return defaultPermissionForRoles(roles, permission);
+}
+
+export async function assertMailPermission(userId: string, permission: PermissionKey): Promise<void> {
+  if (!(await hasMailPermission(userId, permission))) {
+    throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
+  }
+}
+
+export async function getMailPermissionMap(userId: string): Promise<Record<string, boolean>> {
+  const pairs = await Promise.all(
+    MAIL_PERMISSION_KEYS.map(async (k) => [k, await hasMailPermission(userId, k as PermissionKey)] as const),
+  );
+  return Object.fromEntries(pairs);
+}

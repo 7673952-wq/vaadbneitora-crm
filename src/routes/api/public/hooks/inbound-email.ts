@@ -63,21 +63,46 @@ async function handleInboundEmail(request: Request) {
     const systemId = ((threadRow as any)?.system_id ?? null) as string | null;
     const recordId = ((threadRow as any)?.crm_record_id ?? null) as string | null;
 
+    // Direction: the relay may state it explicitly; otherwise infer it by
+    // comparing the sender with the CRM's own mailbox address.
+    const { data: addrRow } = await supabaseAdmin
+      .from("app_settings").select("value").eq("key", "email_relay_address").maybeSingle();
+    const myAddress = ((addrRow?.value as { address?: string } | null)?.address ?? "").trim().toLowerCase();
+    const fromLower = String(from ?? "").toLowerCase();
+    const stated = String(body?.direction ?? "").toLowerCase();
+    const direction =
+      stated === "outbound" || stated === "out"
+        ? "outbound"
+        : stated === "inbound" || stated === "in"
+          ? "inbound"
+          : myAddress && fromLower.includes(myAddress)
+            ? "outbound"
+            : "inbound";
+    const isInbound = direction === "inbound";
+
     const { stripQuotedEmail } = await import("@/lib/email-cleanup");
 
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({
       system_id: systemId,
       crm_record_id: recordId,
-      direction: "inbound",
+      direction,
       gmail_thread_id: gmailThreadId,
       gmail_message_id: gmailMessageId ?? null,
       from_address: from ?? null,
       to_address: to ?? null,
       subject: subject ?? null,
       body: stripQuotedEmail(text ?? ""),
+      read_at: isInbound ? null : receivedIso,
       created_at: receivedIso,
     });
     if (error) throw error;
+
+    if (!isInbound) {
+      return new Response(JSON.stringify({ ok: true, direction }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
 
     // Flag the system so the dashboard shows an "unread email" badge, and
     // optionally re-open it into an unhandled status (configured in admin).
@@ -92,6 +117,7 @@ async function handleInboundEmail(request: Request) {
     if (nextStatus) patch.status = nextStatus;
     if (systemId) await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
     if (recordId) await supabaseAdmin.from("crm_records").update({ reminder_at: receivedIso, updated_at: receivedIso }).eq("id", recordId);
+
 
 
     return new Response(JSON.stringify({ ok: true }), {

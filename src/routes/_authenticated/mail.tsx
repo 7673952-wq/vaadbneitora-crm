@@ -259,14 +259,18 @@ function MailboxPage() {
               >
                 <div className="flex items-center gap-2">
                   {t.unread > 0 && <Circle className="h-2 w-2 shrink-0 fill-primary text-primary" />}
-                  <span className={`flex-1 truncate text-sm ${t.unread > 0 ? "font-semibold" : ""}`}>{t.address || "—"}</span>
+                  <span className={`flex-1 truncate text-sm ${t.unread > 0 ? "font-semibold" : ""}`}>{t.displayName || t.address || "—"}</span>
                   <span className="text-[11px] text-muted-foreground shrink-0">{fmt(t.lastAt)}</span>
                 </div>
+                {t.displayName && t.address && (
+                  <div className="truncate text-[11px] text-muted-foreground" dir="ltr">{t.address}</div>
+                )}
                 <div className="truncate text-xs mt-0.5">{t.subject || "(ללא נושא)"}</div>
                 <div className="truncate text-[11px] text-muted-foreground mt-0.5">{t.snippet}</div>
               </button>
             ))}
           </div>
+
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4 min-h-[50vh]">

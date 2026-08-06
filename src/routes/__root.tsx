@@ -160,7 +160,10 @@ function RootComponent() {
       if (event === "SIGNED_OUT") sessionStorage.removeItem(SESSION_MARKER);
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
-      if (event !== "SIGNED_OUT") queryClient.invalidateQueries();
+      if (event !== "SIGNED_OUT") {
+        queryClient.invalidateQueries({ queryKey: ["me"] });
+        queryClient.invalidateQueries({ queryKey: ["my_email_profile"] });
+      }
     });
     return () => {
       subscription.unsubscribe();

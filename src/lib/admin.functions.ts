@@ -238,7 +238,12 @@ export const getMyRole = createServerFn({ method: "GET" })
       r === "super_admin" || r === "admin" || r === "agent" || r === "viewer",
     );
     const isSuperAdmin = roles.includes("super_admin");
-    const yemotRoles = await getCrmRoles(context.userId, "yemot");
+    const [yemotRoles, permissions, globalPermissions, mailPermissions] = await Promise.all([
+      getCrmRoles(context.userId, "yemot"),
+      getUserPermissionMap(context.userId),
+      getGlobalPermissionMap(context.userId),
+      getMailPermissionMap(context.userId),
+    ]);
     const isAdmin = isSuperAdmin || yemotRoles.includes("admin") || yemotRoles.includes("super_admin");
     const isAgent = isAdmin || yemotRoles.includes("agent");
     // A user is "viewer" only when they have ONLY the viewer role (no agent/admin).
@@ -252,12 +257,12 @@ export const getMyRole = createServerFn({ method: "GET" })
       isSuperAdmin,
       isAgent,
       isViewer,
-      permissions: await getUserPermissionMap(context.userId),
+      permissions,
       // Union across every CRM the user belongs to — drives the shared
       // "כללי" admin tab, which applies to all CRMs.
-      globalPermissions: await getGlobalPermissionMap(context.userId),
+      globalPermissions,
       // Mailbox is cross-CRM: its permissions live in their own "_mail" scope.
-      mailPermissions: await getMailPermissionMap(context.userId),
+      mailPermissions,
       displayName: (prof as any)?.display_name ?? null,
     };
   });

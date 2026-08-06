@@ -82,6 +82,7 @@ function MailboxPage() {
   const { data: settings } = useQuery({
     queryKey: ["mailbox_settings"],
     queryFn: async () => settingsFn({ headers: await getAuthHeaders() }),
+    enabled: canViewMail,
     staleTime: 60_000,
   });
   useEffect(() => { if (settings?.signature != null) setSignature(settings.signature); }, [settings?.signature]);
@@ -97,12 +98,13 @@ function MailboxPage() {
   const { data: threads = [], isFetching, refetch } = useQuery({
     queryKey: ["mail_threads", filter, search],
     queryFn: async () => listFn({ data: { filter, search: search || undefined }, headers: await getAuthHeaders() }),
+    enabled: canViewMail,
     refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
 
   const { data: contacts = [] } = useQuery({
     queryKey: ["mail_contacts", search],
-    enabled: contactsOpen,
+    enabled: canViewMail && contactsOpen,
     queryFn: async () => contactsFn({ data: { search: search || undefined }, headers: await getAuthHeaders() }),
     staleTime: 60_000,
   });
@@ -111,8 +113,11 @@ function MailboxPage() {
 
   const { data: messages = [] } = useQuery({
     queryKey: ["mail_thread", selected],
-    enabled: !!selected,
-    queryFn: async () => threadFn({ data: { threadId: selected! }, headers: await getAuthHeaders() }),
+    enabled: canViewMail && !!selected,
+    queryFn: async () => {
+      if (!selected) return [];
+      return threadFn({ data: { threadId: selected }, headers: await getAuthHeaders() });
+    },
   });
 
   const current = useMemo(() => threads.find((t) => t.threadId === selected) ?? null, [threads, selected]);

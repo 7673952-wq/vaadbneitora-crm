@@ -230,6 +230,41 @@ function MailboxPage() {
         </div>
       )}
 
+      {contactsOpen && (
+        <div className="rounded-xl border border-border bg-card p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <Users className="h-4 w-4 text-primary" /> אנשי קשר מהמייל ({contacts.length})
+          </div>
+          {contacts.length === 0 ? (
+            <div className="py-4 text-center text-sm text-muted-foreground">אין עדיין אנשי קשר</div>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 max-h-[40vh] overflow-y-auto">
+              {contacts.map((c) => (
+                <div key={c.email} className="rounded-lg border border-border p-2.5">
+                  <div className="truncate text-sm font-medium">{c.name || c.email}</div>
+                  <div className="truncate text-[11px] text-muted-foreground" dir="ltr">{c.email}</div>
+                  <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span>{c.messages} הודעות</span>
+                    <span>·</span>
+                    <span>{fmt(c.lastAt)}</span>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Button size="sm" variant="outline" onClick={() => { setTo(c.email); setComposing(true); setSelected(null); }}>
+                      <PenSquare /> מייל
+                    </Button>
+                    {c.systemId && (
+                      <a href={`/systems/${c.systemId}`} className="text-[11px] text-primary inline-flex items-center gap-1">
+                        <ArrowUpRight className="h-3 w-3" /> כרטיס
+                      </a>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center gap-1 border-b border-border p-2">

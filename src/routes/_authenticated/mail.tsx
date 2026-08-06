@@ -47,6 +47,7 @@ function fmt(iso: string) {
 function MailboxPage() {
   const qc = useQueryClient();
   const listFn = useServerFn(listMailThreads);
+  const contactsFn = useServerFn(listMailContacts);
   const threadFn = useServerFn(getMailThread);
   const sendFn = useServerFn(sendMailboxMessage);
   const readFn = useServerFn(markMailThreadRead);

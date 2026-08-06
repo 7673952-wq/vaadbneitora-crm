@@ -23,7 +23,10 @@ async function assertSuperAdmin(context: { userId: string }) {
 }
 
 async function assertPermission(context: { userId: string }, permission: import("@/lib/permissions.server").PermissionKey, crmKey?: string) {
-  const { assertPermission } = await import("@/lib/permissions.server");
+  const { assertPermission, assertPermissionInAnyCrm, MAIL_SCOPE } = await import("@/lib/permissions.server");
+  // The mail scope is not a real CRM — managing it requires the permission in
+  // ANY CRM the user belongs to.
+  if (crmKey === MAIL_SCOPE) return assertPermissionInAnyCrm(context.userId, permission);
   await assertPermission(context.userId, permission, crmKey ?? "yemot");
 }
 
@@ -225,7 +228,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
 export const getMyRole = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { getUserPermissionMap, getGlobalPermissionMap, getCrmRoles } = await import("@/lib/permissions.server");
+    const { getUserPermissionMap, getGlobalPermissionMap, getCrmRoles, getMailPermissionMap } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
       context.supabase.from("user_roles").select("role").eq("user_id", context.userId),
       context.supabase.from("profiles").select("display_name").eq("id", context.userId).maybeSingle(),
@@ -253,6 +256,8 @@ export const getMyRole = createServerFn({ method: "GET" })
       // Union across every CRM the user belongs to — drives the shared
       // "כללי" admin tab, which applies to all CRMs.
       globalPermissions: await getGlobalPermissionMap(context.userId),
+      // Mailbox is cross-CRM: its permissions live in their own "_mail" scope.
+      mailPermissions: await getMailPermissionMap(context.userId),
       displayName: (prof as any)?.display_name ?? null,
     };
   });

@@ -35,11 +35,12 @@ async function handleInboundEmail(request: Request) {
       .maybeSingle();
 
     if (!threadRow) {
-      // Unknown thread — this is a shared mailbox, so the message is still
-      // stored (it shows up in "מיילים"), just without a system/record link.
-      await supabaseAdmin
+      // Unknown thread belongs to the shared mailbox. Keep a lightweight
+      // thread record so later replies and outbound messages group reliably.
+      const { error: threadError } = await supabaseAdmin
         .from("email_threads" as any)
         .upsert({ gmail_thread_id: gmailThreadId }, { onConflict: "gmail_thread_id" });
+      if (threadError) throw threadError;
     }
 
 

@@ -62,7 +62,8 @@ export const listMailThreads = createServerFn({ method: "GET" })
   .handler(async ({ data, context }): Promise<MailThread[]> => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "mailbox_view");
-    const { data: rows, error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows, error } = await supabaseAdmin
       .from("email_messages")
       .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, gmail_thread_id, read_at, created_at")
       .order("created_at", { ascending: false })
@@ -123,7 +124,8 @@ export const listMailContacts = createServerFn({ method: "GET" })
   .handler(async ({ data, context }): Promise<MailContact[]> => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "mailbox_view");
-    const { data: rows, error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows, error } = await supabaseAdmin
       .from("email_messages")
       .select("direction, from_address, to_address, system_id, crm_record_id, created_at")
       .order("created_at", { ascending: false })
@@ -166,8 +168,9 @@ export const getMailThread = createServerFn({ method: "POST" })
   .handler(async ({ data, context }): Promise<MailMessage[]> => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "mailbox_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const single = data.threadId.startsWith("msg:");
-    const query = context.supabase
+    const query = supabaseAdmin
       .from("email_messages")
       .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, agent_name, gmail_thread_id, read_at, created_at")
       .order("created_at", { ascending: true })
@@ -199,8 +202,11 @@ export const markMailThreadRead = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
   .handler(async ({ data, context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date().toISOString();
-    const { error } = await context.supabase
+    const { error } = await supabaseAdmin
       .from("email_messages")
       .update({ read_at: now })
       .eq("gmail_thread_id", data.threadId)

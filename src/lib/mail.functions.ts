@@ -73,12 +73,13 @@ export const listMailThreads = createServerFn({ method: "GET" })
     const map = new Map<string, MailThread>();
     for (const m of (rows ?? []) as any[]) {
       const key = m.gmail_thread_id || `msg:${m.id}`;
-      const addr = String((isInbound(m.direction) ? m.from_address : m.to_address) ?? "").trim().toLowerCase();
+      const parsed = parseEmailAddress(isInbound(m.direction) ? m.from_address : m.to_address);
+      const addr = parsed.email;
       const existing = map.get(key);
       if (existing) {
         existing.count += 1;
         if (isInbound(m.direction) && !m.read_at) existing.unread += 1;
-        if (!existing.address && addr) existing.address = addr;
+        if (!existing.address && addr) { existing.address = addr; existing.displayName = parsed.name; }
         if (!existing.subject && m.subject) existing.subject = m.subject;
         if (!existing.systemId && m.system_id) existing.systemId = m.system_id;
         if (!existing.recordId && m.crm_record_id) existing.recordId = m.crm_record_id;
@@ -86,6 +87,7 @@ export const listMailThreads = createServerFn({ method: "GET" })
         map.set(key, {
           threadId: key,
           address: addr,
+          displayName: parsed.name,
           subject: m.subject ?? null,
           snippet: String(m.body ?? "").replace(/\s+/g, " ").slice(0, 120),
           lastAt: m.created_at,
@@ -106,11 +108,56 @@ export const listMailThreads = createServerFn({ method: "GET" })
     const q = data.search?.trim().toLowerCase();
     if (q) {
       list = list.filter((t) =>
-        [t.address, t.subject ?? "", t.snippet].join(" ").toLowerCase().includes(q),
+        [t.address, t.displayName, t.subject ?? "", t.snippet].join(" ").toLowerCase().includes(q),
       );
     }
     return list.slice(0, 300);
   });
+
+/** Contact book built from every address the CRM has corresponded with. */
+export const listMailContacts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({ search: z.string().max(120).optional() }).parse(input ?? {}),
+  )
+  .handler(async ({ data, context }): Promise<MailContact[]> => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "mailbox_view");
+    const { data: rows, error } = await context.supabase
+      .from("email_messages")
+      .select("direction, from_address, to_address, system_id, crm_record_id, created_at")
+      .order("created_at", { ascending: false })
+      .limit(3000);
+    if (error) throw fromSupabase(error);
+
+    const isInbound = (d: string) => d === "in" || d === "inbound";
+    const map = new Map<string, MailContact>();
+    for (const m of (rows ?? []) as any[]) {
+      const parsed = parseEmailAddress(isInbound(m.direction) ? m.from_address : m.to_address);
+      if (!parsed.email) continue;
+      const existing = map.get(parsed.email);
+      if (existing) {
+        existing.messages += 1;
+        if (!existing.systemId && m.system_id) existing.systemId = m.system_id;
+        if (!existing.recordId && m.crm_record_id) existing.recordId = m.crm_record_id;
+        if (existing.lastAt < m.created_at) existing.lastAt = m.created_at;
+      } else {
+        map.set(parsed.email, {
+          email: parsed.email,
+          name: parsed.name,
+          messages: 1,
+          lastAt: m.created_at,
+          systemId: m.system_id ?? null,
+          recordId: m.crm_record_id ?? null,
+        });
+      }
+    }
+    let list = [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+    const q = data.search?.trim().toLowerCase();
+    if (q) list = list.filter((c) => `${c.name} ${c.email}`.toLowerCase().includes(q));
+    return list.slice(0, 500);
+  });
+
 
 /** All messages in one conversation. */
 export const getMailThread = createServerFn({ method: "POST" })

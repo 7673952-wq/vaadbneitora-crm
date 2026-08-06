@@ -181,6 +181,9 @@ function MailboxPage() {
         <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
           <RefreshCw className={isFetching ? "animate-spin" : ""} /> רענון
         </Button>
+        <Button variant={contactsOpen ? "default" : "outline"} size="sm" onClick={() => setContactsOpen((v) => !v)}>
+          <Users /> אנשי קשר
+        </Button>
         <Button variant="outline" size="sm" onClick={() => setSettingsOpen((v) => !v)}>
           <Settings2 /> הגדרות
         </Button>

@@ -69,6 +69,7 @@ function MailboxPage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
 
   const [to, setTo] = useState("");
   const [subject, setSubject] = useState("");

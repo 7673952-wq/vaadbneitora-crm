@@ -306,7 +306,10 @@ function MailboxPage() {
               <div className="flex flex-wrap items-center gap-2 border-b border-border pb-2">
                 <div className="flex-1 min-w-[160px]">
                   <div className="text-sm font-semibold">{current?.subject || "(ללא נושא)"}</div>
-                  <div className="text-xs text-muted-foreground">{current?.address}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {current?.displayName ? `${current.displayName} · ` : ""}
+                    <span dir="ltr">{current?.address}</span>
+                  </div>
                 </div>
                 {current?.systemId && (
                   <a href={`/systems/${current.systemId}`} className="text-xs text-primary inline-flex items-center gap-1">
@@ -317,14 +320,22 @@ function MailboxPage() {
               <div className="max-h-[45vh] space-y-2 overflow-y-auto">
                 {messages.map((m) => {
                   const inbound = m.direction === "in" || m.direction === "inbound";
+                  const sender = inbound
+                    ? m.fromName || m.fromAddress || "לא ידוע"
+                    : m.agentName || "נציג";
+                  const recipient = inbound ? (m.toName || m.toAddress || "") : (m.toName || m.toAddress || current?.address || "");
                   return (
                     <div key={m.id} className={`rounded-lg border border-border p-3 text-sm ${inbound ? "bg-muted/40" : "bg-primary/5"}`}>
-                      <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
-                        <span>{inbound ? `מ־${m.fromAddress ?? ""}` : `נשלח על ידי ${m.agentName ?? "נציג"}`}</span>
-                        <span>{new Date(m.createdAt).toLocaleString("he-IL")}</span>
+                      <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+                        <span className="truncate">
+                          <span className="font-medium text-foreground">{sender}</span>
+                          {recipient ? <> ← אל {recipient}</> : null}
+                        </span>
+                        <span className="shrink-0">{new Date(m.createdAt).toLocaleString("he-IL")}</span>
                       </div>
                       <div className="whitespace-pre-wrap">{m.body}</div>
                     </div>
+
                   );
                 })}
               </div>

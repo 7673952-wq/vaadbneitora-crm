@@ -17,6 +17,8 @@ export type MailThread = {
   count: number;
   unread: number;
   lastDirection: string;
+  hasInbound: boolean;
+  hasOutbound: boolean;
   systemId: string | null;
   recordId: string | null;
 };
@@ -80,6 +82,8 @@ export const listMailThreads = createServerFn({ method: "GET" })
       if (existing) {
         existing.count += 1;
         if (isInbound(m.direction) && !m.read_at) existing.unread += 1;
+        if (isInbound(m.direction)) existing.hasInbound = true;
+        else existing.hasOutbound = true;
         if (!existing.address && addr) { existing.address = addr; existing.displayName = parsed.name; }
         if (!existing.subject && m.subject) existing.subject = m.subject;
         if (!existing.systemId && m.system_id) existing.systemId = m.system_id;
@@ -95,6 +99,8 @@ export const listMailThreads = createServerFn({ method: "GET" })
           count: 1,
           unread: isInbound(m.direction) && !m.read_at ? 1 : 0,
           lastDirection: m.direction,
+          hasInbound: isInbound(m.direction),
+          hasOutbound: !isInbound(m.direction),
           systemId: m.system_id ?? null,
           recordId: m.crm_record_id ?? null,
         });
@@ -104,8 +110,8 @@ export const listMailThreads = createServerFn({ method: "GET" })
     let list = [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
     const filter = data.filter ?? "all";
     if (filter === "unread") list = list.filter((t) => t.unread > 0);
-    if (filter === "inbox") list = list.filter((t) => t.lastDirection === "in" || t.lastDirection === "inbound");
-    if (filter === "sent") list = list.filter((t) => t.lastDirection === "out" || t.lastDirection === "outbound");
+    if (filter === "inbox") list = list.filter((t) => t.hasInbound);
+    if (filter === "sent") list = list.filter((t) => t.hasOutbound);
     const q = data.search?.trim().toLowerCase();
     if (q) {
       list = list.filter((t) =>

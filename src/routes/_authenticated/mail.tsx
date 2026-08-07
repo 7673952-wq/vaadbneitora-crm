@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Circle, Users } from "lucide-react";
+import { Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Circle, Users, MailOpen, SendHorizontal } from "lucide-react";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
@@ -34,6 +34,13 @@ const FILTERS: { key: Filter; label: string }[] = [
   { key: "inbox", label: "נכנס" },
   { key: "sent", label: "יוצא" },
 ];
+
+const FILTER_ICONS = {
+  all: Mail,
+  unread: MailOpen,
+  inbox: Inbox,
+  sent: SendHorizontal,
+} satisfies Record<Filter, typeof Mail>;
 
 function fmt(iso: string) {
   const d = new Date(iso);
@@ -161,12 +168,12 @@ function MailboxPage() {
   }
 
   return (
-    <div dir="rtl" className="space-y-3">
-      <div className="rounded-xl border border-border p-4 flex flex-wrap items-center gap-3 bg-gradient-to-l from-primary/10 to-transparent">
+    <div dir="rtl" className="space-y-3 overflow-hidden">
+      <header className="flex flex-wrap items-center gap-3 border-b border-border pb-3">
         <div className="flex items-center gap-2 flex-1 min-w-[180px]">
           <Mail className="h-5 w-5 text-primary" />
           <div>
-            <h1 className="text-xl font-semibold">מיילים</h1>
+            <h1 className="text-xl font-semibold">תיבת דואר</h1>
             <p className="text-xs text-muted-foreground mt-0.5">
               {settings?.configured
                 ? `תיבה משותפת${settings.address ? ` — ${settings.address}` : ""} · ${threads.length} שרשורים`
@@ -183,19 +190,13 @@ function MailboxPage() {
             className="w-60 rounded-lg border border-input bg-background pr-8 pl-3 py-1.5 text-sm"
           />
         </div>
-        <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
-          <RefreshCw className={isFetching ? "animate-spin" : ""} /> רענון
-        </Button>
-        <Button variant={contactsOpen ? "default" : "outline"} size="sm" onClick={() => setContactsOpen((v) => !v)}>
-          <Users /> אנשי קשר
-        </Button>
-        <Button variant="outline" size="sm" onClick={() => setSettingsOpen((v) => !v)}>
-          <Settings2 /> הגדרות
+        <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isFetching} title="רענון תיבת הדואר" aria-label="רענון תיבת הדואר">
+          <RefreshCw className={isFetching ? "animate-spin" : ""} />
         </Button>
         <Button size="sm" onClick={() => setComposing(true)}>
           <PenSquare /> מייל חדש
         </Button>
-      </div>
+      </header>
 
       {settingsOpen && (
         <div className="rounded-xl border border-border bg-card p-4 space-y-3">
@@ -270,22 +271,40 @@ function MailboxPage() {
         </div>
       )}
 
-      <div className="grid gap-3 lg:grid-cols-[320px_1fr]">
-        <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="flex items-center gap-1 border-b border-border p-2">
+      <div className="grid min-h-[calc(100vh-12rem)] overflow-hidden border border-border bg-card md:grid-cols-[168px_320px_minmax(0,1fr)]">
+        <aside className="border-b border-border bg-muted/30 p-2 md:border-b-0 md:border-l">
+          <Button className="mb-3 w-full" onClick={() => { setComposing(true); setSelected(null); }}>
+            <PenSquare /> מייל חדש
+          </Button>
+          <nav className="grid grid-cols-2 gap-1 md:grid-cols-1" aria-label="תיקיות דואר">
             {FILTERS.map((f) => (
-              <button
+              <Button
                 key={f.key}
                 onClick={() => setFilter(f.key)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                  filter === f.key ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
-                }`}
+                variant={filter === f.key ? "secondary" : "ghost"}
+                className="h-9 justify-start px-2.5"
               >
+                {(() => { const Icon = FILTER_ICONS[f.key]; return <Icon />; })()}
                 {f.label}
-              </button>
+              </Button>
             ))}
+          </nav>
+          <div className="mt-3 border-t border-border pt-2">
+            <Button variant={contactsOpen ? "secondary" : "ghost"} className="w-full justify-start px-2.5" onClick={() => setContactsOpen((v) => !v)}>
+              <Users /> אנשי קשר
+            </Button>
+            <Button variant={settingsOpen ? "secondary" : "ghost"} className="w-full justify-start px-2.5" onClick={() => setSettingsOpen((v) => !v)}>
+              <Settings2 /> הגדרות אישיות
+            </Button>
           </div>
-          <div className="max-h-[70vh] overflow-y-auto divide-y divide-border">
+        </aside>
+
+        <section className="border-b border-border md:border-b-0 md:border-l" aria-label="רשימת הודעות">
+          <div className="flex h-11 items-center justify-between border-b border-border px-3 text-xs text-muted-foreground">
+            <span>{threads.length} שיחות</span>
+            {isFetching && <RefreshCw className="h-3.5 w-3.5 animate-spin" />}
+          </div>
+          <div className="max-h-[calc(100vh-15rem)] overflow-y-auto divide-y divide-border md:max-h-[calc(100vh-12rem)]">
             {threads.length === 0 && (
               <div className="p-6 text-center text-sm text-muted-foreground">
                 <Inbox className="mx-auto mb-2 h-5 w-5" /> אין הודעות להצגה
@@ -295,7 +314,7 @@ function MailboxPage() {
               <button
                 key={t.threadId}
                 onClick={() => openThread(t.threadId)}
-                className={`w-full text-right p-3 transition hover:bg-muted/60 ${selected === t.threadId ? "bg-muted" : ""}`}
+                className={`w-full border-r-2 p-3 text-right transition hover:bg-muted/60 ${selected === t.threadId ? "border-r-primary bg-muted" : "border-r-transparent"}`}
               >
                 <div className="flex items-center gap-2">
                   {t.unread > 0 && <Circle className="h-2 w-2 shrink-0 fill-primary text-primary" />}
@@ -310,10 +329,9 @@ function MailboxPage() {
               </button>
             ))}
           </div>
+        </section>
 
-        </div>
-
-        <div className="rounded-xl border border-border bg-card p-4 min-h-[50vh]">
+        <main className="min-h-[50vh] min-w-0 bg-background p-4">
           {!selected && !composing && (
             <div className="h-full grid place-items-center text-sm text-muted-foreground">בחר שרשור מהרשימה או פתח מייל חדש</div>
           )}
@@ -398,7 +416,7 @@ function MailboxPage() {
               </div>
             </div>
           )}
-        </div>
+        </main>
       </div>
     </div>
   );

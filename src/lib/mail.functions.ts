@@ -17,8 +17,6 @@ export type MailThread = {
   count: number;
   unread: number;
   lastDirection: string;
-  hasInbound: boolean;
-  hasOutbound: boolean;
   systemId: string | null;
   recordId: string | null;
 };
@@ -82,8 +80,6 @@ export const listMailThreads = createServerFn({ method: "GET" })
       if (existing) {
         existing.count += 1;
         if (isInbound(m.direction) && !m.read_at) existing.unread += 1;
-        if (isInbound(m.direction)) existing.hasInbound = true;
-        else existing.hasOutbound = true;
         if (!existing.address && addr) { existing.address = addr; existing.displayName = parsed.name; }
         if (!existing.subject && m.subject) existing.subject = m.subject;
         if (!existing.systemId && m.system_id) existing.systemId = m.system_id;
@@ -99,8 +95,6 @@ export const listMailThreads = createServerFn({ method: "GET" })
           count: 1,
           unread: isInbound(m.direction) && !m.read_at ? 1 : 0,
           lastDirection: m.direction,
-          hasInbound: isInbound(m.direction),
-          hasOutbound: !isInbound(m.direction),
           systemId: m.system_id ?? null,
           recordId: m.crm_record_id ?? null,
         });
@@ -110,8 +104,8 @@ export const listMailThreads = createServerFn({ method: "GET" })
     let list = [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
     const filter = data.filter ?? "all";
     if (filter === "unread") list = list.filter((t) => t.unread > 0);
-    if (filter === "inbox") list = list.filter((t) => t.hasInbound);
-    if (filter === "sent") list = list.filter((t) => t.hasOutbound);
+    if (filter === "inbox") list = list.filter((t) => t.lastDirection === "in" || t.lastDirection === "inbound");
+    if (filter === "sent") list = list.filter((t) => t.lastDirection === "out" || t.lastDirection === "outbound");
     const q = data.search?.trim().toLowerCase();
     if (q) {
       list = list.filter((t) =>
@@ -266,8 +260,12 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
     if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
 
     const threadId = data.threadId && !data.threadId.startsWith("msg:") ? data.threadId : null;
+    // "to" is included even on replies: the relay needs it as a fallback in
+    // case the thread has no message yet from the customer (e.g. a second
+    // outbound message before they've answered), where it can't safely
+    // infer a recipient from the thread itself.
     const payload = threadId
-      ? { secret: relaySecret, action: "reply", gmailThreadId: threadId, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
+      ? { secret: relaySecret, action: "reply", gmailThreadId: threadId, to: data.to, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject ?? "", body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive };
 
     let res: Response;
@@ -280,10 +278,12 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
     const json: any = await res.json().catch(() => ({}));
     if (!res.ok || !json?.ok) throw new Error(json?.error ? `שליחה נכשלה: ${json.error}` : "שליחת המייל נכשלה");
 
+    // Always (not just on a brand-new thread) upsert the mapping using the
+    // thread id the relay actually returns: on the fallback path (customer
+    // hasn't replied yet) the relay may have to open a fresh Gmail thread,
+    // and future messages need to be grouped under that one, not the old id.
     const gmailThreadId: string = json.gmailThreadId;
-    if (!threadId) {
-      await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: gmailThreadId });
-    }
+    await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: gmailThreadId });
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({
       direction: "outbound",
       gmail_thread_id: gmailThreadId,
@@ -361,4 +361,3 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
       prefs: parseMailboxPrefs((data ?? []).find((r: any) => r.key === "mailbox_prefs")?.value),
     };
   });
-

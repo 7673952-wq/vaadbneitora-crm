@@ -47,11 +47,31 @@ async function handleInboundEmail(request: Request) {
     // Avoid double-inserting if Apps Script retries the same message.
     const { data: existing } = await supabaseAdmin
       .from("email_messages" as any)
-      .select("id")
+      .select("id, direction, system_id, crm_record_id")
       .eq("gmail_message_id", gmailMessageId)
       .limit(1)
       .maybeSingle();
     if (existing) {
+      const existingMessage = existing as any;
+      // The relay is the authoritative source for Gmail direction/address data.
+      // Reconcile rows previously created by the CRM or an older relay version
+      // instead of returning early with stale "inbound/outbound" classification.
+      const stated = String(body?.direction ?? "").toLowerCase();
+      const reconciledDirection = stated === "outbound" || stated === "out"
+        ? "outbound"
+        : stated === "inbound" || stated === "in"
+          ? "inbound"
+          : existingMessage.direction;
+      const { error: reconcileError } = await supabaseAdmin
+        .from("email_messages" as any)
+        .update({
+          direction: reconciledDirection,
+          from_address: from ?? null,
+          to_address: to ?? null,
+          subject: subject ?? null,
+        })
+        .eq("id", existingMessage.id);
+      if (reconcileError) throw reconcileError;
       return new Response(JSON.stringify({ ok: true, duplicate: true, messageId: gmailMessageId }), {
         status: 200,
         headers: { "Content-Type": "application/json" },

@@ -1,193 +1,137 @@
-/**
- * ===== CRM Gmail Relay — Google Apps Script =====
- *
- * Lets every agent send email from a single shared Gmail address, with a
- * per-agent "From" display name + personal signature on each message, and
- * threads every reply from the recipient back into the right system card
- * in the CRM — based on Gmail's own Thread-Id, not on subject text, so it
- * survives subject changes / Re: / Fwd:.
- *
- * ---------- ONE-TIME SETUP ----------
- * 1. Go to https://script.google.com → New project. Paste this whole file
- *    in (replacing the default Code.gs content).
- * 2. Project Settings (gear icon) → Script Properties → add:
- *      SHARED_SECRET   = <same long random value you'll enter in
- *                          ניהול → מיילים in the CRM>
- *      INBOUND_WEBHOOK_URL = <your CRM site URL>/api/public/hooks/inbound-email
- *      INBOUND_WEBHOOK_SECRET = <same secret as SHARED_SECRET, or reuse it>
- * 3. Deploy → New deployment → type: "Web app".
- *      Execute as: Me
- *      Who has access: Anyone
- *    Copy the resulting Web App URL — that's what you paste into
- *    ניהול → מיילים → "כתובת Web App" in the CRM.
- * 4. Run setupTrigger() once (select it in the function dropdown above and
- *    click ▶ Run) — this creates the recurring inbox-scan trigger and will
- *    prompt you to authorize Gmail access. Also creates the Gmail label
- *    "CRM-Thread" used to mark tracked threads.
- *
- * ---------- HOW IT WORKS ----------
- * - Sending (new thread or reply) comes in as a POST to this Web App from
- *   the CRM. We send/reply via GmailApp, label the thread "CRM-Thread", and
- *   return the Gmail thread/message id synchronously so the CRM can store
- *   them right away.
- * - Every few minutes, scanInbox() scans recent Gmail threads and forwards
- *   messages to the CRM. Synced message IDs are stored in Script Properties;
- *   no Gmail label is created and messages are not marked as read.
- */
+// CRM Gmail Relay - v9
+// New inbox mail is always processed before historical backfill.
 
-const CRM_LABEL_NAME = "CRM-Thread";
-
-function getProp_(key) {
-  return PropertiesService.getScriptProperties().getProperty(key);
+function CFG_() {
+  return {
+    SECRET: '0acbcb85408bac61290e49fac924746f',
+    WEBHOOK_URL: 'https://vaadbneitora-crm.lovable.app/api/public/hooks/inbound-email',
+    MAILBOX_EMAIL: 'a033135556@gmail.com',
+    SENDER_NAME: 'CRM'
+  };
 }
 
-function getOrCreateLabel_() {
-  return GmailApp.getUserLabelByName(CRM_LABEL_NAME) || GmailApp.createLabel(CRM_LABEL_NAME);
+function SETUP() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) ScriptApp.deleteTrigger(triggers[i]);
+  ScriptApp.newTrigger('POLL_MAILBOX').timeBased().everyMinutes(5).create();
+  POLL_MAILBOX();
 }
 
-function buildBody_(bodyText, agentSignature) {
-  return agentSignature ? (bodyText + "\n\n--\n" + agentSignature) : bodyText;
+function POLL_MAILBOX() {
+  var started = new Date().getTime();
+  var seen = {};
+  var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0 };
+  // Priority order is intentional. A large mailbox can no longer starve new replies.
+  syncQuery_('in:inbox newer_than:3d', 100, seen, stats, started);
+  syncQuery_('in:sent newer_than:3d', 100, seen, stats, started);
+  syncQuery_('in:anywhere newer_than:14d', 80, seen, stats, started);
+  Logger.log('V9 sync: ' + JSON.stringify(stats));
+  return stats;
 }
 
-/**
- * Web App entry point. Body (JSON): { secret, action, ... }
- * action = "send"  → { to, subject, body, agentName, agentSignature, systemId }
- * action = "reply" → { gmailThreadId, body, agentName, agentSignature }
- */
-function doPost(e) {
-  try {
-    const payload = JSON.parse(e.postData.contents || "{}");
-    if (payload.secret !== getProp_("SHARED_SECRET")) {
-      return jsonResponse_({ ok: false, error: "unauthorized" }, 401);
-    }
+function SYNC_NOW() {
+  var stats = POLL_MAILBOX();
+  Logger.log('SYNC_NOW finished: ' + JSON.stringify(stats));
+}
 
-    if (payload.action === "send") {
-      return handleSend_(payload);
+function syncQuery_(query, maxThreads, seen, stats, started) {
+  var cfg = CFG_();
+  var threads = GmailApp.search(query, 0, maxThreads);
+  for (var i = 0; i < threads.length; i++) {
+    if (new Date().getTime() - started > 270000) return;
+    var messages = threads[i].getMessages();
+    for (var j = messages.length - 1; j >= 0; j--) {
+      var m = messages[j];
+      var id = m.getId();
+      if (m.isDraft() || seen[id]) continue;
+      seen[id] = true;
+      if (isSynced_(id)) { stats.skipped++; continue; }
+      var from = String(m.getFrom() || '');
+      var direction = from.toLowerCase().indexOf(cfg.MAILBOX_EMAIL.toLowerCase()) !== -1 ? 'outbound' : 'inbound';
+      try {
+        var res = UrlFetchApp.fetch(cfg.WEBHOOK_URL, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { apikey: cfg.SECRET, Authorization: 'Bearer ' + cfg.SECRET },
+          payload: JSON.stringify({
+            gmailThreadId: threads[i].getId(), gmailMessageId: id,
+            direction: direction, from: from, to: m.getTo(),
+            subject: m.getSubject(), body: m.getPlainBody(),
+            receivedAt: m.getDate().toISOString()
+          }),
+          muteHttpExceptions: true
+        });
+        var text = res.getContentText() || '{}';
+        var parsed = JSON.parse(text);
+        if (res.getResponseCode() >= 200 && res.getResponseCode() < 300 && parsed.ok) {
+          markSynced_(id);
+          if (parsed.duplicate) stats.existing++; else stats.inserted++;
+        } else {
+          stats.failed++;
+          Logger.log('Rejected ' + id + ': ' + res.getResponseCode() + ' ' + text);
+        }
+      } catch (err) {
+        stats.failed++;
+        Logger.log('Failed ' + id + ': ' + err);
+      }
     }
-    if (payload.action === "reply") {
-      return handleReply_(payload);
-    }
-    if (payload.action === "send_backup") {
-      return handleSendBackup_(payload);
-    }
-    return jsonResponse_({ ok: false, error: "unknown action" }, 400);
-  } catch (err) {
-    return jsonResponse_({ ok: false, error: String(err) }, 500);
   }
 }
 
-function handleSend_(payload) {
-  const fullBody = buildBody_(payload.body || "", payload.agentSignature);
-  const draft = GmailApp.createDraft(payload.to, payload.subject || "", fullBody, {
-    name: payload.agentName || undefined,
-  });
-  const message = draft.send();
-  const thread = message.getThread();
-  thread.addLabel(getOrCreateLabel_());
-  // New replies land in the inbox but Apps Script marks sent threads read
-  // by default — fine, since we only care about *unread* future replies.
-
-  return jsonResponse_({
-    ok: true,
-    gmailThreadId: thread.getId(),
-    gmailMessageId: message.getId(),
-  });
+function doPost(e) {
+  var d;
+  try { d = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
+  catch (err) { return json_({ ok: false, error: 'bad json' }); }
+  if (!d || d.secret !== CFG_().SECRET) return json_({ ok: false, error: 'unauthorized' });
+  try {
+    if (d.action === 'send') return json_(send_(d));
+    if (d.action === 'reply') return json_(reply_(d));
+    if (d.action === 'send_backup') return json_(backup_(d));
+    if (d.action === 'ping') return json_({ ok: true, version: 9 });
+    return json_({ ok: false, error: 'unknown action' });
+  } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
 
-function handleReply_(payload) {
-  const thread = GmailApp.getThreadById(payload.gmailThreadId);
-  if (!thread) return jsonResponse_({ ok: false, error: "thread not found" }, 404);
-
-  const fullBody = buildBody_(payload.body || "", payload.agentSignature);
-  const messages = thread.getMessages();
-  const last = messages[messages.length - 1];
-  const sent = last.reply(fullBody, { name: payload.agentName || undefined });
-  thread.addLabel(getOrCreateLabel_());
-
-  return jsonResponse_({
-    ok: true,
-    gmailThreadId: thread.getId(),
-    gmailMessageId: sent.getId(),
-  });
+function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 9 }); }
+function send_(d) {
+  var body = body_(d.body, d.agentSignature);
+  GmailApp.sendEmail(d.to, d.subject || '(no subject)', plain_(body), { name: d.agentName || CFG_().SENDER_NAME, htmlBody: html_(body) });
+  var thread = findSent_(d.to, d.subject || '(no subject)');
+  return { ok: true, gmailThreadId: thread && thread.getId(), gmailMessageId: lastId_(thread) };
 }
-
-/**
- * Sends a CRM backup email with a base64-encoded zip attachment — used by
- * runBackup()/sendBackupEmail() in the CRM as an alternative to a
- * transactional email provider, so backups can go out through the same
- * Gmail account. payload: { to, subject, body, attachmentBase64, attachmentName }
- */
-function handleSendBackup_(payload) {
-  const bytes = Utilities.base64Decode(payload.attachmentBase64);
-  const blob = Utilities.newBlob(bytes, "application/zip", payload.attachmentName || "backup.zip");
-  GmailApp.sendEmail(payload.to, payload.subject || "גיבוי CRM", payload.body || "", { attachments: [blob] });
-  return jsonResponse_({ ok: true });
+function reply_(d) {
+  var thread = GmailApp.getThreadById(d.gmailThreadId);
+  if (!thread) return { ok: false, error: 'thread not found' };
+  var body = body_(d.body, d.agentSignature);
+  thread.reply(plain_(body), { name: d.agentName || CFG_().SENDER_NAME, htmlBody: html_(body) });
+  return { ok: true, gmailThreadId: thread.getId(), gmailMessageId: lastId_(thread) };
 }
-
-function jsonResponse_(obj, _status) {
-  // Apps Script Web Apps can't set a real HTTP status code on the response;
-  // the CRM side checks the "ok" field in the JSON body instead.
-  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+function backup_(d) {
+  var options = { name: CFG_().SENDER_NAME };
+  if (d.attachmentBase64) options.attachments = [Utilities.newBlob(Utilities.base64Decode(d.attachmentBase64), 'application/zip', d.attachmentName || 'backup.zip')];
+  GmailApp.sendEmail(d.to, d.subject || 'CRM Backup', d.body || 'Backup attached.', options);
+  return { ok: true };
 }
-
-/**
- * Scans "CRM-Thread" labeled threads for unread messages (i.e. replies
- * from the recipient) and forwards each one to the CRM's inbound webhook.
- * Run this on a time-driven trigger (see setupTrigger below) — every 2-5
- * minutes is reasonable.
- */
-function scanInbox() {
-  const threads = GmailApp.search("in:anywhere newer_than:14d", 0, 200);
-  const url = getProp_("INBOUND_WEBHOOK_URL");
-  const secret = getProp_("INBOUND_WEBHOOK_SECRET") || getProp_("SHARED_SECRET");
-  if (!url) { Logger.log("INBOUND_WEBHOOK_URL not configured — skipping scan"); return; }
-
-  threads.forEach((thread) => {
-    thread.getMessages().forEach((msg) => {
-      if (msg.isDraft() || isSynced_(msg.getId())) return;
-      try {
-        const res = UrlFetchApp.fetch(url, {
-          method: "post",
-          contentType: "application/json",
-          headers: { apikey: secret, Authorization: "Bearer " + secret },
-          payload: JSON.stringify({
-            gmailThreadId: thread.getId(),
-            gmailMessageId: msg.getId(),
-            from: msg.getFrom(),
-            to: msg.getTo(),
-            subject: msg.getSubject(),
-            body: msg.getPlainBody(),
-            receivedAt: msg.getDate().toISOString(),
-          }),
-          muteHttpExceptions: true,
-        });
-        const parsed = JSON.parse(res.getContentText() || "{}");
-        if (res.getResponseCode() >= 200 && res.getResponseCode() < 300 && parsed.ok) {
-          markSynced_(msg.getId());
-        } else {
-          Logger.log("inbound webhook failed: " + res.getContentText());
-        }
-      } catch (err) {
-        Logger.log("inbound webhook error: " + err);
-      }
-    });
-  });
+function REMOVE_OLD_LABEL() {
+  var label = GmailApp.getUserLabelByName('CRM-Processed');
+  if (!label) return;
+  for (var n = 0; n < 30; n++) {
+    var threads = label.getThreads(0, 100);
+    if (!threads.length) break;
+    label.removeFromThreads(threads);
+  }
+  try { label.deleteLabel(); } catch (err) { Logger.log('Run REMOVE_OLD_LABEL again'); }
 }
-
-function isSynced_(messageId) {
-  return PropertiesService.getScriptProperties().getProperty("mail_" + messageId) === "1";
-}
-
-function markSynced_(messageId) {
-  PropertiesService.getScriptProperties().setProperty("mail_" + messageId, "1");
-}
-
-/** Run once manually to create the recurring scan trigger + the label. */
-function setupTrigger() {
-  getOrCreateLabel_();
-  ScriptApp.getProjectTriggers()
-    .filter((t) => t.getHandlerFunction() === "scanInbox")
-    .forEach((t) => ScriptApp.deleteTrigger(t));
-  ScriptApp.newTrigger("scanInbox").timeBased().everyMinutes(5).create();
-  Logger.log("Trigger created — scanInbox will run every 5 minutes.");
+function store_() { return PropertiesService.getScriptProperties(); }
+function isSynced_(id) { return store_().getProperty('m_' + id) === '1'; }
+function markSynced_(id) { store_().setProperty('m_' + id, '1'); }
+function json_(x) { return ContentService.createTextOutput(JSON.stringify(x)).setMimeType(ContentService.MimeType.JSON); }
+function body_(b, s) { return String(b || '') + (s ? '\n\n' + s : ''); }
+function plain_(s) { return String(s || '').replace(/<[^>]*>/g, ''); }
+function html_(s) { return String(s || '').replace(/\n/g, '<br>'); }
+function lastId_(t) { if (!t) return null; var m = t.getMessages(); return m.length ? m[m.length - 1].getId() : null; }
+function findSent_(to, subject) {
+  var q = 'in:sent to:' + to + ' subject:"' + String(subject).replace(/"/g, '') + '"';
+  for (var i = 0; i < 4; i++) { var f = GmailApp.search(q, 0, 1); if (f.length) return f[0]; Utilities.sleep(1200); }
+  return null;
 }

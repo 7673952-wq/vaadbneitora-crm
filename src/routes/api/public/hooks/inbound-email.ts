@@ -19,7 +19,7 @@ async function handleInboundEmail(request: Request) {
   try {
     const body = await request.json();
     const { gmailThreadId, gmailMessageId, from, to, subject, body: text, receivedAt } = body ?? {};
-    if (!gmailThreadId) {
+    if (!gmailThreadId || !gmailMessageId) {
       return new Response(JSON.stringify({ ok: false, error: "gmailThreadId required" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
@@ -45,18 +45,17 @@ async function handleInboundEmail(request: Request) {
 
 
     // Avoid double-inserting if Apps Script retries the same message.
-    if (gmailMessageId) {
-      const { data: existing } = await supabaseAdmin
-        .from("email_messages" as any)
-        .select("id")
-        .eq("gmail_message_id", gmailMessageId)
-        .maybeSingle();
-      if (existing) {
-        return new Response(JSON.stringify({ ok: true, duplicate: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
+    const { data: existing } = await supabaseAdmin
+      .from("email_messages" as any)
+      .select("id")
+      .eq("gmail_message_id", gmailMessageId)
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      return new Response(JSON.stringify({ ok: true, duplicate: true, messageId: gmailMessageId }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const receivedIso = receivedAt ?? new Date().toISOString();
@@ -87,7 +86,7 @@ async function handleInboundEmail(request: Request) {
       crm_record_id: recordId,
       direction,
       gmail_thread_id: gmailThreadId,
-      gmail_message_id: gmailMessageId ?? null,
+      gmail_message_id: gmailMessageId,
       from_address: from ?? null,
       to_address: to ?? null,
       subject: subject ?? null,
@@ -120,7 +119,7 @@ async function handleInboundEmail(request: Request) {
 
 
 
-    return new Response(JSON.stringify({ ok: true }), {
+    return new Response(JSON.stringify({ ok: true, inserted: true, messageId: gmailMessageId, direction }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

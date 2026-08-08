@@ -30,10 +30,9 @@
  *   the CRM. We send/reply via GmailApp, label the thread "CRM-Thread", and
  *   return the Gmail thread/message id synchronously so the CRM can store
  *   them right away.
- * - Every few minutes, scanInbox() looks for unread messages inside
- *   "CRM-Thread" labeled threads (i.e. replies to something the CRM sent)
- *   and POSTs each one to the CRM's inbound-email webhook, then marks it
- *   read so it isn't sent twice.
+ * - Every few minutes, scanInbox() scans recent Gmail threads and forwards
+ *   messages to the CRM. Synced message IDs are stored in Script Properties;
+ *   no Gmail label is created and messages are not marked as read.
  */
 
 const CRM_LABEL_NAME = "CRM-Thread";
@@ -138,18 +137,14 @@ function jsonResponse_(obj, _status) {
  * minutes is reasonable.
  */
 function scanInbox() {
-  const label = getOrCreateLabel_();
-  const threads = label.getThreads(0, 50);
+  const threads = GmailApp.search("in:anywhere newer_than:14d", 0, 200);
   const url = getProp_("INBOUND_WEBHOOK_URL");
   const secret = getProp_("INBOUND_WEBHOOK_SECRET") || getProp_("SHARED_SECRET");
   if (!url) { Logger.log("INBOUND_WEBHOOK_URL not configured — skipping scan"); return; }
 
   threads.forEach((thread) => {
-    const unread = thread.getMessages().filter((m) => m.isUnread());
-    unread.forEach((msg) => {
-      // Outgoing messages we just sent also show up here sometimes as
-      // "unread" briefly — skip anything sent from our own address.
-      if (msg.isDraft()) return;
+    thread.getMessages().forEach((msg) => {
+      if (msg.isDraft() || isSynced_(msg.getId())) return;
       try {
         const res = UrlFetchApp.fetch(url, {
           method: "post",
@@ -166,8 +161,9 @@ function scanInbox() {
           }),
           muteHttpExceptions: true,
         });
-        if (res.getResponseCode() >= 200 && res.getResponseCode() < 300) {
-          msg.markRead();
+        const parsed = JSON.parse(res.getContentText() || "{}");
+        if (res.getResponseCode() >= 200 && res.getResponseCode() < 300 && parsed.ok) {
+          markSynced_(msg.getId());
         } else {
           Logger.log("inbound webhook failed: " + res.getContentText());
         }
@@ -176,6 +172,14 @@ function scanInbox() {
       }
     });
   });
+}
+
+function isSynced_(messageId) {
+  return PropertiesService.getScriptProperties().getProperty("mail_" + messageId) === "1";
+}
+
+function markSynced_(messageId) {
+  PropertiesService.getScriptProperties().setProperty("mail_" + messageId, "1");
 }
 
 /** Run once manually to create the recurring scan trigger + the label. */

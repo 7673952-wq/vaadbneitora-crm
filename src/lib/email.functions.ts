@@ -280,7 +280,7 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
     const cleanedBody = cleanEmailContent(data.body, data.cleanup_level ?? "standard");
     if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
     const relayPayload = data.gmail_thread_id
-      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, to: data.to, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive };
 
     let relayRes: Response;
@@ -298,9 +298,11 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
     const gmailThreadId: string = relayJson.gmailThreadId;
     const gmailMessageId: string | undefined = relayJson.gmailMessageId;
 
-    if (!data.gmail_thread_id) {
-      await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: gmailThreadId, system_id: data.system_id });
-    }
+    // Always upsert with whatever thread id the relay actually returned —
+    // on the fallback path (customer hasn't replied yet on this thread) the
+    // relay may open a fresh Gmail thread, and later messages need to group
+    // under that new id, not the stale one.
+    await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: gmailThreadId, system_id: data.system_id });
 
     const { error: insertErr } = await supabaseAdmin.from("email_messages" as any).insert({
       system_id: data.system_id,
@@ -343,13 +345,14 @@ export const sendRecordEmail = createServerFn({ method: "POST" })
     const cleanedBody = cleanEmailContent(data.body, data.cleanup_level ?? "standard");
     if (!cleanedBody) throw new Error("תוכן המייל ריק לאחר הניקוי");
     const payload = data.gmail_thread_id
-      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive }
+      ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, to: data.to, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive };
     const { postToRelay } = await import("@/lib/relay.server");
     const response = await postToRelay(relayUrl, payload);
     const result: any = await response.json().catch(() => ({}));
     if (!response.ok || !result?.ok) throw new Error(result?.error || "שליחת המייל נכשלה");
-    if (!data.gmail_thread_id) await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: result.gmailThreadId, crm_record_id: data.record_id });
+    // Always upsert with the returned thread id (see comment in sendSystemEmail).
+    await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: result.gmailThreadId, crm_record_id: data.record_id });
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({ crm_record_id: data.record_id, direction: "outbound", gmail_thread_id: result.gmailThreadId, gmail_message_id: result.gmailMessageId ?? null, agent_id: context.userId, agent_name: agentName, to_address: data.to, subject: data.subject, body: cleanedBody });
     if (error) throw new Error(error.message);
     return { ok: true, gmailThreadId: result.gmailThreadId as string };

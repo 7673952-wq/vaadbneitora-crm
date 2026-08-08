@@ -52,6 +52,7 @@ async function handleInboundEmail(request: Request) {
       .limit(1)
       .maybeSingle();
     if (existing) {
+      const existingMessage = existing as any;
       // The relay is the authoritative source for Gmail direction/address data.
       // Reconcile rows previously created by the CRM or an older relay version
       // instead of returning early with stale "inbound/outbound" classification.
@@ -60,7 +61,7 @@ async function handleInboundEmail(request: Request) {
         ? "outbound"
         : stated === "inbound" || stated === "in"
           ? "inbound"
-          : existing.direction;
+          : existingMessage.direction;
       const { error: reconcileError } = await supabaseAdmin
         .from("email_messages" as any)
         .update({
@@ -69,7 +70,7 @@ async function handleInboundEmail(request: Request) {
           to_address: to ?? null,
           subject: subject ?? null,
         })
-        .eq("id", existing.id);
+        .eq("id", existingMessage.id);
       if (reconcileError) throw reconcileError;
       return new Response(JSON.stringify({ ok: true, duplicate: true, messageId: gmailMessageId }), {
         status: 200,

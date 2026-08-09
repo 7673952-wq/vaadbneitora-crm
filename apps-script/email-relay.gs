@@ -132,7 +132,7 @@ function prepareSyncVersion_() {
   for (var key in all) {
     if (key.indexOf('m_') === 0) stale.push(key);
   }
-  if (stale.length) props.deleteProperties(stale);
+  for (var i = 0; i < stale.length; i++) props.deleteProperty(stale[i]);
   props.setProperty('SYNC_VERSION', '10');
   Logger.log('V10 reset ' + stale.length + ' stale sync markers; Gmail messages will be verified again.');
 }

@@ -1,4 +1,4 @@
-// CRM Gmail Relay - v9
+// CRM Gmail Relay - v10
 // New inbox mail is always processed before historical backfill.
 
 function CFG_() {
@@ -18,6 +18,7 @@ function SETUP() {
 }
 
 function POLL_MAILBOX() {
+  prepareSyncVersion_();
   var started = new Date().getTime();
   var seen = {};
   var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0 };
@@ -25,7 +26,7 @@ function POLL_MAILBOX() {
   syncQuery_('in:inbox newer_than:3d', 100, seen, stats, started);
   syncQuery_('in:sent newer_than:3d', 100, seen, stats, started);
   syncQuery_('in:anywhere newer_than:14d', 80, seen, stats, started);
-  Logger.log('V9 sync: ' + JSON.stringify(stats));
+  Logger.log('V10 sync: ' + JSON.stringify(stats));
   return stats;
 }
 
@@ -87,12 +88,12 @@ function doPost(e) {
     if (d.action === 'send') return json_(send_(d));
     if (d.action === 'reply') return json_(reply_(d));
     if (d.action === 'send_backup') return json_(backup_(d));
-    if (d.action === 'ping') return json_({ ok: true, version: 9 });
+    if (d.action === 'ping') return json_({ ok: true, version: 10 });
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
 
-function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 9 }); }
+function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 10 }); }
 function send_(d) {
   var body = body_(d.body, d.agentSignature);
   GmailApp.sendEmail(d.to, d.subject || '(no subject)', plain_(body), { name: d.agentName || CFG_().SENDER_NAME, htmlBody: html_(body) });
@@ -123,8 +124,20 @@ function REMOVE_OLD_LABEL() {
   try { label.deleteLabel(); } catch (err) { Logger.log('Run REMOVE_OLD_LABEL again'); }
 }
 function store_() { return PropertiesService.getScriptProperties(); }
-function isSynced_(id) { return store_().getProperty('m_' + id) === '1'; }
-function markSynced_(id) { store_().setProperty('m_' + id, '1'); }
+function prepareSyncVersion_() {
+  var props = store_();
+  if (props.getProperty('SYNC_VERSION') === '10') return;
+  var all = props.getProperties();
+  var stale = [];
+  for (var key in all) {
+    if (key.indexOf('m_') === 0) stale.push(key);
+  }
+  if (stale.length) props.deleteProperties(stale);
+  props.setProperty('SYNC_VERSION', '10');
+  Logger.log('V10 reset ' + stale.length + ' stale sync markers; Gmail messages will be verified again.');
+}
+function isSynced_(id) { return store_().getProperty('m_v10_' + id) === '1'; }
+function markSynced_(id) { store_().setProperty('m_v10_' + id, '1'); }
 function json_(x) { return ContentService.createTextOutput(JSON.stringify(x)).setMimeType(ContentService.MimeType.JSON); }
 function body_(b, s) { return String(b || '') + (s ? '\n\n' + s : ''); }
 function plain_(s) { return String(s || '').replace(/<[^>]*>/g, ''); }

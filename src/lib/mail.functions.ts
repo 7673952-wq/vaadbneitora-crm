@@ -235,7 +235,7 @@ export const updateMailMessage = createServerFn({ method: "POST" })
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_edit");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: Record<string, unknown> = { body: data.body };
+    const patch: { body: string; subject?: string | null } = { body: data.body };
     if (data.subject !== undefined) patch.subject = data.subject;
     const { error } = await supabaseAdmin.from("email_messages").update(patch).eq("id", data.id);
     if (error) throw fromSupabase(error);

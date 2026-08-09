@@ -185,7 +185,7 @@ function MailAdminTabs({ canPermissions }: { canPermissions: boolean }) {
           <div className="rounded-xl border border-border bg-card p-4 text-xs text-muted-foreground">
             הרשאות אלו חלות על תיבת הדואר בכל המערכות (הן אינן חלק מהרשאות "ימות המשיח").
           </div>
-          <PermissionsPanel crmKey="_mail" only={["mailbox_view", "emails_send", "settings_manage"]} />
+          <PermissionsPanel crmKey="_mail" only={["mailbox_view", "emails_send", "emails_edit", "emails_delete", "settings_manage"]} />
         </TabsContent>
       )}
     </Tabs>

@@ -22,6 +22,8 @@ export const PERMISSION_DEFINITIONS = [
   { key: "agent_transfer", label: "העברת נציג", description: "שיוך מערכת לנציג אחר" },
   { key: "notes_write", label: "הוספת הערות", description: "כתיבת הערות בכרטיס מערכת" },
   { key: "emails_send", label: "שליחת מיילים", description: "שליחת מייל חדש או תגובה בתוך שרשור מתוך כרטיס מערכת" },
+  { key: "emails_edit", label: "עריכת מיילים", description: "עריכת תוכן או נושא של הודעת מייל שנשמרה במערכת" },
+  { key: "emails_delete", label: "מחיקת מיילים", description: "מחיקת הודעה בודדת או שרשור שלם מתיבת הדואר" },
   { key: "files_manage", label: "ניהול קבצים", description: "העלאה ומחיקה של קבצים מצורפים" },
   { key: "import_export", label: "ייבוא / ייצוא", description: "ייבוא מאקסל וייצוא נתונים" },
   { key: "series_manage", label: "השלמת סדרות", description: "סריקה ויצירה מרוכזת של מספרים חסרים" },
@@ -49,6 +51,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     agent_transfer: false,
     notes_write: false,
     emails_send: false,
+    emails_edit: false,
+    emails_delete: false,
     files_manage: false,
     import_export: false,
     series_manage: false,
@@ -70,6 +74,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     agent_transfer: true,
     notes_write: true,
     emails_send: true,
+    emails_edit: false,
+    emails_delete: false,
     files_manage: true,
     import_export: false,
     series_manage: false,
@@ -91,6 +97,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     agent_transfer: true,
     notes_write: true,
     emails_send: true,
+    emails_edit: true,
+    emails_delete: true,
     files_manage: true,
     import_export: true,
     series_manage: true,
@@ -112,6 +120,8 @@ const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
     agent_transfer: true,
     notes_write: true,
     emails_send: true,
+    emails_edit: true,
+    emails_delete: true,
     files_manage: true,
     import_export: true,
     series_manage: true,
@@ -388,7 +398,7 @@ export async function assertCanWrite(userId: string, crmKey = "yemot"): Promise<
 export const MAIL_SCOPE = "_mail";
 
 /** Mail-related permissions surfaced in ניהול → מיילים → הרשאות. */
-export const MAIL_PERMISSION_KEYS = ["mailbox_view", "emails_send", "settings_manage"] as const;
+export const MAIL_PERMISSION_KEYS = ["mailbox_view", "emails_send", "emails_edit", "emails_delete", "settings_manage"] as const;
 
 async function getEffectiveRoles(userId: string): Promise<Role[]> {
   const globalRoles = await getUserRoles(userId);

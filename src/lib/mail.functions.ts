@@ -221,6 +221,59 @@ export const markMailThreadRead = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+/** Edits the stored subject/body of a message (does not touch Gmail). */
+export const updateMailMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) =>
+    z.object({
+      id: z.string().uuid(),
+      subject: z.string().max(300).nullable().optional(),
+      body: z.string().min(1).max(20000),
+    }).parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "emails_edit");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const patch: Record<string, unknown> = { body: data.body };
+    if (data.subject !== undefined) patch.subject = data.subject;
+    const { error } = await supabaseAdmin.from("email_messages").update(patch).eq("id", data.id);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+/** Deletes one stored message from the CRM mailbox. */
+export const deleteMailMessage = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "emails_delete");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("email_messages").delete().eq("id", data.id);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+/** Deletes an entire conversation from the CRM mailbox. */
+export const deleteMailThread = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "emails_delete");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    if (data.threadId.startsWith("msg:")) {
+      const { error } = await supabaseAdmin.from("email_messages").delete().eq("id", data.threadId.slice(4));
+      if (error) throw fromSupabase(error);
+      return { ok: true };
+    }
+    const { error } = await supabaseAdmin.from("email_messages").delete().eq("gmail_thread_id", data.threadId);
+    if (error) throw fromSupabase(error);
+    await supabaseAdmin.from("email_threads" as any).delete().eq("gmail_thread_id", data.threadId);
+    return { ok: true };
+  });
+
 /**
  * Sends a standalone mailbox message (new conversation or reply) through the
  * Gmail relay, exactly like the per-system mail — but without needing a card.

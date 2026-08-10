@@ -1664,6 +1664,8 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
   const [crmMode, setCrmMode] = useState<"open" | "block" | "both">("open");
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [agentFilter, setAgentFilter] = useState<string[]>([]);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
 
   function computeRange(): { fromIso: string | null; toIso: string | null; label: string } {
     if (preset === "all") return { fromIso: null, toIso: null, label: "all" };
@@ -1741,54 +1743,76 @@ function ExportModal({ allRows, agents, onClose, onExport }: {
           )}
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">סינון לפי סטטוס</label>
+            <button type="button" onClick={() => setStatusOpen((v) => !v)}
+              className="w-full flex items-center justify-between mb-2">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                {statusOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                סינון לפי סטטוס
+                {statusFilter.length > 0 && (
+                  <span className="text-xs text-muted-foreground">({statusFilter.length} נבחרו)</span>
+                )}
+              </span>
               {statusFilter.length > 0 && (
-                <button type="button" onClick={() => setStatusFilter([])}
-                  className="text-xs text-muted-foreground hover:text-foreground">נקה ({statusFilter.length})</button>
+                <span onClick={(e) => { e.stopPropagation(); setStatusFilter([]); }}
+                  className="text-xs text-muted-foreground hover:text-foreground cursor-pointer">נקה</span>
               )}
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
-              {STATUS_OPTIONS.map((s) => {
-                const active = statusFilter.includes(s.value);
-                return (
-                  <button key={s.value} type="button"
-                    onClick={() => setStatusFilter(active ? statusFilter.filter((v) => v !== s.value) : [...statusFilter, s.value])}
-                    className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
-                    {s.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הסטטוסים</p>
+            </button>
+            {statusOpen && (
+              <>
+                <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
+                  {STATUS_OPTIONS.map((s) => {
+                    const active = statusFilter.includes(s.value);
+                    return (
+                      <button key={s.value} type="button"
+                        onClick={() => setStatusFilter(active ? statusFilter.filter((v) => v !== s.value) : [...statusFilter, s.value])}
+                        className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הסטטוסים</p>
+              </>
+            )}
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="text-sm font-medium">סינון לפי נציג מטפל</label>
+            <button type="button" onClick={() => setAgentOpen((v) => !v)}
+              className="w-full flex items-center justify-between mb-2">
+              <span className="flex items-center gap-1.5 text-sm font-medium">
+                {agentOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                סינון לפי נציג מטפל
+                {agentFilter.length > 0 && (
+                  <span className="text-xs text-muted-foreground">({agentFilter.length} נבחרו)</span>
+                )}
+              </span>
               {agentFilter.length > 0 && (
-                <button type="button" onClick={() => setAgentFilter([])}
-                  className="text-xs text-muted-foreground hover:text-foreground">נקה ({agentFilter.length})</button>
+                <span onClick={(e) => { e.stopPropagation(); setAgentFilter([]); }}
+                  className="text-xs text-muted-foreground hover:text-foreground cursor-pointer">נקה</span>
               )}
-            </div>
-            <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
-              <button type="button"
-                onClick={() => setAgentFilter((prev) => prev.includes("__unassigned") ? prev.filter((v) => v !== "__unassigned") : [...prev, "__unassigned"])}
-                className={`text-xs py-1.5 px-2 rounded border text-right truncate ${agentFilter.includes("__unassigned") ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
-                לא משויך
-              </button>
-              {(agents ?? []).map((a: any) => {
-                const active = agentFilter.includes(a.id);
-                return (
-                  <button key={a.id} type="button"
-                    onClick={() => setAgentFilter(active ? agentFilter.filter((v) => v !== a.id) : [...agentFilter, a.id])}
-                    className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
-                    {a.display_name}
+            </button>
+            {agentOpen && (
+              <>
+                <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto p-1 border border-input rounded-lg">
+                  <button type="button"
+                    onClick={() => setAgentFilter((prev) => prev.includes("__unassigned") ? prev.filter((v) => v !== "__unassigned") : [...prev, "__unassigned"])}
+                    className={`text-xs py-1.5 px-2 rounded border text-right truncate ${agentFilter.includes("__unassigned") ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                    לא משויך
                   </button>
-                );
-              })}
-            </div>
-            <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הנציגים</p>
+                  {(agents ?? []).map((a: any) => {
+                    const active = agentFilter.includes(a.id);
+                    return (
+                      <button key={a.id} type="button"
+                        onClick={() => setAgentFilter(active ? agentFilter.filter((v) => v !== a.id) : [...agentFilter, a.id])}
+                        className={`text-xs py-1.5 px-2 rounded border text-right truncate ${active ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+                        {a.display_name}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">לא נבחר = כל הנציגים</p>
+              </>
+            )}
           </div>
 
           <div>

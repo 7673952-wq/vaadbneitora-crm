@@ -1,0 +1,2 @@
+UPDATE public.email_messages SET direction = 'inbound' WHERE lower(direction) IN ('in', 'incoming', 'received');
+UPDATE public.email_messages SET direction = 'outbound' WHERE lower(direction) IN ('out', 'outgoing', 'sent');

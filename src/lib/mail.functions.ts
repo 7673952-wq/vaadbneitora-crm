@@ -218,6 +218,25 @@ export const markMailThreadRead = createServerFn({ method: "POST" })
       .eq("gmail_thread_id", data.threadId)
       .is("read_at", null);
     if (error) throw fromSupabase(error);
+
+    // Best-effort: also mark it read in Gmail itself, so it stops showing
+    // as unread there too — but never let a relay hiccup break "mark read"
+    // in the CRM, which is why this failure is swallowed.
+    try {
+      const [urlRow, secretRow] = await Promise.all([
+        supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_url").maybeSingle(),
+        supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_secret").maybeSingle(),
+      ]);
+      const relayUrl = (urlRow.data?.value as { url?: string } | null)?.url;
+      const relaySecret = (secretRow.data?.value as { secret?: string } | null)?.secret;
+      if (relayUrl && relaySecret) {
+        const { postToRelay } = await import("@/lib/relay.server");
+        await postToRelay(relayUrl, { secret: relaySecret, action: "mark_read", gmailThreadId: data.threadId });
+      }
+    } catch {
+      /* Gmail-side read sync is best-effort; the CRM's own read state above already succeeded. */
+    }
+
     return { ok: true };
   });
 

@@ -79,8 +79,8 @@ async function handleInboundEmail(request: Request) {
     }
 
     const receivedIso = receivedAt ?? new Date().toISOString();
-    const systemId = ((threadRow as any)?.system_id ?? null) as string | null;
-    const recordId = ((threadRow as any)?.crm_record_id ?? null) as string | null;
+    let systemId = ((threadRow as any)?.system_id ?? null) as string | null;
+    let recordId = ((threadRow as any)?.crm_record_id ?? null) as string | null;
 
     // Direction: the relay may state it explicitly; otherwise infer it by
     // comparing the sender with the CRM's own mailbox address.
@@ -98,6 +98,27 @@ async function handleInboundEmail(request: Request) {
             ? "outbound"
             : "inbound";
     const isInbound = direction === "inbound";
+
+    // Older relay versions created Gmail thread rows without a card mapping.
+    // Recover that mapping from the correspondent's address when it identifies
+    // exactly one system/record, so replies appear inside the originating card.
+    if (!systemId && !recordId) {
+      const correspondent = String(isInbound ? from : to).match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0]?.toLowerCase() ?? "";
+      if (correspondent) {
+        const [{ data: systems }, { data: records }] = await Promise.all([
+          supabaseAdmin.from("systems").select("id").ilike("email", correspondent).limit(2),
+          supabaseAdmin.from("crm_records").select("id").ilike("email", correspondent).limit(2),
+        ]);
+        if ((systems?.length ?? 0) === 1) systemId = systems?.[0]?.id ?? null;
+        if (!systemId && (records?.length ?? 0) === 1) recordId = records?.[0]?.id ?? null;
+        if (systemId || recordId) {
+          const { error: mappingError } = await supabaseAdmin
+            .from("email_threads" as any)
+            .upsert({ gmail_thread_id: gmailThreadId, system_id: systemId, crm_record_id: recordId }, { onConflict: "gmail_thread_id" });
+          if (mappingError) throw mappingError;
+        }
+      }
+    }
 
     const { stripQuotedEmail } = await import("@/lib/email-cleanup");
 

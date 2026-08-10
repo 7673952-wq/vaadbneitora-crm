@@ -1,5 +1,5 @@
-// CRM Gmail Relay - v10
-// New inbox mail is always processed before historical backfill.
+// CRM Gmail Relay - v11
+// Incremental sync: only mail newer than the last successful poll is scanned.
 
 function CFG_() {
   return {
@@ -13,20 +13,38 @@ function CFG_() {
 function SETUP() {
   var triggers = ScriptApp.getProjectTriggers();
   for (var i = 0; i < triggers.length; i++) ScriptApp.deleteTrigger(triggers[i]);
-  ScriptApp.newTrigger('POLL_MAILBOX').timeBased().everyMinutes(5).create();
+  ScriptApp.newTrigger('POLL_MAILBOX').timeBased().everyMinutes(10).create();
   POLL_MAILBOX();
 }
 
 function POLL_MAILBOX() {
   prepareSyncVersion_();
   var started = new Date().getTime();
+  var props = store_();
+  var lastSync = Number(props.getProperty('LAST_SYNC_MS') || 0);
+  // On the first v11 run inspect three days. Afterwards keep a 15-minute
+  // overlap so delayed Gmail indexing cannot cause a missed reply.
+  var floor = lastSync > 0 ? lastSync - 900000 : started - (3 * 24 * 60 * 60 * 1000);
+  var afterSeconds = Math.floor(floor / 1000);
   var seen = {};
-  var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0 };
-  // Priority order is intentional. A large mailbox can no longer starve new replies.
-  syncQuery_('in:inbox newer_than:3d', 100, seen, stats, started);
-  syncQuery_('in:sent newer_than:3d', 100, seen, stats, started);
-  syncQuery_('in:anywhere newer_than:14d', 80, seen, stats, started);
-  Logger.log('V10 sync: ' + JSON.stringify(stats));
+  var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0, timedOut: false };
+  syncQuery_('in:inbox after:' + afterSeconds, 50, seen, stats, started);
+  syncQuery_('in:sent after:' + afterSeconds, 50, seen, stats, started);
+  // Advance the cursor only after a complete pass. Failed webhooks are not
+  // marked and remain inside the overlap window for the next poll.
+  if (!stats.timedOut) props.setProperty('LAST_SYNC_MS', String(started));
+  Logger.log('V11 incremental sync: ' + JSON.stringify(stats));
+  return stats;
+}
+
+// Optional manual recovery only. It is deliberately not called by the timer.
+function BACKFILL_14_DAYS() {
+  prepareSyncVersion_();
+  var started = new Date().getTime();
+  var seen = {};
+  var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0, timedOut: false };
+  syncQuery_('in:anywhere newer_than:14d', 100, seen, stats, started);
+  Logger.log('V11 manual backfill: ' + JSON.stringify(stats));
   return stats;
 }
 
@@ -39,7 +57,7 @@ function syncQuery_(query, maxThreads, seen, stats, started) {
   var cfg = CFG_();
   var threads = GmailApp.search(query, 0, maxThreads);
   for (var i = 0; i < threads.length; i++) {
-    if (new Date().getTime() - started > 270000) return;
+    if (new Date().getTime() - started > 270000) { stats.timedOut = true; return; }
     var messages = threads[i].getMessages();
     for (var j = messages.length - 1; j >= 0; j--) {
       var m = messages[j];
@@ -88,12 +106,12 @@ function doPost(e) {
     if (d.action === 'send') return json_(send_(d));
     if (d.action === 'reply') return json_(reply_(d));
     if (d.action === 'send_backup') return json_(backup_(d));
-    if (d.action === 'ping') return json_({ ok: true, version: 10 });
+    if (d.action === 'ping') return json_({ ok: true, version: 11 });
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
 
-function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 10 }); }
+function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 11 }); }
 function send_(d) {
   var body = body_(d.body, d.agentSignature);
   GmailApp.sendEmail(d.to, d.subject || '(no subject)', plain_(body), { name: d.agentName || CFG_().SENDER_NAME, htmlBody: html_(body) });
@@ -126,15 +144,12 @@ function REMOVE_OLD_LABEL() {
 function store_() { return PropertiesService.getScriptProperties(); }
 function prepareSyncVersion_() {
   var props = store_();
-  if (props.getProperty('SYNC_VERSION') === '10') return;
-  var all = props.getProperties();
-  var stale = [];
-  for (var key in all) {
-    if (key.indexOf('m_') === 0) stale.push(key);
-  }
-  for (var i = 0; i < stale.length; i++) props.deleteProperty(stale[i]);
-  props.setProperty('SYNC_VERSION', '10');
-  Logger.log('V10 reset ' + stale.length + ' stale sync markers; Gmail messages will be verified again.');
+  if (props.getProperty('SYNC_VERSION') === '11') return;
+  // Keep v10 message markers. Clearing them caused every timer execution to
+  // revisit the mailbox and consume the Apps Script daily runtime quota.
+  props.setProperty('SYNC_VERSION', '11');
+  props.deleteProperty('LAST_SYNC_MS');
+  Logger.log('V11 incremental sync enabled; existing message markers preserved.');
 }
 function isSynced_(id) { return store_().getProperty('m_v10_' + id) === '1'; }
 function markSynced_(id) { store_().setProperty('m_v10_' + id, '1'); }

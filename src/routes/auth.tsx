@@ -5,7 +5,17 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/auth")({
-  head: () => ({ meta: [{ title: "התחברות | CRM" }] }),
+  ssr: false,
+  head: () => ({
+    meta: [
+      { title: "התחברות | CRM ניהול מערכות" },
+      { name: "description", content: "כניסה מאובטחת למערכת ניהול ה-CRM." },
+      { property: "og:title", content: "התחברות | CRM ניהול מערכות" },
+      { property: "og:description", content: "כניסה מאובטחת למערכת ניהול ה-CRM." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
+    ],
+  }),
   component: AuthPage,
 });
 

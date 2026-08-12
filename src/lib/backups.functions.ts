@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { logAndThrow } from "@/lib/errors";
+import { BACKUP_TABLES } from "@/lib/backup-tables";
 
 // All authorization in this file goes through `assertRole` from
 // @/lib/permissions.server — single source of truth.
@@ -109,7 +110,10 @@ export const getBackupZipUrl = createServerFn({ method: "POST" })
 
     const zip = new JSZip();
     for (const f of files) {
+      // Skip the .zip itself and sub-folders (e.g. the `storage/` tree, whose
+      // entries come back with no size metadata and can't be downloaded).
       if (!f.name || f.name.endsWith(".zip")) continue;
+      if ((f.metadata as any)?.size === undefined) continue;
       const { data: blob, error } = await supabaseAdmin.storage
         .from("backups")
         .download(`${data.folder}/${f.name}`);
@@ -138,9 +142,10 @@ export const restoreBackup = createServerFn({ method: "POST" })
   .inputValidator((d: { files: { table: string; csv: string }[]; mode?: "merge" | "replace"; confirm_token?: string }) =>
     z.object({
       files: z.array(z.object({
-        table: z.enum(["systems","system_notes","system_activity_log","system_transfers","system_files","profiles","user_roles","role_permissions","user_permissions","status_settings","app_settings","voice_message_log","email_messages","email_threads","email_templates"]),
+        // Single source of truth — anything the backup writes can be restored.
+        table: z.enum(BACKUP_TABLES),
         csv: z.string().max(20_000_000),
-      })).min(1).max(20),
+      })).min(1).max(BACKUP_TABLES.length),
       mode: z.enum(["merge","replace"]).optional(),
       // Must be the literal word "שחזר" — typed by the user in the
       // confirmation dialog. Prevents accidental restores via stale tabs
@@ -230,7 +235,7 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
     if (listErr) throw new Error(listErr.message);
     if (!files || files.length === 0) throw new Error("אין קבצים בגיבוי");
     const backupFiles = files
-      .filter((file) => file.name && !file.name.endsWith(".zip"))
+      .filter((file) => file.name && !file.name.endsWith(".zip") && (file.metadata as any)?.size !== undefined)
       .map((file) => ({ name: file.name, path: `${data.folder}/${file.name}`, rows: 0 }));
     if (backupFiles.length === 0) throw new Error("אין קבצים בגיבוי");
 

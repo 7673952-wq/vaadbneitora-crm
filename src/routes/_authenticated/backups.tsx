@@ -3,6 +3,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { toast } from "sonner";
+import { BACKUP_TABLES } from "@/lib/backup-tables";
 import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, sendBackupByEmail } from "@/lib/backups.functions";
 import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
@@ -52,7 +53,7 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
 
   async function handleRestoreFilesSelected(fileList: FileList | null) {
     if (!fileList || !fileList.length) return;
-    const allowed = new Set(["systems","system_notes","system_activity_log","system_transfers","system_files","profiles","user_roles","role_permissions","user_permissions","status_settings","app_settings"]);
+    const allowed = new Set<string>(BACKUP_TABLES);
     const files: { table: string; csv: string }[] = [];
     for (const f of Array.from(fileList)) {
       if (/\.zip$/i.test(f.name)) {
@@ -117,8 +118,18 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
 
   const runMut = useMutation({
     mutationFn: async () => nowFn({ headers: await getAuthHeaders() }),
-    onSuccess: (r) => {
-      toast.success(`גיבוי הושלם • ${r.files.length} קבצים`);
+    onSuccess: (r: any) => {
+      const m = r.manifest;
+      if (m) {
+        const tableCount = Object.keys(m.tables ?? {}).length;
+        if (r.verification?.ok) {
+          toast.success(`גיבוי הושלם ואומת — ${tableCount} טבלאות, ${m.total_rows.toLocaleString("he-IL")} רשומות, ${m.total_files} קבצים`);
+        } else {
+          toast.warning(`גיבוי הושלם עם אזהרות: ${(r.verification?.issues ?? []).slice(0, 3).join(" | ")}`, { duration: 12000 });
+        }
+      } else {
+        toast.success(`גיבוי הושלם • ${r.files.length} קבצים`);
+      }
       qc.invalidateQueries({ queryKey: ["backups"] });
     },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בגיבוי"),

@@ -51,6 +51,7 @@ export function shouldRunScheduledBackup(
 }
 
 import { sanitizeCell, sanitizeRows } from "./csv-safe";
+import { BACKUP_TABLES, BACKUP_BUCKETS, RESTORE_ORDER } from "@/lib/backup-tables";
 
 function csvEscape(v: any): string {
   if (v === null || v === undefined) return "";
@@ -92,22 +93,81 @@ async function fetchAll(table: string) {
 export type BackupResult = {
   folder: string;
   files: { name: string; path: string; rows: number }[];
+  storage?: { bucket: string; files: number; bytes: number; failed: number }[];
+  manifest?: BackupManifest;
+  verification?: { ok: boolean; issues: string[] };
 };
+
+export type BackupManifest = {
+  backup_version: number;
+  created_at: string;
+  folder: string;
+  tables: Record<string, number>;
+  storage: Record<string, { files: number; bytes: number; failed: number }>;
+  total_rows: number;
+  total_files: number;
+  status: "complete" | "incomplete";
+  issues: string[];
+};
+
+// Recursively list every object inside a storage bucket.
+async function listBucketFiles(bucket: string, prefix = "", depth = 0): Promise<{ path: string; size: number }[]> {
+  if (depth > 4) return [];
+  const out: { path: string; size: number }[] = [];
+  const pageSize = 100;
+  let offset = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { data, error } = await supabaseAdmin.storage.from(bucket).list(prefix, { limit: pageSize, offset });
+    if (error) throw new Error(`list ${bucket}/${prefix}: ${error.message}`);
+    const entries = data ?? [];
+    for (const e of entries) {
+      if (!e.name) continue;
+      const full = prefix ? `${prefix}/${e.name}` : e.name;
+      const size = (e.metadata as any)?.size;
+      if (e.id === null || size === undefined) {
+        out.push(...(await listBucketFiles(bucket, full, depth + 1)));
+      } else {
+        out.push({ path: full, size: Number(size) || 0 });
+      }
+    }
+    if (entries.length < pageSize) break;
+    offset += pageSize;
+  }
+  return out;
+}
+
+// Copy the real files of a storage bucket into the backup folder, so a backup
+// contains the attachments/audio themselves and not only their DB rows.
+async function backupBucket(bucket: string, folder: string) {
+  const files = await listBucketFiles(bucket);
+  let bytes = 0;
+  let copied = 0;
+  let failed = 0;
+  for (const f of files) {
+    try {
+      const { data: blob, error } = await supabaseAdmin.storage.from(bucket).download(f.path);
+      if (error || !blob) throw new Error(error?.message ?? "download failed");
+      const buf = new Uint8Array(await blob.arrayBuffer());
+      const { error: upErr } = await supabaseAdmin.storage.from("backups")
+        .upload(`${folder}/storage/${bucket}/${f.path}`, buf, { upsert: true, contentType: blob.type || "application/octet-stream" });
+      if (upErr) throw new Error(upErr.message);
+      bytes += buf.byteLength;
+      copied++;
+    } catch (e: any) {
+      failed++;
+      console.error(`[backup] storage copy failed ${bucket}/${f.path}`, e?.message ?? e);
+    }
+  }
+  return { bucket, files: copied, bytes, failed, expected: files.length };
+}
 
 export async function runBackup(): Promise<BackupResult> {
   // Every table in the schema must be listed here, or a restore from backup
   // will silently lose that data. Keep this in sync with the Database type
   // in src/integrations/supabase/types.ts.
-  const tables = [
-    "systems", "system_notes", "system_activity_log", "system_transfers", "system_files",
-    "profiles", "user_roles", "role_permissions", "user_permissions",
-    "status_settings", "app_settings", "voice_message_log",
-    "email_messages", "email_threads", "email_templates",
-    // Multi-CRM data — the general backup covers every CRM, not just Yemot.
-    "crms", "crm_field_defs", "crm_user_roles", "crm_settings",
-    "crm_records", "crm_record_notes", "crm_record_activity",
-    "kosher_instructions", "notification_role_defaults", "notification_user_overrides",
-  ];
+  const tables = [...BACKUP_TABLES];
+  const tableRows: Record<string, number> = {};
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const folder = ts;
   const files: BackupResult["files"] = [];
@@ -122,6 +182,7 @@ export async function runBackup(): Promise<BackupResult> {
     });
     if (error) throw new Error(`upload ${t}: ${error.message}`);
     files.push({ name: `${t}.csv`, path, rows: rows.length });
+    tableRows[t] = rows.length;
 
     // Alongside the raw systems.csv, also build a friendlier Excel summary
     // with just the columns managers actually want to skim: number, name,
@@ -150,7 +211,57 @@ export async function runBackup(): Promise<BackupResult> {
     }
   }
 
-  return { folder, files };
+  // ---- Storage backup (real files, not just their DB rows) ----
+  const storage: { bucket: string; files: number; bytes: number; failed: number }[] = [];
+  const storageManifest: BackupManifest["storage"] = {};
+  const issues: string[] = [];
+  for (const bucket of BACKUP_BUCKETS) {
+    try {
+      const res = await backupBucket(bucket, folder);
+      storage.push({ bucket: res.bucket, files: res.files, bytes: res.bytes, failed: res.failed });
+      storageManifest[bucket] = { files: res.files, bytes: res.bytes, failed: res.failed };
+      if (res.failed > 0) issues.push(`${bucket}: ${res.failed} קבצים לא הועתקו`);
+    } catch (e: any) {
+      issues.push(`${bucket}: ${e?.message ?? "כשל בגיבוי Storage"}`);
+      storageManifest[bucket] = { files: 0, bytes: 0, failed: -1 };
+    }
+  }
+
+  // ---- Verification: every table produced a file, and it's readable back ----
+  const { data: written } = await supabaseAdmin.storage.from("backups").list(folder, { limit: 200 });
+  const writtenNames = new Set((written ?? []).map((f) => f.name));
+  for (const t of tables) {
+    if (!writtenNames.has(`${t}.csv`)) issues.push(`חסר קובץ ${t}.csv`);
+  }
+
+  const totalRows = Object.values(tableRows).reduce((a, b) => a + b, 0);
+  const totalFiles = storage.reduce((a, b) => a + b.files, 0);
+  const manifest: BackupManifest = {
+    backup_version: 2,
+    created_at: new Date().toISOString(),
+    folder,
+    tables: tableRows,
+    storage: storageManifest,
+    total_rows: totalRows,
+    total_files: totalFiles,
+    status: issues.length === 0 ? "complete" : "incomplete",
+    issues,
+  };
+  const manifestJson = JSON.stringify(manifest, null, 2);
+  const manifestPath = `${folder}/manifest.json`;
+  const { error: manErr } = await supabaseAdmin.storage.from("backups").upload(
+    manifestPath, new Blob([manifestJson], { type: "application/json" }),
+    { contentType: "application/json", upsert: true },
+  );
+  if (!manErr) files.push({ name: "manifest.json", path: manifestPath, rows: 0 });
+
+  return {
+    folder,
+    files,
+    storage,
+    manifest,
+    verification: { ok: issues.length === 0, issues },
+  };
 }
 
 // Emails a completed backup as a ZIP attachment. Shared by both the daily
@@ -347,15 +458,11 @@ async function upsertResilient(table: string, rows: any[]): Promise<{ inserted: 
 }
 
 export async function runRestore(files: RestoreInput, mode: "merge" | "replace" = "merge"): Promise<RestoreResult> {
-  const order = [
-    "profiles", "user_roles", "role_permissions", "user_permissions",
-    "status_settings", "app_settings", "systems", "system_files",
-    "system_notes", "system_transfers", "system_activity_log",
-    "crms", "crm_field_defs", "crm_user_roles", "crm_settings",
-    "crm_records", "crm_record_notes", "crm_record_activity",
-    "kosher_instructions", "notification_role_defaults", "notification_user_overrides",
-  ];
-  const sorted = [...files].sort((a, b) => order.indexOf(a.table) - order.indexOf(b.table));
+  const order = RESTORE_ORDER;
+  const sorted = [...files].sort((a, b) => {
+    const ai = order.indexOf(a.table), bi = order.indexOf(b.table);
+    return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+  });
   const results: RestoreResult = [];
 
   for (const f of sorted) {

@@ -110,7 +110,10 @@ export const getBackupZipUrl = createServerFn({ method: "POST" })
 
     const zip = new JSZip();
     for (const f of files) {
+      // Skip the .zip itself and sub-folders (e.g. the `storage/` tree, whose
+      // entries come back with no size metadata and can't be downloaded).
       if (!f.name || f.name.endsWith(".zip")) continue;
+      if ((f.metadata as any)?.size === undefined) continue;
       const { data: blob, error } = await supabaseAdmin.storage
         .from("backups")
         .download(`${data.folder}/${f.name}`);
@@ -232,7 +235,7 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
     if (listErr) throw new Error(listErr.message);
     if (!files || files.length === 0) throw new Error("אין קבצים בגיבוי");
     const backupFiles = files
-      .filter((file) => file.name && !file.name.endsWith(".zip"))
+      .filter((file) => file.name && !file.name.endsWith(".zip") && (file.metadata as any)?.size !== undefined)
       .map((file) => ({ name: file.name, path: `${data.folder}/${file.name}`, rows: 0 }));
     if (backupFiles.length === 0) throw new Error("אין קבצים בגיבוי");
 

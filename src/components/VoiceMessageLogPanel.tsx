@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { listVoiceMessageLog } from "@/lib/admin.functions";
+import { sendVoiceMessage } from "@/lib/systems.functions";
 import { STATUS_LABEL } from "@/lib/status";
 import { getAuthHeaders } from "@/lib/auth-headers";
-import { Volume2, RefreshCw, Check, X } from "lucide-react";
+import { Volume2, RefreshCw, Check, X, Send } from "lucide-react";
 
 const MODE_LABEL: Record<string, string> = { manual: "ידני", auto: "אוטומטי", queue: "מהתור" };
 
@@ -13,11 +16,28 @@ const MODE_LABEL: Record<string, string> = { manual: "ידני", auto: "אוטו
 // standalone modal from the managers' dashboard.
 export function VoiceMessageLogPanel() {
   const listFn = useServerFn(listVoiceMessageLog);
+  const resendFn = useServerFn(sendVoiceMessage);
+  const [resendingId, setResendingId] = useState<string | null>(null);
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["voice_message_log"],
     queryFn: async () => listFn({ headers: await getAuthHeaders() }),
     refetchInterval: 30000,
   });
+
+  async function resend(row: any) {
+    if (!row.system_id) { toast.error("לרשומה זו אין מערכת משויכת"); return; }
+    setResendingId(row.id);
+    try {
+      const res: any = await resendFn({ data: { systemId: row.system_id, phoneIndex: typeof row.phone_index === "number" ? row.phone_index : -1 } });
+      if (res?.success === false) toast.error(res?.error_message || "השליחה נכשלה");
+      else toast.success("ההודעה נשלחה מחדש");
+      refetch();
+    } catch (e: any) {
+      toast.error(e?.message || "השליחה נכשלה");
+    } finally {
+      setResendingId(null);
+    }
+  }
 
   if (isLoading) return <div className="text-center py-10 text-muted-foreground">טוען יומן הודעות...</div>;
 
@@ -52,11 +72,12 @@ export function VoiceMessageLogPanel() {
               <th className="px-4 py-3 font-medium text-muted-foreground">אופן שליחה</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">תוצאה</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">זמן</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">פעולות</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
             {rows.length === 0 ? (
-              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground italic">אין עדיין רשומות ביומן.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-12 text-center text-muted-foreground italic">אין עדיין רשומות ביומן.</td></tr>
             ) : (
               rows.map((r: any) => (
                 <tr key={r.id} className="hover:bg-accent/30 transition-colors">
@@ -81,6 +102,19 @@ export function VoiceMessageLogPanel() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-muted-foreground text-xs">{new Date(r.created_at).toLocaleString("he-IL")}</td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => resend(r)}
+                      disabled={resendingId === r.id || !r.system_id}
+                      title={r.system_id ? "שלח שוב את ההודעה הקולית" : "אין מערכת משויכת"}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border text-xs font-medium hover:bg-accent disabled:opacity-40"
+                    >
+                      {resendingId === r.id
+                        ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        : <Send className="h-3.5 w-3.5" />}
+                      שלח שוב
+                    </button>
+                  </td>
                 </tr>
               ))
             )}

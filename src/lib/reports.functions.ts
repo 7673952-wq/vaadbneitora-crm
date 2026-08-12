@@ -15,6 +15,8 @@ export const getReports = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: Input) => inputSchema.parse(d))
   .handler(async ({ data, context }) => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "systems_read", "yemot");
     const sb = context.supabase;
 
     // Base query for systems with optional filters

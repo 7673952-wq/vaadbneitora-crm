@@ -82,6 +82,8 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
 export const getSystemsByCallerPhone = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "systems_read", "yemot");
     const { data, error } = await context.supabase
       .from("systems")
       .select("id, system_code, name, status, caller_phone, phone, additional_caller_phones, assigned_agent_id, created_at");

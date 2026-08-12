@@ -896,30 +896,37 @@ export const setReminder = createServerFn({ method: "POST" })
 
 export const dismissReminder = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { system_id: string; scope?: "all" | "me" }) =>
-    z.object({ system_id: z.string().uuid(), scope: z.enum(["all", "me"]).optional() }).parse(d))
+  .inputValidator((d: { system_id: string; scope?: "all" | "me" | "agents"; agent_ids?: string[] }) =>
+    z.object({
+      system_id: z.string().uuid(),
+      scope: z.enum(["all", "me", "agents"]).optional(),
+      agent_ids: z.array(z.string().uuid()).max(100).optional(),
+    }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
 
-    // scope="me": keep the reminder alive for the other targeted agents and
-    // only remove the current user from its recipient list.
-    if (data.scope === "me") {
+    // scope="me"/"agents": keep the reminder alive for the other targeted
+    // agents and only drop the selected recipients from its list.
+    if (data.scope === "me" || data.scope === "agents") {
+      const remove = data.scope === "me"
+        ? [context.userId]
+        : (data.agent_ids ?? []);
       const { data: row, error: readErr } = await context.supabase
         .from("systems")
         .select("id, reminder_agent_ids")
         .eq("id", data.system_id)
         .maybeSingle();
       if (readErr) throw new Error(readErr.message);
-      if (row) {
+      if (row && remove.length > 0) {
         const current: string[] = (row as any).reminder_agent_ids ?? [];
         let next: string[];
         if (current.length === 0) {
           // Empty list means "everyone" — materialise it as every other agent.
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const { data: profiles } = await supabaseAdmin.from("profiles").select("id");
-          next = ((profiles ?? []) as any[]).map((p) => p.id as string).filter((uid) => uid !== context.userId);
+          next = ((profiles ?? []) as any[]).map((p) => p.id as string).filter((uid) => !remove.includes(uid));
         } else {
-          next = current.filter((uid) => uid !== context.userId);
+          next = current.filter((uid) => !remove.includes(uid));
         }
         // Nobody left to remind → clear the reminder entirely.
         const patch = next.length === 0
@@ -927,9 +934,10 @@ export const dismissReminder = createServerFn({ method: "POST" })
           : { reminder_agent_ids: next };
         const { error } = await context.supabase.from("systems").update(patch).eq("id", data.system_id);
         if (error) throw new Error(error.message);
-        return { ok: true, scope: "me" as const, remaining: next.length };
+        return { ok: true, scope: data.scope, remaining: next.length };
       }
     }
+
 
     const { data: updated, error } = await context.supabase
       .from("systems")

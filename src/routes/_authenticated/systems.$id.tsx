@@ -421,18 +421,21 @@ function SystemDetail() {
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
 
-  // When a system carries an active reminder, ask on entry whether to cancel it
-  // (for everyone, or only for the agent currently viewing it).
+  // Ask about an existing reminder only when ENTERING a system that already
+  // has one — never right after the user sets a reminder here. The effect is
+  // keyed on the system id alone, so later reminder changes never re-open it.
   const [askCancelReminder, setAskCancelReminder] = useState(false);
-  const askedReminderKeyRef = useRef<string | null>(null);
+  const [cancelAgentIds, setCancelAgentIds] = useState<string[]>([]);
+  const askedSystemRef = useRef<string | null>(null);
   useEffect(() => {
     const sys: any = data?.system;
-    if (!sys?.id || !sys?.reminder_at) return;
-    const key = `${sys.id}:${sys.reminder_at}`;
-    if (askedReminderKeyRef.current === key) return;
-    askedReminderKeyRef.current = key;
-    setAskCancelReminder(true);
-  }, [data?.system?.id, data?.system?.reminder_at]);
+    if (!sys?.id) return;
+    if (askedSystemRef.current === sys.id) return;
+    askedSystemRef.current = sys.id;
+    setCancelAgentIds([]);
+    if (sys.reminder_at) setAskCancelReminder(true);
+  }, [data?.system?.id]);
+
 
   const allMentionOptions = useMemo(() => [
     { id: "__all", label: "כולם" },
@@ -609,10 +612,12 @@ function SystemDetail() {
 
       {askCancelReminder && s?.reminder_at && (() => {
         const targetIds: string[] = (s as any).reminder_agent_ids ?? [];
+        const targetAgents = (targetIds.length > 0
+          ? (agents ?? []).filter((a: any) => targetIds.includes(a.id))
+          : (agents ?? [])) as any[];
         const targetNames = targetIds
           .map((tid) => (agents ?? []).find((a: any) => a.id === tid)?.display_name)
           .filter(Boolean) as string[];
-        const multiple = targetIds.length > 1;
         return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/50 p-4"
           onClick={() => setAskCancelReminder(false)}>
@@ -626,26 +631,48 @@ function SystemDetail() {
               תזכורת ל-<strong className="text-foreground">{new Date(s.reminder_at).toLocaleString("he-IL")}</strong>.
               האם לבטל אותה?
             </p>
-            {targetNames.length > 0 && (
-              <p className="text-xs text-muted-foreground mb-3">
-                מוגדרת עבור: <span className="text-foreground">{targetNames.join(", ")}</span>
-              </p>
+            <p className="text-xs text-muted-foreground mb-3">
+              מוגדרת עבור: <span className="text-foreground">{targetNames.length > 0 ? targetNames.join(", ") : "כל הנציגים"}</span>
+            </p>
+
+            {targetAgents.length > 1 && (
+              <div className="rounded-lg border border-border p-3 mb-3">
+                <div className="text-xs font-medium mb-2">ביטול לנציגים מסוימים בלבד:</div>
+                <div className="max-h-40 overflow-auto space-y-1">
+                  {targetAgents.map((a: any) => {
+                    const checked = cancelAgentIds.includes(a.id);
+                    return (
+                      <label key={a.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input type="checkbox" checked={checked}
+                          onChange={() => setCancelAgentIds((prev) => checked ? prev.filter((x) => x !== a.id) : [...prev, a.id])} />
+                        <span>{a.display_name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <button
+                  disabled={cancelAgentIds.length === 0}
+                  onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "agents", agent_ids: cancelAgentIds } }); setAskCancelReminder(false); }}
+                  className="mt-2 w-full rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                >
+                  בטל עבור {cancelAgentIds.length || ""} נבחרים
+                </button>
+              </div>
             )}
+
             <div className="flex flex-col gap-2 mt-3">
               <button
                 onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "all" } }); setAskCancelReminder(false); }}
                 className="w-full rounded-lg bg-red-600 text-white px-3 py-2 text-sm font-medium hover:bg-red-700"
               >
-                {multiple ? "בטל את התזכורת לכל הנציגים" : "כן, בטל את התזכורת"}
+                בטל את התזכורת לכולם
               </button>
-              {multiple && (
-                <button
-                  onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "me" } }); setAskCancelReminder(false); }}
-                  className="w-full rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
-                >
-                  בטל רק עבורי ({me?.displayName || "המשתמש הנוכחי"})
-                </button>
-              )}
+              <button
+                onClick={() => { dismissMut.mutate({ data: { system_id: id, scope: "me" } }); setAskCancelReminder(false); }}
+                className="w-full rounded-lg border border-border px-3 py-2 text-sm font-medium hover:bg-accent"
+              >
+                בטל רק עבורי ({me?.displayName || "המשתמש הנוכחי"})
+              </button>
               <button
                 onClick={() => setAskCancelReminder(false)}
                 className="w-full rounded-lg px-3 py-2 text-sm text-muted-foreground hover:bg-accent"
@@ -657,6 +684,7 @@ function SystemDetail() {
         </div>
         );
       })()}
+
 
       {me?.userId && (
         <SystemPresence

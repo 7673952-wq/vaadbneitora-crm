@@ -1,4 +1,4 @@
-// CRM Gmail Relay - v16
+// CRM Gmail Relay - v19
 // Based on חביב's v11. Changes from v11:
 // 1) FIXED: WEBHOOK_URL was pointing at the Lovable preview domain
 //    (vaadbneitora-crm.lovable.app), not the real production system
@@ -15,8 +15,7 @@
 // 3) NEW (per request): only CRM-related mail is synced into the CRM. A
 //    Gmail thread only counts as "CRM-related" once the relay has sent at
 //    least one message on it (via the 'send' or 'reply' actions below, or
-//    is registered explicitly by a CRM send/reply action. Mail sent by
-//    hand from Gmail no longer turns a thread into a CRM thread. Inbound mail on threads the
+//    was discovered as sent-by-us in a poll). Inbound mail on threads the
 //    CRM never sent anything on (cold mail, personal mail sharing the same
 //    inbox, newsletters, etc.) is skipped entirely — nothing about it is
 //    posted to the CRM. This can be lifted later by clearing the
@@ -41,6 +40,30 @@
 // 6) NEW (v15, per request): the 'mark_read' action lets the CRM tell Gmail
 //    a message was read the moment an agent opens it in the CRM — until
 //    then, it stays unread in Gmail exactly as it arrived. See markRead_.
+// 7) CHANGED (v17, per request): automatic Gmail filters are now OFF by
+//    default (USE_GMAIL_FILTERS = false). Filters apply to every future
+//    email from an address, not just CRM threads, which mislabeled mail
+//    that had nothing to do with a CRM conversation. Tagging/archiving is
+//    back to the thread-aware poll only — a customer's reply can flash in
+//    "ראשי" for up to the poll interval before it's archived, but nothing
+//    unrelated ever gets swept in. Run REMOVE_ALL_CRM_FILTERS once to clean
+//    up any filters created automatically before this change.
+// 8) CHANGED (v18, per request): filters are back on, but now scoped to
+//    from AND subject together, not from alone — the flash into "ראשי" is
+//    avoided again, without sweeping in unrelated mail from the same
+//    address, since only this specific conversation's subject matches.
+//    Trade-off: if the customer changes the subject line, or Gmail's
+//    subject match is imprecise for the way threading rewrites it, an
+//    edge-case reply could still flash before the poll catches it.
+// 9) FIXED (v19): "CRM-related thread" was being decided by sender address
+//    alone during polling — any mail sent FROM the shared mailbox address,
+//    even sent manually through Gmail and not through the CRM at all, got
+//    treated as CRM-related and swept in, dragging entirely unrelated
+//    conversations into whatever system happened to be linked. A thread is
+//    now ONLY ever marked known inside send_/reply_ — i.e. only when the
+//    relay itself actually sent something on it. Run RESET_ALL_KNOWN_THREADS
+//    once after installing this to clear out anything wrongly marked known
+//    by the old logic.
 
 function CFG_() {
   return {
@@ -58,13 +81,21 @@ function CFG_() {
     // toggle in ניהול → מיילים. When true, any thread that gets the CRM
     // label is also archived out of the inbox right after tagging.
     ARCHIVE_AFTER_LABEL: true,
+    // Master switch: when false, no automatic Gmail filter is EVER created
+    // for any address — tagging/archiving relies entirely on the
+    // thread-aware poll (only a customer replying to a thread the CRM
+    // actually sent something on gets tagged; nothing else). Trade-off: a
+    // reply can flash in "ראשי" for up to the poll interval before it's
+    // archived, since filters (which avoid that flash) are off.
+    USE_GMAIL_FILTERS: true,
     // Addresses that should NEVER get an automatic Gmail filter created for
     // them — because a "from" filter applies to every future email from
     // that address, not just CRM threads, addresses you also use for
     // unrelated mail (shared test accounts, colleagues, etc.) would end up
     // mislabeled. These addresses still get labeled/archived per-thread via
     // the regular poll (thread-aware, correct), just not instantly via a
-    // filter. Add addresses here in lowercase.
+    // filter. Add addresses here in lowercase. (Only relevant if
+    // USE_GMAIL_FILTERS is ever turned back on.)
     EXCLUDE_FROM_FILTERS: ['7673952@gmail.com']
   };
 }
@@ -116,16 +147,17 @@ function POLL_MAILBOX() {
   var seen = {};
   var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0, skippedNotCrm: 0, timedOut: false };
 
-  // Sent mail is scanned FIRST: every thread we sent something on this pass
-  // gets registered as "CRM-related" before inbound mail is evaluated, so a
-  // reply that just came in on a thread we started is never missed.
-  syncQuery_('in:sent after:' + afterSeconds, 50, seen, stats, started, /*isSentPass*/ true);
-  syncQuery_('in:inbox after:' + afterSeconds, 50, seen, stats, started, /*isSentPass*/ false);
+  // Threads are only ever "known" (CRM-related) because send_/reply_
+  // marked them so when the CRM itself sent something — not because of
+  // scan order here. Sent mail is still scanned first purely so any of the
+  // CRM's own messages show up before inbound replies in the sync stats.
+  syncQuery_('in:sent after:' + afterSeconds, 50, seen, stats, started);
+  syncQuery_('in:inbox after:' + afterSeconds, 50, seen, stats, started);
 
   // Advance the cursor only after a complete pass. Failed webhooks are not
   // marked and remain inside the overlap window for the next poll.
   if (!stats.timedOut) props.setProperty('LAST_SYNC_MS', String(started));
-  Logger.log('V16 incremental sync: ' + JSON.stringify(stats));
+  Logger.log('V19 incremental sync: ' + JSON.stringify(stats));
   return stats;
 }
 
@@ -137,9 +169,9 @@ function BACKFILL_14_DAYS() {
   var stats = { inserted: 0, existing: 0, failed: 0, skipped: 0, skippedNotCrm: 0, timedOut: false };
   // Same two-pass order as POLL_MAILBOX, so "sent" threads get registered
   // before "inbox" mail is checked against the CRM-relatedness rule.
-  syncQuery_('in:sent newer_than:14d', 150, seen, stats, started, true);
-  syncQuery_('in:inbox newer_than:14d', 150, seen, stats, started, false);
-  Logger.log('V16 manual backfill: ' + JSON.stringify(stats));
+  syncQuery_('in:sent newer_than:14d', 150, seen, stats, started);
+  syncQuery_('in:inbox newer_than:14d', 150, seen, stats, started);
+  Logger.log('V19 manual backfill: ' + JSON.stringify(stats));
   return stats;
 }
 
@@ -148,7 +180,7 @@ function SYNC_NOW() {
   Logger.log('SYNC_NOW finished: ' + JSON.stringify(stats));
 }
 
-function syncQuery_(query, maxThreads, seen, stats, started, isSentPass) {
+function syncQuery_(query, maxThreads, seen, stats, started) {
   var cfg = CFG_();
   var threads = GmailApp.search(query, 0, maxThreads);
   for (var i = 0; i < threads.length; i++) {
@@ -167,9 +199,13 @@ function syncQuery_(query, maxThreads, seen, stats, started, isSentPass) {
       var isOutbound = from.toLowerCase().indexOf(cfg.MAILBOX_EMAIL.toLowerCase()) !== -1;
       var direction = isOutbound ? 'outbound' : 'inbound';
 
-      // v16: only send_/reply_ (i.e. mail the CRM itself sent) may register a
-      // thread. Treating any Gmail "sent" message as CRM mail is what made
-      // ordinary personal correspondence show up in the CRM and get labeled.
+      // NOTE: a thread only becomes "known" (CRM-related) via markThreadKnown_
+      // calls inside send_ / reply_ above — i.e. when the relay itself sent
+      // something on it. We deliberately do NOT mark a thread known just
+      // because its sender matches MAILBOX_EMAIL here: that would treat any
+      // mail a human sends manually from this shared mailbox (not through
+      // the CRM) as CRM-related too, which is exactly the bug that caused
+      // unrelated conversations to get swept in.
 
       // Keep the label on the thread for as long as the conversation
       // continues — covers a customer's reply landing here, and any
@@ -178,9 +214,10 @@ function syncQuery_(query, maxThreads, seen, stats, started, isSentPass) {
       if (isThreadKnown_(threadId)) applyCrmLabel_(threads[i], null, CFG_().ARCHIVE_AFTER_LABEL);
 
       if (ONLY_SYNC_CRM_THREADS && !isThreadKnown_(threadId)) {
-        // Mail on a thread the CRM never sent anything on — not CRM-related.
-        // Skip it entirely (don't post it, don't mark it synced) so it is
-        // re-evaluated later if the CRM ever sends on that thread.
+        // Not a thread the CRM ever sent anything on — not CRM-related,
+        // skip it entirely regardless of direction (don't post it, don't
+        // mark it synced, so it's re-evaluated later if the thread ever
+        // becomes known, e.g. an agent replies to it from the CRM).
         stats.skippedNotCrm++;
         continue;
       }
@@ -225,17 +262,17 @@ function doPost(e) {
     if (d.action === 'reply') return json_(reply_(d));
     if (d.action === 'send_backup') return json_(backup_(d));
     if (d.action === 'mark_read') return json_(markRead_(d));
-    if (d.action === 'ping') return json_({ ok: true, version: 16 });
+    if (d.action === 'ping') return json_({ ok: true, version: 19 });
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
 
-function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 16 }); }
+function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 19 }); }
 
 function send_(d) {
   var body = body_(d.body, d.agentSignature);
   GmailApp.sendEmail(d.to, d.subject || '(no subject)', plain_(body), { name: d.agentName || CFG_().SENDER_NAME, htmlBody: html_(body) });
-  ensureFilterForAddress_(d.to, d.label, d.archive);
+  ensureFilterForAddress_(d.to, d.subject, d.label, d.archive);
   var thread = findSent_(d.to, d.subject || '(no subject)');
   if (thread) {
     markThreadKnown_(thread.getId());
@@ -258,7 +295,7 @@ function reply_(d) {
     // Safe path: an actual message the customer sent. Replying to THAT
     // specific message uses ITS reply-to address, which is always correct.
     target.message.reply(plain_(body), opts);
-    ensureFilterForAddress_(target.address, d.label, d.archive);
+    ensureFilterForAddress_(target.address, target.message.getSubject() || thread.getFirstMessageSubject(), d.label, d.archive);
     applyCrmLabel_(thread, d.label, d.archive);
     return { ok: true, gmailThreadId: thread.getId(), gmailMessageId: lastId_(thread) };
   }
@@ -269,7 +306,7 @@ function reply_(d) {
   var subject = thread.getFirstMessageSubject() || '';
   if (!/^re:/i.test(subject)) subject = 'Re: ' + subject;
   GmailApp.sendEmail(target.address, subject, plain_(body), opts);
-  ensureFilterForAddress_(target.address, d.label, d.archive);
+  ensureFilterForAddress_(target.address, subject, d.label, d.archive);
   var newThread = findSent_(target.address, subject);
   var effectiveThread = newThread || thread;
   markThreadKnown_(effectiveThread.getId());
@@ -338,12 +375,11 @@ function store_() { return PropertiesService.getScriptProperties(); }
 
 function prepareSyncVersion_() {
   var props = store_();
-  if (props.getProperty('SYNC_VERSION') === '16') return;
+  if (props.getProperty('SYNC_VERSION') === '19') return;
   // Keep old message markers — clearing them would make every timer
   // execution revisit the whole mailbox and burn the daily runtime quota.
-  props.setProperty('SYNC_VERSION', '16');
-  cleanupExcludedFilters_();
-  Logger.log('V16 sync enabled; message markers preserved, unsafe address filters removed.');
+  props.setProperty('SYNC_VERSION', '19');
+  Logger.log('V19 sync enabled; existing message markers preserved.');
 }
 
 function isSynced_(id) { return store_().getProperty('m_v10_' + id) === '1'; }
@@ -352,8 +388,8 @@ function markSynced_(id) { store_().setProperty('m_v10_' + id, '1'); }
 // "CRM-related thread" registry: a thread is remembered once we see (or
 // send) an outbound message on it. Kept as its own prefix so it can be
 // wiped independently of the m_v10_ sync markers if ever needed.
-function isThreadKnown_(threadId) { return store_().getProperty('crm16_t_' + threadId) === '1'; }
-function markThreadKnown_(threadId) { if (threadId) store_().setProperty('crm16_t_' + threadId, '1'); }
+function isThreadKnown_(threadId) { return store_().getProperty('t_' + threadId) === '1'; }
+function markThreadKnown_(threadId) { if (threadId) store_().setProperty('t_' + threadId, '1'); }
 
 // Applies the configured CRM label to a thread, and archives it out of the
 // inbox afterward if ARCHIVE_AFTER_LABEL is on. Safe to call repeatedly —
@@ -384,13 +420,19 @@ function applyCrmLabel_(thread, labelNameOverride, archiveOverride) {
 // place. Requires the "Gmail API" advanced service to be enabled (see
 // SETUP_GMAIL_FILTERS comment below) — if it isn't, this silently no-ops
 // and the poll-based archiving above is the fallback.
-function ensureFilterForAddress_(address, labelNameOverride, archiveOverride) {
-  recordFilterAttempt_('called for: ' + address);
+function ensureFilterForAddress_(address, subject, labelNameOverride, archiveOverride) {
+  if (!CFG_().USE_GMAIL_FILTERS) return; // master switch is off — poll-based tagging only
+  recordFilterAttempt_('called for: ' + address + ' / subject: ' + subject);
   if (!address) { recordFilterAttempt_('no address, skipping'); return; }
-  var normalized = extractEmail_(address).toLowerCase();
-  if (isExcludedAddress_(normalized)) {
-    recordFilterAttempt_('excluded from automatic filters: ' + normalized);
-    return;
+  var subj = baseSubject_(subject);
+  if (!subj) { recordFilterAttempt_('no usable subject for ' + address + ', skipping (avoids an overly broad from-only filter)'); return; }
+  var addrLower = address.toLowerCase();
+  var excluded = CFG_().EXCLUDE_FROM_FILTERS || [];
+  for (var e = 0; e < excluded.length; e++) {
+    if (String(excluded[e]).toLowerCase() === addrLower) {
+      recordFilterAttempt_(address + ' is in EXCLUDE_FROM_FILTERS, skipping (falls back to per-thread poll archiving)');
+      return;
+    }
   }
   try {
     if (typeof Gmail === 'undefined') {
@@ -402,13 +444,13 @@ function ensureFilterForAddress_(address, labelNameOverride, archiveOverride) {
       : CFG_().ARCHIVE_AFTER_LABEL;
 
     var existing = Gmail.Users.Settings.Filters.list('me');
-    var addrLower = normalized;
     if (existing.filter) {
       for (var i = 0; i < existing.filter.length; i++) {
         var f = existing.filter[i];
-        if (f.criteria && f.criteria.from && f.criteria.from.toLowerCase() === addrLower) {
-          recordFilterAttempt_('filter already exists for ' + address);
-          return; // already set up
+        if (f.criteria && f.criteria.from && f.criteria.from.toLowerCase() === addrLower
+            && f.criteria.subject && f.criteria.subject.toLowerCase() === subj.toLowerCase()) {
+          recordFilterAttempt_('filter already exists for ' + address + ' / ' + subj);
+          return; // already set up for this exact conversation
         }
       }
     }
@@ -417,48 +459,26 @@ function ensureFilterForAddress_(address, labelNameOverride, archiveOverride) {
     var action = { addLabelIds: [labelId] };
     if (shouldArchive) action.removeLabelIds = ['INBOX'];
 
-    var created = Gmail.Users.Settings.Filters.create({ criteria: { from: address }, action: action }, 'me');
-    recordFilterAttempt_('SUCCESS - created filter for ' + address + ': ' + JSON.stringify(created));
+    // Both from AND subject must match — this is what keeps the filter
+    // scoped to this one conversation instead of every future email from
+    // this address, unlike a from-only filter.
+    var created = Gmail.Users.Settings.Filters.create({ criteria: { from: address, subject: subj }, action: action }, 'me');
+    recordFilterAttempt_('SUCCESS - created filter for ' + address + ' / ' + subj + ': ' + JSON.stringify(created));
   } catch (err) {
-    recordFilterAttempt_('FAILED for ' + address + ': ' + err);
+    recordFilterAttempt_('FAILED for ' + address + ' / ' + subj + ': ' + err);
   }
 }
 
-// Addresses listed in EXCLUDE_FROM_FILTERS must never get a broad "from"
-// filter: such a filter labels EVERY future mail from that address, not only
-// CRM conversations.
-function isExcludedAddress_(normalizedAddress) {
-  var excluded = CFG_().EXCLUDE_FROM_FILTERS || [];
-  for (var i = 0; i < excluded.length; i++) {
-    if (String(excluded[i]).toLowerCase() === normalizedAddress) return true;
-  }
-  return false;
-}
-
-// Removes broad filters that earlier versions created for excluded addresses.
-// Runs automatically once when v16 takes over (see prepareSyncVersion_), and
-// can be run by hand at any time.
-function CLEANUP_UNSAFE_FILTERS() {
-  cleanupExcludedFilters_();
-  Logger.log('Cleanup finished. ' + (store_().getProperty('LAST_FILTER_ATTEMPT') || ''));
-}
-
-function cleanupExcludedFilters_() {
-  if (typeof Gmail === 'undefined') { recordFilterAttempt_('cleanup skipped: Gmail advanced service not enabled'); return; }
-  try {
-    var existing = Gmail.Users.Settings.Filters.list('me').filter || [];
-    var removed = 0;
-    for (var i = 0; i < existing.length; i++) {
-      var criteria = existing[i].criteria;
-      if (!criteria || !criteria.from) continue;
-      if (!isExcludedAddress_(extractEmail_(criteria.from).toLowerCase())) continue;
-      Gmail.Users.Settings.Filters.remove('me', existing[i].id);
-      removed++;
-    }
-    recordFilterAttempt_('cleanup removed ' + removed + ' unsafe filter(s)');
-  } catch (err) {
-    recordFilterAttempt_('cleanup failed: ' + err);
-  }
+// Strips leading "Re:"/"Fwd:" (repeated, any casing/language variant with
+// a colon) so the same underlying conversation subject matches regardless
+// of how many times it's been replied to. Falls back to '' (no filter) if
+// nothing usable is left — a filter needs a real, specific subject to stay
+// narrow; matching on a blank/near-blank subject would be as broad as a
+// from-only filter, defeating the whole point.
+function baseSubject_(s) {
+  var t = String(s || '').replace(/^(re|fwd?)\s*:\s*/i, '').trim();
+  while (/^(re|fwd?)\s*:\s*/i.test(t)) t = t.replace(/^(re|fwd?)\s*:\s*/i, '').trim();
+  return t.length >= 3 ? t : '';
 }
 
 // Persists the outcome so it can be inspected without hunting through the
@@ -481,6 +501,109 @@ function getOrCreateLabelId_(name) {
   for (var i = 0; i < labels.length; i++) if (labels[i].name === name) return labels[i].id;
   var created = Gmail.Users.Labels.create({ name: name }, 'me');
   return created.id;
+}
+
+// Run this MANUALLY once, after turning USE_GMAIL_FILTERS off, to remove
+// every filter this relay ever created automatically (any filter whose
+// action applies the CRM label). Filters you or חביב created manually for
+// unrelated things (IVR recordings, etc.) are left untouched.
+function REMOVE_ALL_CRM_FILTERS() {
+  if (typeof Gmail === 'undefined') {
+    Logger.log('Gmail API advanced service is not enabled.');
+    return;
+  }
+  var labelName = CFG_().LABEL_NAME;
+  var label = GmailApp.getUserLabelByName(labelName);
+  if (!label) { Logger.log('No "' + labelName + '" label found — nothing to remove.'); return; }
+  var labelId = getOrCreateLabelId_(labelName);
+
+  var existing = Gmail.Users.Settings.Filters.list('me');
+  var removed = 0;
+  if (existing.filter) {
+    for (var i = 0; i < existing.filter.length; i++) {
+      var f = existing.filter[i];
+      // Only remove filters that (a) apply exactly this CRM label and
+      // (b) key off a bare "from" address — i.e. filters this relay's own
+      // ensureFilterForAddress_ would have created, not something you or
+      // חביב set up manually with additional criteria.
+      var appliesCrmLabel = f.action && f.action.addLabelIds && f.action.addLabelIds.indexOf(labelId) !== -1;
+      var isSimpleFromFilter = f.criteria && f.criteria.from && !f.criteria.subject && !f.criteria.query && !f.criteria.hasAttachment;
+      if (appliesCrmLabel && isSimpleFromFilter) {
+        Gmail.Users.Settings.Filters.remove('me', f.id);
+        removed++;
+        Logger.log('Removed filter for: ' + f.criteria.from);
+      }
+    }
+  }
+  Logger.log('Done. Removed ' + removed + ' filter(s) total.');
+}
+
+// Run this MANUALLY once after installing this fix. Older versions marked
+// a thread "known" (CRM-related) whenever mail was sent FROM the shared
+// mailbox address — including mail sent manually, not through the CRM —
+// which could have polluted the registry with unrelated conversations.
+// This wipes the whole "known threads" list clean; going forward it will
+// only be populated by actual CRM sends/replies, which is what you asked
+// for. Safe to run: it does not touch email content, sync markers, or
+// anything already in the CRM's database — it only means threads won't
+// sync/tag again until the CRM sends something on them.
+function RESET_ALL_KNOWN_THREADS() {
+  var props = store_().getProperties();
+  var removed = 0;
+  for (var k in props) {
+    if (k.indexOf('t_') === 0) { store_().deleteProperty(k); removed++; }
+  }
+  Logger.log('Cleared ' + removed + ' known-thread marker(s). Threads will re-register only via actual CRM sends/replies from now on.');
+}
+
+// Run this MANUALLY to make the relay "forget" a Gmail thread completely —
+// it stops being treated as CRM-related (won't sync, won't get tagged)
+// until the CRM sends something on it again. Use this to clean up test
+// threads that got merged together by Gmail (same subject → same thread)
+// and are now incorrectly still being treated as CRM-related.
+//   FORGET_THREAD('19fd8b01d318b826')
+function FORGET_THREAD(threadId) {
+  if (!threadId) { Logger.log('Usage: FORGET_THREAD("gmailThreadId")'); return; }
+  store_().deleteProperty('t_' + threadId);
+  Logger.log('Forgot thread ' + threadId + ' — it will no longer sync or be tagged unless the CRM sends on it again.');
+}
+
+// Run this MANUALLY to remove a filter that was already created for an
+// address that turned out to be too broad (e.g. a shared test/personal
+// account). Pass the address as a string, e.g.:
+//   REMOVE_FILTER_FOR_ADDRESS('7673952@gmail.com')
+// Also add the address to CFG_().EXCLUDE_FROM_FILTERS above so a new one
+// doesn't get created again automatically.
+function REMOVE_FILTER_FOR_ADDRESS(address) {
+  if (typeof Gmail === 'undefined') {
+    Logger.log('Gmail API advanced service is not enabled.');
+    return;
+  }
+  if (!address) {
+    Logger.log('Usage: REMOVE_FILTER_FOR_ADDRESS("someone@example.com")');
+    return;
+  }
+  var addrLower = address.toLowerCase();
+  var existing = Gmail.Users.Settings.Filters.list('me');
+  var removed = 0;
+  if (existing.filter) {
+    for (var i = 0; i < existing.filter.length; i++) {
+      var f = existing.filter[i];
+      if (f.criteria && f.criteria.from && f.criteria.from.toLowerCase() === addrLower) {
+        Gmail.Users.Settings.Filters.remove('me', f.id);
+        removed++;
+      }
+    }
+  }
+  Logger.log('Removed ' + removed + ' filter(s) for ' + address + '.');
+}
+
+// Convenience: run this one directly from the dropdown (no editing
+// needed) to remove the filter created earlier for the shared test
+// address. Add more one-line calls here for any other address you need
+// to clean up the same way.
+function CLEANUP_TEST_ADDRESS_FILTER() {
+  REMOVE_FILTER_FOR_ADDRESS('7673952@gmail.com');
 }
 
 // Run this manually once after enabling the Gmail API advanced service

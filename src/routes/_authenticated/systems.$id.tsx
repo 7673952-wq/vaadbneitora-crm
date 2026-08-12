@@ -421,18 +421,21 @@ function SystemDetail() {
     setReminderScope(ids.length === 0 ? "all" : "specific");
   }, [data?.system?.id]);
 
-  // When a system carries an active reminder, ask on entry whether to cancel it
-  // (for everyone, or only for the agent currently viewing it).
+  // Ask about an existing reminder only when ENTERING a system that already
+  // has one — never right after the user sets a reminder here. The effect is
+  // keyed on the system id alone, so later reminder changes never re-open it.
   const [askCancelReminder, setAskCancelReminder] = useState(false);
-  const askedReminderKeyRef = useRef<string | null>(null);
+  const [cancelAgentIds, setCancelAgentIds] = useState<string[]>([]);
+  const askedSystemRef = useRef<string | null>(null);
   useEffect(() => {
     const sys: any = data?.system;
-    if (!sys?.id || !sys?.reminder_at) return;
-    const key = `${sys.id}:${sys.reminder_at}`;
-    if (askedReminderKeyRef.current === key) return;
-    askedReminderKeyRef.current = key;
-    setAskCancelReminder(true);
-  }, [data?.system?.id, data?.system?.reminder_at]);
+    if (!sys?.id) return;
+    if (askedSystemRef.current === sys.id) return;
+    askedSystemRef.current = sys.id;
+    setCancelAgentIds([]);
+    if (sys.reminder_at) setAskCancelReminder(true);
+  }, [data?.system?.id]);
+
 
   const allMentionOptions = useMemo(() => [
     { id: "__all", label: "כולם" },

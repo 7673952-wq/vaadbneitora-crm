@@ -819,7 +819,17 @@ function Dashboard() {
       {/* Main cards grid */}
       <div>
         {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
-        {!isLoading && rest.length === 0 && <div className="text-center py-12 text-muted-foreground">לא נמצאו מערכות</div>}
+        {!isLoading && rest.length === 0 && (
+          <div className="text-center py-12 text-muted-foreground space-y-3">
+            <div>{hasActiveFilters ? "לא נמצאו מערכות התואמות לסינון" : "אין עדיין מערכות"}</div>
+            {hasActiveFilters && (
+              <button onClick={() => { clearFilters(); setPage(1); }}
+                className="inline-flex items-center gap-1 text-xs px-3 py-1.5 rounded-lg border border-input hover:bg-accent">
+                <X className="h-3 w-3" />נקה סינון
+              </button>
+            )}
+          </div>
+        )}
 
         {viewMode === "kanban" ? (
           rest.length > 0 && (

@@ -1,4 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
+
+// systems.functions.ts is client-reachable, so the server-only logger is
+// imported lazily inside handlers instead of at module scope.
+async function logInfo(message: string, context?: Record<string, unknown>) {
+  const { logger } = await import("@/lib/logger.server");
+  logger.info(message, context);
+}
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
@@ -549,7 +556,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       phone: z.string().max(60).nullable().optional(),
       caller_phone: z.string().max(60).nullable().optional(),
       source: z.string().max(40).nullable().optional(),
-      audio_url: z.string().url().max(500).nullable().optional(),
+      audio_url: z.union([z.string().url().max(500), z.literal("")]).nullable().optional(),
       reminder_at: z.string().datetime().nullable().optional(),
       reminder_agent_ids: z.array(z.string().uuid()).nullable().optional(),
       email: z.string().email().max(200).nullable().optional().or(z.literal("")),
@@ -1817,24 +1824,24 @@ async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string
     const settings = await readStatusSettings(supabaseAdmin);
     const cur = settings.find((r) => r.status_key === statusKey);
     if (!cur?.enables_voice_message || cur.voice_send_mode !== "auto") {
-      console.log(`[auto-voice] system=${systemId} status=${statusKey} -> not auto (enables=${cur?.enables_voice_message} mode=${cur?.voice_send_mode})`);
+      void logInfo(`[auto-voice] system=${systemId} status=${statusKey} -> not auto (enables=${cur?.enables_voice_message} mode=${cur?.voice_send_mode})`);
       return;
     }
 
     const now = new Date();
     const withinWindow = isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour);
-    console.log(`[auto-voice] system=${systemId} status=${statusKey} nowUTC=${now.toISOString()} israelHour=${getIsraelHour(now)} window=${cur.auto_send_start_hour}-${cur.auto_send_end_hour} within=${withinWindow}`);
+    void logInfo(`[auto-voice] system=${systemId} status=${statusKey} nowUTC=${now.toISOString()} israelHour=${getIsraelHour(now)} window=${cur.auto_send_start_hour}-${cur.auto_send_end_hour} within=${withinWindow}`);
     if (withinWindow) {
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", systemId);
       const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId, "auto");
-      console.log(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
+      void logInfo(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
     } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", systemId);
-      console.log(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);
+      void logInfo(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);
     }
   } catch (e: any) {
-    console.log(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${e?.message}`);
+    void logInfo(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${e?.message}`);
     // Never let auto-voice-send scheduling break the status update itself.
   }
 }

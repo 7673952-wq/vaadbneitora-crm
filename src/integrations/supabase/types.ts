@@ -14,6 +14,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      api_rate_limits: {
+        Row: {
+          bucket_key: string
+          hits: number
+          updated_at: string
+          window_start: string
+        }
+        Insert: {
+          bucket_key: string
+          hits?: number
+          updated_at?: string
+          window_start: string
+        }
+        Update: {
+          bucket_key?: string
+          hits?: number
+          updated_at?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -1051,6 +1072,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      bump_rate_limit: {
+        Args: { _key: string; _window_seconds: number }
+        Returns: number
+      }
       has_crm_access: {
         Args: { _crm_key: string; _user_id: string }
         Returns: boolean

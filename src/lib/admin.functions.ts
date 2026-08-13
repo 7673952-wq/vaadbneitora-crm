@@ -711,7 +711,7 @@ export const getBackupSchedule = createServerFn({ method: "GET" })
 
 export const setBackupSchedule = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: BackupSchedule) =>
+  .inputValidator((d: Omit<BackupSchedule, "retentionDailyDays" | "retentionWeeklyDays"> & Partial<BackupSchedule>) =>
     z.object({
       frequency: z.enum(["daily", "weekly"]),
       hour: z.number().int().min(0).max(23),

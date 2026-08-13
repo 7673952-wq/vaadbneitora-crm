@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { enforcePublicRateLimit } from "@/lib/public-rate-limit.server";
 import { verifyWebhookAuth } from "@/lib/webhook-auth.server";
 
 async function handleProcessVoiceQueue(request: Request) {

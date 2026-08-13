@@ -462,20 +462,26 @@ function BackupSchedulePanel() {
   const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
   const [hour, setHour] = useState(2);
   const [dayOfWeek, setDayOfWeek] = useState(4);
+  const [retentionDailyDays, setRetentionDailyDays] = useState(30);
+  const [retentionWeeklyDays, setRetentionWeeklyDays] = useState(365);
   useEffect(() => {
-    if (data) { setFrequency(data.frequency); setHour(data.hour); setDayOfWeek(data.dayOfWeek); }
+    if (data) {
+      setFrequency(data.frequency); setHour(data.hour); setDayOfWeek(data.dayOfWeek);
+      setRetentionDailyDays(data.retentionDailyDays); setRetentionWeeklyDays(data.retentionWeeklyDays);
+    }
   }, [data]);
   const mut = useMutation({
-    mutationFn: async (vars: { data: { frequency: "daily" | "weekly"; hour: number; dayOfWeek: number } }) =>
+    mutationFn: async (vars: { data: { frequency: "daily" | "weekly"; hour: number; dayOfWeek: number; retentionDailyDays: number; retentionWeeklyDays: number } }) =>
       setFn({ ...vars, headers: await getAuthHeaders() } as any),
     onSuccess: () => { toast.success("התדירות נשמרה"); qc.invalidateQueries({ queryKey: ["backup_schedule"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });
-  const isDirty = !data || data.frequency !== frequency || data.hour !== hour || data.dayOfWeek !== dayOfWeek;
+  const isDirty = !data || data.frequency !== frequency || data.hour !== hour || data.dayOfWeek !== dayOfWeek
+    || data.retentionDailyDays !== retentionDailyDays || data.retentionWeeklyDays !== retentionWeeklyDays;
   return (
     <div className="bg-card border border-border rounded-xl p-5">
       <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />תדירות ושעת גיבוי אוטומטי</h2>
-      <p className="text-xs text-muted-foreground mb-3">מתי לבצע גיבוי אוטומטי ולשלוח למיילים שהוגדרו למעלה. השעה היא לפי שעון ישראל; ייתכן איחור של עד רבע שעה מהמועד המדויק.</p>
+      <p className="text-xs text-muted-foreground mb-3">מתי לבצע גיבוי אוטומטי ולשלוח למיילים שהוגדרו למעלה. השעה היא לפי שעון ישראל; ייתכן איחור של עד רבע שעה מהמועד המדויק. גיבויים ישנים נמחקים אוטומטית לפי מדיניות השמירה שכאן (0 = לשמור לנצח).</p>
       <div className="flex gap-3 flex-wrap items-end">
         <div>
           <label className="block text-xs text-muted-foreground mb-1">תדירות</label>
@@ -503,7 +509,19 @@ function BackupSchedulePanel() {
             ))}
           </select>
         </div>
-        <button onClick={() => mut.mutate({ data: { frequency, hour, dayOfWeek } })} disabled={mut.isPending || !isDirty}
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">לשמור כל גיבוי (ימים)</label>
+          <input type="number" min={0} max={3650} value={retentionDailyDays}
+            onChange={(e) => setRetentionDailyDays(Number(e.target.value))}
+            className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">ואז גיבוי שבועי עד (ימים)</label>
+          <input type="number" min={0} max={3650} value={retentionWeeklyDays}
+            onChange={(e) => setRetentionWeeklyDays(Number(e.target.value))}
+            className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        </div>
+        <button onClick={() => mut.mutate({ data: { frequency, hour, dayOfWeek, retentionDailyDays, retentionWeeklyDays } })} disabled={mut.isPending || !isDirty}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {mut.isPending ? "שומר..." : "שמור"}
         </button>

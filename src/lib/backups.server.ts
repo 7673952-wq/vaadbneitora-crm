@@ -172,6 +172,8 @@ export async function runBackup(): Promise<BackupResult> {
   const folder = ts;
   const files: BackupResult["files"] = [];
 
+  let systemsRows: any[] = [];
+
   for (const t of tables) {
     const rows = await fetchAll(t);
     const csv = toCSV(rows);
@@ -183,32 +185,36 @@ export async function runBackup(): Promise<BackupResult> {
     if (error) throw new Error(`upload ${t}: ${error.message}`);
     files.push({ name: `${t}.csv`, path, rows: rows.length });
     tableRows[t] = rows.length;
+    if (t === "systems") systemsRows = rows;
+  }
 
-    // Alongside the raw systems.csv, also build a friendlier Excel summary
-    // with just the columns managers actually want to skim: number, name,
-    // status (label, not the internal key), caller phone, and notes.
-    if (t === "systems") {
-      const sheetRows = rows.map((r: any) => ({
-        "מספר": r.system_code ?? "",
-        "שם": r.name ?? "",
-        "סטטוס": STATUS_LABEL[r.status as keyof typeof STATUS_LABEL] ?? r.status ?? "",
-        "מספר פונה": r.caller_phone ?? "",
-        "הערות": r.notes ?? "",
-      }));
-      const worksheet = XLSX.utils.json_to_sheet(sanitizeRows(sheetRows));
-      worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");
-      const xlsxBuf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
-      const xlsxPath = `${folder}/systems.xlsx`;
-      const { error: xlsxErr } = await supabaseAdmin.storage.from("backups").upload(
-        xlsxPath,
-        new Blob([new Uint8Array(xlsxBuf)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-        { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: true },
-      );
-      if (xlsxErr) throw new Error(`upload systems.xlsx: ${xlsxErr.message}`);
-      files.push({ name: "systems.xlsx", path: xlsxPath, rows: sheetRows.length });
-    }
+  // Alongside the raw systems.csv, ALWAYS write a friendlier Excel summary
+  // with just the columns managers actually want to skim: number, name,
+  // status (label, not the internal key), caller phone, and notes. This runs
+  // outside the table loop so the file exists even when there are no systems.
+  {
+    const sheetRows = systemsRows.map((r: any) => ({
+      "מספר": r.system_code ?? "",
+      "שם": r.name ?? "",
+      "סטטוס": STATUS_LABEL[r.status as keyof typeof STATUS_LABEL] ?? r.status ?? "",
+      "מספר פונה": r.caller_phone ?? "",
+      "הערות": r.notes ?? "",
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(
+      sheetRows.length ? sanitizeRows(sheetRows) : [{ "מספר": "", "שם": "", "סטטוס": "", "מספר פונה": "", "הערות": "" }],
+    );
+    worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");
+    const xlsxBuf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const xlsxPath = `${folder}/systems.xlsx`;
+    const { error: xlsxErr } = await supabaseAdmin.storage.from("backups").upload(
+      xlsxPath,
+      new Blob([new Uint8Array(xlsxBuf)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: true },
+    );
+    if (xlsxErr) throw new Error(`upload systems.xlsx: ${xlsxErr.message}`);
+    files.push({ name: "systems.xlsx", path: xlsxPath, rows: sheetRows.length });
   }
 
   // ---- Storage backup (real files, not just their DB rows) ----
@@ -233,6 +239,8 @@ export async function runBackup(): Promise<BackupResult> {
   for (const t of tables) {
     if (!writtenNames.has(`${t}.csv`)) issues.push(`חסר קובץ ${t}.csv`);
   }
+  // The Excel summary is a required part of every backup.
+  if (!writtenNames.has("systems.xlsx")) issues.push("חסר קובץ systems.xlsx (סיכום המערכות באקסל)");
 
   const totalRows = Object.values(tableRows).reduce((a, b) => a + b, 0);
   const totalFiles = storage.reduce((a, b) => a + b.files, 0);
@@ -286,6 +294,15 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
   let zipBuf: Uint8Array;
   let filename: string;
   const subjectLabel = kind === "weekly" ? "שבועי" : kind === "daily" ? "יומי" : "ידני";
+  // Never send an optimistic "all good" email for a partial backup.
+  const verificationIssues = result.verification?.ok === false
+    ? (result.verification.issues ?? [])
+    : (result.manifest?.status === "incomplete" ? (result.manifest.issues ?? []) : []);
+  const incomplete = verificationIssues.length > 0 || result.manifest?.status === "incomplete";
+  const subjectPrefix = incomplete ? "⚠️ גיבוי חלקי — " : "";
+  const warningBlock = incomplete
+    ? `\n\n⚠️ שימו לב: הגיבוי הסתיים עם בעיות ואינו שלם.\n${verificationIssues.map((i) => `• ${i}`).join("\n")}\n`
+    : "";
   try {
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
@@ -314,8 +331,8 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
           secret: relaySecret,
           action: "send_backup",
           to: recipient,
-          subject: `גיבוי CRM ${subjectLabel} — ${result.folder}`,
-          body: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+          subject: `${subjectPrefix}גיבוי CRM ${subjectLabel} — ${result.folder}`,
+          body: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.${warningBlock}`,
           attachmentBase64: Buffer.from(zipBuf).toString("base64"),
           attachmentName: filename,
       });
@@ -350,8 +367,8 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
       body: JSON.stringify({
         from: process.env.RESEND_FROM_EMAIL ?? "CRM Backups <onboarding@resend.dev>",
         to: [recipient],
-        subject: `גיבוי CRM ${subjectLabel} — ${result.folder}`,
-        text: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+        subject: `${subjectPrefix}גיבוי CRM ${subjectLabel} — ${result.folder}`,
+        text: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.${warningBlock}`,
         attachments: [{ filename, content: base64 }],
       }),
     });
@@ -359,6 +376,85 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
   } catch (e: any) {
     return `error (resend):${e?.message ?? "unknown"}`;
   }
+}
+
+// ---------- Retention: prune old backup folders ----------
+// Keeps every backup from the last `dailyDays` days, then only one per
+// calendar week up to `weeklyDays` days, and deletes anything older. Without
+// this, every backup (including copies of all storage files) lives forever.
+export type BackupRetention = { dailyDays: number; weeklyDays: number };
+export const DEFAULT_BACKUP_RETENTION: BackupRetention = { dailyDays: 30, weeklyDays: 365 };
+
+function folderDate(folder: string): Date | null {
+  // Folder names look like 2026-08-13T10-00-00-000Z
+  const m = folder.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function weekKey(d: Date): string {
+  const t = new Date(d.getTime());
+  t.setUTCDate(t.getUTCDate() - t.getUTCDay());
+  return t.toISOString().slice(0, 10);
+}
+
+// Pure, so it is easy to unit-test: decides which folders should be deleted.
+export function selectExpiredBackupFolders(
+  folders: string[],
+  retention: BackupRetention = DEFAULT_BACKUP_RETENTION,
+  now: Date = new Date(),
+): string[] {
+  const dailyCutoff = now.getTime() - retention.dailyDays * 86_400_000;
+  const weeklyCutoff = now.getTime() - retention.weeklyDays * 86_400_000;
+  const dated = folders
+    .map((f) => ({ folder: f, at: folderDate(f) }))
+    .filter((x): x is { folder: string; at: Date } => x.at !== null)
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  const expired: string[] = [];
+  const keptWeeks = new Set<string>();
+  for (const { folder, at } of dated) {
+    const ms = at.getTime();
+    if (ms >= dailyCutoff) continue; // recent — always keep
+    if (ms < weeklyCutoff) { expired.push(folder); continue; } // too old — drop
+    const wk = weekKey(at);
+    if (keptWeeks.has(wk)) expired.push(folder); // already kept one this week
+    else keptWeeks.add(wk);
+  }
+  return expired;
+}
+
+async function removeFolderRecursive(folder: string): Promise<number> {
+  let removed = 0;
+  const walk = async (prefix: string, depth: number): Promise<void> => {
+    if (depth > 6) return;
+    const { data } = await supabaseAdmin.storage.from("backups").list(prefix, { limit: 1000 });
+    const entries = data ?? [];
+    const filePaths: string[] = [];
+    for (const e of entries) {
+      if (!e.name) continue;
+      const full = `${prefix}/${e.name}`;
+      if (e.id === null || (e.metadata as any)?.size === undefined) await walk(full, depth + 1);
+      else filePaths.push(full);
+    }
+    if (filePaths.length) {
+      const { error } = await supabaseAdmin.storage.from("backups").remove(filePaths);
+      if (!error) removed += filePaths.length;
+    }
+  };
+  await walk(folder, 0);
+  return removed;
+}
+
+export async function pruneOldBackups(retention: BackupRetention = DEFAULT_BACKUP_RETENTION) {
+  const { data, error } = await supabaseAdmin.storage.from("backups").list("", { limit: 1000 });
+  if (error) return { deletedFolders: 0, deletedFiles: 0, error: error.message };
+  const folders = (data ?? []).filter((e) => e.id === null || (e.metadata as any)?.size === undefined).map((e) => e.name);
+  const expired = selectExpiredBackupFolders(folders, retention);
+  let deletedFiles = 0;
+  for (const f of expired) deletedFiles += await removeFolderRecursive(f);
+  return { deletedFolders: expired.length, deletedFiles, folders: expired };
 }
 
 // ---------- Restore from backup ----------

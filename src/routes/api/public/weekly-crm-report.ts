@@ -1,4 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { enforcePublicRateLimit } from "@/lib/public-rate-limit.server";
+import { timingSafeEqualStr } from "@/lib/webhook-auth.server";
 
 function csvEscape(value: unknown) {
   const raw = String(value ?? "");
@@ -10,9 +12,25 @@ export const Route = createFileRoute("/api/public/weekly-crm-report")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        const token = new URL(request.url).searchParams.get("token");
-        const expected = process.env.WEEKLY_CRM_REPORT_TOKEN;
-        if (!expected || token !== expected) return new Response("Unauthorized", { status: 401 });
+        // Prefer the token in a header — query params leak into proxy logs
+        // and browser history, and this endpoint returns caller PII.
+        const expected = process.env.WEEKLY_CRM_REPORT_TOKEN ?? "";
+        const headerToken =
+          request.headers.get("apikey") ??
+          request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
+          "";
+        const queryToken = new URL(request.url).searchParams.get("token") ?? "";
+        const okHeader = timingSafeEqualStr(headerToken, expected);
+        const okQuery = timingSafeEqualStr(queryToken, expected);
+        if (!expected || (!okHeader && !okQuery)) {
+          return new Response("Unauthorized", { status: 401 });
+        }
+        if (!okHeader) {
+          console.warn("[weekly-crm-report] token passed via query param — move it to the apikey header");
+        }
+
+        const limited = await enforcePublicRateLimit(request, "weekly-crm-report", 10, 3600);
+        if (limited) return limited;
 
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const [{ data: systems, error }, { data: profiles }] = await Promise.all([

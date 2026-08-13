@@ -1,20 +1,25 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { enforcePublicRateLimit } from "@/lib/public-rate-limit.server";
+import { timingSafeEqualStr } from "@/lib/webhook-auth.server";
 
 async function handleInboundEmail(request: Request) {
-  const apikey = request.headers.get("apikey");
-  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+  const apikey = request.headers.get("apikey") ?? "";
+  const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
 
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: secretRow } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", "email_relay_secret").maybeSingle();
   const expected = (secretRow?.value as { secret?: string } | null)?.secret || process.env.EMAIL_RELAY_SECRET;
 
-  if (!expected || (apikey !== expected && bearer !== expected)) {
+  if (!expected || (!timingSafeEqualStr(apikey, expected) && !timingSafeEqualStr(bearer, expected))) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
       status: 401,
       headers: { "Content-Type": "application/json" },
     });
   }
+
+  const limited = await enforcePublicRateLimit(request, "inbound-email", 600, 3600);
+  if (limited) return limited;
 
   try {
     const body = await request.json();

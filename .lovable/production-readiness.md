@@ -172,3 +172,25 @@ Zod מלא בכל ה-server functions, וחיזוק חיפוש Audit Log מפנ�
 
 **המלצה**: ניתן לעלות לאוויר. מומלץ לבצע את 3 פריטי ה-Warning תוך 2 שבועות
 מהעלייה.
+
+---
+
+## עדכון — סבב חוסן וניטור
+
+- **תזמונים**: הוסרו ה-crons הכפולים מ-`vercel.json`; הגיבוי רץ רק דרך
+  ה-heartbeat (`/api/public/hooks/scheduled-backup-check`) לפי ההגדרה בניהול.
+- **גיבוי**: `systems.xlsx` נוצר תמיד, נשמר `manifest.json`, מייל הגיבוי מסומן
+  ב-⚠️ כשהאימות נכשל, ומדיניות שמירה (`pruneOldBackups`) מוחקת גיבויים ישנים
+  לפי `retentionDailyDays` / `retentionWeeklyDays`.
+- **Rate limiting**: `src/lib/public-rate-limit.server.ts` (מגובה DB) מוחל על
+  כל נקודות הקצה תחת `/api/public/*`.
+- **הרשאות**: `getManagerDashboard` ו-`getReports` מוגבלים ל-`admin`.
+  `weekly-crm-report` עבר לאימות בכותרת `apikey` עם השוואה timing-safe.
+- **בריאות**: `/api/public/health` מחזיר בדיקת DB וזמן הגיבוי האחרון, ו-503
+  כשיש תקלה — מתאים לחיבור מוניטור חיצוני.
+- **משתני סביבה**: `src/lib/env.server.ts` מרכז את כל המשתנים ואת הפיצ'רים
+  התלויים בהם.
+- **בדיקות**: `bun run test` (vitest) — כיסוי לתזמון הגיבוי, מדיניות השמירה
+  והגנת CSV.
+- **UX**: סינוני הדשבורד נשמרים ב-localStorage, נוסף כפתור "המערכות שלי",
+  ומצב "אין תוצאות" מציע ניקוי סינון.

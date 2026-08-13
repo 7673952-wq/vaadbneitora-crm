@@ -12,7 +12,8 @@
     "start": "node .output/server/index.mjs",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "test": "vitest run"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

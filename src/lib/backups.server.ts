@@ -172,6 +172,8 @@ export async function runBackup(): Promise<BackupResult> {
   const folder = ts;
   const files: BackupResult["files"] = [];
 
+  let systemsRows: any[] = [];
+
   for (const t of tables) {
     const rows = await fetchAll(t);
     const csv = toCSV(rows);
@@ -183,32 +185,36 @@ export async function runBackup(): Promise<BackupResult> {
     if (error) throw new Error(`upload ${t}: ${error.message}`);
     files.push({ name: `${t}.csv`, path, rows: rows.length });
     tableRows[t] = rows.length;
+    if (t === "systems") systemsRows = rows;
+  }
 
-    // Alongside the raw systems.csv, also build a friendlier Excel summary
-    // with just the columns managers actually want to skim: number, name,
-    // status (label, not the internal key), caller phone, and notes.
-    if (t === "systems") {
-      const sheetRows = rows.map((r: any) => ({
-        "מספר": r.system_code ?? "",
-        "שם": r.name ?? "",
-        "סטטוס": STATUS_LABEL[r.status as keyof typeof STATUS_LABEL] ?? r.status ?? "",
-        "מספר פונה": r.caller_phone ?? "",
-        "הערות": r.notes ?? "",
-      }));
-      const worksheet = XLSX.utils.json_to_sheet(sanitizeRows(sheetRows));
-      worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");
-      const xlsxBuf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
-      const xlsxPath = `${folder}/systems.xlsx`;
-      const { error: xlsxErr } = await supabaseAdmin.storage.from("backups").upload(
-        xlsxPath,
-        new Blob([new Uint8Array(xlsxBuf)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-        { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: true },
-      );
-      if (xlsxErr) throw new Error(`upload systems.xlsx: ${xlsxErr.message}`);
-      files.push({ name: "systems.xlsx", path: xlsxPath, rows: sheetRows.length });
-    }
+  // Alongside the raw systems.csv, ALWAYS write a friendlier Excel summary
+  // with just the columns managers actually want to skim: number, name,
+  // status (label, not the internal key), caller phone, and notes. This runs
+  // outside the table loop so the file exists even when there are no systems.
+  {
+    const sheetRows = systemsRows.map((r: any) => ({
+      "מספר": r.system_code ?? "",
+      "שם": r.name ?? "",
+      "סטטוס": STATUS_LABEL[r.status as keyof typeof STATUS_LABEL] ?? r.status ?? "",
+      "מספר פונה": r.caller_phone ?? "",
+      "הערות": r.notes ?? "",
+    }));
+    const worksheet = XLSX.utils.json_to_sheet(
+      sheetRows.length ? sanitizeRows(sheetRows) : [{ "מספר": "", "שם": "", "סטטוס": "", "מספר פונה": "", "הערות": "" }],
+    );
+    worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");
+    const xlsxBuf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const xlsxPath = `${folder}/systems.xlsx`;
+    const { error: xlsxErr } = await supabaseAdmin.storage.from("backups").upload(
+      xlsxPath,
+      new Blob([new Uint8Array(xlsxBuf)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+      { contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", upsert: true },
+    );
+    if (xlsxErr) throw new Error(`upload systems.xlsx: ${xlsxErr.message}`);
+    files.push({ name: "systems.xlsx", path: xlsxPath, rows: sheetRows.length });
   }
 
   // ---- Storage backup (real files, not just their DB rows) ----
@@ -233,6 +239,8 @@ export async function runBackup(): Promise<BackupResult> {
   for (const t of tables) {
     if (!writtenNames.has(`${t}.csv`)) issues.push(`חסר קובץ ${t}.csv`);
   }
+  // The Excel summary is a required part of every backup.
+  if (!writtenNames.has("systems.xlsx")) issues.push("חסר קובץ systems.xlsx (סיכום המערכות באקסל)");
 
   const totalRows = Object.values(tableRows).reduce((a, b) => a + b, 0);
   const totalFiles = storage.reduce((a, b) => a + b.files, 0);
@@ -286,6 +294,15 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
   let zipBuf: Uint8Array;
   let filename: string;
   const subjectLabel = kind === "weekly" ? "שבועי" : kind === "daily" ? "יומי" : "ידני";
+  // Never send an optimistic "all good" email for a partial backup.
+  const verificationIssues = result.verification?.ok === false
+    ? (result.verification.issues ?? [])
+    : (result.manifest?.status === "incomplete" ? (result.manifest.issues ?? []) : []);
+  const incomplete = verificationIssues.length > 0 || result.manifest?.status === "incomplete";
+  const subjectPrefix = incomplete ? "⚠️ גיבוי חלקי — " : "";
+  const warningBlock = incomplete
+    ? `\n\n⚠️ שימו לב: הגיבוי הסתיים עם בעיות ואינו שלם.\n${verificationIssues.map((i) => `• ${i}`).join("\n")}\n`
+    : "";
   try {
     const JSZip = (await import("jszip")).default;
     const zip = new JSZip();
@@ -314,8 +331,8 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
           secret: relaySecret,
           action: "send_backup",
           to: recipient,
-          subject: `גיבוי CRM ${subjectLabel} — ${result.folder}`,
-          body: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+          subject: `${subjectPrefix}גיבוי CRM ${subjectLabel} — ${result.folder}`,
+          body: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.${warningBlock}`,
           attachmentBase64: Buffer.from(zipBuf).toString("base64"),
           attachmentName: filename,
       });
@@ -350,8 +367,8 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
       body: JSON.stringify({
         from: process.env.RESEND_FROM_EMAIL ?? "CRM Backups <onboarding@resend.dev>",
         to: [recipient],
-        subject: `גיבוי CRM ${subjectLabel} — ${result.folder}`,
-        text: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.`,
+        subject: `${subjectPrefix}גיבוי CRM ${subjectLabel} — ${result.folder}`,
+        text: `מצורף קובץ הגיבוי ה${subjectLabel} של ה-CRM (${filename}). גודל: ${(zipBuf.length / 1024).toFixed(0)} KB.${warningBlock}`,
         attachments: [{ filename, content: base64 }],
       }),
     });

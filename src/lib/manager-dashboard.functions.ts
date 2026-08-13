@@ -4,8 +4,11 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 export const getManagerDashboard = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
+    const { assertPermission, hasRole } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "systems_read", "yemot");
+    if (!(await hasRole(context.userId, "admin"))) {
+      throw new Error("מסכי מנהלים זמינים למנהלים בלבד");
+    }
     const sb = context.supabase;
     const now = new Date();
     const weekAgo = new Date(now);
@@ -82,8 +85,11 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
 export const getSystemsByCallerPhone = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
+    const { assertPermission, hasRole } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "systems_read", "yemot");
+    if (!(await hasRole(context.userId, "admin"))) {
+      throw new Error("מסכי מנהלים זמינים למנהלים בלבד");
+    }
     const { data, error } = await context.supabase
       .from("systems")
       .select("id, system_code, name, status, caller_phone, phone, additional_caller_phones, assigned_agent_id, created_at");

@@ -575,6 +575,8 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.phone !== undefined && data.phone !== null) data.phone = sanitizeText(data.phone);
     if (data.caller_phone !== undefined && data.caller_phone !== null) data.caller_phone = sanitizeText(data.caller_phone);
     if (data.source !== undefined && data.source !== null) data.source = sanitizeText(data.source);
+    // An empty audio field means "no recording", not an invalid URL.
+    if (data.audio_url !== undefined && data.audio_url !== null && data.audio_url.trim() === "") data.audio_url = null;
     if (data.system_code !== undefined) data.system_code = normalizeSystemCode(data.system_code);
     const { data: sys } = await context.supabase
       .from("systems")

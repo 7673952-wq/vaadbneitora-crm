@@ -15,7 +15,8 @@ async function handleScheduledBackupCheck(request: Request) {
   if (unauthorized) return unauthorized;
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { shouldRunScheduledBackup, runBackup, sendBackupEmail } = await import("@/lib/backups.server");
+    const { shouldRunScheduledBackup, runBackup, sendBackupEmail, pruneOldBackups, DEFAULT_BACKUP_RETENTION } =
+      await import("@/lib/backups.server");
 
     const [{ data: scheduleRow }, { data: lastRunRow }] = await Promise.all([
       supabaseAdmin.from("app_settings").select("value").eq("key", SCHEDULE_KEY).maybeSingle(),
@@ -26,6 +27,11 @@ async function handleScheduledBackupCheck(request: Request) {
       frequency: scheduleValue?.frequency === "weekly" ? "weekly" as const : "daily" as const,
       hour: typeof scheduleValue?.hour === "number" ? scheduleValue.hour : 2,
       dayOfWeek: typeof scheduleValue?.dayOfWeek === "number" ? scheduleValue.dayOfWeek : 4,
+    };
+    const rv = scheduleValue as { retentionDailyDays?: number; retentionWeeklyDays?: number } | null;
+    const retention = {
+      dailyDays: typeof rv?.retentionDailyDays === "number" ? rv.retentionDailyDays : DEFAULT_BACKUP_RETENTION.dailyDays,
+      weeklyDays: typeof rv?.retentionWeeklyDays === "number" ? rv.retentionWeeklyDays : DEFAULT_BACKUP_RETENTION.weeklyDays,
     };
     const lastRunAt = ((lastRunRow?.value as { at?: string } | null)?.at) ?? null;
 
@@ -39,12 +45,19 @@ async function handleScheduledBackupCheck(request: Request) {
 
     const result = await runBackup();
     const emailStatus = await sendBackupEmail(result, kind);
+    // Retention cleanup runs right after a successful backup, so old folders
+    // (including their copied storage files) don't grow without bound.
+    let pruned: unknown = null;
+    if (retention.dailyDays > 0 && retention.weeklyDays > 0) {
+      try { pruned = await pruneOldBackups(retention); }
+      catch (e: any) { pruned = { error: e?.message ?? "prune failed" }; }
+    }
     await supabaseAdmin.from("app_settings").upsert({
       key: LAST_RUN_KEY,
       value: { at: new Date().toISOString() },
       updated_at: new Date().toISOString(),
     });
-    return new Response(JSON.stringify({ ok: true, ran: true, kind, ...result, emailStatus }), {
+    return new Response(JSON.stringify({ ok: true, ran: true, kind, ...result, emailStatus, pruned }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

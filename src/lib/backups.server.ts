@@ -378,6 +378,85 @@ export async function sendBackupEmail(result: BackupResult, kind: "daily" | "wee
   }
 }
 
+// ---------- Retention: prune old backup folders ----------
+// Keeps every backup from the last `dailyDays` days, then only one per
+// calendar week up to `weeklyDays` days, and deletes anything older. Without
+// this, every backup (including copies of all storage files) lives forever.
+export type BackupRetention = { dailyDays: number; weeklyDays: number };
+export const DEFAULT_BACKUP_RETENTION: BackupRetention = { dailyDays: 30, weeklyDays: 365 };
+
+function folderDate(folder: string): Date | null {
+  // Folder names look like 2026-08-13T10-00-00-000Z
+  const m = folder.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function weekKey(d: Date): string {
+  const t = new Date(d.getTime());
+  t.setUTCDate(t.getUTCDate() - t.getUTCDay());
+  return t.toISOString().slice(0, 10);
+}
+
+// Pure, so it is easy to unit-test: decides which folders should be deleted.
+export function selectExpiredBackupFolders(
+  folders: string[],
+  retention: BackupRetention = DEFAULT_BACKUP_RETENTION,
+  now: Date = new Date(),
+): string[] {
+  const dailyCutoff = now.getTime() - retention.dailyDays * 86_400_000;
+  const weeklyCutoff = now.getTime() - retention.weeklyDays * 86_400_000;
+  const dated = folders
+    .map((f) => ({ folder: f, at: folderDate(f) }))
+    .filter((x): x is { folder: string; at: Date } => x.at !== null)
+    .sort((a, b) => b.at.getTime() - a.at.getTime());
+
+  const expired: string[] = [];
+  const keptWeeks = new Set<string>();
+  for (const { folder, at } of dated) {
+    const ms = at.getTime();
+    if (ms >= dailyCutoff) continue; // recent — always keep
+    if (ms < weeklyCutoff) { expired.push(folder); continue; } // too old — drop
+    const wk = weekKey(at);
+    if (keptWeeks.has(wk)) expired.push(folder); // already kept one this week
+    else keptWeeks.add(wk);
+  }
+  return expired;
+}
+
+async function removeFolderRecursive(folder: string): Promise<number> {
+  let removed = 0;
+  const walk = async (prefix: string, depth: number): Promise<void> => {
+    if (depth > 6) return;
+    const { data } = await supabaseAdmin.storage.from("backups").list(prefix, { limit: 1000 });
+    const entries = data ?? [];
+    const filePaths: string[] = [];
+    for (const e of entries) {
+      if (!e.name) continue;
+      const full = `${prefix}/${e.name}`;
+      if (e.id === null || (e.metadata as any)?.size === undefined) await walk(full, depth + 1);
+      else filePaths.push(full);
+    }
+    if (filePaths.length) {
+      const { error } = await supabaseAdmin.storage.from("backups").remove(filePaths);
+      if (!error) removed += filePaths.length;
+    }
+  };
+  await walk(folder, 0);
+  return removed;
+}
+
+export async function pruneOldBackups(retention: BackupRetention = DEFAULT_BACKUP_RETENTION) {
+  const { data, error } = await supabaseAdmin.storage.from("backups").list("", { limit: 1000 });
+  if (error) return { deletedFolders: 0, deletedFiles: 0, error: error.message };
+  const folders = (data ?? []).filter((e) => e.id === null || (e.metadata as any)?.size === undefined).map((e) => e.name);
+  const expired = selectExpiredBackupFolders(folders, retention);
+  let deletedFiles = 0;
+  for (const f of expired) deletedFiles += await removeFolderRecursive(f);
+  return { deletedFolders: expired.length, deletedFiles, folders: expired };
+}
+
 // ---------- Restore from backup ----------
 
 function parseCSV(text: string): Record<string, any>[] {

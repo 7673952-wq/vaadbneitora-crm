@@ -685,9 +685,13 @@ export type BackupSchedule = {
   frequency: "daily" | "weekly";
   hour: number; // 0-23, Asia/Jerusalem local time
   dayOfWeek: number; // 0 (Sunday) - 6 (Saturday), only used when frequency === "weekly"
+  retentionDailyDays: number; // keep every backup for this many days (0 = keep forever)
+  retentionWeeklyDays: number; // then keep one per week up to this many days
 };
 
-const DEFAULT_BACKUP_SCHEDULE: BackupSchedule = { frequency: "daily", hour: 2, dayOfWeek: 4 };
+const DEFAULT_BACKUP_SCHEDULE: BackupSchedule = {
+  frequency: "daily", hour: 2, dayOfWeek: 4, retentionDailyDays: 30, retentionWeeklyDays: 365,
+};
 
 export const getBackupSchedule = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
@@ -700,6 +704,8 @@ export const getBackupSchedule = createServerFn({ method: "GET" })
       frequency: v?.frequency === "weekly" ? "weekly" : "daily",
       hour: typeof v?.hour === "number" && v.hour >= 0 && v.hour <= 23 ? v.hour : DEFAULT_BACKUP_SCHEDULE.hour,
       dayOfWeek: typeof v?.dayOfWeek === "number" && v.dayOfWeek >= 0 && v.dayOfWeek <= 6 ? v.dayOfWeek : DEFAULT_BACKUP_SCHEDULE.dayOfWeek,
+      retentionDailyDays: typeof v?.retentionDailyDays === "number" ? v.retentionDailyDays : DEFAULT_BACKUP_SCHEDULE.retentionDailyDays,
+      retentionWeeklyDays: typeof v?.retentionWeeklyDays === "number" ? v.retentionWeeklyDays : DEFAULT_BACKUP_SCHEDULE.retentionWeeklyDays,
     } as BackupSchedule;
   });
 
@@ -710,6 +716,8 @@ export const setBackupSchedule = createServerFn({ method: "POST" })
       frequency: z.enum(["daily", "weekly"]),
       hour: z.number().int().min(0).max(23),
       dayOfWeek: z.number().int().min(0).max(6),
+      retentionDailyDays: z.number().int().min(0).max(3650).optional(),
+      retentionWeeklyDays: z.number().int().min(0).max(3650).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {

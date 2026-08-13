@@ -194,13 +194,29 @@ function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [status, setStatus] = useState<string>("");
-  const [secondaryStatus, setSecondaryStatus] = useState<string>("");
-  const [agentId, setAgentId] = useState<string>("");
-  const [period, setPeriod] = useState<Period>("");
-  const [dateFrom, setDateFrom] = useState<string>("");
-  const [dateTo, setDateTo] = useState<string>("");
-  const [search, setSearch] = useState("");
+  // Filters survive navigation to a system card and back, and a full reload —
+  // agents kept losing their view every time they opened a system.
+  const savedFilters = (() => {
+    if (typeof window === "undefined") return {} as Record<string, string>;
+    try { return JSON.parse(window.localStorage.getItem("dashboardFilters") || "{}") as Record<string, string>; }
+    catch { return {} as Record<string, string>; }
+  })();
+  const [status, setStatus] = useState<string>(savedFilters.status ?? "");
+  const [secondaryStatus, setSecondaryStatus] = useState<string>(savedFilters.secondaryStatus ?? "");
+  const [agentId, setAgentId] = useState<string>(savedFilters.agentId ?? "");
+  const [period, setPeriod] = useState<Period>((savedFilters.period as Period) ?? "");
+  const [dateFrom, setDateFrom] = useState<string>(savedFilters.dateFrom ?? "");
+  const [dateTo, setDateTo] = useState<string>(savedFilters.dateTo ?? "");
+  const [search, setSearch] = useState(savedFilters.search ?? "");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem("dashboardFilters", JSON.stringify({ status, secondaryStatus, agentId, period, dateFrom, dateTo, search }));
+  }, [status, secondaryStatus, agentId, period, dateFrom, dateTo, search]);
+  const hasActiveFilters = !!(status || secondaryStatus || agentId || period || dateFrom || dateTo || search);
+  const clearFilters = () => {
+    setStatus(""); setSecondaryStatus(""); setAgentId(""); setPeriod(""); setDateFrom(""); setDateTo(""); setSearch("");
+  };
+
   const [pdfDate, setPdfDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(200);

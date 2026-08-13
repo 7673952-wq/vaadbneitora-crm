@@ -5,6 +5,8 @@ import { verifyWebhookAuth } from "@/lib/webhook-auth.server";
 async function handleDailyBackup(request: Request) {
   const unauthorized = verifyWebhookAuth(request);
   if (unauthorized) return unauthorized;
+  const limited = await enforcePublicRateLimit(request, "daily-backup", 5, 3600);
+  if (limited) return limited;
   try {
     const { runBackup, sendBackupEmail } = await import("@/lib/backups.server");
     const result = await runBackup();

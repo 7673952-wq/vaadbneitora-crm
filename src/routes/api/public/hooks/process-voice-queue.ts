@@ -5,6 +5,8 @@ import { verifyWebhookAuth } from "@/lib/webhook-auth.server";
 async function handleProcessVoiceQueue(request: Request) {
   const unauthorized = verifyWebhookAuth(request);
   if (unauthorized) return unauthorized;
+  const limited = await enforcePublicRateLimit(request, "process-voice-queue", 60, 3600);
+  if (limited) return limited;
   try {
     const { processPendingVoiceSends } = await import("@/lib/systems.functions");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

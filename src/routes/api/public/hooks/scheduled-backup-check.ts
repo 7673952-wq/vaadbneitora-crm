@@ -14,6 +14,8 @@ const LAST_RUN_KEY = "backup_schedule_last_run";
 async function handleScheduledBackupCheck(request: Request) {
   const unauthorized = verifyWebhookAuth(request);
   if (unauthorized) return unauthorized;
+  const limited = await enforcePublicRateLimit(request, "scheduled-backup-check", 30, 3600);
+  if (limited) return limited;
   try {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { shouldRunScheduledBackup, runBackup, sendBackupEmail, pruneOldBackups, DEFAULT_BACKUP_RETENTION } =

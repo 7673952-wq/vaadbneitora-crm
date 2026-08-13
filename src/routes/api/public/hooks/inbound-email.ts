@@ -18,6 +18,9 @@ async function handleInboundEmail(request: Request) {
     });
   }
 
+  const limited = await enforcePublicRateLimit(request, "inbound-email", 600, 3600);
+  if (limited) return limited;
+
   try {
     const body = await request.json();
     const { gmailThreadId, gmailMessageId, from, to, subject, body: text, receivedAt } = body ?? {};

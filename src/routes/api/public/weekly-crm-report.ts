@@ -29,6 +29,9 @@ export const Route = createFileRoute("/api/public/weekly-crm-report")({
           console.warn("[weekly-crm-report] token passed via query param — move it to the apikey header");
         }
 
+        const limited = await enforcePublicRateLimit(request, "weekly-crm-report", 10, 3600);
+        if (limited) return limited;
+
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const [{ data: systems, error }, { data: profiles }] = await Promise.all([
           supabaseAdmin

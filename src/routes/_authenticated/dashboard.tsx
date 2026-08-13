@@ -739,6 +739,13 @@ function Dashboard() {
           <option value="">כל הנציגים</option>
           {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
         </select>
+        {me?.id && (
+          <button
+            onClick={() => { setAgentId(agentId === me.id ? "" : me.id); setPage(1); }}
+            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${agentId === me.id ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+            המערכות שלי
+          </button>
+        )}
         <TimeFilter
           period={period}
           dateFrom={dateFrom}
@@ -750,12 +757,13 @@ function Dashboard() {
             setPage(1);
           }}
         />
-        {(status || secondaryStatus || agentId || period || search || dateFrom || dateTo) && (
-          <button onClick={() => { setStatus(""); setSecondaryStatus(""); setAgentId(""); setPeriod(""); setSearch(""); setDateFrom(""); setDateTo(""); setPage(1); }}
+        {hasActiveFilters && (
+          <button onClick={() => { clearFilters(); setPage(1); }}
             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
             <X className="h-3 w-3" />נקה סינון
           </button>
         )}
+
         <div className="ms-auto flex items-center gap-2">
 
           {!me?.isViewer && (

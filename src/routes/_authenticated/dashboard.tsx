@@ -739,10 +739,10 @@ function Dashboard() {
           <option value="">כל הנציגים</option>
           {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
         </select>
-        {me?.id && (
+        {me?.userId && (
           <button
-            onClick={() => { setAgentId(agentId === me.id ? "" : me.id); setPage(1); }}
-            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${agentId === me.id ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
+            onClick={() => { setAgentId(agentId === me.userId ? "" : me.userId); setPage(1); }}
+            className={`px-3 py-2 text-sm rounded-lg border transition-colors ${agentId === me.userId ? "bg-primary text-primary-foreground border-primary" : "border-input bg-background hover:bg-accent"}`}>
             המערכות שלי
           </button>
         )}

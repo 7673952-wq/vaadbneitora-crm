@@ -1719,13 +1719,6 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   }
 
   const ymBase = "https://www.call2all.co.il/ym/api";
-  // IMPORTANT: this MUST stay exactly ivr2:0CRM/Phone/{phone} — that's the
-  // only path CallExtensionBridging actually plays from. It's called below
-  // with just { phones: phone }; Yemot resolves the extension itself purely
-  // from the phone number, so writing to any other path (e.g. a per-system
-  // suffix) gets ignored at call time and the call plays nothing. The
-  // same-phone race between concurrent sends is instead prevented with an
-  // application-level lock below, not by partitioning the path.
   const extensionPath = `ivr2:0CRM/Phone/${phone}`;
   const jsonHeaders = { authorization: apiKey, "Content-Type": "application/json" };
   const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
@@ -1761,29 +1754,12 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
     }
   };
 
-  // Serialize sends to the same caller phone: CallExtensionBridging always
-  // plays from the single Yemot path keyed by phone, so two sends to the
-  // same number must never write+dial concurrently. Retry briefly if
-  // another send for this phone is already in flight.
-  let lockAcquired = false;
-  for (let attempt = 0; attempt < 10 && !lockAcquired; attempt++) {
-    if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 500));
-    const { data } = await supabaseAdmin.rpc("acquire_voice_send_lock", {
-      _phone: phone,
-      _stale_after_seconds: 120,
-    });
-    lockAcquired = !!data;
-  }
-  if (!lockAcquired) {
-    throw new Error("מספר זה נמצא כרגע באמצע שליחה אחרת — נסה שוב בעוד רגע");
-  }
+  await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
 
-  try {
-    await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
-
-  // The extension path is shared by every send to this phone, so purge any
-  // leftover file from a previous send before writing the new one in — the
-  // lock above ensures we're the only send touching this path right now.
+  // The extension is keyed by the caller's phone only, so when the same caller
+  // exists in several systems the previous round's message + "<id>-Title.tts"
+  // are still sitting there and get played too (two different system numbers).
+  // Purge everything in the extension before copying the new message in.
   const dir = await tryYemot("GetIVR2Dir", { path: extensionPath });
   const stale: string[] = Array.isArray(dir?.files)
     ? dir.files.map((f: any) => String(f?.name ?? f?.fileName ?? "")).filter(Boolean)
@@ -1811,36 +1787,23 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   // Read the title back before dialing: if another send for the same caller
   // overwrote it, stop instead of announcing the wrong system number.
   try {
-    // Give Yemot's storage a brief moment to propagate the write we just
-    // made before reading it back — cheap insurance against a slow write.
-    await new Promise((resolve) => setTimeout(resolve, 800));
     const verifyRes = await fetch(`${ymBase}/DownloadFile`, {
       method: "POST", headers: jsonHeaders, body: JSON.stringify({ path: titlePath }),
     });
     const text = (await verifyRes.text()).trim();
-    if (verifyRes.ok && !text) {
-      throw new Error(
-        `ימות המשיח: הקריאה החוזרת של מספר המערכת בשלוחה ${extensionPath} חזרה ריקה — השליחה בוטלה כדי למנוע הודעה ריקה`,
-      );
-    }
     if (verifyRes.ok && text && !text.startsWith("{") && text !== systemCode) {
       throw new Error(
         `ימות המשיח: מספר המערכת בשלוחה ${extensionPath} אינו תואם (נמצא "${text}" במקום "${systemCode}") — השליחה בוטלה`,
       );
     }
   } catch (e: any) {
-    if (String(e?.message ?? "").includes("אינו תואם") || String(e?.message ?? "").includes("חזרה ריקה")) throw e;
+    if (String(e?.message ?? "").includes("אינו תואם")) throw e;
     console.warn("[voice] title verification skipped", e?.message ?? e);
   }
 
-    var callJson = await callYemot("CallExtensionBridging", {
-      phones: phone,
-    }, (json) => json.responseStatus === "OK");
-  } finally {
-    await supabaseAdmin
-      .rpc("release_voice_send_lock", { _phone: phone })
-      .catch((e: any) => console.warn("[voice] failed to release send lock", e?.message ?? e));
-  }
+  const callJson = await callYemot("CallExtensionBridging", {
+    phones: phone,
+  }, (json) => json.responseStatus === "OK");
 
   const nowIso = new Date().toISOString();
   let sentAtError: any = null;

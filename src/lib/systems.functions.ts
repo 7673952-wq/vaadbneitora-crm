@@ -1722,7 +1722,11 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   // Keyed by phone AND systemId (not just phone) so two sends to the same
   // caller phone — from two different systems, or two overlapping sends —
   // never share a path and can never overwrite each other's message/title.
-  const extensionPath = `ivr2:0CRM/Phone/${phone}/${systemId}`;
+  // NOTE: keep this at the same folder depth as before (dash-joined, not an
+  // extra "/" level) — the Yemot API key's ACL is scoped to ivr2:0CRM/Phone/*
+  // one level deep, and an added path segment gets rejected with
+  // API_KEY_ACL_REJECT.
+  const extensionPath = `ivr2:0CRM/Phone/${phone}-${systemId}`;
   const jsonHeaders = { authorization: apiKey, "Content-Type": "application/json" };
   const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
     let res: Response;

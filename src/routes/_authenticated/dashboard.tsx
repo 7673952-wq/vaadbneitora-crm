@@ -7,6 +7,7 @@ import {
   importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,

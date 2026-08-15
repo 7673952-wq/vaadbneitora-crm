@@ -1794,17 +1794,26 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   // Read the title back before dialing: if another send for the same caller
   // overwrote it, stop instead of announcing the wrong system number.
   try {
+    // Give Yemot's storage a brief moment to propagate the write we just
+    // made — reading it back immediately, especially against a brand-new
+    // extension path, can return an empty body before it's actually saved.
+    await new Promise((resolve) => setTimeout(resolve, 800));
     const verifyRes = await fetch(`${ymBase}/DownloadFile`, {
       method: "POST", headers: jsonHeaders, body: JSON.stringify({ path: titlePath }),
     });
     const text = (await verifyRes.text()).trim();
+    if (verifyRes.ok && !text) {
+      throw new Error(
+        `ימות המשיח: הקריאה החוזרת של מספר המערכת בשלוחה ${extensionPath} חזרה ריקה — השליחה בוטלה כדי למנוע הודעה ריקה`,
+      );
+    }
     if (verifyRes.ok && text && !text.startsWith("{") && text !== systemCode) {
       throw new Error(
         `ימות המשיח: מספר המערכת בשלוחה ${extensionPath} אינו תואם (נמצא "${text}" במקום "${systemCode}") — השליחה בוטלה`,
       );
     }
   } catch (e: any) {
-    if (String(e?.message ?? "").includes("אינו תואם")) throw e;
+    if (String(e?.message ?? "").includes("אינו תואם") || String(e?.message ?? "").includes("חזרה ריקה")) throw e;
     console.warn("[voice] title verification skipped", e?.message ?? e);
   }
 

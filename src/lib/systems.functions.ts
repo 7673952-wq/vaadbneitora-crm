@@ -1719,7 +1719,10 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   }
 
   const ymBase = "https://www.call2all.co.il/ym/api";
-  const extensionPath = `ivr2:0CRM/Phone/${phone}`;
+  // Keyed by phone AND systemId (not just phone) so two sends to the same
+  // caller phone — from two different systems, or two overlapping sends —
+  // never share a path and can never overwrite each other's message/title.
+  const extensionPath = `ivr2:0CRM/Phone/${phone}/${systemId}`;
   const jsonHeaders = { authorization: apiKey, "Content-Type": "application/json" };
   const callYemot = async (endpoint: string, params: Record<string, string>, accept: (json: any) => boolean) => {
     let res: Response;
@@ -1756,10 +1759,10 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
 
   await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
 
-  // The extension is keyed by the caller's phone only, so when the same caller
-  // exists in several systems the previous round's message + "<id>-Title.tts"
-  // are still sitting there and get played too (two different system numbers).
-  // Purge everything in the extension before copying the new message in.
+  // The extension path is unique per (phone, systemId), so it can no longer
+  // collide with a different system sending to the same caller. Still purge
+  // any leftover file first — e.g. a retry or resend for this same system —
+  // so we never risk two "<id>-Title.tts" files sitting in the same folder.
   const dir = await tryYemot("GetIVR2Dir", { path: extensionPath });
   const stale: string[] = Array.isArray(dir?.files)
     ? dir.files.map((f: any) => String(f?.name ?? f?.fileName ?? "")).filter(Boolean)

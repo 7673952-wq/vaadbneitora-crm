@@ -1857,6 +1857,38 @@ async function runYemotVoiceSend(
     // Best-effort context for the log only; never blocks the actual send.
   }
 
+  // The Yemot extension is shared per caller phone, so two systems sending to
+  // the same caller at once would overwrite each other's system-number title.
+  // Serialize with a short DB-backed lock (reuses the rate-limit counter).
+  const lockDigits = String(phoneForLog ?? "").replace(/\D/g, "");
+  if (lockDigits) {
+    try {
+      const { data: hits } = await supabaseAdmin.rpc("bump_rate_limit", {
+        _key: `voice-send:${lockDigits}`,
+        _window_seconds: 30,
+      });
+      if (Number(hits ?? 0) > 1) {
+        throw new Error("שליחה נוספת למספר זה בוצעה ממש עכשיו — נסה שוב בעוד כחצי דקה");
+      }
+    } catch (e: any) {
+      if (String(e?.message ?? "").includes("נסה שוב")) {
+        await supabaseAdmin.from("voice_message_log").insert({
+          system_id: systemId,
+          system_code: systemCodeForLog,
+          phone: phoneForLog,
+          phone_index: phoneIndex,
+          status_key: statusForLog,
+          send_mode: sendMode,
+          success: false,
+          error_message: String(e.message).slice(0, 500),
+          created_by: userId ?? null,
+        }).then(() => {}, () => {});
+        throw e;
+      }
+      console.warn("[voice] lock unavailable", e?.message ?? e);
+    }
+  }
+
   try {
     const result = await runYemotVoiceSendInner(supabaseAdmin, systemId, phoneIndex);
     await supabaseAdmin.from("voice_message_log").insert({

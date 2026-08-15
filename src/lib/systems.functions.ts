@@ -1330,6 +1330,58 @@ export const findSystemByCode = createServerFn({ method: "POST" })
     return [...exact, ...rest];
   });
 
+// While typing a caller phone in the "open a system" form we show which other
+// systems already have that same caller — matching the primary caller_phone,
+// the dial phone, and any entry in additional_caller_phones. Digits only, so
+// 052-767..., +97252767... and 052767... all match each other.
+export const findSystemsByCallerPhone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { phone: string }) => z.object({ phone: z.string().min(1).max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const digits = String(data.phone).replace(/\D/g, "");
+    const local = digits.replace(/^972/, "").replace(/^0+/, "");
+    if (local.length < 6) return [];
+
+    const variants = [local, `0${local}`, `972${local}`, `+972${local}`];
+    const or = variants
+      .flatMap((v) => [`caller_phone.ilike.%${v}%`, `phone.ilike.%${v}%`, `additional_caller_phones::text.ilike.%${v}%`])
+      .join(",");
+
+    const { data: rows } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, secondary_status, assigned_agent_id, caller_phone, phone, additional_caller_phones, created_at")
+      .or(or)
+      .order("created_at", { ascending: false })
+      .limit(25);
+    if (!rows || rows.length === 0) return [];
+
+    // The ilike above is a coarse prefilter; confirm on normalized digits.
+    const matches = (v: any) => String(v ?? "").replace(/\D/g, "").replace(/^972/, "").replace(/^0+/, "") === local;
+    const filtered = (rows as any[]).filter((r) => {
+      if (matches(r.caller_phone) || matches(r.phone)) return true;
+      const extra = normalizeAdditionalCallerPhones(r.additional_caller_phones);
+      return extra.some((e: any) => matches(e?.phone));
+    });
+
+    const agentIds = Array.from(new Set(filtered.map((r) => r.assigned_agent_id).filter(Boolean)));
+    let names: Record<string, string> = {};
+    if (agentIds.length) {
+      const { data: profs } = await context.supabase
+        .from("profiles").select("id, display_name").in("id", agentIds as any);
+      names = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.display_name]));
+    }
+    return filtered.map((r) => ({
+      id: r.id,
+      system_code: r.system_code,
+      name: r.name,
+      status: r.status,
+      secondary_status: r.secondary_status ?? null,
+      agent_name: r.assigned_agent_id ? (names[r.assigned_agent_id] ?? null) : null,
+      created_at: r.created_at,
+    }));
+  });
+
+
 // Ensures a persistent ROOT system with the given name exists (used for
 // "category" parents like "קו ההגנה" that group many sub-systems). If a root
 // with that exact name is missing it is created on-the-fly and returned.

@@ -1412,6 +1412,23 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.system_code, codeFn]);
+
+  // Caller-phone lookup: while typing, list other systems that already have
+  // this caller (primary, dial phone, or an additional caller number).
+  const callerLookupFn = useServerFn(findSystemsByCallerPhone);
+  const [callerMatches, setCallerMatches] = useState<any[]>([]);
+  useEffect(() => {
+    const digits = form.caller_phone.replace(/\D/g, "");
+    if (digits.length < 6) { setCallerMatches([]); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const rows = await callerLookupFn({ data: { phone: form.caller_phone } });
+        if (!cancelled) setCallerMatches(rows ?? []);
+      } catch { if (!cancelled) setCallerMatches([]); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [form.caller_phone, callerLookupFn]);
   // Names that must ALWAYS present the "open as sub / open as new root" choice,
   // even when no matching root exists yet in the DB. If sub is chosen the root
   // is created on-the-fly by ensureCategoryRoot before the sub is attached.

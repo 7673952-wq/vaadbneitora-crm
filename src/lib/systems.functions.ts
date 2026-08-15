@@ -1330,6 +1330,58 @@ export const findSystemByCode = createServerFn({ method: "POST" })
     return [...exact, ...rest];
   });
 
+// While typing a caller phone in the "open a system" form we show which other
+// systems already have that same caller — matching the primary caller_phone,
+// the dial phone, and any entry in additional_caller_phones. Digits only, so
+// 052-767..., +97252767... and 052767... all match each other.
+export const findSystemsByCallerPhone = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { phone: string }) => z.object({ phone: z.string().min(1).max(60) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const digits = String(data.phone).replace(/\D/g, "");
+    const local = digits.replace(/^972/, "").replace(/^0+/, "");
+    if (local.length < 6) return [];
+
+    const variants = [local, `0${local}`, `972${local}`, `+972${local}`];
+    const or = variants
+      .flatMap((v) => [`caller_phone.ilike.%${v}%`, `phone.ilike.%${v}%`, `additional_caller_phones::text.ilike.%${v}%`])
+      .join(",");
+
+    const { data: rows } = await context.supabase
+      .from("systems")
+      .select("id, system_code, name, status, secondary_status, assigned_agent_id, caller_phone, phone, additional_caller_phones, created_at")
+      .or(or)
+      .order("created_at", { ascending: false })
+      .limit(25);
+    if (!rows || rows.length === 0) return [];
+
+    // The ilike above is a coarse prefilter; confirm on normalized digits.
+    const matches = (v: any) => String(v ?? "").replace(/\D/g, "").replace(/^972/, "").replace(/^0+/, "") === local;
+    const filtered = (rows as any[]).filter((r) => {
+      if (matches(r.caller_phone) || matches(r.phone)) return true;
+      const extra = normalizeAdditionalCallerPhones(r.additional_caller_phones);
+      return extra.some((e: any) => matches(e?.phone));
+    });
+
+    const agentIds = Array.from(new Set(filtered.map((r) => r.assigned_agent_id).filter(Boolean)));
+    let names: Record<string, string> = {};
+    if (agentIds.length) {
+      const { data: profs } = await context.supabase
+        .from("profiles").select("id, display_name").in("id", agentIds as any);
+      names = Object.fromEntries((profs ?? []).map((p: any) => [p.id, p.display_name]));
+    }
+    return filtered.map((r) => ({
+      id: r.id,
+      system_code: r.system_code,
+      name: r.name,
+      status: r.status,
+      secondary_status: r.secondary_status ?? null,
+      agent_name: r.assigned_agent_id ? (names[r.assigned_agent_id] ?? null) : null,
+      created_at: r.created_at,
+    }));
+  });
+
+
 // Ensures a persistent ROOT system with the given name exists (used for
 // "category" parents like "קו ההגנה" that group many sub-systems). If a root
 // with that exact name is missing it is created on-the-fly and returned.
@@ -1689,7 +1741,33 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
     return json;
   };
 
+  // Best-effort helper: never let a housekeeping call abort the send.
+  const tryYemot = async (endpoint: string, params: Record<string, string>) => {
+    try {
+      const res = await fetch(`${ymBase}/${endpoint}`, {
+        method: "POST", headers: jsonHeaders, body: JSON.stringify(params),
+      });
+      try { return await res.json(); } catch { return null; }
+    } catch (e: any) {
+      console.warn(`[voice] ${endpoint} failed`, e?.message ?? e);
+      return null;
+    }
+  };
+
   await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
+
+  // The extension is keyed by the caller's phone only, so when the same caller
+  // exists in several systems the previous round's message + "<id>-Title.tts"
+  // are still sitting there and get played too (two different system numbers).
+  // Purge everything in the extension before copying the new message in.
+  const dir = await tryYemot("GetIVR2Dir", { path: extensionPath });
+  const stale: string[] = Array.isArray(dir?.files)
+    ? dir.files.map((f: any) => String(f?.name ?? f?.fileName ?? "")).filter(Boolean)
+    : [];
+  for (const name of stale) {
+    await tryYemot("FileAction", { action: "delete", what: `${extensionPath}/${name}` });
+  }
+
   const fileActionJson = await callYemot("FileAction", {
     what: `ivr2:0CRM/files/${messageFile}.wav`,
     target: extensionPath,
@@ -1698,12 +1776,31 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
   const fileId = targetMatch?.[1];
   if (!fileId) {
-    throw new Error("ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה");
+    throw new Error(`ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה (שלוחה ${extensionPath})`);
   }
+  const titlePath = `${extensionPath}/${fileId}-Title.tts`;
   await callYemot("UploadTextFile", {
-    what: `${extensionPath}/${fileId}-Title.tts`,
+    what: titlePath,
     contents: systemCode,
   }, (json) => json.responseStatus === "OK");
+
+  // Read the title back before dialing: if another send for the same caller
+  // overwrote it, stop instead of announcing the wrong system number.
+  try {
+    const verifyRes = await fetch(`${ymBase}/DownloadFile`, {
+      method: "POST", headers: jsonHeaders, body: JSON.stringify({ path: titlePath }),
+    });
+    const text = (await verifyRes.text()).trim();
+    if (verifyRes.ok && text && !text.startsWith("{") && text !== systemCode) {
+      throw new Error(
+        `ימות המשיח: מספר המערכת בשלוחה ${extensionPath} אינו תואם (נמצא "${text}" במקום "${systemCode}") — השליחה בוטלה`,
+      );
+    }
+  } catch (e: any) {
+    if (String(e?.message ?? "").includes("אינו תואם")) throw e;
+    console.warn("[voice] title verification skipped", e?.message ?? e);
+  }
+
   const callJson = await callYemot("CallExtensionBridging", {
     phones: phone,
   }, (json) => json.responseStatus === "OK");
@@ -1758,6 +1855,38 @@ async function runYemotVoiceSend(
     }
   } catch {
     // Best-effort context for the log only; never blocks the actual send.
+  }
+
+  // The Yemot extension is shared per caller phone, so two systems sending to
+  // the same caller at once would overwrite each other's system-number title.
+  // Serialize with a short DB-backed lock (reuses the rate-limit counter).
+  const lockDigits = String(phoneForLog ?? "").replace(/\D/g, "");
+  if (lockDigits) {
+    try {
+      const { data: hits } = await supabaseAdmin.rpc("bump_rate_limit", {
+        _key: `voice-send:${lockDigits}`,
+        _window_seconds: 30,
+      });
+      if (Number(hits ?? 0) > 1) {
+        throw new Error("שליחה נוספת למספר זה בוצעה ממש עכשיו — נסה שוב בעוד כחצי דקה");
+      }
+    } catch (e: any) {
+      if (String(e?.message ?? "").includes("נסה שוב")) {
+        await supabaseAdmin.from("voice_message_log").insert({
+          system_id: systemId,
+          system_code: systemCodeForLog,
+          phone: phoneForLog,
+          phone_index: phoneIndex,
+          status_key: statusForLog,
+          send_mode: sendMode,
+          success: false,
+          error_message: String(e.message).slice(0, 500),
+          created_by: userId ?? null,
+        }).then(() => {}, () => {});
+        throw e;
+      }
+      console.warn("[voice] lock unavailable", e?.message ?? e);
+    }
   }
 
   try {

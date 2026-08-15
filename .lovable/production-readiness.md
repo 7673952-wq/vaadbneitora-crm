@@ -152,7 +152,7 @@ Zod מלא בכל ה-server functions, וחיזוק חיפוש Audit Log מפנ�
 - [ ] להריץ load test בסיסי (100 משתמשים במקביל קוראים `listSystems`).
 - [ ] להגדיר monitoring/alerts (Sentry, או דרך `error-capture.ts`).
 - [ ] לעבור על תפקידים ב-DB ולוודא שיש לפחות 2 super_admins (אחד backup).
-- [ ] לאמת cron jobs: `daily-backup`, `weekly-backup`, `weekly-crm-report`.
+- [ ] לאמת תזמונים: ה-heartbeat היחיד (`scheduled-backup-check`) שמכבד את הגדרות הגיבוי בניהול, ו-`weekly-crm-report`. ה-crons הישנים `daily-backup`/`weekly-backup` הוסרו כדי למנוע כפילות.
 - [ ] לסקור את כל מדיניות ה-RLS במסך ה-Backend.
 
 ---

@@ -3,10 +3,11 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   listSystems, listAgents, createSystem, updateSystem, pokeVoiceQueue,
-  findSystemByName, findSystemByCode, addSubSystem, ensureCategoryRoot,
+  findSystemByName, findSystemByCode, findSystemsByCallerPhone, addSubSystem, ensureCategoryRoot,
   importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
@@ -245,6 +246,23 @@ function Dashboard() {
       window.localStorage.setItem("dashboardChartsOpen", showCharts ? "1" : "0");
     }
   }, [showCharts]);
+
+  // Keyboard: "/" focuses the search box, Esc clears it while focused.
+  const searchRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      const typing = !!el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      } else if (e.key === "Escape" && el === searchRef.current) {
+        setSearch("");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
@@ -709,7 +727,7 @@ function Dashboard() {
         </div>
         <div className="relative">
           <Search className="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש לפי מערכת, שם, נציג, טלפון או סטטוס..."
+          <input ref={searchRef} aria-label="חיפוש מערכות" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש (/) לפי מערכת, שם, נציג, טלפון או סטטוס..."
             className="pr-9 pl-8 py-2 text-sm rounded-lg border border-input bg-background w-72 focus:outline-none focus:ring-2 focus:ring-ring" />
           {search && (
             <button onClick={() => setSearch("")} aria-label="נקה חיפוש"
@@ -818,7 +836,21 @@ function Dashboard() {
 
       {/* Main cards grid */}
       <div>
-        {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
+        {isLoading && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="טוען מערכות">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && rest.length === 0 && (
           <div className="text-center py-12 text-muted-foreground space-y-3">
             <div>{hasActiveFilters ? "לא נמצאו מערכות התואמות לסינון" : "אין עדיין מערכות"}</div>
@@ -1412,6 +1444,23 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
     }, 250);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.system_code, codeFn]);
+
+  // Caller-phone lookup: while typing, list other systems that already have
+  // this caller (primary, dial phone, or an additional caller number).
+  const callerLookupFn = useServerFn(findSystemsByCallerPhone);
+  const [callerMatches, setCallerMatches] = useState<any[]>([]);
+  useEffect(() => {
+    const digits = form.caller_phone.replace(/\D/g, "");
+    if (digits.length < 6) { setCallerMatches([]); return; }
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const rows = await callerLookupFn({ data: { phone: form.caller_phone } });
+        if (!cancelled) setCallerMatches(rows ?? []);
+      } catch { if (!cancelled) setCallerMatches([]); }
+    }, 350);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [form.caller_phone, callerLookupFn]);
   // Names that must ALWAYS present the "open as sub / open as new root" choice,
   // even when no matching root exists yet in the DB. If sub is chosen the root
   // is created on-the-fly by ensureCategoryRoot before the sub is attached.
@@ -1628,6 +1677,28 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
             <label className="text-sm font-medium block mb-1">טלפון פונה</label>
             <input required value={form.caller_phone} onChange={(e) => setForm({ ...form, caller_phone: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            {callerMatches.length > 0 && (
+              <div className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs">
+                <div className="font-semibold text-amber-900 mb-1">
+                  המספר קיים כבר ב-{callerMatches.length} מערכות:
+                </div>
+                <ul className="max-h-40 overflow-y-auto space-y-1">
+                  {callerMatches.map((m: any) => (
+                    <li key={m.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        <span className="font-mono">{m.system_code}</span>
+                        {m.name ? ` · ${m.name}` : ""}
+                        {m.agent_name ? ` · ${m.agent_name}` : ""}
+                      </span>
+                      <a href={`/systems/${m.id}`} target="_blank" rel="noreferrer"
+                        className="shrink-0 rounded border border-amber-400 px-1.5 py-0.5 hover:bg-amber-100">
+                        פתח
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium block mb-1">מקור</label>

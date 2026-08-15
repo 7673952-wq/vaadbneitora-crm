@@ -1645,6 +1645,28 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
             <label className="text-sm font-medium block mb-1">טלפון פונה</label>
             <input required value={form.caller_phone} onChange={(e) => setForm({ ...form, caller_phone: e.target.value })}
               className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+            {callerMatches.length > 0 && (
+              <div className="mt-1.5 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs">
+                <div className="font-semibold text-amber-900 mb-1">
+                  המספר קיים כבר ב-{callerMatches.length} מערכות:
+                </div>
+                <ul className="max-h-40 overflow-y-auto space-y-1">
+                  {callerMatches.map((m: any) => (
+                    <li key={m.id} className="flex items-center justify-between gap-2">
+                      <span className="truncate">
+                        <span className="font-mono">{m.system_code}</span>
+                        {m.name ? ` · ${m.name}` : ""}
+                        {m.agent_name ? ` · ${m.agent_name}` : ""}
+                      </span>
+                      <a href={`/systems/${m.id}`} target="_blank" rel="noreferrer"
+                        className="shrink-0 rounded border border-amber-400 px-1.5 py-0.5 hover:bg-amber-100">
+                        פתח
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium block mb-1">מקור</label>

@@ -727,7 +727,7 @@ function Dashboard() {
         </div>
         <div className="relative">
           <Search className="h-4 w-4 absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש לפי מערכת, שם, נציג, טלפון או סטטוס..."
+          <input ref={searchRef} aria-label="חיפוש מערכות" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="חיפוש (/) לפי מערכת, שם, נציג, טלפון או סטטוס..."
             className="pr-9 pl-8 py-2 text-sm rounded-lg border border-input bg-background w-72 focus:outline-none focus:ring-2 focus:ring-ring" />
           {search && (
             <button onClick={() => setSearch("")} aria-label="נקה חיפוש"

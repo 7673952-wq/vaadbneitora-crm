@@ -818,7 +818,21 @@ function Dashboard() {
 
       {/* Main cards grid */}
       <div>
-        {isLoading && <div className="text-center py-12 text-muted-foreground">טוען...</div>}
+        {isLoading && (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-busy="true" aria-label="טוען מערכות">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <Skeleton className="h-4 w-24" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-1/2" />
+                <Skeleton className="h-3 w-2/3" />
+              </div>
+            ))}
+          </div>
+        )}
         {!isLoading && rest.length === 0 && (
           <div className="text-center py-12 text-muted-foreground space-y-3">
             <div>{hasActiveFilters ? "לא נמצאו מערכות התואמות לסינון" : "אין עדיין מערכות"}</div>

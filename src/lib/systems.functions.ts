@@ -1741,7 +1741,33 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
     return json;
   };
 
+  // Best-effort helper: never let a housekeeping call abort the send.
+  const tryYemot = async (endpoint: string, params: Record<string, string>) => {
+    try {
+      const res = await fetch(`${ymBase}/${endpoint}`, {
+        method: "POST", headers: jsonHeaders, body: JSON.stringify(params),
+      });
+      try { return await res.json(); } catch { return null; }
+    } catch (e: any) {
+      console.warn(`[voice] ${endpoint} failed`, e?.message ?? e);
+      return null;
+    }
+  };
+
   await callYemot("UpdateExtension", { path: extensionPath }, (json) => json.responseStatus === "OK");
+
+  // The extension is keyed by the caller's phone only, so when the same caller
+  // exists in several systems the previous round's message + "<id>-Title.tts"
+  // are still sitting there and get played too (two different system numbers).
+  // Purge everything in the extension before copying the new message in.
+  const dir = await tryYemot("GetIVR2Dir", { path: extensionPath });
+  const stale: string[] = Array.isArray(dir?.files)
+    ? dir.files.map((f: any) => String(f?.name ?? f?.fileName ?? "")).filter(Boolean)
+    : [];
+  for (const name of stale) {
+    await tryYemot("FileAction", { action: "delete", what: `${extensionPath}/${name}` });
+  }
+
   const fileActionJson = await callYemot("FileAction", {
     what: `ivr2:0CRM/files/${messageFile}.wav`,
     target: extensionPath,
@@ -1750,12 +1776,31 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   const targetMatch = copiedTarget.match(/\/([^/]+)\.wav$/i);
   const fileId = targetMatch?.[1];
   if (!fileId) {
-    throw new Error("ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה");
+    throw new Error(`ימות המשיח (FileAction): לא התקבל מזהה קובץ להמשך השליחה (שלוחה ${extensionPath})`);
   }
+  const titlePath = `${extensionPath}/${fileId}-Title.tts`;
   await callYemot("UploadTextFile", {
-    what: `${extensionPath}/${fileId}-Title.tts`,
+    what: titlePath,
     contents: systemCode,
   }, (json) => json.responseStatus === "OK");
+
+  // Read the title back before dialing: if another send for the same caller
+  // overwrote it, stop instead of announcing the wrong system number.
+  try {
+    const verifyRes = await fetch(`${ymBase}/DownloadFile`, {
+      method: "POST", headers: jsonHeaders, body: JSON.stringify({ path: titlePath }),
+    });
+    const text = (await verifyRes.text()).trim();
+    if (verifyRes.ok && text && !text.startsWith("{") && text !== systemCode) {
+      throw new Error(
+        `ימות המשיח: מספר המערכת בשלוחה ${extensionPath} אינו תואם (נמצא "${text}" במקום "${systemCode}") — השליחה בוטלה`,
+      );
+    }
+  } catch (e: any) {
+    if (String(e?.message ?? "").includes("אינו תואם")) throw e;
+    console.warn("[voice] title verification skipped", e?.message ?? e);
+  }
+
   const callJson = await callYemot("CallExtensionBridging", {
     phones: phone,
   }, (json) => json.responseStatus === "OK");

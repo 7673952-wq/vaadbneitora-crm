@@ -125,123 +125,45 @@ export const listSystems = createServerFn({ method: "POST" })
     const db = context.supabase;
     const statusValues = await resolveStatusFilterValues(db, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(db, data.secondaryStatus);
-    const primaryStatusValues = primaryStatusFilterValues(statusValues);
     if (data.status && statusValues.length === 0 && secondaryStatusValues.length === 0) {
       return { items: [], total: 0, page: data.page ?? 1, pageSize: data.pageSize ?? 1000 };
     }
     const page = data.page ?? 1;
     const pageSize = data.pageSize ?? 1000;
     const offset = (page - 1) * pageSize;
-    const endTo = offset + pageSize - 1;
 
-    const baseSelect =
-      "id, system_code, name, status, secondary_status, assigned_agent_id, notes, phone, caller_phone, additional_caller_phones, email, additional_emails, source, reminder_at, reminder_agent_ids, handled_pending_at, parent_system_id, audio_url, has_unread_email, last_inbound_email_at, created_at, updated_at";
-
-
-    const applySharedFilters = (q: any) => {
-      if (data.agentId) q = q.eq("assigned_agent_id", data.agentId);
-      if (data.period) {
-        const now = new Date();
-        const start = new Date(now);
-        if (data.period === "day") start.setDate(now.getDate() - 1);
-        else if (data.period === "week") start.setDate(now.getDate() - 7);
-        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-        q = q.gte("updated_at", start.toISOString());
-      }
-      if (data.dateFrom) q = q.gte("updated_at", new Date(data.dateFrom).toISOString());
-      if (data.dateTo) q = q.lte("updated_at", new Date(data.dateTo).toISOString());
-      return q;
-    };
-
-    // Dashboard priority: systems still waiting for treatment must always be
-    // shown before handled ones — even when the view is capped to a page
-    // size (50/100/200). Sorting purely by "most recently updated" and then
-    // cutting off at the page size can bury an old waiting system under a
-    // page full of rows that were simply handled more recently. To guarantee
-    // the ordering we fetch every row matching the current filters, sort by
-    // (waiting-first, then most-recently-updated), and only then slice out
-    // the requested page.
-    const { data: statusRows } = await db
-      .from("status_settings").select("status_key, is_handled");
-    const handledKeys = new Set<string>((statusRows ?? []).filter((r: any) => r.is_handled).map((r: any) => r.status_key));
-    if (handledKeys.size === 0) {
-      ["open", "closed", "blocked_from_root", "sent_to_yosela", "sent_to_committee", "blocked_in_committee"].forEach((k) => handledKeys.add(k));
+    // Ordering ("waiting before handled", then most recently updated),
+    // filtering and pagination all happen inside the database now
+    // (`list_systems_page`). Previously the whole table was streamed to the
+    // app server in 1000-row chunks just to sort it in JS — that made the
+    // dashboard slower with every system added.
+    let fromIso: string | null = null;
+    let toIso: string | null = null;
+    if (data.period) {
+      const now = new Date();
+      const start = new Date(now);
+      if (data.period === "day") start.setDate(now.getDate() - 1);
+      else if (data.period === "week") start.setDate(now.getDate() - 7);
+      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+      fromIso = start.toISOString();
     }
-    const sortWaitingFirst = (rows: any[]) => [...rows].sort((a, b) => {
-      const aHandled = handledKeys.has(a.status) ? 1 : 0;
-      const bHandled = handledKeys.has(b.status) ? 1 : 0;
-      if (aHandled !== bHandled) return aHandled - bHandled; // waiting (0) before handled (1)
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
+    if (data.dateFrom) fromIso = new Date(data.dateFrom).toISOString();
+    if (data.dateTo) toIso = new Date(data.dateTo).toISOString();
 
-    const CHUNK = 1000;
-
-    // Status filters must support both the fixed enum column (`status`) and
-    // the flexible optional column (`secondary_status`), including custom
-    // statuses and legacy rows that stored workflow statuses in either place.
-    // Fetch the filtered set in JS instead of building enum/text OR queries,
-    // so a custom optional status can never be dropped by the database cast.
-    if (statusValues.length > 0 || secondaryStatusValues.length > 0) {
-      const statusSet = new Set(statusValues);
-      const secondaryStatusSet = new Set(secondaryStatusValues);
-      const pageQuery = (from: number, withCount: boolean) => {
-        let q = db.from("systems").select(baseSelect, withCount ? { count: "exact" } : {});
-        return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
-      };
-      const { data: firstRows, error: firstErr, count } = await pageQuery(0, true);
-      if (firstErr) throw new Error(firstErr.message);
-      const allRows: any[] = [...(firstRows ?? [])];
-      const totalRows = typeof count === "number" ? count : allRows.length;
-      if (totalRows > CHUNK) {
-        const rest: any[] = [];
-        for (let from = CHUNK; from < totalRows; from += CHUNK) rest.push(pageQuery(from, false));
-        for (const res of await Promise.all(rest)) {
-          if (res.error) throw new Error(res.error.message);
-          allRows.push(...(res.data ?? []));
-        }
-      }
-
-      const filteredRows = allRows.filter((row) => {
-        const matchesPrimary = statusValues.length === 0
-          || statusValueMatches(row.status, statusSet);
-        const matchesSecondary = secondaryStatusValues.length === 0
-          || statusValueMatches(row.secondary_status, secondaryStatusSet)
-          || statusValueMatches(row.status, secondaryStatusSet);
-        return matchesPrimary && matchesSecondary;
-      });
-      const orderedRows = sortWaitingFirst(filteredRows);
-      const items = await enrichSystemRows(db, orderedRows.slice(offset, endTo + 1));
-      return { items, total: orderedRows.length, page, pageSize };
-    }
-
-    // No status filter: fetch every row matching the remaining filters (in
-    // 1000-row chunks — PostgREST caps a single response there — fetched
-    // concurrently after the first page tells us the total) so the
-    // waiting/handled ordering above can be applied across the whole set,
-    // then slice out the requested page.
-    const buildQuery = (from: number, withCount: boolean) => {
-      let q = db
-        .from("systems")
-        .select(baseSelect, withCount ? { count: "exact" } : {});
-      if (primaryStatusValues.length > 0) q = q.in("status", primaryStatusValues as any);
-      return applySharedFilters(q).order("updated_at", { ascending: false }).range(from, from + CHUNK - 1);
-    };
-    const { data: firstPageRows, error: firstPageErr, count: firstCount } = await buildQuery(0, true);
-    if (firstPageErr) throw new Error(firstPageErr.message);
-    const allRows: any[] = [...(firstPageRows ?? [])];
-    const total = typeof firstCount === "number" ? firstCount : allRows.length;
-    if (total > CHUNK) {
-      const remaining: Promise<any>[] = [];
-      for (let from = CHUNK; from < total; from += CHUNK) remaining.push(buildQuery(from, false));
-      for (const res of await Promise.all(remaining)) {
-        if (res.error) throw new Error(res.error.message);
-        allRows.push(...(res.data ?? []));
-      }
-    }
-    const orderedRows = sortWaitingFirst(allRows);
-    const items = await enrichSystemRows(db, orderedRows.slice(offset, endTo + 1));
-    return { items, total: total || orderedRows.length, page, pageSize };
+    const { data: rpcData, error: rpcErr } = await db.rpc("list_systems_page" as any, {
+      _status_values: statusValues.length ? statusValues : null,
+      _secondary_values: secondaryStatusValues.length ? secondaryStatusValues : null,
+      _agent: data.agentId ?? null,
+      _from: fromIso,
+      _to: toIso,
+      _limit: pageSize,
+      _offset: offset,
+    } as any);
+    if (rpcErr) throw new Error(rpcErr.message);
+    const payload = (rpcData ?? {}) as { items?: any[]; total?: number };
+    const items = await enrichSystemRows(db, payload.items ?? []);
+    return { items, total: payload.total ?? items.length, page, pageSize };
   });
 
 // Global per-status counts across ALL systems (with optional agent/period

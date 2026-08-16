@@ -229,8 +229,14 @@ export const getStatusCounts = createServerFn({ method: "POST" })
 // can render them without an N+1.
 async function enrichSystemRows(supabase: any, rows: any[]) {
   if (!rows.length) return [];
-  const { data: profiles } = await supabase.from("profiles").select("id, display_name");
-  const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  // Only the agents that actually appear on this page — not every profile.
+  const agentIds = Array.from(new Set(rows.map((r) => r.assigned_agent_id).filter(Boolean) as string[]));
+  let profileMap = new Map<string, any>();
+  if (agentIds.length) {
+    const { data: profiles } = await supabase
+      .from("profiles").select("id, display_name").in("id", agentIds);
+    profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p]));
+  }
 
   const parentIds = Array.from(new Set(rows.map((r) => r.parent_system_id).filter(Boolean) as string[]));
   let parentMap = new Map<string, { id: string; system_code: string; name: string }>();

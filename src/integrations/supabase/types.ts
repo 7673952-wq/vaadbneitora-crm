@@ -1080,7 +1080,28 @@ export type Database = {
         Args: { _crm_key: string; _user_id: string }
         Returns: boolean
       }
+      list_systems_page: {
+        Args: {
+          _agent?: string
+          _from?: string
+          _limit?: number
+          _offset?: number
+          _secondary_values?: string[]
+          _status_values?: string[]
+          _to?: string
+        }
+        Returns: Json
+      }
+      purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
+      systems_status_counts: {
+        Args: { _agent?: string; _from?: string; _to?: string }
+        Returns: {
+          cnt: number
+          secondary_status: string
+          status: string
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "agent" | "super_admin" | "viewer"

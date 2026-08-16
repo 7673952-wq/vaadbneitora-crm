@@ -27,6 +27,24 @@ export function GlobalSearch() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
+  // Ctrl/Cmd+K jumps straight to the cross-CRM search from anywhere.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+        setOpen(true);
+      } else if (e.key === "Escape" && document.activeElement === inputRef.current) {
+        setOpen(false);
+        inputRef.current?.blur();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const { data: hits = [], isFetching } = useQuery({
     queryKey: ["global_search", debounced],
     queryFn: async () => fn({ data: { q: debounced }, headers: await getAuthHeaders() }),
@@ -40,10 +58,12 @@ export function GlobalSearch() {
     <div ref={boxRef} className="relative hidden md:block">
       <Search className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
       <input
+        ref={inputRef}
         value={q}
         onChange={(e) => { setQ(e.target.value); setOpen(true); }}
         onFocus={() => setOpen(true)}
-        placeholder="חיפוש כללי..."
+        placeholder="חיפוש כללי... (Ctrl+K)"
+        aria-label="חיפוש כללי בכל המערכות"
         className="w-56 rounded-xl border-none bg-muted pr-9 pl-3 py-1.5 text-sm focus:ring-2 focus:ring-primary/20 focus:bg-background transition-all outline-none"
       />
       {isFetching && <Loader2 className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-muted-foreground" />}

@@ -60,7 +60,15 @@ async function handleScheduledBackupCheck(request: Request) {
       value: { at: new Date().toISOString() },
       updated_at: new Date().toISOString(),
     });
-    return new Response(JSON.stringify({ ok: true, ran: true, kind, ...result, emailStatus, pruned }), {
+    // Activity/audit log retention — the live tables would otherwise grow
+    // forever. Runs only after a successful backup, so nothing is dropped
+    // before it has been backed up.
+    let logsPurged: unknown = null;
+    try {
+      const { data: purged } = await supabaseAdmin.rpc("purge_old_activity_logs" as any, { _days: 365 } as any);
+      logsPurged = purged ?? null;
+    } catch (e: any) { logsPurged = { error: e?.message ?? "purge failed" }; }
+    return new Response(JSON.stringify({ ok: true, ran: true, kind, ...result, emailStatus, pruned, logsPurged }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

@@ -11,14 +11,20 @@ export const Route = createFileRoute("/api/public/health")({
         const limited = await enforcePublicRateLimit(request, "health", 120, 3600);
         if (limited) return limited;
 
+        // Never leak internal error details to an unauthenticated monitor —
+        // the response is a plain up/down summary; details go to the log.
         const checks: Record<string, unknown> = {};
         let ok = true;
         try {
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const started = Date.now();
           const { error } = await supabaseAdmin.from("app_settings").select("key").limit(1);
-          checks.database = error ? { ok: false, error: error.message } : { ok: true, ms: Date.now() - started };
-          if (error) ok = false;
+          if (error) {
+            ok = false;
+            const { logger } = await import("@/lib/logger.server");
+            logger.error("health: database check failed", { message: error.message });
+          }
+          checks.database = { ok: !error, ms: Date.now() - started };
 
           const { data: lastRun } = await supabaseAdmin
             .from("app_settings").select("value").eq("key", "backup_schedule_last_run").maybeSingle();
@@ -27,7 +33,9 @@ export const Route = createFileRoute("/api/public/health")({
           checks.lastBackup = { at, ageHours: ageHours === null ? null : Math.round(ageHours) };
         } catch (e: any) {
           ok = false;
-          checks.database = { ok: false, error: e?.message ?? "unreachable" };
+          const { logger } = await import("@/lib/logger.server");
+          logger.error("health: unreachable", { message: e?.message, stack: e?.stack });
+          checks.database = { ok: false };
         }
 
         return new Response(JSON.stringify({ ok, ts: new Date().toISOString(), checks }), {

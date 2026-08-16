@@ -181,56 +181,42 @@ export const getStatusCounts = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { aliasToKey } = await buildStatusAliasMap(context.supabase);
     const canonicalStatus = (value?: string | null) => value ? (aliasToKey.get(value) ?? value) : null;
-    // Paginate through everything to bypass the 1000-row default — fetch
-    // the first page to learn the total row count, then fetch any
-    // remaining pages concurrently instead of one-at-a-time (previously
-    // this awaited each 1000-row page sequentially, which visibly added
-    // up on every dashboard load since this query fires on every filter
-    // change alongside listSystems).
+    // Counts are aggregated by the database (GROUP BY status,
+    // secondary_status) — the dashboard no longer streams thousands of rows
+    // just to tally them.
     const primary: Record<string, number> = {};
     const secondary: Record<string, number> = {};
     const any: Record<string, number> = {};
-    const pageSize = 1000;
-    const countQuery = (from: number, to: number, withCount: boolean) => {
-      let pq = context.supabase.from("systems").select("status, secondary_status", withCount ? { count: "exact" } : {});
-      if (data.agentId) pq = pq.eq("assigned_agent_id", data.agentId);
-      if (data.period) {
-        const now = new Date();
-        const start = new Date(now);
-        if (data.period === "day") start.setDate(now.getDate() - 1);
-        else if (data.period === "week") start.setDate(now.getDate() - 7);
-        else if (data.period === "month") start.setMonth(now.getMonth() - 1);
-        else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
-        pq = pq.gte("updated_at", start.toISOString());
-      }
-      if (data.dateFrom) pq = pq.gte("updated_at", new Date(data.dateFrom).toISOString());
-      if (data.dateTo) pq = pq.lte("updated_at", new Date(data.dateTo).toISOString());
-      return pq.range(from, to);
-    };
-    const tally = (rows: any[]) => {
-      for (const r of rows) {
-        const primaryKey = canonicalStatus(r.status);
-        const secondaryKey = canonicalStatus(r.secondary_status);
-        if (primaryKey) primary[primaryKey] = (primary[primaryKey] ?? 0) + 1;
-        if (secondaryKey) secondary[secondaryKey] = (secondary[secondaryKey] ?? 0) + 1;
-        for (const key of new Set([primaryKey, secondaryKey].filter(Boolean))) {
-          any[key as string] = (any[key as string] ?? 0) + 1;
-        }
-      }
-    };
-    const { data: firstRows, error: firstErr, count } = await countQuery(0, pageSize - 1, true);
-    if (firstErr) throw new Error(firstErr.message);
-    tally((firstRows ?? []) as any[]);
-    const total = typeof count === "number" ? count : (firstRows?.length ?? 0);
-    if (total > pageSize) {
-      const remainingPages: any[] = [];
-      for (let from = pageSize; from < total; from += pageSize) {
-        remainingPages.push(countQuery(from, from + pageSize - 1, false));
-      }
-      const results = await Promise.all(remainingPages);
-      for (const res of results) {
-        if (res.error) throw new Error(res.error.message);
-        tally((res.data ?? []) as any[]);
+
+    let fromIso: string | null = null;
+    let toIso: string | null = null;
+    if (data.period) {
+      const now = new Date();
+      const start = new Date(now);
+      if (data.period === "day") start.setDate(now.getDate() - 1);
+      else if (data.period === "week") start.setDate(now.getDate() - 7);
+      else if (data.period === "month") start.setMonth(now.getMonth() - 1);
+      else if (data.period === "year") start.setFullYear(now.getFullYear() - 1);
+      fromIso = start.toISOString();
+    }
+    if (data.dateFrom) fromIso = new Date(data.dateFrom).toISOString();
+    if (data.dateTo) toIso = new Date(data.dateTo).toISOString();
+
+    const { data: rows, error } = await context.supabase.rpc("systems_status_counts" as any, {
+      _agent: data.agentId ?? null,
+      _from: fromIso,
+      _to: toIso,
+    } as any);
+    if (error) throw new Error(error.message);
+
+    for (const r of (rows ?? []) as any[]) {
+      const cnt = Number(r.cnt ?? 0);
+      const primaryKey = canonicalStatus(r.status);
+      const secondaryKey = canonicalStatus(r.secondary_status);
+      if (primaryKey) primary[primaryKey] = (primary[primaryKey] ?? 0) + cnt;
+      if (secondaryKey) secondary[secondaryKey] = (secondary[secondaryKey] ?? 0) + cnt;
+      for (const key of new Set([primaryKey, secondaryKey].filter(Boolean))) {
+        any[key as string] = (any[key as string] ?? 0) + cnt;
       }
     }
     // Back-compat: spread primary at top-level so old callers keep working.

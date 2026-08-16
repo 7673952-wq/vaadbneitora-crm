@@ -27,6 +27,24 @@ export function GlobalSearch() {
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
 
+  // Ctrl/Cmd+K jumps straight to the cross-CRM search from anywhere.
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        inputRef.current?.focus();
+        inputRef.current?.select();
+        setOpen(true);
+      } else if (e.key === "Escape" && document.activeElement === inputRef.current) {
+        setOpen(false);
+        inputRef.current?.blur();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const { data: hits = [], isFetching } = useQuery({
     queryKey: ["global_search", debounced],
     queryFn: async () => fn({ data: { q: debounced }, headers: await getAuthHeaders() }),

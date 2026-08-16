@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.purge_old_activity_logs(int) FROM anon, authenticated;

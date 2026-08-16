@@ -268,12 +268,13 @@ function Dashboard() {
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({
-    queryKey: ["systems", status, secondaryStatus, agentId, period, dateFrom, dateTo, page, pageSize],
+    queryKey: ["systems", status, secondaryStatus, agentId, period, dateFrom, dateTo, page, pageSize, debouncedSearch],
     queryFn: async () => listFn({ data: {
       status: status || null, secondaryStatus: secondaryStatus || null, agentId: agentId || null, period: period || null,
       dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
       dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
       page, pageSize: serverPageSize,
+      q: debouncedSearch || null,
     } }),
     staleTime: 30_000,
     placeholderData: (prev) => prev,

@@ -1256,26 +1256,34 @@ export const findSystemsByCallerPhone = createServerFn({ method: "POST" })
     const local = digits.replace(/^972/, "").replace(/^0+/, "");
     if (local.length < 6) return [];
 
-    const variants = [local, `0${local}`, `972${local}`, `+972${local}`];
-    const or = variants
-      .flatMap((v) => [`caller_phone.ilike.%${v}%`, `phone.ilike.%${v}%`, `additional_caller_phones::text.ilike.%${v}%`])
-      .join(",");
+    const select =
+      "id, system_code, name, status, secondary_status, assigned_agent_id, caller_phone, phone, additional_caller_phones, created_at";
+    // PostgREST cannot `ilike` a jsonb column inside `or()` (a `::text` cast
+    // there is rejected and silently returned nothing), so the extra caller
+    // numbers are matched in a second, narrow query instead.
+    const or = `caller_phone.ilike.%${local}%,phone.ilike.%${local}%`;
 
-    const { data: rows } = await context.supabase
-      .from("systems")
-      .select("id, system_code, name, status, secondary_status, assigned_agent_id, caller_phone, phone, additional_caller_phones, created_at")
-      .or(or)
-      .order("created_at", { ascending: false })
-      .limit(25);
-    if (!rows || rows.length === 0) return [];
+    const [directRes, extraRes] = await Promise.all([
+      context.supabase.from("systems").select(select)
+        .or(or).order("created_at", { ascending: false }).limit(50),
+      context.supabase.from("systems").select(select)
+        .not("additional_caller_phones", "eq", "[]")
+        .order("created_at", { ascending: false }).limit(500),
+    ]);
+    if (directRes.error) throw new Error(directRes.error.message);
+    if (extraRes.error) throw new Error(extraRes.error.message);
+
+    const byId = new Map<string, any>();
+    for (const r of [...(directRes.data ?? []), ...(extraRes.data ?? [])] as any[]) byId.set(r.id, r);
 
     // The ilike above is a coarse prefilter; confirm on normalized digits.
     const matches = (v: any) => String(v ?? "").replace(/\D/g, "").replace(/^972/, "").replace(/^0+/, "") === local;
-    const filtered = (rows as any[]).filter((r) => {
+    const filtered = Array.from(byId.values()).filter((r: any) => {
       if (matches(r.caller_phone) || matches(r.phone)) return true;
       const extra = normalizeAdditionalCallerPhones(r.additional_caller_phones);
       return extra.some((e: any) => matches(e?.phone));
-    });
+    }).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 25);
 
     const agentIds = Array.from(new Set(filtered.map((r) => r.assigned_agent_id).filter(Boolean)));
     let names: Record<string, string> = {};

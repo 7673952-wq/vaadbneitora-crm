@@ -209,6 +209,14 @@ function Dashboard() {
   const [dateFrom, setDateFrom] = useState<string>(savedFilters.dateFrom ?? "");
   const [dateTo, setDateTo] = useState<string>(savedFilters.dateTo ?? "");
   const [search, setSearch] = useState(savedFilters.search ?? "");
+  // Search runs on the server (across ALL systems, not just the loaded page),
+  // debounced so typing doesn't fire a request per keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState(search.trim());
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.localStorage.setItem("dashboardFilters", JSON.stringify({ status, secondaryStatus, agentId, period, dateFrom, dateTo, search }));

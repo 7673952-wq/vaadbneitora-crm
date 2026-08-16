@@ -113,6 +113,7 @@ const listSystemsInputSchema = z.object({
   dateTo: isoDate,
   page: z.number().int().min(1).max(10000).optional(),
   pageSize: z.number().int().min(1).max(100000).optional(),
+  q: z.string().max(200).nullable().optional(),
 }).strict();
 
 export const listSystems = createServerFn({ method: "POST" })

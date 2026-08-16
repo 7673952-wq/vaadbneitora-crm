@@ -160,6 +160,7 @@ export const listSystems = createServerFn({ method: "POST" })
       _to: toIso,
       _limit: pageSize,
       _offset: offset,
+      _q: data.q?.trim() || null,
     } as any);
     if (rpcErr) throw new Error(rpcErr.message);
     const payload = (rpcData ?? {}) as { items?: any[]; total?: number };

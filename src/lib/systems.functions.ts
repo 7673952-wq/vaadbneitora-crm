@@ -421,14 +421,25 @@ export const createSystem = createServerFn({ method: "POST" })
     const { data: existing } = await context.supabase
       .from("systems").select("id").eq("system_code", normalizedCode).is("parent_system_id", null).maybeSingle();
     if (existing) throw new Error("מספר המערכת כבר קיים כמערכת שורש — לא ניתן לפתוח מערכת ראשית נוספת עם אותו מספר");
-    // Auto-assign the creator as the handling agent if none was selected.
-    const assignedAgentId = data.assigned_agent_id ?? context.userId;
+    // Assignment priority: explicit choice → status auto-assignment → creator.
+    let assignedAgentId = data.assigned_agent_id ?? null;
+    let reminderAgentIds: string[] | null = null;
+    if (!assignedAgentId) {
+      const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+      const auto = await resolveAutoAssign(context.supabase, data.status);
+      if (auto) {
+        assignedAgentId = auto.agentId;
+        reminderAgentIds = auto.otherAgentIds.length ? auto.otherAgentIds : null;
+      }
+    }
+    if (!assignedAgentId) assignedAgentId = context.userId;
     const cleanNotes = sanitizeOptional(data.notes ?? null);
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: normalizedCode,
       name: sanitizeText(data.name),
       status: data.status as any,
       assigned_agent_id: assignedAgentId,
+      reminder_agent_ids: reminderAgentIds,
       notes: cleanNotes,
       phone: sanitizeOptional(data.phone || null),
       source: sanitizeOptional(data.source ?? null),

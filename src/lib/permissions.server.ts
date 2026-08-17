@@ -378,6 +378,7 @@ export async function hasPermissionInAnyCrm(userId: string, permission: Permissi
 
 export async function assertPermissionInAnyCrm(userId: string, permission: PermissionKey): Promise<void> {
   if (!(await hasPermissionInAnyCrm(userId, permission))) {
+    void logDeniedAttempt(userId, permission, "any_crm");
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
 }

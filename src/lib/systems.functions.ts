@@ -328,6 +328,60 @@ export const getSystem = createServerFn({ method: "POST" })
     };
   });
 
+/**
+ * Paged activity log for a single system, with optional filters. Replaces the
+ * old hard `limit(300)` — the card loads a page at a time ("טען עוד").
+ */
+export const listSystemActivity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    systemId: string; offset?: number; limit?: number;
+    action?: string | null; actorId?: string | null; from?: string | null; to?: string | null;
+  }) =>
+    z.object({
+      systemId: z.string().uuid(),
+      offset: z.number().int().min(0).max(100000).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+      action: z.string().max(40).nullable().optional(),
+      actorId: z.string().uuid().nullable().optional(),
+      from: z.string().min(4).nullable().optional(),
+      to: z.string().min(4).nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, "yemot");
+    const offset = data.offset ?? 0;
+    const limit = data.limit ?? ACTIVITY_PAGE_SIZE;
+    let q = context.supabase.from("system_activity_log").select("*").eq("system_id", data.systemId);
+    if (data.action) q = q.eq("action", data.action);
+    if (data.actorId) q = q.eq("actor_id", data.actorId);
+    if (data.from) q = q.gte("created_at", new Date(data.from).toISOString());
+    if (data.to) q = q.lte("created_at", new Date(data.to).toISOString());
+    const { data: rows, error } = await q
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw new Error(error.message);
+    const list = rows ?? [];
+    const actorIds = Array.from(new Set(list.map((r: any) => r.actor_id).filter(Boolean))) as string[];
+    let pmap = new Map<string, string>();
+    if (actorIds.length) {
+      const { data: profs } = await context.supabase
+        .from("profiles").select("id, display_name").in("id", actorIds);
+      pmap = new Map((profs ?? []).map((p: any) => [p.id, p.display_name]));
+    }
+    return {
+      items: list.map((a: any) => ({
+        ...a,
+        actor_name: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
+      })),
+      hasMore: list.length === limit,
+      nextOffset: offset + list.length,
+    };
+  });
+
+
+
 export const addSubSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: {

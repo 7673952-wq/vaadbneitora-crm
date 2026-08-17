@@ -1172,12 +1172,48 @@ function SystemDetail() {
           </button>
         </form>
 
+        {/* סינון יומן הפעילות */}
+        <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+          <select aria-label="סינון לפי פעולה" value={activityActionFilter} onChange={(e) => setActivityActionFilter(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2">
+            <option value="">כל הפעולות</option>
+            <option value="created">נוצרה</option>
+            <option value="updated">עודכנה</option>
+            <option value="deleted">נמחקה</option>
+            <option value="denied">נדחתה הרשאה</option>
+          </select>
+          <select aria-label="סינון לפי משתמש" value={activityActorFilter} onChange={(e) => setActivityActorFilter(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2">
+            <option value="">כל המשתמשים</option>
+            {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+          </select>
+          <input type="date" aria-label="מתאריך" value={activityFrom} onChange={(e) => setActivityFrom(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2" />
+          <input type="date" aria-label="עד תאריך" value={activityTo} onChange={(e) => setActivityTo(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2" />
+          {(activityActionFilter || activityActorFilter || activityFrom || activityTo) && (
+            <button type="button" className="h-7 px-2 rounded-md border border-border hover:bg-accent"
+              onClick={() => { setActivityActionFilter(""); setActivityActorFilter(""); setActivityFrom(""); setActivityTo(""); }}>
+              נקה סינון
+            </button>
+          )}
+        </div>
+
         <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
           {(() => {
+            const baseActivity = [...data.activity, ...olderActivity];
+            const passesFilters = (a: any) => {
+              if (activityActionFilter && a.action !== activityActionFilter) return false;
+              if (activityActorFilter && a.actor_id !== activityActorFilter) return false;
+              if (activityFrom && new Date(a.created_at) < new Date(activityFrom)) return false;
+              if (activityTo && new Date(a.created_at) > new Date(`${activityTo}T23:59:59`)) return false;
+              return true;
+            };
+            const filtersActive = !!(activityActionFilter || activityActorFilter || activityFrom || activityTo);
             const allMerged = [
-              ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
-              ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-              ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
+              ...(filtersActive ? [] : data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
+              ...baseActivity.filter(passesFilters).map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
+              ...(filtersActive ? [] : data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
             const merged = mentionFilter
               ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))

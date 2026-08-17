@@ -407,6 +407,7 @@ export async function assertAnyPermission(userId: string, permissions: Permissio
 export async function assertCanWrite(userId: string, crmKey = "yemot"): Promise<void> {
   const ok = await hasPermission(userId, "systems_write", crmKey);
   if (!ok) {
+    void logDeniedAttempt(userId, "systems_write", crmKey);
     throw new AppError("אין הרשאת עריכה למערכות", { code: "forbidden" });
   }
 }

@@ -555,19 +555,39 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
 
-    // Auto-assign the configured agent for this status (if any and caller
-    // didn't already pick one in the same request).
-    if (data.status && data.status !== sys.status && data.assigned_agent_id === undefined) {
-      const setting = (await readStatusSettings(context.supabase)).find((row) => row.status_key === data.status);
-      const ids: string[] = setting?.assigned_agent_ids ?? [];
-      if (ids.length > 0) {
-        (data as any).assigned_agent_id = ids[0];
+    // Auto-assign the configured agent for this status. The UI sends
+    // `assigned_agent_id: null` when the user did not pick anyone, so both
+    // `undefined` and `null` count as "no explicit choice".
+    if (data.status && data.status !== sys.status && !data.assigned_agent_id) {
+      const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+      const auto = await resolveAutoAssign(context.supabase, data.status);
+      if (auto) {
+        (data as any).assigned_agent_id = auto.agentId;
+        if (auto.otherAgentIds.length && data.reminder_agent_ids === undefined) {
+          (data as any).reminder_agent_ids = auto.otherAgentIds;
+        }
       }
     }
 
     const { id, reason: _r, email, apply_to_children: _ac, ...patch } = data as any;
     if (email !== undefined) (patch as any).email = email || null;
-    const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
+    // A transfer to another agent is a privileged action: RLS only lets an
+    // agent keep a system within their own scope, so the assignment is written
+    // separately and, when RLS blocks it, re-applied with elevated rights after
+    // the `agent_transfer` permission check passes.
+    const wantsTransfer = patch.assigned_agent_id !== undefined
+      && patch.assigned_agent_id !== sys.assigned_agent_id;
+    if (wantsTransfer) {
+      const { assertPermission } = await import("@/lib/permissions.server");
+      await assertPermission(context.userId, "agent_transfer");
+    }
+    let { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
+    if (error && wantsTransfer) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const elevated = await supabaseAdmin.from("systems").update(patch).eq("id", id).select().single();
+      row = elevated.data as any;
+      error = elevated.error as any;
+    }
     if (error) throw new Error(error.message);
     // Explicit sub-system status cascade (opt-in via apply_to_children).
     if (shouldCascadeStatus && cascadeChildren.length) {

@@ -345,6 +345,7 @@ export async function getUserPermissionMap(userId: string, crmKey = "yemot"): Pr
 export async function assertPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<void> {
   const ok = await hasPermission(userId, permission, crmKey);
   if (!ok) {
+    void logDeniedAttempt(userId, permission, crmKey);
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
 }

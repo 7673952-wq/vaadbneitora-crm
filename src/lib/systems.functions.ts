@@ -276,8 +276,10 @@ export const getSystem = createServerFn({ method: "POST" })
       context.supabase.from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
       context.supabase.from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
         .eq("parent_system_id", data.id).order("created_at", { ascending: true }),
+      // Only the newest slice is loaded up front; the card fetches older
+      // entries on demand through `listSystemActivity`.
       context.supabase.from("system_activity_log").select("*").eq("system_id", data.id)
-        .order("created_at", { ascending: false }).limit(300),
+        .order("created_at", { ascending: false }).limit(ACTIVITY_PAGE_SIZE),
       context.supabase.from("profiles").select("id, display_name"),
       sys.parent_system_id
         ? context.supabase.from("systems").select("id, system_code, name, status").eq("id", sys.parent_system_id).maybeSingle()

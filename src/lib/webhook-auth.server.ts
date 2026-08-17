@@ -9,22 +9,34 @@ export function timingSafeEqualStr(a: string, b: string): boolean {
   return diff === 0;
 }
 
+function auditDenied(request: Request, reason: string) {
+  // Best-effort audit of rejected webhook calls, so the audit screen shows
+  // failed attempts too. Never blocks or throws.
+  void (async () => {
+    try {
+      const { logDeniedAttempt } = await import("@/lib/permissions.server");
+      const path = new URL(request.url).pathname;
+      await logDeniedAttempt(null, "webhook_auth", `${reason}: ${path}`);
+    } catch { /* ignore */ }
+  })();
+}
+
 export function verifyWebhookAuth(request: Request): Response | null {
   const expected = process.env.BACKUP_WEBHOOK_SECRET || process.env.CRON_SECRET;
+  const unauthorized = () => new Response(JSON.stringify({ error: "Unauthorized" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json" },
+  });
   if (!expected) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    auditDenied(request, "missing_secret");
+    return unauthorized();
   }
   const apikey = request.headers.get("apikey") ?? "";
   const bearer = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   const ok = timingSafeEqualStr(apikey, expected) || timingSafeEqualStr(bearer, expected);
   if (!ok) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401,
-      headers: { "Content-Type": "application/json" },
-    });
+    auditDenied(request, "bad_secret");
+    return unauthorized();
   }
   return null;
 }

@@ -124,6 +124,7 @@ function SystemDetail() {
   const parentFn = useServerFn(setParent);
   const voiceFn = useServerFn(sendVoiceMessage);
   const statusSettingsFn = useServerFn(listStatusSettings);
+  const activityFn = useServerFn(listSystemActivity);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   // Reference/settings data changes rarely — cache it longer than the 30s

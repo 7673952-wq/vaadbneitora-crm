@@ -101,6 +101,8 @@ async function ensureCanWrite(userId: string) {
 }
 
 
+const ACTIVITY_PAGE_SIZE = 100;
+
 const periodSchema = z.enum(["day", "week", "month", "year"]);
 const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
 const listStatusFilterSchema = z.string().min(1).max(100);
@@ -276,8 +278,10 @@ export const getSystem = createServerFn({ method: "POST" })
       context.supabase.from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
       context.supabase.from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
         .eq("parent_system_id", data.id).order("created_at", { ascending: true }),
+      // Only the newest slice is loaded up front; the card fetches older
+      // entries on demand through `listSystemActivity`.
       context.supabase.from("system_activity_log").select("*").eq("system_id", data.id)
-        .order("created_at", { ascending: false }).limit(300),
+        .order("created_at", { ascending: false }).limit(ACTIVITY_PAGE_SIZE),
       context.supabase.from("profiles").select("id, display_name"),
       sys.parent_system_id
         ? context.supabase.from("systems").select("id, system_code, name, status").eq("id", sys.parent_system_id).maybeSingle()
@@ -325,6 +329,60 @@ export const getSystem = createServerFn({ method: "POST" })
       profiles: profiles ?? [],
     };
   });
+
+/**
+ * Paged activity log for a single system, with optional filters. Replaces the
+ * old hard `limit(300)` — the card loads a page at a time ("טען עוד").
+ */
+export const listSystemActivity = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: {
+    systemId: string; offset?: number; limit?: number;
+    action?: string | null; actorId?: string | null; from?: string | null; to?: string | null;
+  }) =>
+    z.object({
+      systemId: z.string().uuid(),
+      offset: z.number().int().min(0).max(100000).optional(),
+      limit: z.number().int().min(1).max(500).optional(),
+      action: z.string().max(40).nullable().optional(),
+      actorId: z.string().uuid().nullable().optional(),
+      from: z.string().min(4).nullable().optional(),
+      to: z.string().min(4).nullable().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, "yemot");
+    const offset = data.offset ?? 0;
+    const limit = data.limit ?? ACTIVITY_PAGE_SIZE;
+    let q = context.supabase.from("system_activity_log").select("*").eq("system_id", data.systemId);
+    if (data.action) q = q.eq("action", data.action);
+    if (data.actorId) q = q.eq("actor_id", data.actorId);
+    if (data.from) q = q.gte("created_at", new Date(data.from).toISOString());
+    if (data.to) q = q.lte("created_at", new Date(data.to).toISOString());
+    const { data: rows, error } = await q
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw new Error(error.message);
+    const list = rows ?? [];
+    const actorIds = Array.from(new Set(list.map((r: any) => r.actor_id).filter(Boolean))) as string[];
+    let pmap = new Map<string, string>();
+    if (actorIds.length) {
+      const { data: profs } = await context.supabase
+        .from("profiles").select("id, display_name").in("id", actorIds);
+      pmap = new Map((profs ?? []).map((p: any) => [p.id, p.display_name]));
+    }
+    return {
+      items: list.map((a: any) => ({
+        ...a,
+        actor_name: a.actor_display_name ?? (a.actor_id ? pmap.get(a.actor_id) ?? "לא ידוע" : "מערכת"),
+      })),
+      hasMore: list.length === limit,
+      nextOffset: offset + list.length,
+    };
+  });
+
+
 
 export const addSubSystem = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -421,14 +479,25 @@ export const createSystem = createServerFn({ method: "POST" })
     const { data: existing } = await context.supabase
       .from("systems").select("id").eq("system_code", normalizedCode).is("parent_system_id", null).maybeSingle();
     if (existing) throw new Error("מספר המערכת כבר קיים כמערכת שורש — לא ניתן לפתוח מערכת ראשית נוספת עם אותו מספר");
-    // Auto-assign the creator as the handling agent if none was selected.
-    const assignedAgentId = data.assigned_agent_id ?? context.userId;
+    // Assignment priority: explicit choice → status auto-assignment → creator.
+    let assignedAgentId = data.assigned_agent_id ?? null;
+    let reminderAgentIds: string[] | null = null;
+    if (!assignedAgentId) {
+      const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+      const auto = await resolveAutoAssign(context.supabase, data.status);
+      if (auto) {
+        assignedAgentId = auto.agentId;
+        reminderAgentIds = auto.otherAgentIds.length ? auto.otherAgentIds : null;
+      }
+    }
+    if (!assignedAgentId) assignedAgentId = context.userId;
     const cleanNotes = sanitizeOptional(data.notes ?? null);
     const { data: row, error } = await context.supabase.from("systems").insert({
       system_code: normalizedCode,
       name: sanitizeText(data.name),
       status: data.status as any,
       assigned_agent_id: assignedAgentId,
+      reminder_agent_ids: reminderAgentIds,
       notes: cleanNotes,
       phone: sanitizeOptional(data.phone || null),
       source: sanitizeOptional(data.source ?? null),
@@ -544,19 +613,39 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
 
-    // Auto-assign the configured agent for this status (if any and caller
-    // didn't already pick one in the same request).
-    if (data.status && data.status !== sys.status && data.assigned_agent_id === undefined) {
-      const setting = (await readStatusSettings(context.supabase)).find((row) => row.status_key === data.status);
-      const ids: string[] = setting?.assigned_agent_ids ?? [];
-      if (ids.length > 0) {
-        (data as any).assigned_agent_id = ids[0];
+    // Auto-assign the configured agent for this status. The UI sends
+    // `assigned_agent_id: null` when the user did not pick anyone, so both
+    // `undefined` and `null` count as "no explicit choice".
+    if (data.status && data.status !== sys.status && !data.assigned_agent_id) {
+      const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+      const auto = await resolveAutoAssign(context.supabase, data.status);
+      if (auto) {
+        (data as any).assigned_agent_id = auto.agentId;
+        if (auto.otherAgentIds.length && data.reminder_agent_ids === undefined) {
+          (data as any).reminder_agent_ids = auto.otherAgentIds;
+        }
       }
     }
 
     const { id, reason: _r, email, apply_to_children: _ac, ...patch } = data as any;
     if (email !== undefined) (patch as any).email = email || null;
-    const { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
+    // A transfer to another agent is a privileged action: RLS only lets an
+    // agent keep a system within their own scope, so the assignment is written
+    // separately and, when RLS blocks it, re-applied with elevated rights after
+    // the `agent_transfer` permission check passes.
+    const wantsTransfer = patch.assigned_agent_id !== undefined
+      && patch.assigned_agent_id !== sys.assigned_agent_id;
+    if (wantsTransfer) {
+      const { assertPermission } = await import("@/lib/permissions.server");
+      await assertPermission(context.userId, "agent_transfer");
+    }
+    let { data: row, error } = await context.supabase.from("systems").update(patch).eq("id", id).select().single();
+    if (error && wantsTransfer) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const elevated = await supabaseAdmin.from("systems").update(patch).eq("id", id).select().single();
+      row = elevated.data as any;
+      error = elevated.error as any;
+    }
     if (error) throw new Error(error.message);
     // Explicit sub-system status cascade (opt-in via apply_to_children).
     if (shouldCascadeStatus && cascadeChildren.length) {

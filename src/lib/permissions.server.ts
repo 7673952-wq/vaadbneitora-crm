@@ -247,8 +247,29 @@ export async function hasCrmAccess(userId: string, crmKey: string): Promise<bool
   return (await getCrmRoles(userId, crmKey)).length > 0;
 }
 
+/**
+ * Audit trail for refused access. Every failed permission / CRM-access check
+ * (and every rejected webhook) is written to `system_activity_log` with
+ * `action = 'denied'`, so the audit screen shows attempts, not only successes.
+ * Best-effort: an audit failure must never mask the original refusal.
+ */
+export async function logDeniedAttempt(userId: string | null, what: string, detail?: string): Promise<void> {
+  try {
+    await supabaseAdmin.from("system_activity_log").insert({
+      system_id: null,
+      actor_id: userId,
+      action: "denied",
+      field: what,
+      new_value: detail ?? null,
+    } as any);
+  } catch {
+    /* audit is best-effort */
+  }
+}
+
 export async function assertCrmAccess(userId: string, crmKey: string): Promise<void> {
   if (!(await hasCrmAccess(userId, crmKey))) {
+    void logDeniedAttempt(userId, "crm_access", crmKey);
     throw new AppError("אין לך גישה ל-CRM זה", { code: "forbidden" });
   }
 }
@@ -324,6 +345,7 @@ export async function getUserPermissionMap(userId: string, crmKey = "yemot"): Pr
 export async function assertPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<void> {
   const ok = await hasPermission(userId, permission, crmKey);
   if (!ok) {
+    void logDeniedAttempt(userId, permission, crmKey);
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
 }
@@ -356,6 +378,7 @@ export async function hasPermissionInAnyCrm(userId: string, permission: Permissi
 
 export async function assertPermissionInAnyCrm(userId: string, permission: PermissionKey): Promise<void> {
   if (!(await hasPermissionInAnyCrm(userId, permission))) {
+    void logDeniedAttempt(userId, permission, "any_crm");
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
 }
@@ -384,6 +407,7 @@ export async function assertAnyPermission(userId: string, permissions: Permissio
 export async function assertCanWrite(userId: string, crmKey = "yemot"): Promise<void> {
   const ok = await hasPermission(userId, "systems_write", crmKey);
   if (!ok) {
+    void logDeniedAttempt(userId, "systems_write", crmKey);
     throw new AppError("אין הרשאת עריכה למערכות", { code: "forbidden" });
   }
 }
@@ -437,6 +461,7 @@ export async function hasMailPermission(userId: string, permission: PermissionKe
 
 export async function assertMailPermission(userId: string, permission: PermissionKey): Promise<void> {
   if (!(await hasMailPermission(userId, permission))) {
+    void logDeniedAttempt(userId, permission, "_mail");
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
 }

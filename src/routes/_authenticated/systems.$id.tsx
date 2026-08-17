@@ -6,7 +6,7 @@ import {
   updateSystem, addNote, deleteSystem, addSubSystem,
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
-  updateNote, deleteNote, updateActivityLog, deleteActivityLog,
+  updateNote, deleteNote, updateActivityLog, deleteActivityLog, listSystemActivity,
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
@@ -124,6 +124,7 @@ function SystemDetail() {
   const parentFn = useServerFn(setParent);
   const voiceFn = useServerFn(sendVoiceMessage);
   const statusSettingsFn = useServerFn(listStatusSettings);
+  const activityFn = useServerFn(listSystemActivity);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   // Reference/settings data changes rarely — cache it longer than the 30s
@@ -138,6 +139,39 @@ function SystemDetail() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
+  // Older activity pages loaded on demand ("טען עוד") + activity filters.
+  const [olderActivity, setOlderActivity] = useState<any[]>([]);
+  const [activityHasMore, setActivityHasMore] = useState(true);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityActionFilter, setActivityActionFilter] = useState<string>("");
+  const [activityActorFilter, setActivityActorFilter] = useState<string>("");
+  const [activityFrom, setActivityFrom] = useState<string>("");
+  const [activityTo, setActivityTo] = useState<string>("");
+  useEffect(() => {
+    setOlderActivity([]);
+    setActivityHasMore(true);
+  }, [id, activityActionFilter, activityActorFilter, activityFrom, activityTo]);
+  const loadMoreActivity = async (baseCount: number) => {
+    setActivityLoading(true);
+    try {
+      const res: any = await activityFn({
+        data: {
+          systemId: id,
+          offset: baseCount + olderActivity.length,
+          action: activityActionFilter || null,
+          actorId: activityActorFilter || null,
+          from: activityFrom || null,
+          to: activityTo || null,
+        },
+      });
+      setOlderActivity((prev) => [...prev, ...(res?.items ?? [])]);
+      setActivityHasMore(!!res?.hasMore);
+    } catch (e: any) {
+      toast.error(e?.message ?? "טעינת היומן נכשלה");
+    } finally {
+      setActivityLoading(false);
+    }
+  };
   // Per-user preference for whether the "פרטים" section starts expanded.
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
@@ -1138,12 +1172,48 @@ function SystemDetail() {
           </button>
         </form>
 
+        {/* סינון יומן הפעילות */}
+        <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
+          <select aria-label="סינון לפי פעולה" value={activityActionFilter} onChange={(e) => setActivityActionFilter(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2">
+            <option value="">כל הפעולות</option>
+            <option value="created">נוצרה</option>
+            <option value="updated">עודכנה</option>
+            <option value="deleted">נמחקה</option>
+            <option value="denied">נדחתה הרשאה</option>
+          </select>
+          <select aria-label="סינון לפי משתמש" value={activityActorFilter} onChange={(e) => setActivityActorFilter(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2">
+            <option value="">כל המשתמשים</option>
+            {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+          </select>
+          <input type="date" aria-label="מתאריך" value={activityFrom} onChange={(e) => setActivityFrom(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2" />
+          <input type="date" aria-label="עד תאריך" value={activityTo} onChange={(e) => setActivityTo(e.target.value)}
+            className="h-7 rounded-md border border-input bg-background px-2" />
+          {(activityActionFilter || activityActorFilter || activityFrom || activityTo) && (
+            <button type="button" className="h-7 px-2 rounded-md border border-border hover:bg-accent"
+              onClick={() => { setActivityActionFilter(""); setActivityActorFilter(""); setActivityFrom(""); setActivityTo(""); }}>
+              נקה סינון
+            </button>
+          )}
+        </div>
+
         <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
           {(() => {
+            const baseActivity = [...data.activity, ...olderActivity];
+            const passesFilters = (a: any) => {
+              if (activityActionFilter && a.action !== activityActionFilter) return false;
+              if (activityActorFilter && a.actor_id !== activityActorFilter) return false;
+              if (activityFrom && new Date(a.created_at) < new Date(activityFrom)) return false;
+              if (activityTo && new Date(a.created_at) > new Date(`${activityTo}T23:59:59`)) return false;
+              return true;
+            };
+            const filtersActive = !!(activityActionFilter || activityActorFilter || activityFrom || activityTo);
             const allMerged = [
-              ...data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n })),
-              ...data.activity.map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-              ...data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t })),
+              ...(filtersActive ? [] : data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
+              ...baseActivity.filter(passesFilters).map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
+              ...(filtersActive ? [] : data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
             const merged = mentionFilter
               ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))
@@ -1299,6 +1369,15 @@ function SystemDetail() {
               );
             });
           })()}
+          {activityHasMore && (
+            <div className="pt-2 text-center">
+              <button type="button" disabled={activityLoading}
+                onClick={() => loadMoreActivity(data.activity.length)}
+                className="text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50">
+                {activityLoading ? "טוען…" : "טען עוד"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

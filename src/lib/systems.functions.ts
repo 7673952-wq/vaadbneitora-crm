@@ -101,6 +101,8 @@ async function ensureCanWrite(userId: string) {
 }
 
 
+const ACTIVITY_PAGE_SIZE = 100;
+
 const periodSchema = z.enum(["day", "week", "month", "year"]);
 const isoDate = z.string().datetime().or(z.string().min(4)).nullable().optional();
 const listStatusFilterSchema = z.string().min(1).max(100);

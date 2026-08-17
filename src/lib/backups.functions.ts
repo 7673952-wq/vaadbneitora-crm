@@ -37,12 +37,16 @@ export const listBackups = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Only the newest folders are listed in detail: Storage has no recursive
+    // listing, so every extra folder costs another round-trip. Older backups
+    // stay reachable through the retention job and direct paths.
+    const MAX_DETAILED_FOLDERS = 40;
     const { data: folders, error } = await supabaseAdmin.storage.from("backups").list("", {
-      limit: 200,
+      limit: MAX_DETAILED_FOLDERS,
       sortBy: { column: "name", order: "desc" },
     });
     if (error) throw new Error(error.message);
-    // Fetch all folder contents in parallel — avoids N+1 sequential listing.
+    // Fetch the folder contents in parallel — avoids N+1 sequential listing.
     const folderResults = await Promise.all(
       (folders ?? [])
         .filter((f) => f.name)

@@ -247,8 +247,29 @@ export async function hasCrmAccess(userId: string, crmKey: string): Promise<bool
   return (await getCrmRoles(userId, crmKey)).length > 0;
 }
 
+/**
+ * Audit trail for refused access. Every failed permission / CRM-access check
+ * (and every rejected webhook) is written to `system_activity_log` with
+ * `action = 'denied'`, so the audit screen shows attempts, not only successes.
+ * Best-effort: an audit failure must never mask the original refusal.
+ */
+export async function logDeniedAttempt(userId: string | null, what: string, detail?: string): Promise<void> {
+  try {
+    await supabaseAdmin.from("system_activity_log").insert({
+      system_id: null,
+      actor_id: userId,
+      action: "denied",
+      field: what,
+      new_value: detail ?? null,
+    } as any);
+  } catch {
+    /* audit is best-effort */
+  }
+}
+
 export async function assertCrmAccess(userId: string, crmKey: string): Promise<void> {
   if (!(await hasCrmAccess(userId, crmKey))) {
+    void logDeniedAttempt(userId, "crm_access", crmKey);
     throw new AppError("אין לך גישה ל-CRM זה", { code: "forbidden" });
   }
 }

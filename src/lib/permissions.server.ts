@@ -461,6 +461,7 @@ export async function hasMailPermission(userId: string, permission: PermissionKe
 
 export async function assertMailPermission(userId: string, permission: PermissionKey): Promise<void> {
   if (!(await hasMailPermission(userId, permission))) {
+    void logDeniedAttempt(userId, permission, "_mail");
     throw new AppError(`אין הרשאה: ${PERMISSION_LABEL[permission]}`, { code: "forbidden" });
   }
 }

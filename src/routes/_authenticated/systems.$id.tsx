@@ -138,6 +138,14 @@ function SystemDetail() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
+  // Older activity pages loaded on demand ("טען עוד") + activity filters.
+  const [olderActivity, setOlderActivity] = useState<any[]>([]);
+  const [activityHasMore, setActivityHasMore] = useState(true);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityActionFilter, setActivityActionFilter] = useState<string>("");
+  const [activityActorFilter, setActivityActorFilter] = useState<string>("");
+  const [activityFrom, setActivityFrom] = useState<string>("");
+  const [activityTo, setActivityTo] = useState<string>("");
   // Per-user preference for whether the "פרטים" section starts expanded.
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;

@@ -147,6 +147,31 @@ function SystemDetail() {
   const [activityActorFilter, setActivityActorFilter] = useState<string>("");
   const [activityFrom, setActivityFrom] = useState<string>("");
   const [activityTo, setActivityTo] = useState<string>("");
+  useEffect(() => {
+    setOlderActivity([]);
+    setActivityHasMore(true);
+  }, [id, activityActionFilter, activityActorFilter, activityFrom, activityTo]);
+  const loadMoreActivity = async (baseCount: number) => {
+    setActivityLoading(true);
+    try {
+      const res: any = await activityFn({
+        data: {
+          systemId: id,
+          offset: baseCount + olderActivity.length,
+          action: activityActionFilter || null,
+          actorId: activityActorFilter || null,
+          from: activityFrom || null,
+          to: activityTo || null,
+        },
+      });
+      setOlderActivity((prev) => [...prev, ...(res?.items ?? [])]);
+      setActivityHasMore(!!res?.hasMore);
+    } catch (e: any) {
+      toast.error(e?.message ?? "טעינת היומן נכשלה");
+    } finally {
+      setActivityLoading(false);
+    }
+  };
   // Per-user preference for whether the "פרטים" section starts expanded.
   const [detailsDefaultOpen, setDetailsDefaultOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;

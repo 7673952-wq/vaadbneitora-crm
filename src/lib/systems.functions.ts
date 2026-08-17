@@ -1730,6 +1730,11 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
     systemCode = strippedCode.split("").reverse().join("");
     if (!systemCode) throw new Error("אין מספר מערכת לשליחה");
   }
+  // Yemot's TTS reads a run of digits as one whole number (e.g. "133" as
+  // "one hundred thirty-three"). Inserting "!" between every digit forces
+  // it to pause and read each digit on its own instead — e.g.
+  // "0133155556" becomes "0!1!3!3!1!5!5!5!5!6".
+  const spokenCode = systemCode.split("").join("!");
 
   const ymBase = "https://www.call2all.co.il/ym/api";
   const extensionPath = `ivr2:0CRM/Phone/${phone}`;
@@ -1794,7 +1799,7 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   const titlePath = `${extensionPath}/${fileId}-Title.tts`;
   await callYemot("UploadTextFile", {
     what: titlePath,
-    contents: systemCode,
+    contents: spokenCode,
   }, (json) => json.responseStatus === "OK");
 
   // Read the title back before dialing: if another send for the same caller
@@ -1804,9 +1809,9 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
       method: "POST", headers: jsonHeaders, body: JSON.stringify({ path: titlePath }),
     });
     const text = (await verifyRes.text()).trim();
-    if (verifyRes.ok && text && !text.startsWith("{") && text !== systemCode) {
+    if (verifyRes.ok && text && !text.startsWith("{") && text !== spokenCode) {
       throw new Error(
-        `ימות המשיח: מספר המערכת בשלוחה ${extensionPath} אינו תואם (נמצא "${text}" במקום "${systemCode}") — השליחה בוטלה`,
+        `ימות המשיח: מספר המערכת בשלוחה ${extensionPath} אינו תואם (נמצא "${text}" במקום "${spokenCode}") — השליחה בוטלה`,
       );
     }
   } catch (e: any) {

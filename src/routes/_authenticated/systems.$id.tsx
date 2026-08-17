@@ -1369,6 +1369,15 @@ function SystemDetail() {
               );
             });
           })()}
+          {activityHasMore && (
+            <div className="pt-2 text-center">
+              <button type="button" disabled={activityLoading}
+                onClick={() => loadMoreActivity(data.activity.length)}
+                className="text-xs px-3 py-1.5 rounded-md border border-input bg-background hover:bg-accent disabled:opacity-50">
+                {activityLoading ? "טוען…" : "טען עוד"}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 

@@ -104,17 +104,74 @@ export function applyStatusSettings(rows: { status_key: string; label: string; t
   rebuildMaps();
 }
 
-// Client-only: hydrate from localStorage at module load, before any component
-// renders. Eliminates the brief flash of stale hardcoded statuses on cold load.
-if (typeof window !== "undefined") {
+// ---------------------------------------------------------------------------
+// Versioned client cache for the status settings.
+//
+// The cache is what keeps the first paint from showing hardcoded defaults.
+// It carries a schema version + timestamp so a stale/foreign payload is
+// discarded instead of rendered: an outdated configuration flashing on screen
+// is exactly the bug we're avoiding.
+// ---------------------------------------------------------------------------
+export const STATUS_CACHE_KEY = "crm_status_settings_v2";
+const LEGACY_STATUS_CACHE_KEY = "crm_status_settings_v1";
+const STATUS_CACHE_VERSION = 2;
+const STATUS_CACHE_TTL_MS = 24 * 60 * 60_000;
+
+export type StatusSettingRow = {
+  status_key: string; label: string; tone: string; sort_order?: number;
+  is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean;
+  assigned_agent_ids?: string[] | null;
+};
+
+function isValidRows(rows: any): rows is StatusSettingRow[] {
+  return Array.isArray(rows) && rows.length > 0
+    && rows.every((r) => r && typeof r.status_key === "string" && typeof r.label === "string");
+}
+
+export function readStatusCache(): StatusSettingRow[] | null {
+  if (typeof window === "undefined") return null;
   try {
-    const raw = window.localStorage.getItem("crm_status_settings_v1");
+    const raw = window.localStorage.getItem(STATUS_CACHE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length) applyStatusSettings(parsed);
+      if (parsed?.v === STATUS_CACHE_VERSION && isValidRows(parsed.rows)
+        && Date.now() - Number(parsed.savedAt ?? 0) < STATUS_CACHE_TTL_MS) {
+        return parsed.rows;
+      }
+      window.localStorage.removeItem(STATUS_CACHE_KEY);
+    }
+    // One-time migration from the unversioned cache.
+    const legacy = window.localStorage.getItem(LEGACY_STATUS_CACHE_KEY);
+    if (legacy) {
+      const rows = JSON.parse(legacy);
+      window.localStorage.removeItem(LEGACY_STATUS_CACHE_KEY);
+      if (isValidRows(rows)) { writeStatusCache(rows); return rows; }
     }
   } catch {}
+  return null;
 }
+
+export function writeStatusCache(rows: StatusSettingRow[]) {
+  if (typeof window === "undefined" || !isValidRows(rows)) return;
+  try {
+    window.localStorage.setItem(STATUS_CACHE_KEY, JSON.stringify({ v: STATUS_CACHE_VERSION, savedAt: Date.now(), rows }));
+  } catch {}
+}
+
+// True when the runtime maps already reflect real (server-provided) settings
+// rather than the compiled-in defaults. Screens use it to render a skeleton
+// instead of stale statuses.
+export let statusSettingsHydrated = false;
+
+// Client-only: hydrate from the versioned cache at module load, before any
+// component renders.
+if (typeof window !== "undefined") {
+  const cached = readStatusCache();
+  if (cached) { applyStatusSettings(cached as any); statusSettingsHydrated = true; }
+}
+
+export function markStatusSettingsHydrated() { statusSettingsHydrated = true; }
+
 
 // Pure variant of `applyStatusSettings`: takes status rows and returns fresh
 // objects without touching any module-level state. Prefer this in new code

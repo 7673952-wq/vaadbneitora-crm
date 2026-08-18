@@ -8,11 +8,12 @@ import {
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useStatusSettings } from "@/lib/use-status-settings";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
-  statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
-  CALLER_SOURCES, buildDialNumber, buildStatusMaps,
+  statusCardClasses, statusRequiresReason, type SystemStatus,
+  CALLER_SOURCES, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -171,17 +172,14 @@ function Dashboard() {
   const createFn = useServerFn(createSystem);
   const updateFn = useServerFn(updateSystem);
   const pokeVoiceQueueFn = useServerFn(pokeVoiceQueue);
-  const statusSettingsFn = useServerFn(listStatusSettings);
   const staleHoursFn = useServerFn(getStaleWarningHours);
   // Reference/settings data changes rarely — cache it longer than the
   // 30s default so switching between the dashboard and a system card
   // (which reads the same query keys) doesn't re-fetch it every time.
   const REFERENCE_STALE_TIME = 5 * 60_000;
-  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
+  const { rows: statusSettings, maps: statusMaps, ready: statusReady } = useStatusSettings({ staleTime: REFERENCE_STALE_TIME });
   const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn(), staleTime: REFERENCE_STALE_TIME });
   const staleHours = staleSetting?.hours ?? 0;
-  const statusMaps = useMemo(() => buildStatusMaps(statusSettings as any), [statusSettings]);
-  useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   // Free alternative to a frequent Vercel cron (Pro-only): opportunistically
   // process any queued automatic voice-message sends whenever a staff member
@@ -635,9 +633,24 @@ function Dashboard() {
     XLSX.writeFile(wb, `systems_${label}.xlsx`);
   }
 
+  // Cold load with no cached settings: show a skeleton rather than the
+  // compiled-in default statuses, which would flash and then flip.
+  if (!statusReady) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">דשבורד מערכות</h1>
@@ -1279,12 +1292,22 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
     && !STATUS_HANDLED[r.status]
     && r.updated_at
     && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
-  const prefetchSystem = () => {
+  // Debounced: sweeping the mouse across a grid of cards used to fire a
+  // request per card. Only a deliberate hover (120ms) prefetches.
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doPrefetch = () => {
     qc.prefetchQuery({
       queryKey: ["system", r.id],
       queryFn: () => getSystemFn({ data: { id: r.id } }),
       staleTime: 30_000,
     });
+  };
+  const prefetchSystem = () => {
+    if (prefetchTimer.current) clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = setTimeout(doPrefetch, 120);
+  };
+  const cancelPrefetch = () => {
+    if (prefetchTimer.current) { clearTimeout(prefetchTimer.current); prefetchTimer.current = null; }
   };
   const handleCardClick = () => {
     if (selectMode && onToggleSelect) { onToggleSelect(r.id); return; }
@@ -1293,7 +1316,8 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
   return (
     <div onClick={handleCardClick}
       onMouseEnter={prefetchSystem}
-      onFocus={prefetchSystem}
+      onMouseLeave={cancelPrefetch}
+      onFocus={doPrefetch}
       draggable={draggable}
       onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
       className={`relative border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-4 ring-red-600 animate-pulse-stale border-red-600" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}

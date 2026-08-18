@@ -29,11 +29,17 @@ export async function resolveAutoAssign(supabase: any, statusKey: string | null 
 
   // Balance across the configured agents by current workload.
   const counts = new Map<string, number>(ids.map((id) => [id, 0]));
+  // Only *unhandled* systems count as workload — a closed system is not work.
+  const handledKeys = (settings as Array<{ status_key: string; is_handled?: boolean }>)
+    .filter((row) => row.is_handled)
+    .map((row) => row.status_key);
   try {
-    const { data } = await supabase
+    let query = supabase
       .from("systems")
       .select("assigned_agent_id")
       .in("assigned_agent_id", ids);
+    if (handledKeys.length) query = query.not("status", "in", `(${handledKeys.join(",")})`);
+    const { data } = await query;
     for (const row of (data ?? []) as Array<{ assigned_agent_id: string | null }>) {
       if (row.assigned_agent_id && counts.has(row.assigned_agent_id)) {
         counts.set(row.assigned_agent_id, (counts.get(row.assigned_agent_id) ?? 0) + 1);

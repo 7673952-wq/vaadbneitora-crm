@@ -13,7 +13,7 @@ import { useQuery } from "@tanstack/react-query";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
-import { applyStatusSettings } from "@/lib/status";
+import { applyStatusSettings, markStatusSettingsHydrated, writeStatusCache } from "@/lib/status";
 import { listStatusSettings } from "@/lib/admin.functions";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import { useServerFn } from "@tanstack/react-start";
@@ -181,22 +181,11 @@ function RootComponent() {
   );
 }
 
-const STATUS_SETTINGS_CACHE_KEY = "crm_status_settings_v1";
-
 function StatusSettingsHydrator() {
   const fn = useServerFn(listStatusSettings);
   const [hasSession, setHasSession] = useState(false);
-  // Apply the last-known status settings from localStorage synchronously,
-  // before the server query resolves — otherwise the UI briefly renders
-  // hardcoded defaults from @/lib/status and then flips to the real ones.
-  useState(() => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = window.localStorage.getItem(STATUS_SETTINGS_CACHE_KEY);
-      if (raw) applyStatusSettings(JSON.parse(raw));
-    } catch {}
-    return null;
-  });
+  // The versioned cache is applied at module load inside @/lib/status, so the
+  // very first paint already shows the admin's real statuses.
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
@@ -215,7 +204,9 @@ function StatusSettingsHydrator() {
   useEffect(() => {
     if (!data) return;
     applyStatusSettings(data as any);
-    try { window.localStorage.setItem(STATUS_SETTINGS_CACHE_KEY, JSON.stringify(data)); } catch {}
+    markStatusSettingsHydrated();
+    writeStatusCache(data as any);
   }, [data]);
   return null;
 }
+

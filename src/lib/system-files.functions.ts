@@ -50,6 +50,21 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
     if (!isAdmin && sys.assigned_agent_id !== context.userId) {
       throw new Error("רק מנהל או הנציג המשויך יכולים להעלות קבצים");
     }
+    // Allowlist: block active content (html/svg/scripts) that could be served
+    // back to a browser from a signed URL.
+    const ALLOWED_MIME = [
+      "image/png", "image/jpeg", "image/gif", "image/webp", "image/heic",
+      "application/pdf", "text/plain", "text/csv",
+      "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "application/zip", "audio/mpeg", "audio/wav", "audio/ogg", "audio/mp4", "video/mp4",
+      "application/octet-stream", "",
+    ];
+    const mime = (data.mime_type || "").toLowerCase();
+    if (!ALLOWED_MIME.includes(mime)) throw new Error("סוג הקובץ אינו נתמך");
+    if (/\.(html?|svg|js|mjs|xhtml|php|exe|sh|bat)$/i.test(data.file_name)) {
+      throw new Error("סוג הקובץ אינו נתמך");
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const buffer = Buffer.from(data.data_base64, "base64");
     const safeName = data.file_name.replace(/[^A-Za-z0-9._\u0590-\u05FF\- ]/g, "_");

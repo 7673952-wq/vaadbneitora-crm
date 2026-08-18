@@ -12,8 +12,8 @@ import { useStatusSettings } from "@/lib/use-status-settings";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
-  statusCardClasses, applyStatusSettings, statusRequiresReason, type SystemStatus,
-  CALLER_SOURCES, buildDialNumber, buildStatusMaps,
+  statusCardClasses, statusRequiresReason, type SystemStatus,
+  CALLER_SOURCES, buildDialNumber,
 } from "@/lib/status";
 import { useMemo, useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
@@ -172,7 +172,6 @@ function Dashboard() {
   const createFn = useServerFn(createSystem);
   const updateFn = useServerFn(updateSystem);
   const pokeVoiceQueueFn = useServerFn(pokeVoiceQueue);
-  const statusSettingsFn = useServerFn(listStatusSettings);
   const staleHoursFn = useServerFn(getStaleWarningHours);
   // Reference/settings data changes rarely — cache it longer than the
   // 30s default so switching between the dashboard and a system card

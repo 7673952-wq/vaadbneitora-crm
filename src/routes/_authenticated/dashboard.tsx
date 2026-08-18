@@ -1292,12 +1292,22 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
     && !STATUS_HANDLED[r.status]
     && r.updated_at
     && (Date.now() - new Date(r.updated_at).getTime()) > staleHours * 3600_000;
-  const prefetchSystem = () => {
+  // Debounced: sweeping the mouse across a grid of cards used to fire a
+  // request per card. Only a deliberate hover (120ms) prefetches.
+  const prefetchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const doPrefetch = () => {
     qc.prefetchQuery({
       queryKey: ["system", r.id],
       queryFn: () => getSystemFn({ data: { id: r.id } }),
       staleTime: 30_000,
     });
+  };
+  const prefetchSystem = () => {
+    if (prefetchTimer.current) clearTimeout(prefetchTimer.current);
+    prefetchTimer.current = setTimeout(doPrefetch, 120);
+  };
+  const cancelPrefetch = () => {
+    if (prefetchTimer.current) { clearTimeout(prefetchTimer.current); prefetchTimer.current = null; }
   };
   const handleCardClick = () => {
     if (selectMode && onToggleSelect) { onToggleSelect(r.id); return; }
@@ -1306,7 +1316,8 @@ function SystemCard({ r, agents, statusOptions = STATUS_OPTIONS, onUpdate, compa
   return (
     <div onClick={handleCardClick}
       onMouseEnter={prefetchSystem}
-      onFocus={prefetchSystem}
+      onMouseLeave={cancelPrefetch}
+      onFocus={doPrefetch}
       draggable={draggable}
       onDragStart={(e) => { if (onDragStart) onDragStart(e, r.id); }}
       className={`relative border-2 rounded-xl p-3 cursor-pointer transition ${cardCls} ${isStale ? "ring-4 ring-red-600 animate-pulse-stale border-red-600" : ""} ${selected ? "ring-2 ring-indigo-500" : ""} ${draggable ? "active:cursor-grabbing" : ""}`}

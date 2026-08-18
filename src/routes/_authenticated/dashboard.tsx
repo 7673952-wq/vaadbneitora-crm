@@ -633,9 +633,24 @@ function Dashboard() {
     XLSX.writeFile(wb, `systems_${label}.xlsx`);
   }
 
+  // Cold load with no cached settings: show a skeleton rather than the
+  // compiled-in default statuses, which would flash and then flip.
+  if (!statusReady) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-16 w-full" />
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-24 w-full" />)}
+        </div>
+        <Skeleton className="h-96 w-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
+
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">דשבורד מערכות</h1>

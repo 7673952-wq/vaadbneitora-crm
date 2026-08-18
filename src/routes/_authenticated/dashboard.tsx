@@ -8,6 +8,7 @@ import {
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useStatusSettings } from "@/lib/use-status-settings";
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
@@ -177,11 +178,9 @@ function Dashboard() {
   // 30s default so switching between the dashboard and a system card
   // (which reads the same query keys) doesn't re-fetch it every time.
   const REFERENCE_STALE_TIME = 5 * 60_000;
-  const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
+  const { rows: statusSettings, maps: statusMaps, ready: statusReady } = useStatusSettings({ staleTime: REFERENCE_STALE_TIME });
   const { data: staleSetting } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: () => staleHoursFn(), staleTime: REFERENCE_STALE_TIME });
   const staleHours = staleSetting?.hours ?? 0;
-  const statusMaps = useMemo(() => buildStatusMaps(statusSettings as any), [statusSettings]);
-  useEffect(() => { if (statusSettings) applyStatusSettings(statusSettings as any); }, [statusSettings]);
 
   // Free alternative to a frequent Vercel cron (Pro-only): opportunistically
   // process any queued automatic voice-message sends whenever a staff member

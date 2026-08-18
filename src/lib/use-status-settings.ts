@@ -3,7 +3,7 @@
 // paint already shows the real statuses, and reports `ready` so screens can
 // render a skeleton instead of the compiled-in defaults on a cold load.
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listStatusSettings } from "@/lib/admin.functions";
@@ -38,9 +38,10 @@ export function useStatusSettings(options?: { staleTime?: number }): {
   }, [data]);
 
   const rows = (data as StatusSettingRow[] | undefined) ?? undefined;
+  const maps = useMemo(() => buildStatusMaps(rows as any), [rows]);
   return {
     rows,
-    maps: buildStatusMaps(rows as any),
+    maps,
     ready: !!rows || statusSettingsHydrated,
   };
 }

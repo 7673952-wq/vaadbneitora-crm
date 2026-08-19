@@ -20,10 +20,15 @@ import { createPortal } from "react-dom";
 import { toast } from "sonner";
 import { Plus, Download, Search, Filter, X, Bell, BellOff, Phone, CornerUpRight, CheckCircle2, Clock, Moon, Upload, LayoutGrid, Columns3, CheckSquare, Square, Copy, Check } from "lucide-react";
 import { ChevronDown, ChevronUp, ExternalLink, BarChart3, Mail, TrendingUp } from "lucide-react";
-import { ChartGrid } from "@/components/ChartGrid";
-import { HandlingSpeedChart } from "@/components/HandlingSpeedChart";
-import { HandledRatioChart } from "@/components/HandledRatioChart";
-import { StatusFunnelChart } from "@/components/StatusFunnelChart";
+import { lazy, Suspense } from "react";
+import { LazyVisible } from "@/components/LazyVisible";
+
+// Charts are the heaviest part of the dashboard bundle and sit below the fold,
+// so they are code-split and only mounted once scrolled into view.
+const ChartGrid = lazy(() => import("@/components/ChartGrid").then((m) => ({ default: m.ChartGrid })));
+const HandlingSpeedChart = lazy(() => import("@/components/HandlingSpeedChart").then((m) => ({ default: m.HandlingSpeedChart })));
+const HandledRatioChart = lazy(() => import("@/components/HandledRatioChart").then((m) => ({ default: m.HandledRatioChart })));
+const StatusFunnelChart = lazy(() => import("@/components/StatusFunnelChart").then((m) => ({ default: m.StatusFunnelChart })));
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import * as XLSX from "xlsx";
@@ -728,15 +733,20 @@ function Dashboard() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <HandlingSpeedChart />
-            <HandledRatioChart />
-          </div>
-          <StatusFunnelChart />
-
-          {(chartData.length > 0 || agentChartData.length > 0) && (
-            <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
-          )}
+          <LazyVisible minHeight={320}>
+            <Suspense fallback={<div className="h-72 rounded-xl border border-border bg-card/50 animate-pulse" />}>
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <HandlingSpeedChart />
+                  <HandledRatioChart />
+                </div>
+                <StatusFunnelChart />
+                {(chartData.length > 0 || agentChartData.length > 0) && (
+                  <ChartGrid chartData={chartData} agentChartData={agentChartData} trendData={trendData} />
+                )}
+              </div>
+            </Suspense>
+          </LazyVisible>
         </div>
       )}
 

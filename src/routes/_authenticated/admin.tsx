@@ -336,7 +336,7 @@ function UsersPanel({ me }: { me: any }) {
                     )}
                     {editingThis && editing?.field === "password" && (
                       <div className="mt-2">
-                        <EditRow type="text" placeholder="סיסמה חדשה (מינ׳ 6)" value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
+                        <EditRow type="text" placeholder="סיסמה חדשה (מינ׳ 10, אות וספרה)" value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
                       </div>
                     )}
                   </td>
@@ -381,7 +381,7 @@ function UsersPanel({ me }: { me: any }) {
             <form onSubmit={(e) => { e.preventDefault(); createMut.mutate({ data: form }); }} className="space-y-3">
               <Field label="שם תצוגה"><input required value={form.display_name} onChange={(e) => setForm({ ...form, display_name: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></Field>
               <Field label='דוא"ל'><input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></Field>
-              <Field label="סיסמה (מינ׳ 6)"><input type="text" required minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></Field>
+              <Field label="סיסמה (מינ׳ 10, אות וספרה)"><input type="text" required minLength={10} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" /></Field>
               <Field label="תפקיד">
                 <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as any })} className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm">
                   <option value="viewer">צופה (קריאה בלבד)</option>

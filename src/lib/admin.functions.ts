@@ -126,12 +126,18 @@ async function seedMissingRolePermissions() {
   await supabaseAdmin.from("role_permissions").upsert(rows, { onConflict: "role,permission", ignoreDuplicates: true } as any);
 }
 
+// Password policy: at least 10 chars with a mix of letter classes and digits.
+const strongPassword = z.string().min(10).max(72)
+  .refine((v) => /[A-Za-z\u0590-\u05FF]/.test(v) && /\d/.test(v), {
+    message: "הסיסמה חייבת להכיל לפחות 10 תווים, כולל אות וספרה",
+  });
+
 export const createUser = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
     z.object({
       email: z.string().email(),
-      password: z.string().min(6).max(72),
+      password: strongPassword,
       display_name: z.string().min(1).max(100),
       role: z.enum(["admin", "agent", "super_admin", "viewer"]),
     }).parse(d),
@@ -215,7 +221,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
 export const updateUserPassword = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { user_id: string; password: string }) =>
-    z.object({ user_id: z.string().uuid(), password: z.string().min(6).max(72) }).parse(d),
+    z.object({ user_id: z.string().uuid(), password: strongPassword }).parse(d),
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");

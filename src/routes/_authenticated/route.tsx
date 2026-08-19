@@ -89,7 +89,7 @@ function AuthedLayout() {
   }
 
   async function changePassword() {
-    if (pw1.length < 6) { toast.error("הסיסמה חייבת לכלול לפחות 6 תווים"); return; }
+    if (pw1.length < 10 || !/\d/.test(pw1) || !/[A-Za-z\u0590-\u05FF]/.test(pw1)) { toast.error("הסיסמה חייבת לכלול לפחות 10 תווים, אות וספרה"); return; }
     if (pw1 !== pw2) { toast.error("הסיסמאות אינן תואמות"); return; }
     setPwBusy(true);
     const { error } = await supabase.auth.updateUser({ password: pw1 });
@@ -265,7 +265,7 @@ function AuthedLayout() {
               <div>
                 <label className="text-sm font-medium block mb-1">סיסמה חדשה</label>
                 <input type="password" autoFocus value={pw1} onChange={(e) => setPw1(e.target.value)}
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="מינ׳ 6 תווים" />
+                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm" placeholder="מינ׳ 10 תווים, אות וספרה" />
               </div>
               <div>
                 <label className="text-sm font-medium block mb-1">אישור סיסמה</label>

@@ -273,16 +273,20 @@ export const getSystem = createServerFn({ method: "POST" })
       (sys as any).has_unread_email = false;
     }
 
-    const [notesRes, transfersRes, childrenRes, activityRes, profilesRes, parentRes] = await Promise.all([
-      context.supabase.from("system_notes").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
-      context.supabase.from("system_transfers").select("*").eq("system_id", data.id).order("created_at", { ascending: false }),
+    // Notes and transfers are capped: the card renders them inside a merged
+    // timeline that is already limited on the activity side.
+    const RELATED_PAGE_SIZE = 50;
+    const [notesRes, transfersRes, childrenRes, activityRes, parentRes] = await Promise.all([
+      context.supabase.from("system_notes").select("*").eq("system_id", data.id)
+        .order("created_at", { ascending: false }).limit(RELATED_PAGE_SIZE),
+      context.supabase.from("system_transfers").select("*").eq("system_id", data.id)
+        .order("created_at", { ascending: false }).limit(RELATED_PAGE_SIZE),
       context.supabase.from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
         .eq("parent_system_id", data.id).order("created_at", { ascending: true }),
       // Only the newest slice is loaded up front; the card fetches older
       // entries on demand through `listSystemActivity`.
       context.supabase.from("system_activity_log").select("*").eq("system_id", data.id)
         .order("created_at", { ascending: false }).limit(ACTIVITY_PAGE_SIZE),
-      context.supabase.from("profiles").select("id, display_name"),
       sys.parent_system_id
         ? context.supabase.from("systems").select("id, system_code, name, status").eq("id", sys.parent_system_id).maybeSingle()
         : Promise.resolve({ data: null }),
@@ -291,8 +295,25 @@ export const getSystem = createServerFn({ method: "POST" })
     const transfers = transfersRes.data;
     const children = childrenRes.data;
     const activity = activityRes.data;
-    const profiles = profilesRes.data;
     const parent = (parentRes.data as { id: string; system_code: string; name: string; status: string } | null) ?? null;
+
+    // Only the profiles actually referenced by this card are loaded — the old
+    // code pulled the entire profiles table on every card open.
+    const neededProfileIds = Array.from(new Set([
+      sys.assigned_agent_id,
+      ...(sys.reminder_agent_ids ?? []),
+      ...(children ?? []).map((c: any) => c.assigned_agent_id),
+      ...(notes ?? []).map((n: any) => n.author_id),
+      ...(transfers ?? []).flatMap((t: any) => [t.from_agent_id, t.to_agent_id, t.transferred_by]),
+      ...(activity ?? []).flatMap((a: any) => [
+        a.actor_id,
+        a.field === "assigned_agent_id" ? a.old_value : null,
+        a.field === "assigned_agent_id" ? a.new_value : null,
+      ]),
+    ].filter((v): v is string => typeof v === "string" && /^[0-9a-f-]{36}$/i.test(v))));
+    const profiles = neededProfileIds.length
+      ? (await context.supabase.from("profiles").select("id, display_name").in("id", neededProfileIds)).data
+      : [];
 
     const pmap = new Map((profiles ?? []).map((p) => [p.id, p.display_name]));
     return {

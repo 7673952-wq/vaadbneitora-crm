@@ -336,7 +336,7 @@ function UsersPanel({ me }: { me: any }) {
                     )}
                     {editingThis && editing?.field === "password" && (
                       <div className="mt-2">
-                        <EditRow type="text" placeholder="סיסמה חדשה (מינ׳ 6)" value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
+                        <EditRow type="text" placeholder="סיסמה חדשה (מינ׳ 10, אות וספרה)" value={editing.value} onChange={(v) => setEditing({ ...editing, value: v })} onSave={submitEdit} onCancel={() => setEditing(null)} />
                       </div>
                     )}
                   </td>

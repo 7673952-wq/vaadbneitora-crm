@@ -584,6 +584,87 @@ export type Database = {
         }
         Relationships: []
       }
+      login_events: {
+        Row: {
+          created_at: string
+          device_id: string | null
+          email: string | null
+          id: string
+          kind: string
+          user_agent: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          device_id?: string | null
+          email?: string | null
+          id?: string
+          kind: string
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          device_id?: string | null
+          email?: string | null
+          id?: string
+          kind?: string
+          user_agent?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
+      login_otp_challenges: {
+        Row: {
+          attempts: number
+          code_hash: string
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          code_hash: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          code_hash?: string
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_trusted_devices: {
+        Row: {
+          device_id: string
+          expires_at: string
+          user_id: string
+          verified_at: string
+        }
+        Insert: {
+          device_id: string
+          expires_at: string
+          user_id: string
+          verified_at?: string
+        }
+        Update: {
+          device_id?: string
+          expires_at?: string
+          user_id?: string
+          verified_at?: string
+        }
+        Relationships: []
+      }
       notification_role_defaults: {
         Row: {
           enabled: boolean
@@ -1013,6 +1094,30 @@ export type Database = {
         Update: {
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_security: {
+        Row: {
+          mfa_enabled: boolean
+          mfa_phone: string | null
+          updated_at: string
+          updated_by: string | null
+          user_id: string
+        }
+        Insert: {
+          mfa_enabled?: boolean
+          mfa_phone?: string | null
+          updated_at?: string
+          updated_by?: string | null
+          user_id: string
+        }
+        Update: {
+          mfa_enabled?: boolean
+          mfa_phone?: string | null
+          updated_at?: string
+          updated_by?: string | null
           user_id?: string
         }
         Relationships: []

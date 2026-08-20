@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import {
   ArrowRight, History, MessageSquare, Trash2, Send, Plus, Network,
   Phone, Bell, BellOff, Activity, Link as LinkIcon, CornerUpRight,
-  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail, ExternalLink, Pencil, MoreVertical,
+  Info, Paperclip, Upload, Download, FileText, ChevronDown, Copy, Check, Volume2, X, Mail, ExternalLink,
 } from "lucide-react";
 
 import { useNavigate } from "@tanstack/react-router";
@@ -66,7 +66,6 @@ const FIELD_LABELS: Record<string, string> = {
   name: "שם",
   notes: "הערות",
   phone: "טלפון",
-  manager_phone: "מספר מנהל",
   caller_phone: "מספר פונה",
   reminder_at: "תזכורת",
   parent_system_id: "מערכת אב",
@@ -640,7 +639,7 @@ function SystemDetail() {
 
   return (
     <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
-    <div className={splitOpen && data.parent ? "space-y-6 flex-1 min-w-0" : "space-y-6 max-w-7xl mx-auto"}>
+    <div className={splitOpen && data.parent ? "space-y-6 flex-1 min-w-0" : "space-y-6 max-w-5xl mx-auto"}>
       <Link to="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
@@ -763,8 +762,9 @@ function SystemDetail() {
 
       {(() => {
         const cardTone = statusCardClasses(s.status);
-        const managerPhone = String((s as any).manager_phone || "").trim();
-        const chip = "h-9 rounded-xl border border-white/70 bg-white/85 px-3 text-xs text-foreground shadow-sm focus:outline-none focus:border-primary";
+        const btnBase = "inline-flex items-center gap-1.5 h-8 px-2.5 text-xs font-medium rounded-md transition";
+        const iconBtn = "inline-flex items-center justify-center h-8 w-8 rounded-md border border-white/70 bg-white/70 text-foreground hover:bg-white transition";
+        const chip = "rounded-md border border-white/70 bg-white/80 px-2 py-1 text-xs text-foreground focus:outline-none focus:border-primary";
         const changeStatus = (newStatus: string) => {
           if (newStatus === s.status) return;
           const isRootWithChildren = !s.parent_system_id && (data?.children?.length ?? 0) > 0;
@@ -782,229 +782,240 @@ function SystemDetail() {
           if (!reason || !reason.trim()) { toast.error("יש להזין סיבה"); return; }
           updateMut.mutate({ data: { id, status: newStatus, reason: reason.trim(), ...(apply_to_children !== undefined ? { apply_to_children } : {}) } });
         };
-
         return (
-          <section className={`rounded-2xl border-2 shadow-sm overflow-visible ${cardTone}`}>
-            <div className="p-4 md:p-5 space-y-4">
-              <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-                {/* identity */}
-                <div className="min-w-0 flex-1 order-1 xl:order-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[11px] rounded-full px-2.5 py-1 font-semibold ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
-                      {STATUS_LABEL[s.status as SystemStatus]}
-                    </span>
-                    {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2.5 py-1 font-medium">תת-מערכת</span>}
-                    {!isSub && (me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) && (
-                      <label className="flex items-center gap-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-1 cursor-pointer"
-                        title="בהודעה קולית על סיום הפניה יישלח מספר המערכת הפוך וללא קידומת 0">
-                        <input type="checkbox" checked={!!s.is_blocking_number}
-                          onChange={(e) => updateMut.mutate({ data: { id, is_blocking_number: e.target.checked } })}
-                          className="h-3 w-3" />
-                        חסימה
-                      </label>
-                    )}
-                  </div>
-
-                  {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
+          <div className={`border-2 rounded-xl overflow-hidden shadow-sm ${cardTone}`}>
+            <div className="p-3 flex items-start justify-between gap-3 flex-wrap">
+              {/* Title zone */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className={`text-[11px] rounded-full px-2.5 py-0.5 font-semibold ${toneClasses(STATUS_TONE[s.status as SystemStatus])}`}>
+                    {STATUS_LABEL[s.status as SystemStatus]}
+                  </span>
+                  {isSub && <span className="text-[11px] bg-amber-50 text-amber-900 border border-amber-300 rounded-full px-2 py-0.5 font-medium">תת-מערכת</span>}
+                  {(me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) ? (
                     <input
-                      defaultValue={s.name || ""}
-                      onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
-                      className="mt-2 w-full max-w-xl bg-transparent text-2xl md:text-3xl font-bold tracking-tight border-b border-transparent hover:border-white/60 focus:border-primary focus:outline-none"
+                      defaultValue={s.system_code || ""}
+                      onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
+                      className="text-[11px] font-mono bg-white/70 rounded px-2 py-0.5 border border-white/70 w-32 focus:outline-none focus:border-primary"
+                      title="מזהה מערכת"
                     />
                   ) : (
-                    <h1 className="mt-2 text-2xl md:text-3xl font-bold tracking-tight truncate">{s.name}</h1>
+                    <span className="text-[11px] font-mono bg-white/70 rounded px-2 py-0.5">{s.system_code}</span>
                   )}
+                  {!isSub && (me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) && (
+                    <label className="flex items-center gap-1 text-[10px] text-amber-800 bg-amber-50 border border-amber-300 rounded-full px-2 py-0.5 cursor-pointer"
+                      title="בהודעה קולית על סיום הפניה יישלח מספר המערכת הפוך וללא קידומת 0">
+                      <input type="checkbox" checked={!!s.is_blocking_number}
+                        onChange={(e) => updateMut.mutate({ data: { id, is_blocking_number: e.target.checked } })}
+                        className="h-3 w-3" />
+                      חסימה
+                    </label>
+                  )}
+                </div>
+                {(me?.isSuperAdmin || (me as any)?.permissions?.system_name_edit) ? (
+                  <input
+                    defaultValue={s.name || ""}
+                    onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== s.name) updateMut.mutate({ data: { id, name: v } }); }}
+                    className="text-lg md:text-xl font-bold tracking-tight mt-1.5 bg-transparent border-b border-transparent hover:border-white/60 focus:border-primary focus:outline-none w-full"
+                  />
+                ) : (
+                  <h1 className="text-lg md:text-xl font-bold tracking-tight mt-1.5 truncate">{s.name}</h1>
+                )}
+                {/* Inline status + agent + secondary status selects */}
+                <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                  <select value={s.status} onChange={(e) => changeStatus(e.target.value)} className={chip} title="סטטוס">
+                    {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })} className={chip} title="נציג מטפל">
+                    <option value="">— לא משויך —</option>
+                    {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
+                  </select>
+                  <select
+                    value={s.secondary_status || ""}
+                    onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })}
+                    className={chip}
+                    title="סטטוס משני">
+                    <option value="">— סטטוס משני —</option>
+                    {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                {s.created_at && (
+                  <div className="mt-2 text-[11px] opacity-70">
+                    שעת יצירה: {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
+                  </div>
+                )}
+              </div>
 
-                  <div className="mt-3 flex items-end gap-5 flex-wrap">
-                    <div>
-                      <div className="text-[11px] opacity-60 mb-1">מספר מערכת</div>
-                      <div className="flex items-center gap-2">
-                        {(me?.isSuperAdmin || (me as any)?.permissions?.system_code_edit) ? (
-                          <input
-                            defaultValue={s.system_code || ""}
-                            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== (s.system_code || "")) updateMut.mutate({ data: { id, system_code: v } }); }}
-                            className="font-mono text-lg font-semibold bg-white/75 rounded-lg px-2.5 py-1 border border-white/70 w-40 focus:outline-none focus:border-primary"
-                          />
-                        ) : (
-                          <span className="font-mono text-lg font-semibold bg-white/75 rounded-lg px-2.5 py-1">{s.system_code}</span>
-                        )}
-                        {s.system_code && (
-                          <button onClick={() => copyToClipboard(s.system_code, "code", "מספר המערכת")}
-                            className="h-8 w-8 rounded-lg border border-white/70 bg-white/75 hover:bg-white inline-flex items-center justify-center" title="העתק מספר מערכת">
-                            {copiedKey === "code" ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-                          </button>
-                        )}
-                      </div>
+              {/* Actions zone */}
+              <div className="flex flex-wrap gap-1.5 items-center shrink-0">
+                {s.system_code && (
+                  <div className="inline-flex items-stretch rounded-md overflow-hidden shadow-sm">
+                    <a href={`tel:${buildDialNumber(s.system_code)}`}
+                      className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>מערכת</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(s.system_code, "code", "מזהה המערכת")}
+                      title="העתק מזהה מערכת"
+                      className="inline-flex items-center justify-center h-8 w-8 bg-white/80 hover:bg-white text-muted-foreground border-r border-white/70">
+                      {copiedKey === "code" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                )}
+                {s.caller_phone && (
+                  <div className="relative inline-flex items-stretch">
+                    <div className="inline-flex items-stretch rounded-md overflow-hidden shadow-sm">
+                    <a href={`tel:${buildDialNumber(s.caller_phone)}`}
+                      className="inline-flex items-center gap-1 h-8 px-2.5 text-xs font-medium bg-sky-600 text-white hover:bg-sky-700">
+                      <Phone className="h-3.5 w-3.5" />
+                      <span>פונה</span>
+                    </a>
+                    <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
+                      title="העתק מספר פונה"
+                      className="inline-flex items-center justify-center h-8 w-8 bg-white/80 hover:bg-white text-muted-foreground border-r border-white/70">
+                      {copiedKey === "caller" ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+                    </button>
+                    <button
+                      ref={sendChoiceBtnRef}
+                      type="button"
+                      disabled={!voiceEnabled || voiceMut.isPending || batchSending}
+                      onClick={() => {
+                        if (!showSendChoice) {
+                          const r = sendChoiceBtnRef.current?.getBoundingClientRect();
+                          if (r) setSendChoicePos({ top: r.bottom + 4, left: r.left });
+                        }
+                        setShowSendChoice((v) => !v);
+                      }}
+                      title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שליחת הודעה קולית לפונה/ים דרך ימות המשיח"}
+                      aria-label="שלח הודעה קולית"
+                      className={`inline-flex items-center justify-center h-8 w-8 border-r border-white/70 transition ${
+                        !voiceEnabled
+                          ? "bg-white/60 text-muted-foreground/40 cursor-not-allowed"
+                          : voiceAlreadySent
+                            ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                            : "bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100"
+                      }`}>
+                      {voiceMut.isPending || batchSending
+                        ? <span className="inline-block h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        : <Volume2 className="h-3.5 w-3.5" />}
+                    </button>
                     </div>
 
-                    {managerPhone && (
-                      <div>
-                        <div className="text-[11px] opacity-60 mb-1">מספר מנהל</div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-base font-semibold bg-white/70 rounded-lg px-2.5 py-1">{managerPhone}</span>
-                          <button onClick={() => copyToClipboard(managerPhone, "manager", "מספר המנהל")}
-                            className="h-8 w-8 rounded-lg border border-white/70 bg-white/75 hover:bg-white inline-flex items-center justify-center" title="העתק מספר מנהל">
-                            {copiedKey === "manager" ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-                          </button>
+                    {showSendChoice && sendChoicePos && (
+                      <>
+                        <div className="fixed inset-0 z-40" onClick={() => setShowSendChoice(false)} />
+                        <div
+                          className="fixed z-50 w-64 bg-popover border border-border rounded-lg shadow-lg p-2 space-y-1"
+                          style={{ top: sendChoicePos.top, left: sendChoicePos.left }}
+                          dir="rtl">
+                        <div className="text-xs font-semibold text-muted-foreground px-1 pb-1">למי לשלוח הודעה קולית?</div>
+                        <button type="button"
+                          onClick={() => {
+                            setShowSendChoice(false);
+                            if (!window.confirm(`לשלוח הודעה קולית לכל ${voiceRecipients.length} הפונים?`)) return;
+                            sendVoiceBatch(voiceRecipients);
+                          }}
+                          className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent flex items-center justify-between">
+                          <span>שלח לכולם</span>
+                          <span className="text-muted-foreground">{voiceRecipients.length}</span>
+                        </button>
+                        <button type="button"
+                          onClick={() => {
+                            setShowSendChoice(false);
+                            if (unsentRecipients.length === 0) { toast.info("לכולם כבר נשלחה הודעה"); return; }
+                            if (!window.confirm(`לשלוח הודעה קולית ל-${unsentRecipients.length} פונים שעדיין לא נשלחה אליהם הודעה?`)) return;
+                            sendVoiceBatch(unsentRecipients);
+                          }}
+                          className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent flex items-center justify-between">
+                          <span>רק למי שעדיין לא נשלח</span>
+                          <span className="text-muted-foreground">{unsentRecipients.length}</span>
+                        </button>
+                        <button type="button"
+                          onClick={() => { setShowSendChoice(false); setShowSendPicker(true); }}
+                          className="w-full text-right px-2 py-1.5 rounded-md text-xs hover:bg-accent">
+                          אחד מהפונים...
+                        </button>
+                        </div>
+                      </>
+                    )}
+
+                    {showSendPicker && (
+                      <div className="fixed inset-0 z-30 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowSendPicker(false)}>
+                        <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-4 space-y-2" dir="rtl" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-between mb-1">
+                            <h3 className="text-sm font-bold">בחר פונה לשליחה</h3>
+                            <button onClick={() => setShowSendPicker(false)} className="p-1 hover:bg-accent rounded"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                          {voiceRecipients.length === 0 ? (
+                            <p className="text-xs text-muted-foreground">אין מספרי פונה מוגדרים.</p>
+                          ) : (
+                            <div className="space-y-1 max-h-72 overflow-y-auto">
+                              {voiceRecipients.map((r) => (
+                                <button key={r.index} type="button"
+                                  onClick={() => {
+                                    setShowSendPicker(false);
+                                    const confirmMsg = r.sentAt ? "ההודעה כבר נשלחה לפונה זה בעבר. לשלוח שוב?" : "לשלוח הודעה קולית לפונה זה כעת?";
+                                    if (!window.confirm(confirmMsg)) return;
+                                    voiceMut.mutate({ systemId: id, phoneIndex: r.index });
+                                  }}
+                                  className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border hover:bg-accent text-xs">
+                                  <span className="font-mono" dir="ltr">{r.phone}</span>
+                                  <span className="text-muted-foreground">{r.label}{r.sentAt ? " · נשלח" : ""}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     )}
                   </div>
-                </div>
-
-                {/* quick actions */}
-                <div className="order-2 xl:order-1 flex flex-wrap gap-2 items-center xl:max-w-[620px]">
-                  {s.system_code && (
-                    <a href={`tel:${buildDialNumber(s.system_code)}`}
-                      className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700">
-                      <Phone className="h-4 w-4" /> חייג למערכת
-                    </a>
-                  )}
-                  {managerPhone && (
-                    <a href={`tel:${buildDialNumber(managerPhone)}`}
-                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-emerald-300 bg-white/80 px-4 text-sm font-semibold text-emerald-700 hover:bg-white">
-                      <Phone className="h-4 w-4" /> חייג למנהל
-                    </a>
-                  )}
-                  {s.caller_phone && (
-                    <div className="relative inline-flex items-stretch rounded-xl overflow-visible">
-                      <a href={`tel:${buildDialNumber(s.caller_phone)}`}
-                        className="inline-flex h-10 items-center gap-2 rounded-r-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-700">
-                        <Phone className="h-4 w-4" /> חייג לפונה
-                      </a>
-                      <button onClick={() => copyToClipboard(s.caller_phone!, "caller", "מספר הפונה")}
-                        className="h-10 w-10 border-r border-sky-500 bg-sky-600 text-white hover:bg-sky-700 inline-flex items-center justify-center" title="העתק מספר פונה">
-                        {copiedKey === "caller" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                      </button>
-                      <button
-                        ref={sendChoiceBtnRef}
-                        type="button"
-                        disabled={!voiceEnabled || voiceMut.isPending || batchSending}
-                        onClick={() => {
-                          if (!showSendChoice) {
-                            const r = sendChoiceBtnRef.current?.getBoundingClientRect();
-                            if (r) setSendChoicePos({ top: r.bottom + 4, left: r.left });
-                          }
-                          setShowSendChoice((v) => !v);
-                        }}
-                        title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שליחת הודעה קולית לפונה/ים"}
-                        className={`h-10 w-10 rounded-l-xl border-r inline-flex items-center justify-center ${!voiceEnabled ? "bg-white/60 text-muted-foreground/40" : "bg-orange-50 text-orange-700 hover:bg-orange-100"}`}>
-                        {voiceMut.isPending || batchSending
-                          ? <span className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                          : <Volume2 className="h-4 w-4" />}
-                      </button>
-                    </div>
-                  )}
-                  {me?.isSuperAdmin && (
-                    <button onClick={() => {
-                      const childCount = data.children?.length ?? 0;
-                      if (childCount === 0) {
-                        if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } });
-                        return;
-                      }
-                      const choice = window.prompt(
-                        `למערכת זו יש ${childCount} תתי-מערכות.\n\nהקלד "הכל" כדי למחוק את המערכת ואת כל תתי-המערכות.\nהקלד "קדם" כדי למחוק רק את המערכת הראשית — תת-מערכת אחת תהפוך לראשית ותכלול את השאר.\nהשאר ריק כדי לבטל.`,
-                        "",
-                      )?.trim();
-                      if (choice === "הכל") deleteMut.mutate({ data: { id, mode: "cascade" } });
-                      else if (choice === "קדם") deleteMut.mutate({ data: { id, mode: "promote" } });
-                    }} title="מחק מערכת"
-                      className="h-10 w-10 rounded-xl border border-white/70 bg-white/75 hover:bg-destructive/10 hover:text-destructive inline-flex items-center justify-center">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
+                )}
+                {s.phone && (
+                  <a href={`tel:${s.phone}`}
+                    className={`${btnBase} bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm`}>
+                    <Phone className="h-3.5 w-3.5" />
+                    {s.phone}
+                  </a>
+                )}
+                {me?.isSuperAdmin && (
+                  <button onClick={() => {
+                    const childCount = data.children?.length ?? 0;
+                    if (childCount === 0) {
+                      if (confirm("למחוק מערכת זו?")) deleteMut.mutate({ data: { id } });
+                      return;
+                    }
+                    const choice = window.prompt(
+                      `למערכת זו יש ${childCount} תתי-מערכות.\n\n` +
+                      `הקלד "הכל" כדי למחוק את המערכת ואת כל תתי-המערכות.\n` +
+                      `הקלד "קדם" כדי למחוק רק את המערכת הראשית — תת-מערכת אחת תהפוך לראשית ותכלול את השאר.\n` +
+                      `השאר ריק כדי לבטל.`,
+                      "",
+                    )?.trim();
+                    if (choice === "הכל") {
+                      deleteMut.mutate({ data: { id, mode: "cascade" } });
+                    } else if (choice === "קדם") {
+                      deleteMut.mutate({ data: { id, mode: "promote" } });
+                    }
+                  }}
+                    title="מחק מערכת"
+                    aria-label="מחק מערכת"
+                    className={`${iconBtn} hover:!text-destructive hover:!bg-destructive/10`}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                )}
               </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 border-t border-white/60 pt-3">
-                <select value={s.status} onChange={(e) => changeStatus(e.target.value)} className={chip} title="סטטוס">
-                  {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] !== false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <select value={s.assigned_agent_id || ""} onChange={(e) => updateMut.mutate({ data: { id, assigned_agent_id: e.target.value || null } })} className={chip} title="נציג מטפל">
-                  <option value="">— לא משויך —</option>
-                  {(agents ?? []).map((a: any) => <option key={a.id} value={a.id}>{a.display_name}</option>)}
-                </select>
-                <select value={s.secondary_status || ""} onChange={(e) => updateMut.mutate({ data: { id, secondary_status: e.target.value || null } })} className={chip} title="סטטוס משני">
-                  <option value="">— סטטוס משני —</option>
-                  {STATUS_OPTIONS.filter((o) => STATUS_MANDATORY[o.value] === false).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-
-              {s.created_at && (
-                <div className="text-[11px] opacity-60">
-                  שעת יצירה: {new Date(s.created_at).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}
-                </div>
-              )}
             </div>
-
-            {showSendChoice && sendChoicePos && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setShowSendChoice(false)} />
-                <div
-                  className="fixed z-50 w-56 rounded-xl border border-border bg-card p-1.5 shadow-xl"
-                  style={{ top: sendChoicePos.top, left: Math.max(8, Math.min(sendChoicePos.left, window.innerWidth - 232)) }}
-                  dir="rtl">
-                  <button type="button"
-                    onClick={() => { setShowSendChoice(false); sendVoiceBatch(voiceRecipients); }}
-                    className="w-full flex items-center justify-between gap-2 px-2 py-2 rounded-lg text-xs hover:bg-accent">
-                    <span>שלח לכל מספרי הפונה</span>
-                    <span className="text-muted-foreground">{voiceRecipients.length}</span>
-                  </button>
-                  <button type="button" disabled={unsentRecipients.length === 0}
-                    onClick={() => { setShowSendChoice(false); sendVoiceBatch(unsentRecipients); }}
-                    className="w-full flex items-center justify-between gap-2 px-2 py-2 rounded-lg text-xs hover:bg-accent disabled:opacity-50">
-                    <span>שלח רק למי שטרם נשלח</span>
-                    <span className="text-muted-foreground">{unsentRecipients.length}</span>
-                  </button>
-                  <button type="button"
-                    onClick={() => { setShowSendChoice(false); setShowSendPicker(true); }}
-                    className="w-full text-right px-2 py-2 rounded-lg text-xs hover:bg-accent">
-                    בחר פונה אחד...
-                  </button>
-                </div>
-              </>
-            )}
-
-            {showSendPicker && (
-              <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setShowSendPicker(false)}>
-                <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-sm p-4 space-y-2" dir="rtl" onClick={(e) => e.stopPropagation()}>
-                  <div className="flex items-center justify-between mb-1">
-                    <h3 className="text-sm font-bold">בחר פונה לשליחה</h3>
-                    <button onClick={() => setShowSendPicker(false)} className="p-1 hover:bg-accent rounded"><X className="h-3.5 w-3.5" /></button>
-                  </div>
-                  {voiceRecipients.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">אין מספרי פונה מוגדרים.</p>
-                  ) : (
-                    <div className="space-y-1 max-h-72 overflow-y-auto">
-                      {voiceRecipients.map((r) => (
-                        <button key={r.index} type="button"
-                          onClick={() => {
-                            setShowSendPicker(false);
-                            const confirmMsg = r.sentAt ? "ההודעה כבר נשלחה לפונה זה בעבר. לשלוח שוב?" : "לשלוח הודעה קולית לפונה זה כעת?";
-                            if (!window.confirm(confirmMsg)) return;
-                            voiceMut.mutate({ systemId: id, phoneIndex: r.index });
-                          }}
-                          className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-border hover:bg-accent text-xs">
-                          <span className="font-mono" dir="ltr">{r.phone}</span>
-                          <span className="text-muted-foreground">{r.label}{r.sentAt ? " · נשלח" : ""}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </section>
+          </div>
         );
       })()}
 
-      {/* ===== פרטי קשר + מספרי פונה ===== */}
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+      {/* ===== פרטים ===== */}
+      <div className="bg-card border border-border rounded-xl p-4">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <button type="button" onClick={() => setDetailsOpen((v) => !v)}
             className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition"
             aria-expanded={detailsOpen}>
-            <Phone className="h-4 w-4" />מספרי פונה ופרטי קשר
+            <Info className="h-4 w-4" />פרטים
             <ChevronDown className={`h-4 w-4 transition-transform ${detailsOpen ? "rotate-180" : ""}`} />
           </button>
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -1014,8 +1025,9 @@ function SystemDetail() {
                 setDetailsDefaultOpen(next);
                 try { window.localStorage.setItem("crm.details.defaultOpen", next ? "1" : "0"); } catch {}
                 setDetailsOpen(next);
-                toast.success(next ? "הפרטים ייפתחו אוטומטית" : "הפרטים יהיו מכווצים אוטומטית");
+                toast.success(next ? "פרטים ייפתחו אוטומטית" : "פרטים יהיו מכווצים אוטומטית");
               }}
+              title={detailsDefaultOpen ? "ברירת מחדל: פרוש. לחץ כדי לקבוע מכווץ" : "ברירת מחדל: מכווץ. לחץ כדי לקבוע פרוש"}
               className={`text-[11px] px-2 py-1 border rounded-md ${detailsDefaultOpen ? "bg-primary/10 border-primary/30 text-primary" : "border-input bg-background hover:bg-accent"}`}>
               {detailsDefaultOpen ? "פתוח כברירת מחדל" : "סגור כברירת מחדל"}
             </button>
@@ -1034,7 +1046,6 @@ function SystemDetail() {
             )}
           </div>
         </div>
-
         {showParentPick && !isSub && (
           <div className="mb-3">
             <ParentPicker
@@ -1047,74 +1058,47 @@ function SystemDetail() {
             />
           </div>
         )}
-
-        {detailsOpen && (
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_290px] gap-4 items-start">
-            <div className="min-w-0 rounded-xl border border-border bg-muted/10 p-3">
-              <CallerPhonesEditor
-                systemId={id}
-                primary={s.caller_phone || ""}
-                primarySentAt={(s as any).voice_message_sent_at || null}
-                additional={((s as any).additional_caller_phones ?? []) as Array<{ phone: string; sent_at?: string }>}
-                voiceEnabled={voiceEnabled}
-                onSavePrimary={(v: string) => updateMut.mutate({ data: { id, caller_phone: v || null } })}
-                onSendPrimary={() => voiceMut.mutate({ systemId: id, phoneIndex: -1 })}
-                onAddAdditional={(phone: string) => addPhoneMut.mutate({ systemId: id, phone })}
-                onUpdateAdditional={(index: number, phone: string) => updPhoneMut.mutate({ systemId: id, index, phone })}
-                onRemoveAdditional={(index: number) => rmPhoneMut.mutate({ systemId: id, index })}
-                onSendAdditional={(index: number) => voiceMut.mutate({ systemId: id, phoneIndex: index })}
-                sending={voiceMut.isPending}
-              />
-            </div>
-
-            <aside className="space-y-2">
-              <CompactPhoneField
-                label="מספר מנהל"
-                value={String((s as any).manager_phone || "")}
-                emptyLabel="הוסף מספר מנהל"
-                onSave={(v) => updateMut.mutate({ data: { id, manager_phone: v || null } as any })}
-                copyKey="manager-details"
-                copiedKey={copiedKey}
-                onCopy={(v) => copyToClipboard(v, "manager-details", "מספר המנהל")}
-              />
-
-              <CompactEmailField
-                initial={(s as any).email || ""}
-                onSave={(v) => updateMut.mutate({ data: { id, email: v } })}
-              />
-
-              {(s.phone || false) ? (
-                <CompactPhoneField
-                  label="טלפון נוסף"
-                  value={s.phone || ""}
-                  emptyLabel="הוסף טלפון נוסף"
-                  onSave={(v) => updateMut.mutate({ data: { id, phone: v || null } })}
-                  copyKey="legacy-phone"
-                  copiedKey={copiedKey}
-                  onCopy={(v) => copyToClipboard(v, "legacy-phone", "הטלפון")}
-                />
-              ) : (
-                <CompactPhoneField
-                  label="טלפון נוסף"
-                  value=""
-                  emptyLabel="הוסף טלפון נוסף"
-                  onSave={(v) => updateMut.mutate({ data: { id, phone: v || null } })}
-                  copyKey="legacy-phone"
-                  copiedKey={copiedKey}
-                  onCopy={(v) => copyToClipboard(v, "legacy-phone", "הטלפון")}
-                />
-              )}
-
-              <div className="rounded-xl border border-border bg-background p-3">
-                <AdditionalEmailsEditor
-                  emails={((s as any).additional_emails ?? []) as string[]}
-                  onChange={(next) => updateMut.mutate({ data: { id, additional_emails: next } })}
-                />
-              </div>
-            </aside>
+        {detailsOpen && (<>
+        <div className="grid md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-medium block mb-1 text-muted-foreground">טלפון לחיוג</label>
+            <input
+              defaultValue={s.phone || ""}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v !== (s.phone || "")) updateMut.mutate({ data: { id, phone: v || null } }); }}
+              placeholder="מספר טלפון"
+              className="w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm" />
           </div>
-        )}
+          <div>
+            <label className="text-xs font-medium block mb-1 text-muted-foreground">דוא"ל</label>
+            <EmailField initial={(s as any).email || ""} onSave={(v) => updateMut.mutate({ data: { id, email: v } })} />
+          </div>
+          <div className="md:col-span-2">
+            <CallerPhonesEditor
+              systemId={id}
+              primary={s.caller_phone || ""}
+              primarySentAt={(s as any).voice_message_sent_at || null}
+              additional={((s as any).additional_caller_phones ?? []) as Array<{ phone: string; sent_at?: string }>}
+              voiceEnabled={voiceEnabled}
+              onSavePrimary={(v: string) => updateMut.mutate({ data: { id, caller_phone: v || null } })}
+              onSendPrimary={() => voiceMut.mutate({ systemId: id, phoneIndex: -1 })}
+              onAddAdditional={(phone: string) => addPhoneMut.mutate({ systemId: id, phone })}
+              onUpdateAdditional={(index: number, phone: string) => updPhoneMut.mutate({ systemId: id, index, phone })}
+              onRemoveAdditional={(index: number) => rmPhoneMut.mutate({ systemId: id, index })}
+              onSendAdditional={(index: number) => voiceMut.mutate({ systemId: id, phoneIndex: index })}
+              sending={voiceMut.isPending}
+            />
+          </div>
+          <div className="md:col-span-2">
+            <AdditionalEmailsEditor
+              emails={((s as any).additional_emails ?? []) as string[]}
+              onChange={(next) => updateMut.mutate({ data: { id, additional_emails: next } })}
+            />
+          </div>
+        </div>
+        </>)}
       </div>
+
+
 
       {/* ===== פעילות ===== */}
       <div className="bg-card border border-border rounded-xl p-4">
@@ -1927,109 +1911,8 @@ function ParentPicker({
   );
 }
 
-function CompactPhoneField({
-  label, value, emptyLabel, onSave, copyKey, copiedKey, onCopy,
-}: {
-  label: string;
-  value: string;
-  emptyLabel: string;
-  onSave: (value: string) => void;
-  copyKey: string;
-  copiedKey: string | null;
-  onCopy: (value: string) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
-  const digits = String(value || "").replace(/\D/g, "");
-  const commit = () => {
-    const next = draft.trim();
-    if (next !== (value || "").trim()) onSave(next);
-    setEditing(false);
-  };
-
-  if (!value && !editing) {
-    return (
-      <button type="button" onClick={() => setEditing(true)}
-        className="w-full rounded-xl border border-dashed border-input bg-background px-3 py-3 text-right text-xs font-medium text-primary hover:bg-accent">
-        <span className="inline-flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" />{emptyLabel}</span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-background p-3">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <span className="text-xs font-medium text-muted-foreground">{label}</span>
-        {!editing && <button type="button" onClick={() => setEditing(true)} className="p-1 rounded hover:bg-accent" title="ערוך"><Pencil className="h-3.5 w-3.5" /></button>}
-      </div>
-      {editing ? (
-        <div className="flex items-center gap-2">
-          <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape") { setDraft(value); setEditing(false); } }}
-            onBlur={commit}
-            placeholder={emptyLabel}
-            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 py-2 text-sm font-mono" dir="ltr" />
-        </div>
-      ) : (
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-mono text-sm font-semibold" dir="ltr">{value}</span>
-          {digits && <a href={`tel:${buildDialNumber(digits)}`} className="h-8 w-8 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 inline-flex items-center justify-center hover:bg-emerald-100" title="חייג"><Phone className="h-3.5 w-3.5" /></a>}
-          <button type="button" onClick={() => onCopy(value)} className="h-8 w-8 rounded-lg border border-border inline-flex items-center justify-center hover:bg-accent" title="העתק">
-            {copiedKey === copyKey ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CompactEmailField({ initial, onSave }: { initial: string; onSave: (v: string | null) => void }) {
-  const [open, setOpen] = useState(false);
-  const [val, setVal] = useState(initial);
-  useEffect(() => setVal(initial), [initial]);
-  const commit = () => {
-    const next = val.trim();
-    if (next !== (initial || "")) onSave(next || null);
-  };
-
-  if (!initial && !open) {
-    return (
-      <button type="button" onClick={() => setOpen(true)}
-        className="w-full rounded-xl border border-dashed border-input bg-background px-3 py-3 text-right text-xs font-medium text-primary hover:bg-accent">
-        <span className="inline-flex items-center gap-1.5"><Plus className="h-3.5 w-3.5" />הוסף כתובת דוא&quot;ל</span>
-      </button>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border border-border bg-background p-3">
-      <button type="button" onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 text-right">
-        <span className="inline-flex min-w-0 items-center gap-2">
-          <Mail className="h-4 w-4 text-primary shrink-0" />
-          <span className="text-xs font-medium">דוא&quot;ל</span>
-          {!open && initial && <span className="text-xs text-muted-foreground truncate max-w-[150px]" dir="ltr">{initial}</span>}
-        </span>
-        <ChevronDown className={`h-4 w-4 transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-      {open && (
-        <div className="mt-3 flex gap-1">
-          <input type="email" value={val} onChange={(e) => setVal(e.target.value)} onBlur={commit}
-            placeholder="name@example.com" dir="ltr"
-            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 py-2 text-sm" />
-          <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => {
-            if (!val || val.includes("@")) return;
-            const next = val.trim() + "@gmail.com";
-            setVal(next); onSave(next);
-          }} className="rounded-lg border border-input px-2 text-[11px] hover:bg-accent">@gmail.com</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
 function CallerPhoneRow({
-  initial, sentAt, voiceEnabled, sending, onSave, onSend, onRemove, showRemove, isPrimary,
+  initial, sentAt, voiceEnabled, sending, onSave, onSend, onRemove, showRemove,
 }: {
   initial: string;
   sentAt: string | null | undefined;
@@ -2039,68 +1922,66 @@ function CallerPhoneRow({
   onSend: () => void;
   onRemove?: () => void;
   showRemove: boolean;
-  isPrimary?: boolean;
 }) {
   const [val, setVal] = useState(initial);
-  const [editing, setEditing] = useState(!initial);
-  useEffect(() => { setVal(initial); if (initial) setEditing(false); }, [initial]);
+  useEffect(() => { setVal(initial); }, [initial]);
   const digits = (val || "").replace(/\D/g, "");
-
-  const commit = () => {
-    const next = val.trim();
-    if (next !== (initial || "").trim()) onSave(next);
-    if (next) setEditing(false);
-  };
-
-  if (!initial && !editing) {
-    return (
-      <button type="button" onClick={() => setEditing(true)}
-        className="min-h-[96px] rounded-xl border border-dashed border-input bg-background p-3 text-xs font-medium text-primary hover:bg-accent">
-        <span className="inline-flex items-center gap-1"><Plus className="h-4 w-4" />הוסף מספר פונה ראשי</span>
-      </button>
-    );
-  }
-
+  const sendTitle = !voiceEnabled
+    ? "לא ניתן לשלוח הודעה בסטטוס זה"
+    : sentAt ? `נשלח: ${new Date(sentAt).toLocaleString("he-IL")}` : "שליחת הודעה קולית לפונה";
   return (
-    <div className="rounded-xl border border-border bg-background p-3 shadow-sm min-w-0">
-      {editing ? (
-        <div className="space-y-2">
-          <div className="text-[11px] text-muted-foreground">{isPrimary ? "מספר פונה ראשי" : "מספר פונה"}</div>
-          <input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commit(); } else if (e.key === "Escape" && initial) { setVal(initial); setEditing(false); } }}
-            onBlur={commit}
-            placeholder="מספר טלפון"
-            className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-sm font-mono" dir="ltr" />
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <input
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onBlur={() => { if (val.trim() !== (initial || "").trim()) onSave(val.trim()); }}
+          placeholder="מספר טלפון של הפונה"
+          className="flex-1 min-w-[160px] rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground"
+        />
+        {digits && (
+          <a href={`tel:${digits}`}
+            title="חייג"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md bg-sky-600 text-white hover:bg-sky-700">
+            <Phone className="h-4 w-4" />
+          </a>
+        )}
+        {digits && (
+          <button type="button"
+            onClick={() => navigator.clipboard.writeText(digits).then(() => toast.success("המספר הועתק"))}
+            title="העתק"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border bg-background text-muted-foreground hover:bg-accent">
+            <Copy className="h-4 w-4" />
+          </button>
+        )}
+        <button type="button"
+          disabled={!voiceEnabled || sending || !digits}
+          onClick={() => { if (window.confirm(sentAt ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?" : "לשלוח הודעה קולית לפונה כעת?")) onSend(); }}
+          title={sendTitle}
+          aria-label="שלח הודעה קולית"
+          className={`inline-flex items-center gap-1.5 h-9 px-3 rounded-md text-xs font-medium border transition ${
+            !voiceEnabled
+              ? "bg-background text-muted-foreground/50 border-border cursor-not-allowed"
+              : sentAt
+                ? "bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100"
+                : "bg-fuchsia-600 text-white border-fuchsia-600 hover:bg-fuchsia-700"
+          }`}>
+          <Volume2 className="h-3.5 w-3.5" />
+          <span>שלח הודעה</span>
+        </button>
+        {showRemove && onRemove && (
+          <button type="button" onClick={() => { if (window.confirm("להסיר מספר פונה זה?")) onRemove(); }}
+            title="הסר מספר"
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md border border-border text-destructive hover:bg-destructive/10">
+            <Trash2 className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+      {sentAt ? (
+        <div className="text-[11px] text-emerald-700 pr-1">
+          ✓ הודעה נשלחה בתאריך {new Date(sentAt).toLocaleString("he-IL")}
         </div>
-      ) : (
-        <>
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-mono text-base font-semibold" dir="ltr">{initial}</span>
-                {isPrimary && <span className="rounded-full bg-emerald-50 border border-emerald-200 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">ראשי</span>}
-              </div>
-              {sentAt ? <div className="mt-1 text-[10px] text-emerald-700">✓ {new Date(sentAt).toLocaleString("he-IL", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false })}</div> : <div className="mt-1 text-[10px] text-muted-foreground">טרם נשלחה הודעה</div>}
-            </div>
-            <button type="button" onClick={() => setEditing(true)} className="p-1 rounded-md text-muted-foreground hover:bg-accent" title="ערוך"><Pencil className="h-3.5 w-3.5" /></button>
-          </div>
-
-          <div className="mt-3 flex items-center gap-1.5">
-            {digits && <a href={`tel:${buildDialNumber(digits)}`} title="חייג"
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"><Phone className="h-3.5 w-3.5" /></a>}
-            {digits && <button type="button" onClick={() => navigator.clipboard.writeText(digits).then(() => toast.success("המספר הועתק"))}
-              title="העתק" className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border hover:bg-accent"><Copy className="h-3.5 w-3.5" /></button>}
-            <button type="button" disabled={!voiceEnabled || sending || !digits}
-              onClick={() => { if (window.confirm(sentAt ? "ההודעה כבר נשלחה בעבר. לשלוח שוב?" : "לשלוח הודעה קולית לפונה כעת?")) onSend(); }}
-              title={!voiceEnabled ? "לא ניתן לשלוח הודעה בסטטוס זה" : "שלח הודעה קולית"}
-              className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border ${!voiceEnabled ? "opacity-40 cursor-not-allowed" : sentAt ? "border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100" : "border-orange-200 bg-orange-50 text-orange-700 hover:bg-orange-100"}`}>
-              <Volume2 className="h-3.5 w-3.5" />
-            </button>
-            {showRemove && onRemove && <button type="button" onClick={() => { if (window.confirm("להסיר מספר פונה זה?")) onRemove(); }} title="הסר מספר"
-              className="mr-auto inline-flex h-8 w-8 items-center justify-center rounded-lg border border-border text-destructive hover:bg-destructive/10"><Trash2 className="h-3.5 w-3.5" /></button>}
-          </div>
-        </>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -2124,31 +2005,17 @@ function CallerPhonesEditor({
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [newPhone, setNewPhone] = useState("");
-  const count = (primary ? 1 : 0) + additional.filter((p) => !!p.phone).length;
-
-  const add = () => {
-    const value = newPhone.trim();
-    if (!value) return;
-    onAddAdditional(value);
-    setNewPhone("");
-    setShowAdd(false);
-  };
-
   return (
     <div>
-      <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-semibold">מספרי פונה</label>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{count}</span>
-        </div>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-sm font-medium">מספר פונה</label>
         <button type="button" onClick={() => setShowAdd((v) => !v)}
-          className="inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border border-primary/25 bg-primary/5 hover:bg-primary/10 text-primary"
+          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-input bg-background hover:bg-accent text-foreground"
           title="הוסף מספר פונה נוסף">
           <Plus className="h-3.5 w-3.5" /> הוסף מספר פונה
         </button>
       </div>
-
-      <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+      <div className="space-y-2">
         <CallerPhoneRow
           initial={primary}
           sentAt={primarySentAt}
@@ -2157,11 +2024,10 @@ function CallerPhonesEditor({
           onSave={onSavePrimary}
           onSend={onSendPrimary}
           showRemove={false}
-          isPrimary
         />
         {additional.map((entry, i) => (
           <CallerPhoneRow
-            key={`${i}-${entry.phone}`}
+            key={i}
             initial={entry.phone || ""}
             sentAt={entry.sent_at ?? null}
             voiceEnabled={voiceEnabled}
@@ -2172,20 +2038,40 @@ function CallerPhonesEditor({
             showRemove={true}
           />
         ))}
-        {showAdd && (
-          <div className="rounded-xl border border-dashed border-primary/30 bg-primary/5 p-3 min-h-[96px] flex flex-col justify-center gap-2">
-            <input autoFocus value={newPhone} onChange={(e) => setNewPhone(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); add(); } else if (e.key === "Escape") { setShowAdd(false); setNewPhone(""); } }}
-              placeholder="מספר חדש"
-              className="w-full rounded-lg border border-input bg-background px-2.5 py-2 text-sm font-mono" dir="ltr" />
-            <div className="flex gap-2">
-              <button type="button" disabled={!newPhone.trim()} onClick={add} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground disabled:opacity-50">הוסף</button>
-              <button type="button" onClick={() => { setShowAdd(false); setNewPhone(""); }} className="rounded-lg border border-input px-3 py-1.5 text-xs">ביטול</button>
-            </div>
-          </div>
-        )}
       </div>
+      {showAdd && (
+        <div className="mt-2 flex items-center gap-2 p-2 border border-dashed border-input rounded-lg bg-muted/20">
+          <input
+            autoFocus
+            value={newPhone}
+            onChange={(e) => setNewPhone(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && newPhone.trim()) {
+                e.preventDefault();
+                onAddAdditional(newPhone.trim());
+                setNewPhone("");
+                setShowAdd(false);
+              } else if (e.key === "Escape") {
+                setShowAdd(false); setNewPhone("");
+              }
+            }}
+            placeholder="מספר טלפון חדש (Enter לשמירה)"
+            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm"
+          />
+          <button type="button"
+            disabled={!newPhone.trim()}
+            onClick={() => { onAddAdditional(newPhone.trim()); setNewPhone(""); setShowAdd(false); }}
+            className="px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium disabled:opacity-50">
+            הוסף
+          </button>
+          <button type="button" onClick={() => { setShowAdd(false); setNewPhone(""); }}
+            className="px-3 py-2 rounded-md border border-input text-xs">
+            ביטול
+          </button>
+        </div>
+      )}
     </div>
   );
 }
+
 

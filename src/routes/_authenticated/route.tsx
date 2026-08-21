@@ -43,7 +43,9 @@ function AuthedLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const myRoleFn = useServerFn(getMyRole);
+  const { session, ready: sessionResolved } = useSession();
   const [sessionReady, setSessionReady] = useState(false);
+
   const { data: me } = useQuery({
     queryKey: ["me"],
     queryFn: async () => myRoleFn({ headers: await getAuthHeaders() }),

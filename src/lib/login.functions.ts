@@ -168,8 +168,8 @@ export const recordLoginEvent = createServerFn({ method: "POST" })
 export const listLoginEvents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "users_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows } = await supabaseAdmin
       .from("login_events")
@@ -194,8 +194,8 @@ export const listLoginEvents = createServerFn({ method: "GET" })
 export const listUserSecurity = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "users_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data } = await supabaseAdmin.from("user_security").select("user_id, mfa_enabled, mfa_phone");
     return (data ?? []) as { user_id: string; mfa_enabled: boolean; mfa_phone: string | null }[];
@@ -211,8 +211,8 @@ export const setUserSecurity = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "users_manage");
+    const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
+    await assertPermissionInAnyCrm(context.userId, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { normalizePhone } = await import("@/lib/otp.server");
     const phone = data.mfa_phone ? normalizePhone(data.mfa_phone) : null;

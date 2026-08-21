@@ -178,13 +178,17 @@ function RootComponent() {
     };
   }, [router, queryClient]);
 
+  useEffect(() => { perfMark("APP_START"); }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <StatusSettingsHydrator />
       <Outlet />
       <Toaster position="top-center" richColors dir="rtl" />
+      <PerfOverlay />
     </QueryClientProvider>
   );
+
 }
 
 function StatusSettingsHydrator() {

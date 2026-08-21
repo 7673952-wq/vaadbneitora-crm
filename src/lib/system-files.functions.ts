@@ -67,8 +67,13 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const buffer = Buffer.from(data.data_base64, "base64");
+    // The declared MIME type is browser-supplied; verify the real bytes too.
+    const { validateFileSignature } = await import("@/lib/file-signature");
+    const sigError = validateFileSignature(new Uint8Array(buffer), mime);
+    if (sigError) throw new Error(sigError);
     const safeName = data.file_name.replace(/[^A-Za-z0-9._\u0590-\u05FF\- ]/g, "_");
     const path = `${data.system_id}/${Date.now()}-${safeName}`;
+
     const { error: upErr } = await supabaseAdmin.storage.from("system-files").upload(path, buffer, {
       contentType: data.mime_type || "application/octet-stream",
       upsert: false,

@@ -129,13 +129,15 @@ function RootComponent() {
       decided = true;
       const { data } = await supabase.auth.getSession();
       if (data.session && !sessionStorage.getItem(SESSION_MARKER)) {
-        if (otherTabAlive) {
+        // "זכור אותי" opts this device out of the force-relogin behavior.
+        if (otherTabAlive || isRemembered()) {
           sessionStorage.setItem(SESSION_MARKER, "1");
         } else {
           await supabase.auth.signOut();
         }
       }
     }
+
 
     let channel: BroadcastChannel | null = null;
     let pingTimer: ReturnType<typeof setTimeout> | null = null;

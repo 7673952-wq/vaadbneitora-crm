@@ -150,9 +150,12 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         {canGeneral && <TabsTrigger value="settings" className="flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" />הגדרות כלליות</TabsTrigger>}
         {canNotifs && <TabsTrigger value="notifications" className="flex items-center gap-1.5"><BellRing className="h-3.5 w-3.5" />פעמון התראות</TabsTrigger>}
         {canBackups && <TabsTrigger value="backups" className="flex items-center gap-1.5"><Database className="h-3.5 w-3.5" />גיבויים</TabsTrigger>}
+        {canUsers && <TabsTrigger value="security" className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" />אבטחת כניסה</TabsTrigger>}
       </TabsList>
 
       {canUsers && <TabsContent value="users" className="mt-4"><UsersPanel me={me} /></TabsContent>}
+      {canUsers && <TabsContent value="security" className="mt-4"><SecurityPanel /></TabsContent>}
+
       {canCrms && <TabsContent value="crms" className="mt-4"><CrmManagerPanel /></TabsContent>}
       {canGeneral && <TabsContent value="settings" className="mt-4 space-y-6">
         <AutoSnoozePanel />

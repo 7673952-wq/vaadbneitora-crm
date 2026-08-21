@@ -17,6 +17,11 @@ import { GlobalSearch } from "@/components/GlobalSearch";
 import { NewRecordButton } from "@/components/NewRecordButton";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
+import { useSession } from "@/lib/use-session";
+import { getSessionSecurity } from "@/lib/login.functions";
+import { getDeviceId } from "@/lib/device-id";
+import { perfMark } from "@/lib/perf";
+
 
 
 

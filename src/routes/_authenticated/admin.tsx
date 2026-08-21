@@ -29,6 +29,8 @@ import { BackupsPage } from "./backups";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { SecurityPanel } from "@/components/SecurityPanel";
+
 import {
   listRoleNotificationDefaults, updateRoleNotificationDefault,
 } from "@/lib/notifications.functions";

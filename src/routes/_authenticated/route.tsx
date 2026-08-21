@@ -99,41 +99,51 @@ function AuthedLayout() {
     setPw1(""); setPw2(""); setPwOpen(false);
   }
 
+  // Session state comes from the shared ["session"] cache (one read per load,
+  // kept fresh by a single auth listener) instead of a per-screen getSession().
   useEffect(() => {
+    if (!sessionResolved) return;
+    if (session) { setSessionReady(true); return; }
+    // A transient/spurious sign-out can fire while tabs coordinate a token
+    // refresh — confirm with the server before bouncing the user out.
     let active = true;
     supabase.auth.getSession().then(({ data }) => {
       if (!active) return;
-      if (!data.session) {
-        navigate({ to: "/auth", replace: true });
-        return;
-      }
-      setSessionReady(true);
+      if (data.session) return;
+      setSessionReady(false);
+      navigate({ to: "/auth", replace: true });
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
-      if (event === "SIGNED_OUT") {
-        // Confirm before redirecting — a transient/spurious SIGNED_OUT can
-        // fire (e.g. while multiple tabs coordinate token refresh) even
-        // though the user is still genuinely logged in.
-        supabase.auth.getSession().then(({ data: confirm }) => {
-          if (!active) return;
-          if (confirm.session) { setSessionReady(true); return; }
-          setSessionReady(false);
-          navigate({ to: "/auth", replace: true });
+    return () => { active = false; };
+  }, [session, sessionResolved, navigate]);
+
+  // Second factor is enforced server-side: an untrusted device is signed out
+  // even if it somehow obtained a session without passing the phone check.
+  const securityFn = useServerFn(getSessionSecurity);
+  useEffect(() => {
+    if (!sessionReady) return;
+    let active = true;
+    (async () => {
+      try {
+        const res: any = await securityFn({
+          data: { device_id: getDeviceId() },
+          headers: await getAuthHeaders(),
         });
-        return;
-      }
-      if (session) setSessionReady(true);
-    });
-    return () => { active = false; subscription.unsubscribe(); };
-  }, [navigate]);
+        if (active && res?.mfa_required) {
+          await supabase.auth.signOut();
+          toast.error("נדרש אימות נוסף — התחבר מחדש");
+          navigate({ to: "/auth", replace: true });
+        }
+      } catch { /* never lock the user out on a transient failure */ }
+    })();
+    return () => { active = false; };
+  }, [sessionReady, securityFn, navigate]);
 
   useEffect(() => {
     if (!sessionReady) return;
-    supabase.auth.getUser().then(({ data }) => {
-      setDisplayName((data.user?.user_metadata?.display_name as string) || data.user?.email || "");
-    });
-  }, [sessionReady]);
+    perfMark("AUTH_READY");
+    setDisplayName((session?.user?.user_metadata?.display_name as string) || session?.user?.email || "");
+  }, [sessionReady, session]);
+
 
   async function signOut() {
     await queryClient.cancelQueries();

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ResponsiveContainer, LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { getHandlingSpeedTrend } from "@/lib/systems.functions";
+import { perfMark } from "@/lib/perf";
 import { Gauge } from "lucide-react";
 
 const PERIODS: Array<{ value: "day" | "3days" | "week" | "month" | "year"; label: string }> = [
@@ -25,8 +26,10 @@ export function HandlingSpeedChart() {
     staleTime: 60_000,
     placeholderData: (prev) => prev,
   });
+  useEffect(() => { if (data) perfMark("CHARTS_READY"); }, [data]);
 
   const rows = data ?? [];
+
   const totalHandled = rows.reduce((sum, r) => sum + (r.throughput ?? 0), 0);
   const weighted = rows.reduce((sum, r) => sum + (r.avgHours ?? 0) * (r.throughput ?? 0), 0);
   const overallAvg = totalHandled > 0 ? (weighted / totalHandled).toFixed(1) : "—";

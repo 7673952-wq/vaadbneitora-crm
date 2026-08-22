@@ -26,8 +26,10 @@ export function HandlingSpeedChart() {
     staleTime: 60_000,
     placeholderData: (prev) => prev,
   });
+  useEffect(() => { if (data) perfMark("CHARTS_READY"); }, [data]);
 
   const rows = data ?? [];
+
   const totalHandled = rows.reduce((sum, r) => sum + (r.throughput ?? 0), 0);
   const weighted = rows.reduce((sum, r) => sum + (r.avgHours ?? 0) * (r.throughput ?? 0), 0);
   const overallAvg = totalHandled > 0 ? (weighted / totalHandled).toFixed(1) : "—";

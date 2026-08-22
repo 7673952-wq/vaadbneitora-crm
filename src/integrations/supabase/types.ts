@@ -969,7 +969,6 @@ export type Database = {
           id: string
           is_blocking_number: boolean
           last_inbound_email_at: string | null
-          manager_phone: string | null
           name: string
           notes: string | null
           parent_system_id: string | null
@@ -999,7 +998,6 @@ export type Database = {
           id?: string
           is_blocking_number?: boolean
           last_inbound_email_at?: string | null
-          manager_phone?: string | null
           name: string
           notes?: string | null
           parent_system_id?: string | null
@@ -1029,7 +1027,6 @@ export type Database = {
           id?: string
           is_blocking_number?: boolean
           last_inbound_email_at?: string | null
-          manager_phone?: string | null
           name?: string
           notes?: string | null
           parent_system_id?: string | null

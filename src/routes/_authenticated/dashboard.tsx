@@ -9,6 +9,8 @@ import {
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStatusSettings } from "@/lib/use-status-settings";
+import { perfMark } from "@/lib/perf";
+
 import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,

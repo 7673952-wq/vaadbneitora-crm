@@ -292,6 +292,12 @@ function Dashboard() {
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
+  // Real-user timing marks (see src/lib/perf.ts) — recorded once per load.
+  useEffect(() => { perfMark("DASHBOARD_RENDERED"); }, []);
+  useEffect(() => { if (systemsData) perfMark("SYSTEMS_READY"); }, [systemsData]);
+  useEffect(() => { if (statusReady) perfMark("CONFIG_READY"); }, [statusReady]);
+  useEffect(() => { if (systemsData && statusReady) perfMark("DASHBOARD_READY"); }, [systemsData, statusReady]);
+
   // Export must always operate on ALL matching systems, not just the current
   // dashboard page — fetched fresh whenever the export modal is opened so
   // the "יישלחו לייצוא" preview count matches what actually gets exported.

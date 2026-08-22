@@ -543,7 +543,7 @@ export const updateSystem = createServerFn({ method: "POST" })
   .inputValidator((d: {
     id: string; status?: string; secondary_status?: string | null; assigned_agent_id?: string | null;
     name?: string; system_code?: string; notes?: string; phone?: string | null;
-    caller_phone?: string | null; source?: string | null; audio_url?: string | null;
+    manager_phone?: string | null; caller_phone?: string | null; source?: string | null; audio_url?: string | null;
     reminder_at?: string | null; reminder_agent_ids?: string[] | null;
     email?: string | null;
     additional_emails?: string[] | null;
@@ -560,6 +560,7 @@ export const updateSystem = createServerFn({ method: "POST" })
       system_code: z.string().min(1).max(60).optional(),
       notes: z.string().max(2000).optional(),
       phone: z.string().max(60).nullable().optional(),
+      manager_phone: z.string().max(60).nullable().optional(),
       caller_phone: z.string().max(60).nullable().optional(),
       source: z.string().max(40).nullable().optional(),
       audio_url: z.union([z.string().url().max(500), z.literal("")]).nullable().optional(),
@@ -579,6 +580,7 @@ export const updateSystem = createServerFn({ method: "POST" })
     if (data.name !== undefined) data.name = sanitizeText(data.name);
     if (data.notes !== undefined) data.notes = sanitizeText(data.notes);
     if (data.phone !== undefined && data.phone !== null) data.phone = sanitizeText(data.phone);
+    if (data.manager_phone !== undefined && data.manager_phone !== null) data.manager_phone = sanitizeText(data.manager_phone);
     if (data.caller_phone !== undefined && data.caller_phone !== null) data.caller_phone = sanitizeText(data.caller_phone);
     if (data.source !== undefined && data.source !== null) data.source = sanitizeText(data.source);
     // An empty audio field means "no recording", not an invalid URL.

@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   ResponsiveContainer, LineChart, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
 } from "recharts";
 import { getHandlingSpeedTrend } from "@/lib/systems.functions";
+import { perfMark } from "@/lib/perf";
 import { Gauge } from "lucide-react";
 
 const PERIODS: Array<{ value: "day" | "3days" | "week" | "month" | "year"; label: string }> = [

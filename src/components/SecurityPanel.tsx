@@ -53,7 +53,7 @@ export function SecurityPanel() {
       <section className="rounded-xl border border-border bg-card p-4">
         <h3 className="flex items-center gap-2 font-semibold mb-1"><ShieldCheck className="h-4 w-4" />אימות נוסף בשיחה (ימות המשיח)</h3>
         <p className="text-xs text-muted-foreground mb-3">
-          כשמופעל, לאחר הסיסמה תתבצע שיחה למספר שהוגדר עם קוד בן 6 ספרות. מכשיר שאושר עם "זכור אותי" לא יידרש לקוד במשך 30 יום.
+          כשמופעל, לאחר הסיסמה תתבצע שיחה למספר שהוגדר עם קוד בן 8 ספרות. מכשיר שאושר עם "זכור אותי" לא יידרש לקוד במשך 30 יום.
         </p>
         <div className="divide-y divide-border">
           {(users ?? []).map((u: any) => (

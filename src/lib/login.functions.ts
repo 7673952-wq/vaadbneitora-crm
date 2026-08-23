@@ -51,8 +51,13 @@ export const beginLogin = createServerFn({ method: "POST" })
     await clearLoginFailures(supabaseAdmin, email);
 
     const userId = signIn.user.id;
-    const { data: sec } = await supabaseAdmin
+    const { data: sec, error: secErr } = await supabaseAdmin
       .from("user_security").select("mfa_enabled, mfa_phone").eq("user_id", userId).maybeSingle();
+    // A failed lookup must never be read as "second factor disabled".
+    if (secErr) {
+      console.error("[login] user_security lookup failed", secErr.message);
+      throw new Error("בדיקת אבטחה נכשלה — נסה שוב בעוד רגע");
+    }
 
     if (!(sec as any)?.mfa_enabled) return { mfa: false as const };
 
@@ -86,11 +91,48 @@ export const beginLogin = createServerFn({ method: "POST" })
     return { mfa: true as const, challenge_id: (challenge as any).id as string };
   });
 
+/**
+ * Sends a fresh code for an existing challenge. Server-enforced cooldown via
+ * the challenge's updated_at so the phone can't be spammed.
+ */
+export const resendLoginOtp = createServerFn({ method: "POST" })
+  .inputValidator((d: { challenge_id: string }) =>
+    z.object({ challenge_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: row } = await supabaseAdmin
+      .from("login_otp_challenges")
+      .select("id, user_id, expires_at, attempts, consumed_at, created_at")
+      .eq("id", data.challenge_id).maybeSingle();
+    const ch = row as any;
+    if (!ch || ch.consumed_at) throw new Error("הקוד אינו תקף — התחבר מחדש");
+    // expires_at is (re)set to now+TTL on every send, so it doubles as the
+    // "last sent" marker for the cooldown.
+    const lastSent = new Date(ch.expires_at).getTime() - OTP_TTL_MS;
+    if (Number.isFinite(lastSent) && Date.now() - lastSent < 30_000) {
+      throw new Error("הקוד נשלח זה עתה — נסה שוב בעוד כמה שניות");
+    }
+    const { data: sec } = await supabaseAdmin
+      .from("user_security").select("mfa_phone").eq("user_id", ch.user_id).maybeSingle();
+    const phone = (sec as any)?.mfa_phone as string | null;
+    if (!phone) throw new Error("לא הוגדר מספר טלפון לאימות הנוסף — פנה למנהל המערכת");
+
+    const { generateOtpCode, hashOtpCode, sendOtpByPhone } = await import("@/lib/otp.server");
+    const code = generateOtpCode();
+    await supabaseAdmin.from("login_otp_challenges").update({
+      code_hash: hashOtpCode(code, ch.id),
+      expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
+    }).eq("id", ch.id);
+    await sendOtpByPhone(phone, code);
+    return { ok: true as const };
+  });
+
 export const verifyLoginOtp = createServerFn({ method: "POST" })
   .inputValidator((d: { challenge_id: string; code: string; device_id: string; remember: boolean }) =>
     z.object({
       challenge_id: z.string().uuid(),
-      code: z.string().regex(/^\d{6}$/),
+      code: z.string().regex(/^\d{8}$/),
       device_id: deviceSchema,
       remember: z.boolean(),
     }).parse(d),

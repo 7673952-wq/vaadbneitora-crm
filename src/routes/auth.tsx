@@ -1,10 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { beginLogin, verifyLoginOtp, recordLoginEvent } from "@/lib/login.functions";
+import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent } from "@/lib/login.functions";
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
 import { getAuthHeaders } from "@/lib/auth-headers";
 
@@ -26,6 +26,7 @@ function AuthPage() {
   const navigate = useNavigate();
   const beginFn = useServerFn(beginLogin);
   const verifyFn = useServerFn(verifyLoginOtp);
+  const resendFn = useServerFn(resendLoginOtp);
   const logFn = useServerFn(recordLoginEvent);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -34,6 +35,13 @@ function AuthPage() {
   const [step, setStep] = useState<"credentials" | "otp">("credentials");
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   /** Creates the browser session only after every check has passed. */
   async function completeSignIn() {
@@ -46,6 +54,9 @@ function AuthPage() {
         headers: await getAuthHeaders(),
       });
     } catch { /* the journal must never block a valid login */ }
+    // This tab already journaled a "password" login — the root layout must not
+    // add a second "session" entry for the same sign-in.
+    try { sessionStorage.setItem("crm_login_logged", "1"); } catch { /* ignore */ }
     toast.success("ברוך הבא");
     navigate({ to: "/dashboard" });
   }
@@ -58,6 +69,7 @@ function AuthPage() {
       if (res?.mfa) {
         setChallengeId(res.challenge_id);
         setStep("otp");
+        setResendCooldown(30);
         toast.success("נשלחה אליך שיחה עם קוד הכניסה");
       } else {
         await completeSignIn();
@@ -78,6 +90,21 @@ function AuthPage() {
       await completeSignIn();
     } catch (err: any) {
       toast.error(err?.message ?? "האימות נכשל");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    if (!challengeId || resendCooldown > 0) return;
+    setLoading(true);
+    try {
+      await resendFn({ data: { challenge_id: challengeId } });
+      setCode("");
+      setResendCooldown(30);
+      toast.success("הקוד נשלח שוב בשיחה נוספת");
+    } catch (err: any) {
+      toast.error(err?.message ?? "שליחה חוזרת נכשלה");
     } finally {
       setLoading(false);
     }
@@ -116,14 +143,18 @@ function AuthPage() {
         ) : (
           <form onSubmit={handleVerify} className="bg-card border border-border rounded-2xl p-8 shadow-sm space-y-5">
             <div>
-              <label className="text-sm font-medium block mb-2">קוד אימות (6 ספרות)</label>
-              <Input inputMode="numeric" pattern="\d{6}" required value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              <label className="text-sm font-medium block mb-2">קוד אימות (8 ספרות)</label>
+              <Input inputMode="numeric" pattern="\d{8}" required value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-center tracking-[0.4em] text-lg outline-none focus:ring-2 focus:ring-ring" />
             </div>
-            <button type="submit" disabled={loading || code.length !== 6}
+            <button type="submit" disabled={loading || code.length !== 8}
               className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 font-medium hover:bg-primary/90 disabled:opacity-50 transition">
               {loading ? "מאמת..." : "אישור"}
+            </button>
+            <button type="button" onClick={handleResend} disabled={loading || resendCooldown > 0}
+              className="w-full rounded-lg border border-input bg-background py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 transition">
+              {resendCooldown > 0 ? `שליחת קוד חוזרת בעוד ${resendCooldown} שניות` : "שלח קוד שוב"}
             </button>
             <button type="button" onClick={() => { setStep("credentials"); setCode(""); setChallengeId(null); }}
               className="w-full text-xs text-muted-foreground hover:text-foreground">

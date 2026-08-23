@@ -91,6 +91,42 @@ export const beginLogin = createServerFn({ method: "POST" })
     return { mfa: true as const, challenge_id: (challenge as any).id as string };
   });
 
+/**
+ * Sends a fresh code for an existing challenge. Server-enforced cooldown via
+ * the challenge's updated_at so the phone can't be spammed.
+ */
+export const resendLoginOtp = createServerFn({ method: "POST" })
+  .inputValidator((d: { challenge_id: string }) =>
+    z.object({ challenge_id: z.string().uuid() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: row } = await supabaseAdmin
+      .from("login_otp_challenges")
+      .select("id, user_id, expires_at, attempts, consumed_at, updated_at, created_at")
+      .eq("id", data.challenge_id).maybeSingle();
+    const ch = row as any;
+    if (!ch || ch.consumed_at) throw new Error("הקוד אינו תקף — התחבר מחדש");
+    const lastSent = new Date(ch.updated_at ?? ch.created_at).getTime();
+    if (Number.isFinite(lastSent) && Date.now() - lastSent < 30_000) {
+      throw new Error("הקוד נשלח זה עתה — נסה שוב בעוד כמה שניות");
+    }
+    const { data: sec } = await supabaseAdmin
+      .from("user_security").select("mfa_phone").eq("user_id", ch.user_id).maybeSingle();
+    const phone = (sec as any)?.mfa_phone as string | null;
+    if (!phone) throw new Error("לא הוגדר מספר טלפון לאימות הנוסף — פנה למנהל המערכת");
+
+    const { generateOtpCode, hashOtpCode, sendOtpByPhone } = await import("@/lib/otp.server");
+    const code = generateOtpCode();
+    await supabaseAdmin.from("login_otp_challenges").update({
+      code_hash: hashOtpCode(code, ch.id),
+      expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
+      updated_at: new Date().toISOString(),
+    }).eq("id", ch.id);
+    await sendOtpByPhone(phone, code);
+    return { ok: true as const };
+  });
+
 export const verifyLoginOtp = createServerFn({ method: "POST" })
   .inputValidator((d: { challenge_id: string; code: string; device_id: string; remember: boolean }) =>
     z.object({

@@ -18,8 +18,8 @@ import { NewRecordButton } from "@/components/NewRecordButton";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import { useSession } from "@/lib/use-session";
-import { getSessionSecurity } from "@/lib/login.functions";
-import { getDeviceId } from "@/lib/device-id";
+import { getSessionSecurity, recordLoginEvent } from "@/lib/login.functions";
+import { getDeviceId, setRemembered } from "@/lib/device-id";
 import { perfMark } from "@/lib/perf";
 
 
@@ -43,6 +43,7 @@ function AuthedLayout() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const myRoleFn = useServerFn(getMyRole);
+  const recordLoginEventFn = useServerFn(recordLoginEvent);
   const { session, ready: sessionResolved } = useSession();
   const [sessionReady, setSessionReady] = useState(false);
 

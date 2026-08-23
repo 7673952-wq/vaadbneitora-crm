@@ -153,6 +153,16 @@ function AuthedLayout() {
 
 
   async function signOut() {
+    // Journal the logout BEFORE the session is gone (the endpoint needs the
+    // bearer), and drop "זכור אותי" — an explicit sign-out must not be
+    // remembered on this device.
+    try {
+      await recordLoginEventFn({
+        data: { kind: "logout", device_id: getDeviceId() },
+        headers: await getAuthHeaders(),
+      });
+    } catch { /* journaling must never block sign-out */ }
+    setRemembered(false);
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();

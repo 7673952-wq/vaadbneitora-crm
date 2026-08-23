@@ -26,6 +26,7 @@ function AuthPage() {
   const navigate = useNavigate();
   const beginFn = useServerFn(beginLogin);
   const verifyFn = useServerFn(verifyLoginOtp);
+  const resendFn = useServerFn(resendLoginOtp);
   const logFn = useServerFn(recordLoginEvent);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -95,7 +96,6 @@ function AuthPage() {
     if (!challengeId || resendCooldown > 0) return;
     setLoading(true);
     try {
-      const resendFn = useServerFnRef.current;
       await resendFn({ data: { challenge_id: challengeId } });
       setCode("");
       setResendCooldown(30);

@@ -54,6 +54,9 @@ function AuthPage() {
         headers: await getAuthHeaders(),
       });
     } catch { /* the journal must never block a valid login */ }
+    // This tab already journaled a "password" login — the root layout must not
+    // add a second "session" entry for the same sign-in.
+    try { sessionStorage.setItem("crm_login_logged", "1"); } catch { /* ignore */ }
     toast.success("ברוך הבא");
     navigate({ to: "/dashboard" });
   }

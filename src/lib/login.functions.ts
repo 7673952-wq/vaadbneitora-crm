@@ -103,11 +103,13 @@ export const resendLoginOtp = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: row } = await supabaseAdmin
       .from("login_otp_challenges")
-      .select("id, user_id, expires_at, attempts, consumed_at, updated_at, created_at")
+      .select("id, user_id, expires_at, attempts, consumed_at, created_at")
       .eq("id", data.challenge_id).maybeSingle();
     const ch = row as any;
     if (!ch || ch.consumed_at) throw new Error("הקוד אינו תקף — התחבר מחדש");
-    const lastSent = new Date(ch.updated_at ?? ch.created_at).getTime();
+    // expires_at is (re)set to now+TTL on every send, so it doubles as the
+    // "last sent" marker for the cooldown.
+    const lastSent = new Date(ch.expires_at).getTime() - OTP_TTL_MS;
     if (Number.isFinite(lastSent) && Date.now() - lastSent < 30_000) {
       throw new Error("הקוד נשלח זה עתה — נסה שוב בעוד כמה שניות");
     }
@@ -121,7 +123,6 @@ export const resendLoginOtp = createServerFn({ method: "POST" })
     await supabaseAdmin.from("login_otp_challenges").update({
       code_hash: hashOtpCode(code, ch.id),
       expires_at: new Date(Date.now() + OTP_TTL_MS).toISOString(),
-      updated_at: new Date().toISOString(),
     }).eq("id", ch.id);
     await sendOtpByPhone(phone, code);
     return { ok: true as const };

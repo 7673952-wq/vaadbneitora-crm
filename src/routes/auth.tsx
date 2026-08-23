@@ -65,6 +65,7 @@ function AuthPage() {
       if (res?.mfa) {
         setChallengeId(res.challenge_id);
         setStep("otp");
+        setResendCooldown(30);
         toast.success("נשלחה אליך שיחה עם קוד הכניסה");
       } else {
         await completeSignIn();
@@ -85,6 +86,22 @@ function AuthPage() {
       await completeSignIn();
     } catch (err: any) {
       toast.error(err?.message ?? "האימות נכשל");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleResend() {
+    if (!challengeId || resendCooldown > 0) return;
+    setLoading(true);
+    try {
+      const resendFn = useServerFnRef.current;
+      await resendFn({ data: { challenge_id: challengeId } });
+      setCode("");
+      setResendCooldown(30);
+      toast.success("הקוד נשלח שוב בשיחה נוספת");
+    } catch (err: any) {
+      toast.error(err?.message ?? "שליחה חוזרת נכשלה");
     } finally {
       setLoading(false);
     }

@@ -51,8 +51,13 @@ export const beginLogin = createServerFn({ method: "POST" })
     await clearLoginFailures(supabaseAdmin, email);
 
     const userId = signIn.user.id;
-    const { data: sec } = await supabaseAdmin
+    const { data: sec, error: secErr } = await supabaseAdmin
       .from("user_security").select("mfa_enabled, mfa_phone").eq("user_id", userId).maybeSingle();
+    // A failed lookup must never be read as "second factor disabled".
+    if (secErr) {
+      console.error("[login] user_security lookup failed", secErr.message);
+      throw new Error("בדיקת אבטחה נכשלה — נסה שוב בעוד רגע");
+    }
 
     if (!(sec as any)?.mfa_enabled) return { mfa: false as const };
 
@@ -90,7 +95,7 @@ export const verifyLoginOtp = createServerFn({ method: "POST" })
   .inputValidator((d: { challenge_id: string; code: string; device_id: string; remember: boolean }) =>
     z.object({
       challenge_id: z.string().uuid(),
-      code: z.string().regex(/^\d{6}$/),
+      code: z.string().regex(/^\d{8}$/),
       device_id: deviceSchema,
       remember: z.boolean(),
     }).parse(d),

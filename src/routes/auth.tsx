@@ -140,14 +140,18 @@ function AuthPage() {
         ) : (
           <form onSubmit={handleVerify} className="bg-card border border-border rounded-2xl p-8 shadow-sm space-y-5">
             <div>
-              <label className="text-sm font-medium block mb-2">קוד אימות (6 ספרות)</label>
-              <Input inputMode="numeric" pattern="\d{6}" required value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              <label className="text-sm font-medium block mb-2">קוד אימות (8 ספרות)</label>
+              <Input inputMode="numeric" pattern="\d{8}" required value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 8))}
                 className="w-full rounded-lg border border-input bg-background px-3 py-2.5 text-center tracking-[0.4em] text-lg outline-none focus:ring-2 focus:ring-ring" />
             </div>
-            <button type="submit" disabled={loading || code.length !== 6}
+            <button type="submit" disabled={loading || code.length !== 8}
               className="w-full rounded-lg bg-primary text-primary-foreground py-2.5 font-medium hover:bg-primary/90 disabled:opacity-50 transition">
               {loading ? "מאמת..." : "אישור"}
+            </button>
+            <button type="button" onClick={handleResend} disabled={loading || resendCooldown > 0}
+              className="w-full rounded-lg border border-input bg-background py-2 text-sm font-medium hover:bg-accent disabled:opacity-50 transition">
+              {resendCooldown > 0 ? `שליחת קוד חוזרת בעוד ${resendCooldown} שניות` : "שלח קוד שוב"}
             </button>
             <button type="button" onClick={() => { setStep("credentials"); setCode(""); setChallengeId(null); }}
               className="w-full text-xs text-muted-foreground hover:text-foreground">

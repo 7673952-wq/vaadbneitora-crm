@@ -1,10 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { beginLogin, verifyLoginOtp, recordLoginEvent } from "@/lib/login.functions";
+import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent } from "@/lib/login.functions";
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
 import { getAuthHeaders } from "@/lib/auth-headers";
 
@@ -34,6 +34,13 @@ function AuthPage() {
   const [step, setStep] = useState<"credentials" | "otp">("credentials");
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [code, setCode] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setTimeout(() => setResendCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [resendCooldown]);
 
   /** Creates the browser session only after every check has passed. */
   async function completeSignIn() {

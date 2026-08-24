@@ -125,8 +125,22 @@ function RootComponent() {
     // instead of signing out. Only sign out if truly nobody answers (i.e. this
     // is the first tab — the whole browser was closed and reopened).
     const SESSION_MARKER = "crm_active_session";
+    const LOGIN_LOGGED = "crm_login_logged";
     const CHANNEL_NAME = "crm_tab_presence";
     const PING_TIMEOUT_MS = 300;
+
+    // Journal "session" entries: a sign-in that needed no password (restored
+    // session) still shows up in the admin login journal — once per tab.
+    async function logRestoredSession() {
+      try {
+        if (sessionStorage.getItem(LOGIN_LOGGED)) return;
+        sessionStorage.setItem(LOGIN_LOGGED, "1");
+        await recordLoginEvent({
+          data: { kind: "session", device_id: getDeviceId(), user_agent: describeDevice() },
+          headers: await getAuthHeaders(),
+        });
+      } catch { /* journaling must never block the app */ }
+    }
 
     let decided = false;
     async function resolvePresence(otherTabAlive: boolean) {
@@ -137,9 +151,12 @@ function RootComponent() {
         // "זכור אותי" opts this device out of the force-relogin behavior.
         if (otherTabAlive || isRemembered()) {
           sessionStorage.setItem(SESSION_MARKER, "1");
+          void logRestoredSession();
         } else {
           await supabase.auth.signOut();
         }
+      } else if (data.session) {
+        void logRestoredSession();
       }
     }
 
@@ -163,8 +180,15 @@ function RootComponent() {
     }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") sessionStorage.setItem(SESSION_MARKER, "1");
-      if (event === "SIGNED_OUT") sessionStorage.removeItem(SESSION_MARKER);
+      if (event === "SIGNED_IN") {
+        sessionStorage.setItem(SESSION_MARKER, "1");
+        // A fresh password login is journaled by the auth page itself.
+        sessionStorage.setItem(LOGIN_LOGGED, "1");
+      }
+      if (event === "SIGNED_OUT") {
+        sessionStorage.removeItem(SESSION_MARKER);
+        sessionStorage.removeItem(LOGIN_LOGGED);
+      }
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
       if (event !== "SIGNED_OUT") {

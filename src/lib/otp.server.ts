@@ -4,7 +4,7 @@
 // (ivr2:0CRM/Phone/<phone> + CallExtensionBridging) — the only difference is
 // the spoken content: the 8-digit login code instead of a system number.
 
-import { createHash, randomInt } from "crypto";
+import { createHash, randomInt, randomBytes } from "crypto";
 
 const YM_BASE = "https://www.call2all.co.il/ym/api";
 
@@ -17,6 +17,16 @@ export function generateOtpCode(): string {
 /** Codes are never stored in the clear — only a salted hash. */
 export function hashOtpCode(code: string, salt: string): string {
   return createHash("sha256").update(`${salt}:${code}`).digest("hex");
+}
+
+/** One-time MFA grant handed out after a verified OTP (256-bit random). */
+export function generateMfaGrant(): string {
+  return randomBytes(32).toString("hex");
+}
+
+/** Grants are never stored in the clear — only their SHA-256 hash. */
+export function hashMfaGrant(grant: string): string {
+  return createHash("sha256").update(grant).digest("hex");
 }
 
 export function normalizePhone(raw: string): string {
@@ -84,9 +94,10 @@ export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<vo
   }
 
   // "!" between digits forces Yemot's TTS to read each digit separately.
+  // The login code rides the exact voice-message flow, in file '004'.
   const spoken = code.split("").join("!");
   await post("UploadTextFile", {
-    what: `${extensionPath}/000.tts`,
+    what: `${extensionPath}/004.tts`,
     contents: `קוד הכניסה שלך למערכת הוא ${spoken} . שוב, ${spoken}`,
   });
 

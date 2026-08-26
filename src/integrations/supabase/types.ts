@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -622,6 +622,8 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
+          resend_count: number
+          state: string
           user_id: string
         }
         Insert: {
@@ -631,6 +633,8 @@ export type Database = {
           created_at?: string
           expires_at: string
           id?: string
+          resend_count?: number
+          state?: string
           user_id: string
         }
         Update: {
@@ -640,6 +644,56 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          resend_count?: number
+          state?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_grants: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          grant_hash: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          grant_hash: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          grant_hash?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_passed_sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          session_id?: string
           user_id?: string
         }
         Relationships: []
@@ -1197,6 +1251,10 @@ export type Database = {
           _to?: string
         }
         Returns: Json
+      }
+      mfa_session_ok: {
+        Args: { _session_id: string; _user_id: string }
+        Returns: boolean
       }
       purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }

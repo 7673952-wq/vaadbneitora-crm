@@ -4,12 +4,31 @@
 
 export const PERF_MARKS = [
   "APP_START",
+  // Login flow (recorded on the SPA, so APP_START may precede them by a lot —
+  // read the delta column in the overlay for the login timeline).
+  "OTP_SUBMIT_START",
+  "OTP_VERIFY_DONE",
+  "SUPABASE_SIGNIN_START",
+  "SUPABASE_SIGNIN_DONE",
+  "SESSION_READY",
+  "SESSION_SECURITY_START",
+  "SESSION_SECURITY_DONE",
+  "AUTH_COMPLETE",
+  "NAVIGATE_START",
+  // App shell / dashboard.
   "AUTH_READY",
+  "DASHBOARD_ROUTE_READY",
+  "STATUS_SETTINGS_START",
+  "STATUS_SETTINGS_READY",
   "CONFIG_READY",
+  "SYSTEMS_QUERY_START",
+  "SYSTEMS_QUERY_DONE",
+  "DASHBOARD_ABOVE_FOLD_READY",
   "DASHBOARD_RENDERED",
   "SYSTEMS_READY",
   "DASHBOARD_READY",
   "CHARTS_READY",
+  "DASHBOARD_FULL_READY",
 ] as const;
 
 export type PerfMark = (typeof PERF_MARKS)[number];
@@ -20,20 +39,26 @@ export function perfMark(name: PerfMark) {
   // so a re-render can't skew the numbers.
   if (performance.getEntriesByName(name, "mark").length > 0) return;
   performance.mark(name);
-  if (name !== "APP_START" && performance.getEntriesByName("APP_START", "mark").length > 0) {
-    try {
-      performance.measure(`${name}_since_start`, "APP_START", name);
-    } catch {
-      /* the start mark may have been cleared — ignore */
-    }
-  }
 }
 
-export function readPerfTimings(): { name: string; ms: number }[] {
+export type PerfTiming = { name: string; ms: number; delta: number | null };
+
+export function readPerfTimings(reference: PerfMark = "APP_START"): PerfTiming[] {
   if (typeof performance === "undefined") return [];
-  const start = performance.getEntriesByName("APP_START", "mark")[0]?.startTime ?? 0;
+  const start = performance.getEntriesByName(reference, "mark")[0]?.startTime ?? 0;
+  let prev: number | null = null;
   return PERF_MARKS.flatMap((name) => {
     const entry = performance.getEntriesByName(name, "mark")[0];
-    return entry ? [{ name, ms: Math.round(entry.startTime - start) }] : [];
+    if (!entry) return [];
+    const ms = Math.round(entry.startTime - start);
+    const delta = prev == null ? null : Math.round(entry.startTime - prev);
+    prev = entry.startTime;
+    return [{ name, ms, delta }];
   });
+}
+
+/** Clears all marks — used before a fresh login so a second measurement works. */
+export function resetPerfTimings() {
+  if (typeof performance === "undefined" || typeof performance.clearMarks !== "function") return;
+  performance.clearMarks();
 }

@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
-import { readPerfTimings } from "@/lib/perf";
+import { readPerfTimings, type PerfTiming } from "@/lib/perf";
 
 /**
  * Small timings panel. Visible only in dev, with ?perf=1, or to admins
- * (the caller passes `enabled`).
+ * (the caller passes `enabled`). Shows both the time since the page started
+ * and the delta from the previous mark, so a stage that eats seconds is
+ * obvious at a glance.
  */
 export function PerfOverlay({ enabled }: { enabled?: boolean }) {
-  const [rows, setRows] = useState<{ name: string; ms: number }[]>([]);
+  const [rows, setRows] = useState<PerfTiming[]>([]);
   const [open, setOpen] = useState(false);
   const show =
     enabled ||
@@ -29,14 +31,20 @@ export function PerfOverlay({ enabled }: { enabled?: boolean }) {
         ⏱ ביצועים
       </button>
       {open && (
-        <div className="mt-1 rounded-md border border-border bg-card/95 p-2 shadow-lg min-w-[220px]">
+        <div className="mt-1 rounded-md border border-border bg-card/95 p-2 shadow-lg min-w-[280px] max-h-[60vh] overflow-auto">
+          <div className="flex justify-between gap-3 text-muted-foreground border-b border-border pb-1 mb-1">
+            <span>שלב</span>
+            <span>Δ / סה״כ</span>
+          </div>
           {rows.length === 0 ? (
             <div className="text-muted-foreground">אין נתונים עדיין</div>
           ) : (
             rows.map((r) => (
-              <div key={r.name} className="flex justify-between gap-4">
-                <span className="text-muted-foreground">{r.name}</span>
-                <span>{r.ms} ms</span>
+              <div key={r.name} className="flex justify-between gap-3">
+                <span className="text-muted-foreground truncate" dir="ltr">{r.name}</span>
+                <span dir="ltr" className={r.delta != null && r.delta > 1000 ? "text-destructive font-bold" : ""}>
+                  {r.delta != null ? `+${r.delta}` : "–"} / {r.ms} ms
+                </span>
               </div>
             ))
           )}

@@ -84,9 +84,10 @@ export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<vo
   }
 
   // "!" between digits forces Yemot's TTS to read each digit separately.
+  // The login code rides the exact voice-message flow, in file '004'.
   const spoken = code.split("").join("!");
   await post("UploadTextFile", {
-    what: `${extensionPath}/000.tts`,
+    what: `${extensionPath}/004.tts`,
     contents: `קוד הכניסה שלך למערכת הוא ${spoken} . שוב, ${spoken}`,
   });
 

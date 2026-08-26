@@ -622,6 +622,8 @@ export type Database = {
           created_at: string
           expires_at: string
           id: string
+          resend_count: number
+          state: string
           user_id: string
         }
         Insert: {
@@ -631,6 +633,8 @@ export type Database = {
           created_at?: string
           expires_at: string
           id?: string
+          resend_count?: number
+          state?: string
           user_id: string
         }
         Update: {
@@ -640,6 +644,56 @@ export type Database = {
           created_at?: string
           expires_at?: string
           id?: string
+          resend_count?: number
+          state?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_grants: {
+        Row: {
+          consumed_at: string | null
+          created_at: string
+          expires_at: string
+          grant_hash: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at: string
+          grant_hash: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          consumed_at?: string | null
+          created_at?: string
+          expires_at?: string
+          grant_hash?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      mfa_passed_sessions: {
+        Row: {
+          created_at: string
+          expires_at: string
+          session_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at: string
+          session_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string
+          session_id?: string
           user_id?: string
         }
         Relationships: []

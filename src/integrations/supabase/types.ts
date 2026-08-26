@@ -1252,6 +1252,10 @@ export type Database = {
         }
         Returns: Json
       }
+      mfa_session_ok: {
+        Args: { _session_id: string; _user_id: string }
+        Returns: boolean
+      }
       purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
       systems_status_counts: {

@@ -94,6 +94,10 @@ async function issueOtpChallenge(
   resendCount: number,
 ): Promise<{ id: string }> {
   const { generateOtpCode, hashOtpCode, sendOtpByPhone } = await import("@/lib/otp.server");
+  const { throttleOtpSend, noteOtpSend } = await import("@/lib/login.server");
+  // Per-user send budget, independent of the challenge row: restarting the
+  // whole login flow does not hand out a fresh quota.
+  await throttleOtpSend(supabaseAdmin, userId);
   const code = generateOtpCode();
   const { data: challenge, error: chErr } = await supabaseAdmin
     .from("login_otp_challenges")
@@ -107,6 +111,7 @@ async function issueOtpChallenge(
     .select("id").single();
   if (chErr || !challenge) throw new Error("יצירת קוד האימות נכשלה");
   const id = (challenge as any).id as string;
+  await noteOtpSend(supabaseAdmin, userId);
   try {
     await sendOtpByPhone(phone, code);
   } catch (e: any) {
@@ -114,16 +119,17 @@ async function issueOtpChallenge(
     console.error("[login] OTP send failed", e?.message ?? e);
     throw e;
   }
-  // Commit the hash only after the code is actually on its way.
-  await supabaseAdmin.from("login_otp_challenges")
-    .update({ code_hash: hashOtpCode(code, id), state: "active" })
-    .eq("id", id);
-  await supabaseAdmin.from("login_otp_challenges")
-    .update({ state: "revoked" })
-    .eq("user_id", userId)
-    .in("state", ["pending", "active"])
-    .is("consumed_at", null)
-    .neq("id", id);
+  // Activating the new code and revoking the older ones is one DB operation,
+  // so there is never a window with two live codes (or none at all).
+  const { data: activated, error: actErr } = await supabaseAdmin.rpc("otp_activate_resend", {
+    _new_id: id,
+    _code_hash: hashOtpCode(code, id),
+    _user_id: userId,
+  });
+  if (actErr || activated !== true) {
+    console.error("[login] otp_activate_resend failed", actErr?.message);
+    throw new Error("הפעלת קוד האימות נכשלה — נסה שוב");
+  }
   return { id };
 }
 
@@ -145,12 +151,7 @@ export const resendLoginOtp = createServerFn({ method: "POST" })
     const ch = row as any;
     if (!ch || ch.consumed_at || ch.state !== "active") throw new Error("הקוד אינו תקף — התחבר מחדש");
     if ((ch.resend_count ?? 0) >= MAX_RESENDS) throw new Error("בוצעו יותר מדי שליחות — התחבר מחדש");
-    // expires_at is (re)set to now+TTL on every send, so it doubles as the
-    // "last sent" marker for the cooldown.
-    const lastSent = new Date(ch.expires_at).getTime() - OTP_TTL_MS;
-    if (Number.isFinite(lastSent) && Date.now() - lastSent < 30_000) {
-      throw new Error("הקוד נשלח זה עתה — נסה שוב בעוד כמה שניות");
-    }
+    // Cooldown + per-window cap live in throttleOtpSend (see issueOtpChallenge).
     const { data: sec } = await supabaseAdmin
       .from("user_security").select("mfa_phone").eq("user_id", ch.user_id).maybeSingle();
     const phone = (sec as any)?.mfa_phone as string | null;
@@ -171,33 +172,21 @@ export const verifyLoginOtp = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { hashOtpCode, generateMfaGrant, hashMfaGrant } = await import("@/lib/otp.server");
-    const { data: row } = await supabaseAdmin
-      .from("login_otp_challenges")
-      .select("id, user_id, code_hash, expires_at, attempts, consumed_at, state")
-      .eq("id", data.challenge_id).maybeSingle();
-    const ch = row as any;
-    if (!ch || ch.consumed_at || ch.state !== "active" || ch.attempts >= OTP_MAX_ATTEMPTS || new Date(ch.expires_at).getTime() < Date.now()) {
-      throw new Error("הקוד אינו תקף — בקש קוד חדש");
-    }
-    if (hashOtpCode(data.code, ch.id) !== ch.code_hash) {
-      await supabaseAdmin.from("login_otp_challenges")
-        .update({ attempts: ch.attempts + 1 }).eq("id", ch.id);
-      throw new Error("קוד שגוי");
-    }
-    await supabaseAdmin.from("login_otp_challenges")
-      .update({ consumed_at: new Date().toISOString(), attempts: ch.attempts + 1 }).eq("id", ch.id);
-
-    // One-time, short-lived grant. The browser exchanges it (after signing in)
-    // for a session-bound MFA proof — a password alone is never enough.
     const grant = generateMfaGrant();
-    const { error: grantErr } = await supabaseAdmin.from("mfa_grants").insert({
-      user_id: ch.user_id,
-      grant_hash: hashMfaGrant(grant),
-      expires_at: new Date(Date.now() + GRANT_TTL_MS).toISOString(),
+    const { data: res, error: rpcErr } = await supabaseAdmin.rpc("otp_consume_and_grant", {
+      _challenge_id: data.challenge_id,
+      _code_hash: hashOtpCode(data.code, data.challenge_id),
+      _grant_hash: hashMfaGrant(grant),
+      _grant_expires: new Date(Date.now() + GRANT_TTL_MS).toISOString(),
+      _max_attempts: OTP_MAX_ATTEMPTS,
     });
-    if (grantErr) {
-      console.error("[login] mfa_grants insert failed", grantErr.message);
-      throw new Error("יצירת אישור האימות נכשלה — נסה שוב");
+    if (rpcErr) {
+      console.error("[login] otp_consume_and_grant failed", rpcErr.message);
+      throw new Error("אימות הקוד נכשל — נסה שוב");
+    }
+    const out = res as any;
+    if (!out?.ok) {
+      throw new Error(out?.reason === "wrong_code" ? "קוד שגוי" : "הקוד אינו תקף — בקש קוד חדש");
     }
     return { ok: true as const, mfa_grant: grant };
   });
@@ -218,26 +207,17 @@ export const confirmMfaSession = createServerFn({ method: "POST" })
     const sessionId = (context.claims as any)?.session_id as string | undefined;
     if (!sessionId) throw new Error("אימות Session חסר — התחבר מחדש");
 
-    const { data: row } = await supabaseAdmin
-      .from("mfa_grants")
-      .select("id, user_id, expires_at, consumed_at")
-      .eq("grant_hash", hashMfaGrant(data.grant))
-      .maybeSingle();
-    const grant = row as any;
-    if (!grant || grant.user_id !== context.userId || grant.consumed_at || new Date(grant.expires_at).getTime() < Date.now()) {
-      throw new Error("אישור האימות אינו תקף — התחבר מחדש");
-    }
-    await supabaseAdmin.from("mfa_grants")
-      .update({ consumed_at: new Date().toISOString() }).eq("id", grant.id);
-    const { error } = await supabaseAdmin.from("mfa_passed_sessions").upsert({
-      session_id: sessionId,
-      user_id: context.userId,
-      expires_at: new Date(Date.now() + PASSED_SESSION_TTL_MS).toISOString(),
+    const { data: ok, error } = await supabaseAdmin.rpc("mfa_consume_grant", {
+      _grant_hash: hashMfaGrant(data.grant),
+      _user_id: context.userId,
+      _session_id: sessionId,
+      _expires: new Date(Date.now() + PASSED_SESSION_TTL_MS).toISOString(),
     });
     if (error) {
-      console.error("[login] mfa_passed_sessions write failed", error.message);
+      console.error("[login] mfa_consume_grant failed", error.message);
       throw new Error("רישום האימות נכשל — נסה שוב");
     }
+    if (ok !== true) throw new Error("אישור האימות אינו תקף — התחבר מחדש");
     return { ok: true as const };
   });
 

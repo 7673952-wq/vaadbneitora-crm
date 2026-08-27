@@ -7,6 +7,7 @@ import {
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
   updateNote, deleteNote, updateActivityLog, deleteActivityLog, listSystemActivity,
+  listSystemNotes, listSystemTransfers,
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
@@ -142,6 +143,8 @@ function SystemDetail() {
   const voiceFn = useServerFn(sendVoiceMessage);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const activityFn = useServerFn(listSystemActivity);
+  const notesFn = useServerFn(listSystemNotes);
+  const transfersFn = useServerFn(listSystemTransfers);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   // TanStack reuses this component when only :id changes. Reset from the

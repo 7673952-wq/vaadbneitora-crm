@@ -245,8 +245,8 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       _reason: `בקשת ${parsed.requestType === "pticha" ? "פתיחה" : "סגירה"} אוטומטית מהמייל`,
     });
     if (applied === true) {
-      const { maybeAutoVoiceForStatus } = await import("@/lib/systems.functions");
-      await maybeAutoVoiceForStatus(supabaseAdmin, system.id, outcome.toStatus);
+      const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");
+      await maybeScheduleOrSendAutoVoice(supabaseAdmin, system.id, outcome.toStatus);
       await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "auto_applied" });
       return { ok: true, requestId: req.id, mode, decision: "auto_applied", newStatus: outcome.toStatus };
     }

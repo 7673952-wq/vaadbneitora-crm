@@ -23,6 +23,7 @@ import { perfMark } from "@/lib/perf";
 import { useSession } from "@/lib/use-session";
 import { clearAccessToken, primeAccessToken } from "@/lib/session-cache";
 import { PerfOverlay } from "@/components/PerfOverlay";
+import { startPresenceHeartbeat } from "@/lib/remember-storage";
 
 
 function NotFoundComponent() {

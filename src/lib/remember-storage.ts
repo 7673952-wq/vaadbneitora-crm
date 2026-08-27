@@ -9,6 +9,32 @@
 
 import { brokeredPreviewStorage } from "@/integrations/supabase/previewAuthStorage";
 import { isRemembered, setRemembered } from "@/lib/device-id";
+import { getDurable, setDurable, deleteDurable } from "@/lib/durable-cookie";
+
+// Remembered sessions are ALSO mirrored into a first-party cookie. Some
+// browsers/embeddings drop localStorage between launches; the cookie keeps the
+// session alive there, and is restored into localStorage on the next load.
+const AUTH_COOKIE = "crm_auth_session";
+const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
+
+function mirrorToCookie(key: string, value: string) {
+  if (!isRemembered()) { deleteDurable(AUTH_COOKIE); return; }
+  setDurable(AUTH_COOKIE, JSON.stringify({ k: key, v: value }), AUTH_COOKIE_MAX_AGE);
+}
+
+/** Puts a cookie-mirrored session back into localStorage when it was wiped. */
+function restoreFromCookie() {
+  if (!isRemembered()) return;
+  const raw = getDurable(AUTH_COOKIE);
+  if (!raw) return;
+  try {
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.k !== "string" || typeof parsed?.v !== "string") return;
+    if (!isAuthKey(parsed.k)) return;
+    if (window.localStorage.getItem(parsed.k)) return; // storage already has it
+    window.localStorage.setItem(parsed.k, parsed.v);
+  } catch { /* malformed mirror is simply ignored */ }
+}
 
 function isAuthKey(key: string): boolean {
   return key.startsWith("sb-") && key.includes("-auth-token");
@@ -50,6 +76,7 @@ export function rememberAwareStorage() {
 
   // Resolved once per page load, and again only when the login screen changes
   // the choice through setSessionPersistence (which clears both stores first).
+  restoreFromCookie();
   dropAuthKeys(otherStore());
 
   return {
@@ -58,11 +85,15 @@ export function rememberAwareStorage() {
     },
     setItem(key: string, value: string) {
       try { targetStore().setItem(key, value); } catch { /* ignore */ }
-      if (isAuthKey(key)) { try { otherStore().removeItem(key); } catch { /* ignore */ } }
+      if (isAuthKey(key)) {
+        try { otherStore().removeItem(key); } catch { /* ignore */ }
+        mirrorToCookie(key, value);
+      }
     },
     removeItem(key: string) {
       try { window.localStorage.removeItem(key); } catch { /* ignore */ }
       try { window.sessionStorage.removeItem(key); } catch { /* ignore */ }
+      if (isAuthKey(key)) deleteDurable(AUTH_COOKIE);
     },
   };
 }
@@ -78,6 +109,7 @@ export function setSessionPersistence(remember: boolean) {
     setRemembered(remember);
     dropAuthKeys(window.localStorage);
     dropAuthKeys(window.sessionStorage);
+    deleteDurable(AUTH_COOKIE);
   } catch { /* blocked storage must not prevent sign-in */ }
 }
 
@@ -98,6 +130,7 @@ export function authStorageDiagnostics() {
     });
   return {
     remembered: isRemembered(),
+    cookieMirror: !!getDurable(AUTH_COOKIE),
     local: describe(window.localStorage),
     session: describe(window.sessionStorage),
   };

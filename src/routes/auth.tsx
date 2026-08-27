@@ -4,8 +4,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent } from "@/lib/login.functions";
+import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMfaSession } from "@/lib/login.functions";
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
+import { perfMark, resetPerfTimings } from "@/lib/perf";
+import { primeSessionCache } from "@/lib/session-cache";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({

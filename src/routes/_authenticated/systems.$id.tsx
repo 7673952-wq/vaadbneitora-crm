@@ -165,6 +165,9 @@ function SystemDetail() {
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
   // Older activity pages loaded on demand ("טען עוד") + activity filters.
   const [olderActivity, setOlderActivity] = useState<any[]>([]);
+  // Notes and transfers are paged the same way (getSystem only sends the newest 50).
+  const [olderNotes, setOlderNotes] = useState<any[]>([]);
+  const [olderTransfers, setOlderTransfers] = useState<any[]>([]);
   const [activityHasMore, setActivityHasMore] = useState(true);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityActionFilter, setActivityActionFilter] = useState<string>("");
@@ -173,6 +176,8 @@ function SystemDetail() {
   const [activityTo, setActivityTo] = useState<string>("");
   useEffect(() => {
     setOlderActivity([]);
+    setOlderNotes([]);
+    setOlderTransfers([]);
     setActivityHasMore(true);
   }, [id, activityActionFilter, activityActorFilter, activityFrom, activityTo]);
   const loadMoreActivity = async (baseCount: number) => {
@@ -190,6 +195,18 @@ function SystemDetail() {
       });
       setOlderActivity((prev) => [...prev, ...(res?.items ?? [])]);
       setActivityHasMore(!!res?.hasMore);
+      // Pull the matching page of notes/transfers so the merged timeline does
+      // not silently stop at the newest 50 of each.
+      if (!activityActionFilter && !activityActorFilter && !activityFrom && !activityTo) {
+        try {
+          const [n, t]: any[] = await Promise.all([
+            notesFn({ data: { systemId: id, offset: data.notes.length + olderNotes.length } }),
+            transfersFn({ data: { systemId: id, offset: data.transfers.length + olderTransfers.length } }),
+          ]);
+          setOlderNotes((prev) => [...prev, ...(n?.items ?? [])]);
+          setOlderTransfers((prev) => [...prev, ...(t?.items ?? [])]);
+        } catch { /* the activity page already loaded — not worth an error toast */ }
+      }
     } catch (e: any) {
       toast.error(e?.message ?? "טעינת היומן נכשלה");
     } finally {
@@ -1273,9 +1290,9 @@ function SystemDetail() {
             };
             const filtersActive = !!(activityActionFilter || activityActorFilter || activityFrom || activityTo);
             const allMerged = [
-              ...(filtersActive ? [] : data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
+              ...(filtersActive ? [] : [...data.notes, ...olderNotes].map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
               ...baseActivity.filter(passesFilters).map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-              ...(filtersActive ? [] : data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
+              ...(filtersActive ? [] : [...data.transfers, ...olderTransfers].map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
             const merged = mentionFilter
               ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))

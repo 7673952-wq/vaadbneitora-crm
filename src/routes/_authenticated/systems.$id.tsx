@@ -1665,11 +1665,12 @@ function SystemDetail() {
 
 
       {/* ===== תתי-מערכות ===== */}
-      {!isSub && (
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-semibold flex items-center gap-2 mb-4">
+      {tab === "subs" && !isSub && (
+        <div className="bg-card border border-border rounded-2xl p-4 xl:col-start-1">
+          <h2 className="font-semibold flex items-center gap-2 mb-3 text-sm">
             <Network className="h-4 w-4" />תתי-מערכות ({data.children.length})
           </h2>
+
           <p className="text-xs text-muted-foreground mb-4">
             בשינוי סטטוס של מערכת ראשית תישאל האם להחיל את השינוי גם על תתי-המערכות. שינוי נציג עדיין עובר אליהן אוטומטית.
           </p>

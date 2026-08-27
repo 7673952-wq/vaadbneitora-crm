@@ -639,10 +639,11 @@ function SystemDetail() {
 
   return (
     <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
-    <div className={splitOpen && data.parent ? "space-y-6 flex-1 min-w-0" : "space-y-5 max-w-7xl mx-auto"}>
-      <Link to="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <div className={`grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px] ${splitOpen && data.parent ? "flex-1 min-w-0" : "max-w-[1600px] mx-auto"}`}>
+      <Link to="/dashboard" className="xl:col-span-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
+
 
       {askCancelReminder && s?.reminder_at && (() => {
         const targetIds: string[] = (s as any).reminder_agent_ids ?? [];

@@ -79,7 +79,7 @@ export const listAuditLog = createServerFn({ method: "POST" })
       allProfileIds.length
         ? context.supabase.from("profiles").select("id, display_name").in("id", allProfileIds)
         : Promise.resolve({ data: [] as any[] }),
-      readStatusSettings(context.supabase),
+      import("@/integrations/supabase/client.server").then((m) => readStatusSettings(m.supabaseAdmin)),
     ]);
 
     const sysMap = new Map((systemsRes.data ?? []).map((s: any) => [s.id, s]));

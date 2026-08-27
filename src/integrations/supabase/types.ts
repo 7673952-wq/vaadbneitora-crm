@@ -971,6 +971,168 @@ export type Database = {
           },
         ]
       }
+      system_request_rules: {
+        Row: {
+          action: string
+          created_at: string
+          created_by: string | null
+          crm_key: string
+          from_status: string | null
+          id: string
+          is_active: boolean
+          request_type: string
+          sort_order: number
+          to_status: string | null
+          updated_at: string
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          created_by?: string | null
+          crm_key?: string
+          from_status?: string | null
+          id?: string
+          is_active?: boolean
+          request_type: string
+          sort_order?: number
+          to_status?: string | null
+          updated_at?: string
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          created_by?: string | null
+          crm_key?: string
+          from_status?: string | null
+          id?: string
+          is_active?: boolean
+          request_type?: string
+          sort_order?: number
+          to_status?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      system_requests: {
+        Row: {
+          attachment_index: number | null
+          attachment_name: string | null
+          attempts: number
+          caller_phone: string | null
+          caller_phone_norm: string | null
+          created_at: string
+          crm_key: string
+          decided_at: string | null
+          decided_by: string | null
+          decision_status: string | null
+          dry_run: boolean
+          error_at: string | null
+          gmail_message_id: string
+          gmail_thread_id: string | null
+          id: string
+          last_completed_state: string
+          last_error: string | null
+          new_status: string | null
+          phone_added_at: string | null
+          prev_status: string | null
+          processing_state: string
+          proposed_status: string | null
+          received_at: string
+          request_number: string | null
+          request_type: string
+          rule_id: string | null
+          status_applied_at: string | null
+          subject: string | null
+          system_code_norm: string | null
+          system_code_raw: string | null
+          system_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          attachment_index?: number | null
+          attachment_name?: string | null
+          attempts?: number
+          caller_phone?: string | null
+          caller_phone_norm?: string | null
+          created_at?: string
+          crm_key?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_status?: string | null
+          dry_run?: boolean
+          error_at?: string | null
+          gmail_message_id: string
+          gmail_thread_id?: string | null
+          id?: string
+          last_completed_state?: string
+          last_error?: string | null
+          new_status?: string | null
+          phone_added_at?: string | null
+          prev_status?: string | null
+          processing_state?: string
+          proposed_status?: string | null
+          received_at?: string
+          request_number?: string | null
+          request_type: string
+          rule_id?: string | null
+          status_applied_at?: string | null
+          subject?: string | null
+          system_code_norm?: string | null
+          system_code_raw?: string | null
+          system_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attachment_index?: number | null
+          attachment_name?: string | null
+          attempts?: number
+          caller_phone?: string | null
+          caller_phone_norm?: string | null
+          created_at?: string
+          crm_key?: string
+          decided_at?: string | null
+          decided_by?: string | null
+          decision_status?: string | null
+          dry_run?: boolean
+          error_at?: string | null
+          gmail_message_id?: string
+          gmail_thread_id?: string | null
+          id?: string
+          last_completed_state?: string
+          last_error?: string | null
+          new_status?: string | null
+          phone_added_at?: string | null
+          prev_status?: string | null
+          processing_state?: string
+          proposed_status?: string | null
+          received_at?: string
+          request_number?: string | null
+          request_type?: string
+          rule_id?: string | null
+          status_applied_at?: string | null
+          subject?: string | null
+          system_code_norm?: string | null
+          system_code_raw?: string | null
+          system_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "system_requests_rule_id_fkey"
+            columns: ["rule_id"]
+            isOneToOne: false
+            referencedRelation: "system_request_rules"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "system_requests_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_transfers: {
         Row: {
           created_at: string
@@ -1024,6 +1186,7 @@ export type Database = {
           is_blocking_number: boolean
           last_inbound_email_at: string | null
           name: string
+          name_pending: boolean
           notes: string | null
           parent_system_id: string | null
           pending_voice_send_at: string | null
@@ -1053,6 +1216,7 @@ export type Database = {
           is_blocking_number?: boolean
           last_inbound_email_at?: string | null
           name: string
+          name_pending?: boolean
           notes?: string | null
           parent_system_id?: string | null
           pending_voice_send_at?: string | null
@@ -1082,6 +1246,7 @@ export type Database = {
           is_blocking_number?: boolean
           last_inbound_email_at?: string | null
           name?: string
+          name_pending?: boolean
           notes?: string | null
           parent_system_id?: string | null
           pending_voice_send_at?: string | null
@@ -1231,6 +1396,16 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_request_status_change: {
+        Args: {
+          _from_status: string
+          _reason: string
+          _request_id: string
+          _system_id: string
+          _to_status: string
+        }
+        Returns: boolean
+      }
       bump_rate_limit: {
         Args: { _key: string; _window_seconds: number }
         Returns: number

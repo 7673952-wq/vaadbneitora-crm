@@ -20,6 +20,7 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedMailRouteImport } from './routes/_authenticated/mail'
 import { Route as AuthenticatedManagerDashboardRouteImport } from './routes/_authenticated/manager-dashboard'
 import { Route as AuthenticatedReportsRouteImport } from './routes/_authenticated/reports'
+import { Route as AuthenticatedRequestsRouteImport } from './routes/_authenticated/requests'
 import { Route as AuthenticatedSystemsIdRouteImport } from './routes/_authenticated/systems.$id'
 import { Route as ApiPublicHealthRouteImport } from './routes/api/public/health'
 import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/public/weekly-crm-report'
@@ -29,6 +30,7 @@ import { Route as ApiPublicHooksDailyBackupRouteImport } from './routes/api/publ
 import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
 import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
 import { Route as ApiPublicHooksScheduledBackupCheckRouteImport } from './routes/api/public/hooks/scheduled-backup-check'
+import { Route as ApiPublicHooksSystemRequestRouteImport } from './routes/api/public/hooks/system-request'
 import { Route as ApiPublicHooksWeeklyBackupRouteImport } from './routes/api/public/hooks/weekly-backup'
 
 const IndexRoute = IndexRouteImport.update({
@@ -86,6 +88,11 @@ const AuthenticatedReportsRoute = AuthenticatedReportsRouteImport.update({
   path: '/reports',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedRequestsRoute = AuthenticatedRequestsRouteImport.update({
+  id: '/requests',
+  path: '/requests',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
 const AuthenticatedSystemsIdRoute = AuthenticatedSystemsIdRouteImport.update({
   id: '/systems/$id',
   path: '/systems/$id',
@@ -136,6 +143,12 @@ const ApiPublicHooksScheduledBackupCheckRoute =
     path: '/api/public/hooks/scheduled-backup-check',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksSystemRequestRoute =
+  ApiPublicHooksSystemRequestRouteImport.update({
+    id: '/api/public/hooks/system-request',
+    path: '/api/public/hooks/system-request',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksWeeklyBackupRoute =
   ApiPublicHooksWeeklyBackupRouteImport.update({
     id: '/api/public/hooks/weekly-backup',
@@ -154,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/mail': typeof AuthenticatedMailRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/requests': typeof AuthenticatedRequestsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -162,6 +176,7 @@ export interface FileRoutesByFullPath {
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
+  '/api/public/hooks/system-request': typeof ApiPublicHooksSystemRequestRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
   '/c/$crm/': typeof AuthenticatedCCrmIndexRoute
 }
@@ -176,6 +191,7 @@ export interface FileRoutesByTo {
   '/mail': typeof AuthenticatedMailRoute
   '/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/reports': typeof AuthenticatedReportsRoute
+  '/requests': typeof AuthenticatedRequestsRoute
   '/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -184,6 +200,7 @@ export interface FileRoutesByTo {
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
+  '/api/public/hooks/system-request': typeof ApiPublicHooksSystemRequestRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
   '/c/$crm': typeof AuthenticatedCCrmIndexRoute
 }
@@ -200,6 +217,7 @@ export interface FileRoutesById {
   '/_authenticated/mail': typeof AuthenticatedMailRoute
   '/_authenticated/manager-dashboard': typeof AuthenticatedManagerDashboardRoute
   '/_authenticated/reports': typeof AuthenticatedReportsRoute
+  '/_authenticated/requests': typeof AuthenticatedRequestsRoute
   '/_authenticated/systems/$id': typeof AuthenticatedSystemsIdRoute
   '/api/public/health': typeof ApiPublicHealthRoute
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
@@ -208,6 +226,7 @@ export interface FileRoutesById {
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
+  '/api/public/hooks/system-request': typeof ApiPublicHooksSystemRequestRoute
   '/api/public/hooks/weekly-backup': typeof ApiPublicHooksWeeklyBackupRoute
   '/_authenticated/c/$crm/': typeof AuthenticatedCCrmIndexRoute
 }
@@ -224,6 +243,7 @@ export interface FileRouteTypes {
     | '/mail'
     | '/manager-dashboard'
     | '/reports'
+    | '/requests'
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -232,6 +252,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
+    | '/api/public/hooks/system-request'
     | '/api/public/hooks/weekly-backup'
     | '/c/$crm/'
   fileRoutesByTo: FileRoutesByTo
@@ -246,6 +267,7 @@ export interface FileRouteTypes {
     | '/mail'
     | '/manager-dashboard'
     | '/reports'
+    | '/requests'
     | '/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -254,6 +276,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
+    | '/api/public/hooks/system-request'
     | '/api/public/hooks/weekly-backup'
     | '/c/$crm'
   id:
@@ -269,6 +292,7 @@ export interface FileRouteTypes {
     | '/_authenticated/mail'
     | '/_authenticated/manager-dashboard'
     | '/_authenticated/reports'
+    | '/_authenticated/requests'
     | '/_authenticated/systems/$id'
     | '/api/public/health'
     | '/api/public/weekly-crm-report'
@@ -277,6 +301,7 @@ export interface FileRouteTypes {
     | '/api/public/hooks/inbound-email'
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
+    | '/api/public/hooks/system-request'
     | '/api/public/hooks/weekly-backup'
     | '/_authenticated/c/$crm/'
   fileRoutesById: FileRoutesById
@@ -291,6 +316,7 @@ export interface RootRouteChildren {
   ApiPublicHooksInboundEmailRoute: typeof ApiPublicHooksInboundEmailRoute
   ApiPublicHooksProcessVoiceQueueRoute: typeof ApiPublicHooksProcessVoiceQueueRoute
   ApiPublicHooksScheduledBackupCheckRoute: typeof ApiPublicHooksScheduledBackupCheckRoute
+  ApiPublicHooksSystemRequestRoute: typeof ApiPublicHooksSystemRequestRoute
   ApiPublicHooksWeeklyBackupRoute: typeof ApiPublicHooksWeeklyBackupRoute
 }
 
@@ -373,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedReportsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/requests': {
+      id: '/_authenticated/requests'
+      path: '/requests'
+      fullPath: '/requests'
+      preLoaderRoute: typeof AuthenticatedRequestsRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/systems/$id': {
       id: '/_authenticated/systems/$id'
       path: '/systems/$id'
@@ -436,6 +469,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksScheduledBackupCheckRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/system-request': {
+      id: '/api/public/hooks/system-request'
+      path: '/api/public/hooks/system-request'
+      fullPath: '/api/public/hooks/system-request'
+      preLoaderRoute: typeof ApiPublicHooksSystemRequestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/weekly-backup': {
       id: '/api/public/hooks/weekly-backup'
       path: '/api/public/hooks/weekly-backup'
@@ -455,6 +495,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedMailRoute: typeof AuthenticatedMailRoute
   AuthenticatedManagerDashboardRoute: typeof AuthenticatedManagerDashboardRoute
   AuthenticatedReportsRoute: typeof AuthenticatedReportsRoute
+  AuthenticatedRequestsRoute: typeof AuthenticatedRequestsRoute
   AuthenticatedSystemsIdRoute: typeof AuthenticatedSystemsIdRoute
   AuthenticatedCCrmIdRoute: typeof AuthenticatedCCrmIdRoute
   AuthenticatedCCrmIndexRoute: typeof AuthenticatedCCrmIndexRoute
@@ -469,6 +510,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedMailRoute: AuthenticatedMailRoute,
   AuthenticatedManagerDashboardRoute: AuthenticatedManagerDashboardRoute,
   AuthenticatedReportsRoute: AuthenticatedReportsRoute,
+  AuthenticatedRequestsRoute: AuthenticatedRequestsRoute,
   AuthenticatedSystemsIdRoute: AuthenticatedSystemsIdRoute,
   AuthenticatedCCrmIdRoute: AuthenticatedCCrmIdRoute,
   AuthenticatedCCrmIndexRoute: AuthenticatedCCrmIndexRoute,
@@ -488,6 +530,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHooksProcessVoiceQueueRoute: ApiPublicHooksProcessVoiceQueueRoute,
   ApiPublicHooksScheduledBackupCheckRoute:
     ApiPublicHooksScheduledBackupCheckRoute,
+  ApiPublicHooksSystemRequestRoute: ApiPublicHooksSystemRequestRoute,
   ApiPublicHooksWeeklyBackupRoute: ApiPublicHooksWeeklyBackupRoute,
 }
 export const routeTree = rootRouteImport

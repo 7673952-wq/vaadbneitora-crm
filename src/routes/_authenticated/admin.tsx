@@ -9,6 +9,7 @@ import {
   getBackupEmail, setBackupEmail,
   getBackupSchedule, setBackupSchedule,
   getStaleWarningHours, setStaleWarningHours,
+  getVoiceDebounceSeconds, setVoiceDebounceSeconds,
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
@@ -18,6 +19,10 @@ import {
   listAgentEmailNames, setAgentEmailDisplayName,
 } from "@/lib/email.functions";
 import { getMailboxPrefs, setMailboxPrefs } from "@/lib/mail.functions";
+import {
+  getRequestAutomationSettings, setRequestAutomationSettings,
+  listRequestRules, saveRequestRule, deleteRequestRule,
+} from "@/lib/system-requests.functions";
 import { MAILBOX_PREFS_DEFAULTS, type MailboxPrefs } from "@/lib/mailbox-prefs";
 import { Button } from "@/components/ui/button";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
@@ -161,6 +166,8 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
       {canGeneral && <TabsContent value="settings" className="mt-4 space-y-6">
         <AutoSnoozePanel />
         <StaleHoursPanel />
+        <VoiceDebouncePanel />
+        <RequestAutomationPanel />
         <BackupEmailPanel />
         <BackupSchedulePanel />
       </TabsContent>}
@@ -560,6 +567,174 @@ function StaleHoursPanel() {
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {mut.isPending ? "שומר..." : "שמור"}
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ============= Voice debounce =============
+function VoiceDebouncePanel() {
+  const getFn = useServerFn(getVoiceDebounceSeconds);
+  const setFn = useServerFn(setVoiceDebounceSeconds);
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["voice_debounce_seconds"], queryFn: async () => getFn({}) });
+  const [seconds, setSeconds] = useState<number>(90);
+  useEffect(() => { if (data) setSeconds(data.seconds); }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { seconds: number } }) => setFn({ ...vars } as any),
+    onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["voice_debounce_seconds"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />השהיה לפני הודעה קולית אוטומטית</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        לאחר שינוי סטטוס, ההודעה הקולית תישלח רק בתום ההשהיה — כך שתיקון סטטוס שגוי בתוך הזמן הזה ימנע שיחה מיותרת. 0 = שליחה מיידית.
+        בנוסף, כל פונה מקבל הודעה פעם אחת בלבד לכל סטטוס.
+      </p>
+      <div className="flex gap-2 items-center flex-wrap">
+        <input type="number" min={0} max={3600} value={seconds}
+          onChange={(e) => setSeconds(Math.max(0, Math.min(3600, Number(e.target.value) || 0)))}
+          className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        <span className="text-sm text-muted-foreground">שניות</span>
+        <button onClick={() => mut.mutate({ data: { seconds } })} disabled={mut.isPending || seconds === (data?.seconds ?? 90)}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+          {mut.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+// ============= Request automation (pticha / sgira emails) =============
+function RequestAutomationPanel() {
+  const getFn = useServerFn(getRequestAutomationSettings);
+  const setFn = useServerFn(setRequestAutomationSettings);
+  const listRules = useServerFn(listRequestRules);
+  const saveRule = useServerFn(saveRequestRule);
+  const delRule = useServerFn(deleteRequestRule);
+  const qc = useQueryClient();
+
+  const { data } = useQuery({ queryKey: ["request_automation"], queryFn: async () => getFn({}) });
+  const { data: rules } = useQuery({ queryKey: ["request_rules"], queryFn: async () => listRules({}) });
+
+  const [mode, setMode] = useState<"off" | "dry_run" | "live">("dry_run");
+  const [defPticha, setDefPticha] = useState("");
+  const [defSgira, setDefSgira] = useState("");
+  useEffect(() => {
+    if (!data) return;
+    setMode((data.mode as any) ?? "dry_run");
+    setDefPticha(data.defaultPticha ?? "");
+    setDefSgira(data.defaultSgira ?? "");
+  }, [data]);
+
+  const [draft, setDraft] = useState<{ request_type: "pticha" | "sgira"; from_status: string; action: "set_status" | "keep" | "needs_decision" | "ignore"; to_status: string }>(
+    { request_type: "pticha", from_status: "", action: "set_status", to_status: "" });
+
+  const saveSettings = useMutation({
+    mutationFn: () => setFn({ data: { mode, defaultPticha: defPticha || null, defaultSgira: defSgira || null } } as any),
+    onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["request_automation"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  const addRule = useMutation({
+    mutationFn: () => saveRule({ data: {
+      request_type: draft.request_type,
+      from_status: draft.from_status || null,
+      action: draft.action,
+      to_status: draft.to_status || null,
+    } } as any),
+    onSuccess: () => { toast.success("הכלל נשמר"); qc.invalidateQueries({ queryKey: ["request_rules"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  const removeRule = useMutation({
+    mutationFn: (id: string) => delRule({ data: { id } } as any),
+    onSuccess: () => { toast.success("נמחק"); qc.invalidateQueries({ queryKey: ["request_rules"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+
+  const ACTION_LABELS: Record<string, string> = {
+    set_status: "שנה סטטוס", keep: "השאר כמו שהוא", needs_decision: "העבר להחלטה ידנית", ignore: "התעלם",
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />אוטומציית בקשות פתיחה וסגירה</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        בקשות שמגיעות במייל משויכות למערכת לפי מספר המערכת, ומנוע הכללים קובע מה לעשות. במצב בדיקה שום סטטוס לא משתנה —
+        הכל נרשם בתור <a href="/requests" className="underline">בקשות</a> להחלטה ידנית.
+      </p>
+
+      <div className="flex flex-wrap gap-3 items-end">
+        <Field label="מצב אוטומציה">
+          <select value={mode} onChange={(e) => setMode(e.target.value as any)}
+            className="rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+            <option value="off">כבוי</option>
+            <option value="dry_run">מצב בדיקה (ללא שינויים)</option>
+            <option value="live">פעיל</option>
+          </select>
+        </Field>
+        <Field label="סטטוס ברירת מחדל למערכת חדשה (פתיחה)">
+          <input value={defPticha} onChange={(e) => setDefPticha(e.target.value)} placeholder="ריק = לא ליצור מערכת"
+            className="w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+        </Field>
+        <Field label="סטטוס ברירת מחדל למערכת חדשה (סגירה)">
+          <input value={defSgira} onChange={(e) => setDefSgira(e.target.value)} placeholder="ריק = לא ליצור מערכת"
+            className="w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+        </Field>
+        <button onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+          {saveSettings.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
+
+      <div className="mt-5 border-t border-border pt-4">
+        <h3 className="text-sm font-semibold mb-2">כללים</h3>
+        <div className="space-y-2">
+          {(rules ?? []).length === 0 && (
+            <p className="text-xs text-muted-foreground">אין כללים — כל בקשה תעבור להחלטה ידנית.</p>
+          )}
+          {((rules ?? []) as any[]).map((r) => (
+            <div key={r.id} className="flex flex-wrap items-center gap-2 text-sm rounded-lg border border-border px-3 py-2">
+              <span className="font-medium">{r.request_type === "pticha" ? "פתיחה" : "סגירה"}</span>
+              <span className="text-muted-foreground">מסטטוס: {r.from_status || "כל סטטוס"}</span>
+              <span className="text-muted-foreground">→ {ACTION_LABELS[r.action] ?? r.action}{r.to_status ? `: ${r.to_status}` : ""}</span>
+              <button onClick={() => removeRule.mutate(r.id)} className="ms-auto text-xs text-destructive hover:underline">מחק</button>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-2 items-end">
+          <Field label="סוג בקשה">
+            <select value={draft.request_type} onChange={(e) => setDraft({ ...draft, request_type: e.target.value as any })}
+              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="pticha">פתיחה</option>
+              <option value="sgira">סגירה</option>
+            </select>
+          </Field>
+          <Field label="מסטטוס (ריק = כל סטטוס)">
+            <input value={draft.from_status} onChange={(e) => setDraft({ ...draft, from_status: e.target.value })}
+              className="w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+          </Field>
+          <Field label="פעולה">
+            <select value={draft.action} onChange={(e) => setDraft({ ...draft, action: e.target.value as any })}
+              className="rounded-md border border-input bg-background px-2 py-1.5 text-sm">
+              <option value="set_status">שנה סטטוס</option>
+              <option value="keep">השאר כמו שהוא</option>
+              <option value="needs_decision">העבר להחלטה ידנית</option>
+              <option value="ignore">התעלם</option>
+            </select>
+          </Field>
+          <Field label="לסטטוס">
+            <input value={draft.to_status} disabled={draft.action !== "set_status"}
+              onChange={(e) => setDraft({ ...draft, to_status: e.target.value })}
+              className="w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm disabled:opacity-50" />
+          </Field>
+          <button onClick={() => addRule.mutate()} disabled={addRule.isPending}
+            className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50">
+            הוסף כלל
+          </button>
+        </div>
       </div>
     </div>
   );

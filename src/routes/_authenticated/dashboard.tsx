@@ -32,7 +32,6 @@ const HandledRatioChart = lazy(() => import("@/components/HandledRatioChart").th
 const StatusFunnelChart = lazy(() => import("@/components/StatusFunnelChart").then((m) => ({ default: m.StatusFunnelChart })));
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import * as XLSX from "xlsx";
 import { sanitizeCell, sanitizeRows, sanitizeMatrix } from "@/lib/csv-safe";
 import {
   Pagination,
@@ -603,7 +602,10 @@ function Dashboard() {
   //             (open_only_bimot + close_in_simahedrin), emitted as TWO files:
   //             the open subset with status=OPEN, the block subset with
   //             status=BLOCKED.
-  function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
+  // xlsx is ~400KB — loaded only when an export actually runs, never in the
+  // dashboard's first paint.
+  async function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
+    const XLSX = await import("xlsx");
     const HEADERS = ["number", "note", "active", "call_type", "status"];
     const buildRow = (r: any, statusText: "OPEN" | "BLOCKED") => [
       buildDialNumber(r.system_code),
@@ -640,8 +642,9 @@ function Dashboard() {
     else toast.success(`נוצרו ${filesWritten} קבצים`);
   }
 
-  function exportFullXlsx(rows: any[], label: string) {
+  async function exportFullXlsx(rows: any[], label: string) {
     if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
+    const XLSX = await import("xlsx");
     const data = rows.map((r: any) => ({
       "מזהה מערכת": r.system_code,
       "שם": r.name,
@@ -2397,6 +2400,7 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
     setResult(null);
     setDecisions({});
     try {
+      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];

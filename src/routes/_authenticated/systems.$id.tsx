@@ -71,6 +71,14 @@ const FIELD_LABELS: Record<string, string> = {
   parent_system_id: "מערכת אב",
 };
 
+type WorkTab = "emails" | "subs" | "files" | "reminders";
+const WORK_TABS: Array<{ key: WorkTab; label: string }> = [
+  { key: "emails", label: "מיילים" },
+  { key: "subs", label: "תתי-מערכות" },
+  { key: "files", label: "קבצים" },
+  { key: "reminders", label: "תזכורות" },
+];
+
 function SystemDetail() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
@@ -81,6 +89,19 @@ function SystemDetail() {
   const sendChoiceBtnRef = useRef<HTMLButtonElement>(null);
   const [showSendPicker, setShowSendPicker] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
+  const [tab, setTab] = useState<WorkTab>("emails");
+  useEffect(() => {
+    try {
+      const v = window.localStorage.getItem("crm.system.tab") as WorkTab | null;
+      if (v && WORK_TABS.some((t) => t.key === v)) setTab(v);
+    } catch { /* אין גישה לאחסון */ }
+  }, []);
+  function selectTab(next: WorkTab) {
+    setTab(next);
+    try { window.localStorage.setItem("crm.system.tab", next); } catch { /* אין גישה לאחסון */ }
+  }
+
+
 
   function copyToClipboard(value: string, key: string, label: string) {
     navigator.clipboard.writeText(value)
@@ -597,6 +618,8 @@ function SystemDetail() {
   const s = data.system;
 
   const isSub = !!s.parent_system_id;
+  if (isSub && tab === "subs") setTab("emails");
+
   
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
   const voiceEnabled = !!currentStatusSetting?.enables_voice_message;
@@ -639,10 +662,11 @@ function SystemDetail() {
 
   return (
     <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
-    <div className={splitOpen && data.parent ? "space-y-6 flex-1 min-w-0" : "space-y-5 max-w-7xl mx-auto"}>
-      <Link to="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+    <div className={`grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px] ${splitOpen && data.parent ? "flex-1 min-w-0" : "max-w-[1600px] mx-auto"}`}>
+      <Link to="/dashboard" className="xl:col-span-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
+
 
       {askCancelReminder && s?.reminder_at && (() => {
         const targetIds: string[] = (s as any).reminder_agent_ids ?? [];
@@ -730,7 +754,7 @@ function SystemDetail() {
 
 
       {isSub && data.parent && (
-        <div className={`border-2 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap ${statusCardClasses(data.parent.status)}`}>
+        <div className={`xl:col-span-2 border-2 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap ${statusCardClasses(data.parent.status)}`}>
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <CornerUpRight className="h-4 w-4" />
             <span>זוהי <strong>תת-מערכת</strong> של:</span>
@@ -801,7 +825,7 @@ function SystemDetail() {
         };
 
         return (
-          <section className={`rounded-xl border-2 shadow-sm overflow-visible ${cardTone}`}>
+          <section className={`rounded-xl border-2 shadow-sm overflow-visible xl:col-span-2 xl:sticky xl:top-0 xl:z-30 backdrop-blur ${cardTone}`}>
             <div className="px-3 py-2.5 md:px-4">
               {/* שורה 1 — זהות המערכת מימין, פעולות מהירות משמאל. */}
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -1019,7 +1043,7 @@ function SystemDetail() {
       })()}
 
       {/* ===== פרטי קשר + מספרי פונה ===== */}
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm xl:col-start-1">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <button type="button" onClick={() => setDetailsOpen((v) => !v)}
             className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition"
@@ -1137,7 +1161,7 @@ function SystemDetail() {
       </div>
 
       {/* ===== פעילות ===== */}
-      <div className="bg-card border border-border rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4 xl:col-start-2 xl:row-span-6 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
         {/* ===== פעילות: הערות + היסטוריה ===== */}
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-semibold flex items-center gap-2 text-sm">
@@ -1417,10 +1441,29 @@ function SystemDetail() {
         </div>
       </div>
 
-      {/* ===== תזכורות + מיילים (side-by-side) ===== */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        {/* תזכורות */}
-        <div className="bg-card border border-border rounded-xl p-4">
+      {/* ===== לשוניות עבודה ===== */}
+      <div className="xl:col-start-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
+        {WORK_TABS.filter((t) => t.key !== "subs" || !isSub).map((t) => {
+          const count =
+            t.key === "emails" ? (emailThread?.length ?? 0)
+            : t.key === "subs" ? (data.children?.length ?? 0)
+            : t.key === "files" ? (files?.length ?? 0)
+            : (s.reminder_at ? 1 : 0);
+          const active = tab === t.key;
+          return (
+            <button key={t.key} type="button" onClick={() => selectTab(t.key)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
+              {t.label}
+              <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-white/20" : "bg-muted"}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== תזכורות ===== */}
+      {tab === "reminders" && (
+        <div className="bg-card border border-border rounded-xl p-4 xl:col-start-1">
+
           <ReminderSection
             hasReminder={!!s.reminder_at}
             headerSummary={
@@ -1485,9 +1528,12 @@ function SystemDetail() {
             </div>
           </ReminderSection>
         </div>
+      )}
 
-        {/* מיילים */}
-        <div className="bg-card border border-border rounded-xl p-4">
+      {/* ===== מיילים ===== */}
+      {tab === "emails" && (
+        <div className="bg-card border border-border rounded-xl p-4 xl:col-start-1">
+
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold flex items-center gap-2 text-sm">
               <Mail className="h-4 w-4" />
@@ -1601,7 +1647,8 @@ function SystemDetail() {
             </div>
           )}
         </div>
-      </div>
+      )}
+
 
 
 
@@ -1665,11 +1712,12 @@ function SystemDetail() {
 
 
       {/* ===== תתי-מערכות ===== */}
-      {!isSub && (
-        <div className="bg-card border border-border rounded-2xl p-6">
-          <h2 className="font-semibold flex items-center gap-2 mb-4">
+      {tab === "subs" && !isSub && (
+        <div className="bg-card border border-border rounded-2xl p-4 xl:col-start-1">
+          <h2 className="font-semibold flex items-center gap-2 mb-3 text-sm">
             <Network className="h-4 w-4" />תתי-מערכות ({data.children.length})
           </h2>
+
           <p className="text-xs text-muted-foreground mb-4">
             בשינוי סטטוס של מערכת ראשית תישאל האם להחיל את השינוי גם על תתי-המערכות. שינוי נציג עדיין עובר אליהן אוטומטית.
           </p>
@@ -1710,7 +1758,9 @@ function SystemDetail() {
       )}
 
       {/* ===== קבצים ===== */}
-      <div className="bg-card border border-border rounded-2xl p-6">
+      {tab === "files" && (
+      <div className="bg-card border border-border rounded-2xl p-4 xl:col-start-1">
+
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <h2 className="font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" />קבצים ({files?.length ?? 0})</h2>
           {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
@@ -1759,6 +1809,8 @@ function SystemDetail() {
           </div>
         )}
       </div>
+      )}
+
     </div>
     {splitOpen && data.parent && (
       <div className="flex-1 min-w-0 sticky top-4 border-2 border-primary/40 rounded-xl overflow-hidden bg-card shadow-lg" style={{ height: "calc(100vh - 2rem)" }}>

@@ -1076,7 +1076,11 @@ export const listDueReminders = createServerFn({ method: "GET" })
       .limit(200);
     if (e1) throw new Error(e1.message);
 
-    const statuses = await readStatusSettings(context.supabase);
+    // Status settings are global config — always read them through the admin
+    // client so every caller sees the identical, complete configuration.
+    const { supabaseAdmin: statusAdmin } = await import("@/integrations/supabase/client.server");
+    const statuses = await readStatusSettings(statusAdmin);
+
     const pendingStatusKeys = (statuses ?? [])
       .filter((s: any) => s.is_handled === false)
       .map((s: any) => s.status_key);

@@ -18,8 +18,8 @@ function isAuthKey(key: string): boolean {
 
 type StorageLike = {
   getItem: (key: string) => string | null | Promise<string | null>;
-  setItem: (key: string, value: string) => unknown;
-  removeItem: (key: string) => unknown;
+  setItem: (key: string, value: string) => void | Promise<void>;
+  removeItem: (key: string) => void | Promise<void>;
 };
 
 export function rememberAwareStorage(): StorageLike | undefined {

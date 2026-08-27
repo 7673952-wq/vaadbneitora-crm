@@ -2338,7 +2338,8 @@ export const importSystems = createServerFn({ method: "POST" })
 
     const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);
     // Load label -> key map from the stable status settings config.
-    const settings = await readStatusSettings(context.supabase);
+    const { supabaseAdmin: statusAdmin } = await import("@/integrations/supabase/client.server");
+    const settings = await readStatusSettings(statusAdmin);
     const labelToKey = new Map<string, string>();
     for (const s of (settings ?? []) as any[]) {
       if (s.label) labelToKey.set(String(s.label).trim(), s.status_key);

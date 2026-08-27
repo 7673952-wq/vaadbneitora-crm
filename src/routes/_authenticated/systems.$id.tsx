@@ -664,7 +664,7 @@ function SystemDetail() {
 
   return (
     <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
-    <div className={`grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px] ${splitOpen && data.parent ? "flex-1 min-w-0" : "max-w-[1600px] mx-auto"}`}>
+    <div className={`grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] ${splitOpen && data.parent ? "flex-1 min-w-0" : "max-w-[1600px] mx-auto"}`}>
       <Link to="/dashboard" className="xl:col-span-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>

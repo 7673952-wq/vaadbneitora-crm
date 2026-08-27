@@ -26,6 +26,9 @@ function isAuthKey(key: string): boolean {
 
 export function rememberAwareStorage() {
   if (typeof window === "undefined") return undefined;
+  // The client is created lazily on its first use, which is always before the
+  // first session read — so this is the right moment to apply the policy.
+  enforceRememberPolicy();
   return brokeredPreviewStorage() ?? window.localStorage;
 }
 

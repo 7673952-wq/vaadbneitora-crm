@@ -203,8 +203,8 @@ function SystemDetail() {
       if (!activityActionFilter && !activityActorFilter && !activityFrom && !activityTo) {
         try {
           const [n, t]: any[] = await Promise.all([
-            notesFn({ data: { systemId: id, offset: data.notes.length + olderNotes.length } }),
-            transfersFn({ data: { systemId: id, offset: data.transfers.length + olderTransfers.length } }),
+            notesFn({ data: { systemId: id, offset: (data?.notes?.length ?? 0) + olderNotes.length } }),
+            transfersFn({ data: { systemId: id, offset: (data?.transfers?.length ?? 0) + olderTransfers.length } }),
           ]);
           setOlderNotes((prev) => [...prev, ...(n?.items ?? [])]);
           setOlderTransfers((prev) => [...prev, ...(t?.items ?? [])]);

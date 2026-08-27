@@ -218,7 +218,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
-    await assertCanManageRole(context, { grantRole: data.role });
+    await assertCanManageRole(context, { targetUserId: data.user_id });
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);

@@ -618,6 +618,8 @@ function SystemDetail() {
   const s = data.system;
 
   const isSub = !!s.parent_system_id;
+  if (isSub && tab === "subs") setTab("emails");
+
   
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);
   const voiceEnabled = !!currentStatusSetting?.enables_voice_message;

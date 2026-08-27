@@ -1024,6 +1024,7 @@ export type Database = {
           is_blocking_number: boolean
           last_inbound_email_at: string | null
           name: string
+          name_pending: boolean
           notes: string | null
           parent_system_id: string | null
           pending_voice_send_at: string | null
@@ -1053,6 +1054,7 @@ export type Database = {
           is_blocking_number?: boolean
           last_inbound_email_at?: string | null
           name: string
+          name_pending?: boolean
           notes?: string | null
           parent_system_id?: string | null
           pending_voice_send_at?: string | null
@@ -1082,6 +1084,7 @@ export type Database = {
           is_blocking_number?: boolean
           last_inbound_email_at?: string | null
           name?: string
+          name_pending?: boolean
           notes?: string | null
           parent_system_id?: string | null
           pending_voice_send_at?: string | null

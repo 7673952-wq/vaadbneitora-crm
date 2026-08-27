@@ -9,6 +9,7 @@ import {
   getBackupEmail, setBackupEmail,
   getBackupSchedule, setBackupSchedule,
   getStaleWarningHours, setStaleWarningHours,
+  getVoiceDebounceSeconds, setVoiceDebounceSeconds,
   getSeriesDetection, setSeriesDetection,
   listPermissionSettings, setRolePermission, setUserPermission, deleteUserPermission,
 } from "@/lib/admin.functions";
@@ -161,6 +162,7 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
       {canGeneral && <TabsContent value="settings" className="mt-4 space-y-6">
         <AutoSnoozePanel />
         <StaleHoursPanel />
+        <VoiceDebouncePanel />
         <BackupEmailPanel />
         <BackupSchedulePanel />
       </TabsContent>}

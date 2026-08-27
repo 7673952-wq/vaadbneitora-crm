@@ -1280,6 +1280,15 @@ export type Database = {
         Returns: Json
       }
       purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
+      reports_summary: {
+        Args: {
+          _agent?: string
+          _from?: string
+          _status?: string
+          _to?: string
+        }
+        Returns: Json
+      }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
       systems_status_counts: {
         Args: { _agent?: string; _from?: string; _to?: string }

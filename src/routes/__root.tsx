@@ -108,27 +108,15 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
-    // Force re-login on every browser/tab close: sessionStorage clears on close,
-    // localStorage (where Supabase persists) does not. If we have no marker but
-    // a session exists, it's a stale session from a previous tab — sign out.
-    //
-    // Caveat: sessionStorage is per-tab, and whether it gets copied into a
-    // brand-new tab (e.g. our "פתח בלשונית נפרדת" button, or a plain
-    // ctrl/cmd-click) is inconsistent across browsers, especially with
-    // rel="noopener"/"noreferrer". Without a guard, a legitimate new tab of an
-    // already-open session could look exactly like "stale session from a
-    // closed browser" and get force-signed-out, bouncing the user to /auth.
-    //
-    // Instead of relying on that inconsistent sessionStorage-copy behavior, we
-    // directly ask: "is another tab of this app alive right now?" via
-    // BroadcastChannel (same-origin, all currently-open tabs receive it). If
-    // one answers, this is a legitimate additional tab — adopt the marker
-    // instead of signing out. Only sign out if truly nobody answers (i.e. this
-    // is the first tab — the whole browser was closed and reopened).
-    const SESSION_MARKER = "crm_active_session";
+    // Session lifetime is decided by WHERE the session is stored, chosen at
+    // login time by "זכור אותי" (see @/lib/remember-storage):
+    //   remembered     -> localStorage, survives closing the browser
+    //   not remembered -> sessionStorage, dies with the browser session
+    // There is deliberately no "force sign-out on startup" heuristic here: it
+    // used to guess from a sessionStorage marker + a BroadcastChannel tab ping,
+    // and any missed ping (new window, restored tabs, a slow first paint)
+    // signed a remembered user out for no reason.
     const LOGIN_LOGGED = "crm_login_logged";
-    const CHANNEL_NAME = "crm_tab_presence";
-    const PING_TIMEOUT_MS = 300;
 
     // Journal "session" entries: a sign-in that needed no password (restored
     // session) still shows up in the admin login journal — once per tab.
@@ -142,42 +130,10 @@ function RootComponent() {
       } catch { /* journaling must never block the app */ }
     }
 
-    let decided = false;
-    async function resolvePresence(otherTabAlive: boolean) {
-      if (decided) return;
-      decided = true;
-      const { data } = await supabase.auth.getSession();
-      if (data.session && !sessionStorage.getItem(SESSION_MARKER)) {
-        // "זכור אותי" opts this device out of the force-relogin behavior.
-        if (otherTabAlive || isRemembered()) {
-          sessionStorage.setItem(SESSION_MARKER, "1");
-          void logRestoredSession();
-        } else {
-          await supabase.auth.signOut();
-        }
-      } else if (data.session) {
-        void logRestoredSession();
-      }
-    }
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session) void logRestoredSession();
+    });
 
-
-    let channel: BroadcastChannel | null = null;
-    let pingTimer: ReturnType<typeof setTimeout> | null = null;
-    if (typeof BroadcastChannel !== "undefined") {
-      channel = new BroadcastChannel(CHANNEL_NAME);
-      channel.onmessage = (event) => {
-        if (event.data === "ping") {
-          channel?.postMessage("pong");
-        } else if (event.data === "pong") {
-          resolvePresence(true);
-        }
-      };
-      channel.postMessage("ping");
-      pingTimer = setTimeout(() => resolvePresence(false), PING_TIMEOUT_MS);
-    } else {
-      // No BroadcastChannel support — fall back to the original strict behavior.
-      resolvePresence(false);
-    }
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       primeAccessToken(session ?? null);

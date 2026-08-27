@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMfaSession } from "@/lib/login.functions";
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
-import { primeSessionCache } from "@/lib/session-cache";
+import { primeAccessToken } from "@/lib/session-cache";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -58,7 +58,7 @@ function AuthPage() {
     const { data: signedIn, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { toast.error("התחברות נכשלה"); return; }
     perfMark("SUPABASE_SIGNIN_DONE");
-    primeSessionCache(signedIn.session ?? null);
+    primeAccessToken(signedIn.session ?? null);
     perfMark("SESSION_READY");
 
     if (mfaGrant) {

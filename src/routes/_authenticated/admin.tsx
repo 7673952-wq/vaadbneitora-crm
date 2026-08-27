@@ -565,6 +565,42 @@ function StaleHoursPanel() {
   );
 }
 
+// ============= Voice debounce =============
+function VoiceDebouncePanel() {
+  const getFn = useServerFn(getVoiceDebounceSeconds);
+  const setFn = useServerFn(setVoiceDebounceSeconds);
+  const qc = useQueryClient();
+  const { data } = useQuery({ queryKey: ["voice_debounce_seconds"], queryFn: async () => getFn({}) });
+  const [seconds, setSeconds] = useState<number>(90);
+  useEffect(() => { if (data) setSeconds(data.seconds); }, [data]);
+  const mut = useMutation({
+    mutationFn: async (vars: { data: { seconds: number } }) => setFn({ ...vars } as any),
+    onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["voice_debounce_seconds"] }); },
+    onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
+  });
+  return (
+    <div className="bg-card border border-border rounded-xl p-5">
+      <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />השהיה לפני הודעה קולית אוטומטית</h2>
+      <p className="text-xs text-muted-foreground mb-3">
+        לאחר שינוי סטטוס, ההודעה הקולית תישלח רק בתום ההשהיה — כך שתיקון סטטוס שגוי בתוך הזמן הזה ימנע שיחה מיותרת. 0 = שליחה מיידית.
+        בנוסף, כל פונה מקבל הודעה פעם אחת בלבד לכל סטטוס.
+      </p>
+      <div className="flex gap-2 items-center flex-wrap">
+        <input type="number" min={0} max={3600} value={seconds}
+          onChange={(e) => setSeconds(Math.max(0, Math.min(3600, Number(e.target.value) || 0)))}
+          className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
+        <span className="text-sm text-muted-foreground">שניות</span>
+        <button onClick={() => mut.mutate({ data: { seconds } })} disabled={mut.isPending || seconds === (data?.seconds ?? 90)}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
+          {mut.isPending ? "שומר..." : "שמור"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+
 // ============= Auto Snooze =============
 function AutoSnoozePanel() {
   const getFn = useServerFn(getAutoSnoozeSetting);

@@ -17,14 +17,25 @@ import { getDurable, setDurable, deleteDurable } from "@/lib/durable-cookie";
 const AUTH_COOKIE = "crm_auth_session";
 const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 30;
 
+// The auth client keeps one storage adapter for its entire lifetime. Keep the
+// selected mode equally stable: reading the flag again during a token refresh
+// can move one session between stores while another tab is still using it.
+// The login form is the only place allowed to change this value explicitly.
+let persistenceMode: boolean | undefined;
+
+function currentPersistence(): boolean {
+  if (persistenceMode === undefined) persistenceMode = isRemembered();
+  return persistenceMode;
+}
+
 function mirrorToCookie(key: string, value: string) {
-  if (!isRemembered()) { deleteDurable(AUTH_COOKIE); return; }
+  if (!currentPersistence()) { deleteDurable(AUTH_COOKIE); return; }
   setDurable(AUTH_COOKIE, JSON.stringify({ k: key, v: value }), AUTH_COOKIE_MAX_AGE);
 }
 
 /** Puts a cookie-mirrored session back into localStorage when it was wiped. */
 function restoreFromCookie() {
-  if (!isRemembered()) return;
+  if (!currentPersistence()) return;
   const raw = getDurable(AUTH_COOKIE);
   if (!raw) return;
   try {
@@ -59,11 +70,11 @@ function dropAuthKeys(store: Storage) {
 }
 
 function targetStore(): Storage {
-  return isRemembered() ? window.localStorage : window.sessionStorage;
+  return currentPersistence() ? window.localStorage : window.sessionStorage;
 }
 
 function otherStore(): Storage {
-  return isRemembered() ? window.sessionStorage : window.localStorage;
+  return currentPersistence() ? window.sessionStorage : window.localStorage;
 }
 
 export function rememberAwareStorage() {
@@ -106,6 +117,8 @@ export function rememberAwareStorage() {
 export function setSessionPersistence(remember: boolean) {
   if (typeof window === "undefined") return;
   try {
+    // Update the already-created auth adapter before signIn writes anything.
+    persistenceMode = remember;
     setRemembered(remember);
     dropAuthKeys(window.localStorage);
     dropAuthKeys(window.sessionStorage);
@@ -129,7 +142,7 @@ export function authStorageDiagnostics() {
       return { key, expiresAt, hasRefresh };
     });
   return {
-    remembered: isRemembered(),
+    remembered: currentPersistence(),
     cookieMirror: !!getDurable(AUTH_COOKIE),
     local: describe(window.localStorage),
     session: describe(window.sessionStorage),

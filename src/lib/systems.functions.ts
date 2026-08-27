@@ -2102,9 +2102,20 @@ async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string
     const withinWindow = isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour);
     void logInfo(`[auto-voice] system=${systemId} status=${statusKey} nowUTC=${now.toISOString()} israelHour=${getIsraelHour(now)} window=${cur.auto_send_start_hour}-${cur.auto_send_end_hour} within=${withinWindow}`);
     if (withinWindow) {
+      const debounce = await readVoiceDebounceSeconds(supabaseAdmin);
+      if (debounce > 0) {
+        // Wait out the debounce window; the queue processor re-reads the
+        // system's status before sending, so a corrected status wins.
+        const sendAt = new Date(now.getTime() + debounce * 1000).toISOString();
+        await supabaseAdmin.from("systems").update({ pending_voice_send_at: sendAt }).eq("id", systemId);
+        void logInfo(`[auto-voice] system=${systemId} debounced for ${debounce}s -> ${sendAt}`);
+        return;
+      }
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", systemId);
       const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId, "auto");
       void logInfo(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
+    } else {
+
     } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", systemId);

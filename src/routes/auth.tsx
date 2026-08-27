@@ -8,6 +8,7 @@ import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMf
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
 import { primeAccessToken } from "@/lib/session-cache";
+import { syncRememberPlacement } from "@/lib/remember-storage";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -59,6 +60,9 @@ function AuthPage() {
     if (error) { toast.error("התחברות נכשלה"); return; }
     perfMark("SUPABASE_SIGNIN_DONE");
     primeAccessToken(signedIn.session ?? null);
+    // Make sure the freshly written session actually sits in the store that
+    // matches "זכור אותי" — otherwise it dies when the window closes.
+    await syncRememberPlacement();
     perfMark("SESSION_READY");
 
     if (mfaGrant) {

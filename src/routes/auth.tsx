@@ -52,8 +52,9 @@ function AuthPage() {
    * that only proved a password never becomes MFA-approved without it.
    */
   async function completeSignIn(mfaGrant?: string) {
-    // "זכור אותי" is decided BEFORE the session is written, so the storage
-    // adapter persists it in the right place from the very first write.
+    // "זכור אותי" is recorded BEFORE the session is written; the session itself
+    // always goes to localStorage, and the flag decides whether it survives a
+    // browser restart (see @/lib/remember-storage).
     setRemembered(remember);
     perfMark("SUPABASE_SIGNIN_START");
     const { data: signedIn, error } = await supabase.auth.signInWithPassword({ email, password });

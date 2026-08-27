@@ -154,6 +154,9 @@ export const listSystems = createServerFn({ method: "POST" })
     if (data.dateFrom) fromIso = new Date(data.dateFrom).toISOString();
     if (data.dateTo) toIso = new Date(data.dateTo).toISOString();
 
+    // Server-side breakdown for the perf work: DB time vs enrichment time vs
+    // payload size, so a slow dashboard can be attributed instead of guessed.
+    const tDbStart = Date.now();
     const { data: rpcData, error: rpcErr } = await db.rpc("list_systems_page" as any, {
       _status_values: statusValues.length ? statusValues : null,
       _secondary_values: secondaryStatusValues.length ? secondaryStatusValues : null,

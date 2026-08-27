@@ -158,6 +158,11 @@ function RootComponent() {
 
   useEffect(() => { perfMark("APP_START"); }, []);
 
+  // Keeps "the browser is still open" fresh, so a session saved WITHOUT
+  // "זכור אותי" is dropped on the next browser start — while a remembered one
+  // (and a second tab of a live browser) is never touched.
+  useEffect(() => startPresenceHeartbeat(), []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <StatusSettingsHydrator />

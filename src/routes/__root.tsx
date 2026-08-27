@@ -17,7 +17,7 @@ import { applyStatusSettings, markStatusSettingsHydrated, writeStatusCache } fro
 import { listStatusSettings } from "@/lib/admin.functions";
 import { useServerFn } from "@tanstack/react-start";
 import { Toaster } from "sonner";
-import { isRemembered, getDeviceId, describeDevice } from "@/lib/device-id";
+import { getDeviceId, describeDevice } from "@/lib/device-id";
 import { recordLoginEvent } from "@/lib/login.functions";
 import { perfMark } from "@/lib/perf";
 import { useSession } from "@/lib/use-session";

@@ -102,9 +102,15 @@ export function rememberAwareStorage() {
       }
     },
     removeItem(key: string) {
+      // The auth client also calls removeItem when one tab loses a refresh-token
+      // race. Clear that tab's selected store, but preserve the durable mirror:
+      // another tab may already have written the valid rotated session there.
+      // Intentional logout uses clearPersistedSession() before auth.signOut().
+      const selected = targetStore();
       try { window.localStorage.removeItem(key); } catch { /* ignore */ }
-      try { window.sessionStorage.removeItem(key); } catch { /* ignore */ }
-      if (isAuthKey(key)) deleteDurable(AUTH_COOKIE);
+      if (selected !== window.localStorage) {
+        try { window.sessionStorage.removeItem(key); } catch { /* ignore */ }
+      }
     },
   };
 }
@@ -124,6 +130,20 @@ export function setSessionPersistence(remember: boolean) {
     dropAuthKeys(window.sessionStorage);
     deleteDurable(AUTH_COOKIE);
   } catch { /* blocked storage must not prevent sign-in */ }
+}
+
+/**
+ * Permanently clears a remembered session. Call only for an intentional app
+ * sign-out (including a failed MFA completion), never for tab/window lifecycle
+ * events or an auth client's internal refresh recovery.
+ */
+export function clearPersistedSession() {
+  if (typeof window === "undefined") return;
+  persistenceMode = false;
+  setRemembered(false);
+  dropAuthKeys(window.localStorage);
+  dropAuthKeys(window.sessionStorage);
+  deleteDurable(AUTH_COOKIE);
 }
 
 /** Read-only snapshot for the ?authdebug=1 panel. Never exposes token values. */

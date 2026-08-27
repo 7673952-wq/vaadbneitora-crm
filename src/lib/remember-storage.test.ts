@@ -92,7 +92,7 @@ describe("rememberAwareStorage", () => {
     expect(localStorage.getItem("crm_remember_device")).toBe("1");
   });
 
-  it("removeItem clears both stores on sign-out", async () => {
+  it("an internal auth removal preserves the durable remembered-session mirror", async () => {
     const mod = await loadModule();
     localStorage.setItem("crm_remember_device", "1");
     const storage = mod.rememberAwareStorage()!;
@@ -102,7 +102,23 @@ describe("rememberAwareStorage", () => {
     storage.removeItem(AUTH_KEY);
 
     expect(localStorage.getItem(AUTH_KEY)).toBeNull();
+    expect(sessionStorage.getItem(AUTH_KEY)).toBe("value");
+    expect(mod.authStorageDiagnostics()?.cookieMirror).toBe(true);
+  });
+
+  it("an explicit sign-out clears both stores, the flag, and the mirror", async () => {
+    const mod = await loadModule();
+    mod.setSessionPersistence(true);
+    const storage = mod.rememberAwareStorage()!;
+    storage.setItem(AUTH_KEY, "value");
+    sessionStorage.setItem(AUTH_KEY, "stale-value");
+
+    mod.clearPersistedSession();
+
+    expect(localStorage.getItem(AUTH_KEY)).toBeNull();
     expect(sessionStorage.getItem(AUTH_KEY)).toBeNull();
+    expect(localStorage.getItem("crm_remember_device")).toBeNull();
+    expect(mod.authStorageDiagnostics()?.cookieMirror).toBe(false);
   });
 
   it("keeps the chosen mode stable until the login form explicitly changes it", async () => {

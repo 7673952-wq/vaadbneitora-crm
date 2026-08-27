@@ -96,13 +96,6 @@ function SystemDetail() {
     setTab(next);
   }
 
-  // TanStack reuses this component when only :id changes. Reset the work tab
-  // for the newly opened card so a child card's "emails" state cannot leak
-  // into its parent card.
-  useEffect(() => {
-    setTab("subs");
-  }, [id]);
-
 
 
 
@@ -622,9 +615,13 @@ function SystemDetail() {
 
   const isSub = !!s.parent_system_id;
 
+  // TanStack reuses this component when only :id changes. Wait for the loaded
+  // record's type as well: during navigation the previous child record can
+  // remain briefly in the query placeholder and must not force its parent to
+  // inherit the "emails" tab.
   useEffect(() => {
-    if (isSub && tab === "subs") setTab("emails");
-  }, [isSub, tab]);
+    setTab(isSub ? "emails" : "subs");
+  }, [id, isSub]);
 
   
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);

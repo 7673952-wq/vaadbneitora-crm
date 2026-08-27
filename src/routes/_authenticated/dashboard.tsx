@@ -313,7 +313,23 @@ function Dashboard() {
   // the "יישלחו לייצוא" preview count matches what actually gets exported.
   const { data: exportAllData } = useQuery({
     queryKey: ["systems-export-all"],
-    queryFn: async () => listFn({ data: { status: null, agentId: null, period: null, page: 1, pageSize: 100000 } }),
+    // Fetched in batches so a large account never asks the server for one
+    // enormous payload (which used to time out / spike memory).
+    queryFn: async () => {
+      const BATCH = 2000;
+      const items: any[] = [];
+      let page = 1;
+      let total = 0;
+      for (;;) {
+        const res: any = await listFn({ data: { status: null, agentId: null, period: null, page, pageSize: BATCH } });
+        const batch = res?.items ?? [];
+        items.push(...batch);
+        total = res?.total ?? items.length;
+        if (batch.length < BATCH || items.length >= total || page > 100) break;
+        page += 1;
+      }
+      return { items, total };
+    },
     enabled: showExport,
     staleTime: 30_000,
   });

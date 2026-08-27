@@ -193,9 +193,16 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     const poke = () => { pokeVoiceQueueFn().catch(() => {}); };
-    poke();
+    // The first poke waits for the browser to go idle: it must never compete
+    // with the systems list for the first seconds after login.
+    const idle: any = (globalThis as any).requestIdleCallback ?? ((cb: any) => setTimeout(cb, 3000));
+    const idleHandle = idle(() => { if (!cancelled) poke(); }, { timeout: 8000 });
     const interval = setInterval(() => { if (!cancelled) poke(); }, 5 * 60_000);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      (globalThis as any).cancelIdleCallback?.(idleHandle);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

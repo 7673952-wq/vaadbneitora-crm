@@ -29,6 +29,7 @@ function AuthPage() {
   const verifyFn = useServerFn(verifyLoginOtp);
   const resendFn = useServerFn(resendLoginOtp);
   const logFn = useServerFn(recordLoginEvent);
+  const confirmFn = useServerFn(confirmMfaSession);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);

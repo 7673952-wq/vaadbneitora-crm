@@ -1095,7 +1095,7 @@ function SystemDetail() {
         )}
 
         {detailsOpen && (
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_290px] gap-4 items-start">
+          <div className="grid xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_290px] gap-4 items-start">
             <div className="min-w-0 rounded-xl border border-border bg-muted/10 p-3">
               <CallerPhonesEditor
                 systemId={id}

@@ -11,7 +11,6 @@ import {
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import { listSystemEmailThread, sendSystemEmail, listEmailTemplates, getEmailGeneralName } from "@/lib/email.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
 } from "@/lib/system-files.functions";
@@ -133,7 +132,7 @@ function SystemDetail() {
   // reads the same query keys) doesn't re-fetch it every time.
   const REFERENCE_STALE_TIME = 5 * 60_000;
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({}), staleTime: REFERENCE_STALE_TIME });
   const { data: mains } = useQuery({ queryKey: ["mainSystems"], queryFn: () => mainsFn(), staleTime: REFERENCE_STALE_TIME });
   const { data: statusSettings } = useQuery({ queryKey: ["status_settings"], queryFn: () => statusSettingsFn(), staleTime: REFERENCE_STALE_TIME });
   const noteEditorRef = useRef<HTMLDivElement>(null);
@@ -210,12 +209,12 @@ function SystemDetail() {
   });
   const { data: emailTemplates } = useQuery({
     queryKey: ["email_templates"],
-    queryFn: async () => emailTemplatesFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => emailTemplatesFn({}),
   });
   const emailGeneralNameFn = useServerFn(getEmailGeneralName);
   const { data: emailGeneralName } = useQuery({
     queryKey: ["email_general_name"],
-    queryFn: async () => emailGeneralNameFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => emailGeneralNameFn({}),
   });
   const [composeOpen, setComposeOpen] = useState(false);
   const [composeMode, setComposeMode] = useState<"new" | "reply" | "forward">("new");

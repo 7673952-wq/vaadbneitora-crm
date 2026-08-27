@@ -15,7 +15,6 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { applyStatusSettings, markStatusSettingsHydrated, writeStatusCache } from "@/lib/status";
 import { listStatusSettings } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { useServerFn } from "@tanstack/react-start";
 import { Toaster } from "sonner";
 import { isRemembered, getDeviceId, describeDevice } from "@/lib/device-id";
@@ -137,7 +136,6 @@ function RootComponent() {
         sessionStorage.setItem(LOGIN_LOGGED, "1");
         await recordLoginEvent({
           data: { kind: "session", device_id: getDeviceId(), user_agent: describeDevice() },
-          headers: await getAuthHeaders(),
         });
       } catch { /* journaling must never block the app */ }
     }
@@ -230,7 +228,7 @@ function StatusSettingsHydrator() {
   }, []);
   const { data } = useQuery({
     queryKey: ["status_settings"],
-    queryFn: async () => fn({ headers: await getAuthHeaders() }),
+    queryFn: async () => fn({}),
     enabled: hasSession,
     staleTime: 60_000,
     retry: false,

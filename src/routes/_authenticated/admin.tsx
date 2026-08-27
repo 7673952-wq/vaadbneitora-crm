@@ -21,7 +21,6 @@ import { getMailboxPrefs, setMailboxPrefs } from "@/lib/mail.functions";
 import { MAILBOX_PREFS_DEFAULTS, type MailboxPrefs } from "@/lib/mailbox-prefs";
 import { Button } from "@/components/ui/button";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { VoiceMessageLogPanel } from "@/components/VoiceMessageLogPanel";
 import { CrmManagerPanel, CrmPermissionsPanel, CrmFieldBuilder } from "@/components/CrmManagerPanel";
 import { useMyCrms, type CrmSummary } from "@/lib/use-crms";
@@ -47,7 +46,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
   loader: ({ context }) => {
     context.queryClient.prefetchQuery({
       queryKey: ["me"],
-      queryFn: async () => getMyRole({ headers: await getAuthHeaders() }),
+      queryFn: async () => getMyRole({}),
       staleTime: 5 * 60_000,
     });
   },
@@ -56,7 +55,7 @@ export const Route = createFileRoute("/_authenticated/admin")({
 
 function AdminPage() {
   const meFn = useServerFn(getMyRole);
-  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
+  const { data: me, error: meError, isLoading: meLoading } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({}) });
   const { data: crms = [] } = useMyCrms();
 
   if (meLoading) return <div className="text-center py-20 text-muted-foreground">טוען הרשאות...</div>;
@@ -254,7 +253,7 @@ function UsersPanel({ me }: { me: any }) {
 
   const { data: users, error: usersError } = useQuery({
     queryKey: ["admin_users"],
-    queryFn: async () => agentsFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => agentsFn({}),
   });
 
 
@@ -263,7 +262,7 @@ function UsersPanel({ me }: { me: any }) {
   const [editing, setEditing] = useState<{ id: string; field: "name" | "email" | "password"; value: string } | null>(null);
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["admin_users"] });
-  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}) });
   const onErr = (e: any) => toast.error(e.message);
 
   const createMut = useMutation({
@@ -414,11 +413,11 @@ function BackupEmailPanel() {
   const getFn = useServerFn(getBackupEmail);
   const setFn = useServerFn(setBackupEmail);
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["backup_email"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const { data } = useQuery({ queryKey: ["backup_email"], queryFn: async () => getFn({}) });
   const [emails, setEmails] = useState<string[]>([""]);
   useEffect(() => { if (data) setEmails(data.emails.length ? data.emails : [""]); }, [data]);
   const mut = useMutation({
-    mutationFn: async (vars: { data: { emails: string[] } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    mutationFn: async (vars: { data: { emails: string[] } }) => setFn({ ...vars } as any),
     onSuccess: () => { toast.success("המיילים נשמרו"); qc.invalidateQueries({ queryKey: ["backup_email"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });
@@ -463,7 +462,7 @@ function BackupSchedulePanel() {
   const getFn = useServerFn(getBackupSchedule);
   const setFn = useServerFn(setBackupSchedule);
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["backup_schedule"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const { data } = useQuery({ queryKey: ["backup_schedule"], queryFn: async () => getFn({}) });
   const [frequency, setFrequency] = useState<"daily" | "weekly">("daily");
   const [hour, setHour] = useState(2);
   const [dayOfWeek, setDayOfWeek] = useState(4);
@@ -477,7 +476,7 @@ function BackupSchedulePanel() {
   }, [data]);
   const mut = useMutation({
     mutationFn: async (vars: { data: { frequency: "daily" | "weekly"; hour: number; dayOfWeek: number; retentionDailyDays: number; retentionWeeklyDays: number } }) =>
-      setFn({ ...vars, headers: await getAuthHeaders() } as any),
+      setFn({ ...vars } as any),
     onSuccess: () => { toast.success("התדירות נשמרה"); qc.invalidateQueries({ queryKey: ["backup_schedule"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });
@@ -540,11 +539,11 @@ function StaleHoursPanel() {
   const getFn = useServerFn(getStaleWarningHours);
   const setFn = useServerFn(setStaleWarningHours);
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const { data } = useQuery({ queryKey: ["stale_warning_hours"], queryFn: async () => getFn({}) });
   const [hours, setHours] = useState<number>(24);
   useEffect(() => { if (data) setHours(data.hours); }, [data]);
   const mut = useMutation({
-    mutationFn: async (vars: { data: { hours: number } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    mutationFn: async (vars: { data: { hours: number } }) => setFn({ ...vars } as any),
     onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["stale_warning_hours"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });
@@ -571,10 +570,10 @@ function AutoSnoozePanel() {
   const getFn = useServerFn(getAutoSnoozeSetting);
   const setFn = useServerFn(setAutoSnoozeSetting);
   const qc = useQueryClient();
-  const { data: current } = useQuery({ queryKey: ["auto_snooze"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const { data: current } = useQuery({ queryKey: ["auto_snooze"], queryFn: async () => getFn({}) });
   const [thresholdDays, setThresholdDays] = useState<number>(30);
   useEffect(() => { if (current) setThresholdDays(current.threshold_days); }, [current]);
-  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}) });
   const saveMut = useMutation({
     mutationFn: () => withAuth(setFn, { data: { unit: "day" as const, date: null, threshold_days: thresholdDays } }),
     onSuccess: () => { toast.success("הגדרה נשמרה"); qc.invalidateQueries({ queryKey: ["auto_snooze"] }); },
@@ -606,16 +605,16 @@ function StatusSettingsPanel() {
   const delFn = useServerFn(deleteStatusSetting);
   const reorderFn = useServerFn(reorderStatusSettings);
   const agentsFn = useServerFn(listUsersForAdmin);
-  const { data: rows, error: rowsError, isLoading: rowsLoading } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }) });
-  const { data: agents } = useQuery({ queryKey: ["admin_users"], queryFn: async () => agentsFn({ headers: await getAuthHeaders() }) });
+  const { data: rows, error: rowsError, isLoading: rowsLoading } = useQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({}) });
+  const { data: agents } = useQuery({ queryKey: ["admin_users"], queryFn: async () => agentsFn({}) });
 
   const refresh = async () => {
     // staleTime: 0 overrides the global 60s staleTime so we always get fresh data from the server
-    const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({ headers: await getAuthHeaders() }), staleTime: 0 });
+    const fresh = await qc.fetchQuery({ queryKey: ["status_settings"], queryFn: async () => listFn({}), staleTime: 0 });
     applyStatusSettings(fresh as any);
     qc.invalidateQueries({ queryKey: ["systems"] });
   };
-  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}), headers: await getAuthHeaders() });
+  const withAuth = async (fn: any, vars?: any) => fn({ ...(vars ?? {}) });
   const upsertMut = useMutation({ mutationFn: (vars: any) => withAuth(upsertFn, vars), onSuccess: async () => { await refresh(); toast.success("נשמר"); }, onError: (e: any) => toast.error(e.message) });
   const delMut = useMutation({ mutationFn: (vars: any) => withAuth(delFn, vars), onSuccess: async () => { await refresh(); toast.success("נמחק"); }, onError: (e: any) => toast.error(e.message) });
   const reorderMut = useMutation({ mutationFn: (vars: any) => withAuth(reorderFn, vars), onSuccess: async () => { await refresh(); toast.success("סדר עודכן"); }, onError: (e: any) => toast.error(e?.message || e?.toString() || "שגיאה בשינוי סדר") });
@@ -870,11 +869,11 @@ function SeriesSettingsPanel() {
   const getFn = useServerFn(getSeriesDetection);
   const setFn = useServerFn(setSeriesDetection);
   const qc = useQueryClient();
-  const { data } = useQuery({ queryKey: ["series_detection"], queryFn: async () => getFn({ headers: await getAuthHeaders() }) });
+  const { data } = useQuery({ queryKey: ["series_detection"], queryFn: async () => getFn({}) });
   const [modes, setModes] = useState<Array<{ strip: number; min: number }>>([]);
   useEffect(() => { if (data) setModes(data.modes); }, [data]);
   const mut = useMutation({
-    mutationFn: async (vars: { data: { modes: Array<{ strip: number; min: number }> } }) => setFn({ ...vars, headers: await getAuthHeaders() } as any),
+    mutationFn: async (vars: { data: { modes: Array<{ strip: number; min: number }> } }) => setFn({ ...vars } as any),
     onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["series_detection"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });
@@ -929,13 +928,13 @@ function PermissionsPanel({ crmKey, only }: { crmKey: string; only?: string[] })
   const roleFn = useServerFn(setRolePermission);
   const userFn = useServerFn(setUserPermission);
   const clearFn = useServerFn(deleteUserPermission);
-  const { data, error, isLoading } = useQuery({ queryKey: ["permission_settings", crmKey], queryFn: async () => listFn({ data: { crmKey }, headers: await getAuthHeaders() }) });
+  const { data, error, isLoading } = useQuery({ queryKey: ["permission_settings", crmKey], queryFn: async () => listFn({ data: { crmKey } }) });
   const [selectedUser, setSelectedUser] = useState<string>("");
   const [search, setSearch] = useState("");
   const refresh = () => { qc.invalidateQueries({ queryKey: ["permission_settings", crmKey] }); qc.invalidateQueries({ queryKey: ["me"] }); };
-  const roleMut = useMutation({ mutationFn: async (vars: any) => roleFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("הרשאת תפקיד עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
-  const userMut = useMutation({ mutationFn: async (vars: any) => userFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("הרשאת משתמש עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
-  const clearMut = useMutation({ mutationFn: async (vars: any) => clearFn({ ...vars, headers: await getAuthHeaders() }), onSuccess: () => { toast.success("חריגה הוסרה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
+  const roleMut = useMutation({ mutationFn: async (vars: any) => roleFn({ ...vars }), onSuccess: () => { toast.success("הרשאת תפקיד עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
+  const userMut = useMutation({ mutationFn: async (vars: any) => userFn({ ...vars }), onSuccess: () => { toast.success("הרשאת משתמש עודכנה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
+  const clearMut = useMutation({ mutationFn: async (vars: any) => clearFn({ ...vars }), onSuccess: () => { toast.success("חריגה הוסרה"); refresh(); }, onError: (e: any) => toast.error(e.message) });
 
   if (isLoading) return <div className="text-center py-8 text-muted-foreground">טוען הרשאות...</div>;
   if (error) return <AdminError message={error.message} />;
@@ -1047,26 +1046,26 @@ function EmailSettingsPanel() {
 
   const { data: config } = useQuery({
     queryKey: ["email_relay_config"],
-    queryFn: async () => getConfigFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => getConfigFn({}),
   });
   const { data: myProfile } = useQuery({
     queryKey: ["my_email_profile"],
-    queryFn: async () => getProfileFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => getProfileFn({}),
   });
   const { data: templates } = useQuery({
     queryKey: ["email_templates"],
-    queryFn: async () => listTemplatesFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => listTemplatesFn({}),
   });
   const listAgentNamesFn = useServerFn(listAgentEmailNames);
   const setAgentNameFn = useServerFn(setAgentEmailDisplayName);
   const { data: agentNames, error: agentNamesError } = useQuery({
     queryKey: ["agent_email_names"],
-    queryFn: async () => listAgentNamesFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => listAgentNamesFn({}),
     retry: false,
   });
   const [agentNameDrafts, setAgentNameDrafts] = useState<Record<string, string>>({});
   const saveAgentNameMut = useMutation({
-    mutationFn: async (v: { user_id: string; email_display_name: string }) => setAgentNameFn({ data: v, headers: await getAuthHeaders() }),
+    mutationFn: async (v: { user_id: string; email_display_name: string }) => setAgentNameFn({ data: v }),
     onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["agent_email_names"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
@@ -1078,7 +1077,7 @@ function EmailSettingsPanel() {
   useEffect(() => { if (config) { setWebAppUrl(config.url); setAddress(config.address); setGeneralName(config.generalName ?? ""); } }, [config]);
 
   const saveConfigMut = useMutation({
-    mutationFn: async () => setConfigFn({ data: { url: webAppUrl, address, generalName, secret: secret || undefined }, headers: await getAuthHeaders() }),
+    mutationFn: async () => setConfigFn({ data: { url: webAppUrl, address, generalName, secret: secret || undefined } }),
     onSuccess: async (saved) => {
       setWebAppUrl(saved.url);
       setSecret("");
@@ -1094,19 +1093,19 @@ function EmailSettingsPanel() {
   const [emailCleanupLevel, setEmailCleanupLevel] = useState<EmailCleanupLevel>("standard");
   useEffect(() => { if (myProfile) setSignatureLocal(myProfile.signature); }, [myProfile]);
   const saveSignatureMut = useMutation({
-    mutationFn: async () => setSignatureFn({ data: { signature: cleanEmailContent(signature, emailCleanupLevel) }, headers: await getAuthHeaders() }),
+    mutationFn: async () => setSignatureFn({ data: { signature: cleanEmailContent(signature, emailCleanupLevel) } }),
     onSuccess: () => toast.success("החתימה נשמרה"),
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
 
   const [editingTemplate, setEditingTemplate] = useState<{ id?: string; name: string; subject: string; body: string } | null>(null);
   const saveTemplateMut = useMutation({
-    mutationFn: async (t: { id?: string; name: string; subject: string; body: string }) => upsertTemplateFn({ data: { ...t, body: cleanEmailContent(t.body, emailCleanupLevel) }, headers: await getAuthHeaders() }),
+    mutationFn: async (t: { id?: string; name: string; subject: string; body: string }) => upsertTemplateFn({ data: { ...t, body: cleanEmailContent(t.body, emailCleanupLevel) } }),
     onSuccess: () => { toast.success("התבנית נשמרה"); setEditingTemplate(null); qc.invalidateQueries({ queryKey: ["email_templates"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה בשמירה"),
   });
   const deleteTemplateMut = useMutation({
-    mutationFn: async (id: string) => deleteTemplateFn({ data: { id }, headers: await getAuthHeaders() }),
+    mutationFn: async (id: string) => deleteTemplateFn({ data: { id } }),
     onSuccess: () => { toast.success("התבנית נמחקה"); qc.invalidateQueries({ queryKey: ["email_templates"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה במחיקה"),
   });
@@ -1295,7 +1294,7 @@ function NotificationsPanel({ crms = [] }: { crms?: CrmSummary[] }) {
 
   const { data, isLoading } = useQuery({
     queryKey: ["notif_role_defaults", scope],
-    queryFn: async () => listFn({ data: { crmKey: scope }, headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({ data: { crmKey: scope } }),
   });
 
   const mut = useMutation({
@@ -1398,18 +1397,18 @@ function MailboxAdminPanel() {
 
   const { data: prefs } = useQuery({
     queryKey: ["mailbox_prefs"],
-    queryFn: async () => getPrefsFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => getPrefsFn({}),
   });
   const { data: config } = useQuery({
     queryKey: ["email_relay_config"],
-    queryFn: async () => getConfigFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => getConfigFn({}),
   });
 
   const [draft, setDraft] = useState<MailboxPrefs>(MAILBOX_PREFS_DEFAULTS);
   useEffect(() => { if (prefs) setDraft(prefs); }, [prefs]);
 
   const save = useMutation({
-    mutationFn: async () => setPrefsFn({ data: draft, headers: await getAuthHeaders() }),
+    mutationFn: async () => setPrefsFn({ data: draft }),
     onSuccess: () => {
       toast.success("הגדרות תיבת הדואר נשמרו");
       qc.invalidateQueries({ queryKey: ["mailbox_prefs"] });

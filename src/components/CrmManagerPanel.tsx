@@ -7,7 +7,6 @@ import {
   listMyCrms, upsertCrm, deleteCrm, listCrmMembers, setCrmUserRole, type CrmRole,
 } from "@/lib/crms.functions";
 import { listFieldDefs, upsertFieldDef, deleteFieldDef } from "@/lib/crm-records.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 const ROLE_LABELS: Record<string, string> = {
   "": "אין גישה",
@@ -37,14 +36,14 @@ export function CrmManagerPanel() {
 
   const { data: crms = [] } = useQuery({
     queryKey: ["my_crms"],
-    queryFn: async () => crmsFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => crmsFn({}),
   });
 
   const [draft, setDraft] = useState({ key: "", name: "", color: "#2563eb", idLabel: "מספר פניה" });
 
   async function saveCrm(payload: any) {
     try {
-      await upsertFn({ data: payload, headers: await getAuthHeaders() });
+      await upsertFn({ data: payload });
       await qc.invalidateQueries({ queryKey: ["my_crms"] });
       toast.success("נשמר");
     } catch (e: any) {
@@ -61,7 +60,7 @@ export function CrmManagerPanel() {
             <CrmRow key={c.key} crm={c} onSave={saveCrm} onDelete={async () => {
               if (!confirm(`למחוק את "${c.name}"?`)) return;
               try {
-                await delFn({ data: { key: c.key }, headers: await getAuthHeaders() });
+                await delFn({ data: { key: c.key } });
                 await qc.invalidateQueries({ queryKey: ["my_crms"] });
               } catch (e: any) { toast.error(e?.message ?? "שגיאה"); }
             }} />
@@ -105,7 +104,7 @@ export function CrmAccessMatrix({ crms }: { crms: any[] }) {
   const setRoleFn = useServerFn(setCrmUserRole);
   const { data: members } = useQuery({
     queryKey: ["crm_members"],
-    queryFn: async () => membersFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => membersFn({}),
   });
 
   const roleOf = (userId: string, crmKey: string) =>
@@ -133,7 +132,6 @@ export function CrmAccessMatrix({ crms }: { crms: any[] }) {
                       try {
                         await setRoleFn({
                           data: { userId: u.id, crmKey: c.key, role: (v || null) as CrmRole | null },
-                          headers: await getAuthHeaders(),
                         });
                         await qc.invalidateQueries({ queryKey: ["crm_members"] });
                       } catch (err: any) { toast.error(err?.message ?? "שגיאה"); }
@@ -156,7 +154,7 @@ export function CrmPermissionsPanel({ crmKey }: { crmKey: string }) {
   const setRoleFn = useServerFn(setCrmUserRole);
   const { data: members, isLoading } = useQuery({
     queryKey: ["crm_members"],
-    queryFn: async () => membersFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => membersFn({}),
   });
 
   const roleOf = (userId: string) =>
@@ -178,7 +176,6 @@ export function CrmPermissionsPanel({ crmKey }: { crmKey: string }) {
                   try {
                     await setRoleFn({
                       data: { userId: u.id, crmKey, role: (v || null) as CrmRole | null },
-                      headers: await getAuthHeaders(),
                     });
                     await qc.invalidateQueries({ queryKey: ["crm_members"] });
                     toast.success("עודכן");
@@ -244,7 +241,7 @@ export function CrmFieldBuilder({ crmKey }: { crmKey: string }) {
   const delFn = useServerFn(deleteFieldDef);
   const { data: fields = [] } = useQuery({
     queryKey: ["crm_field_defs", crmKey],
-    queryFn: async () => listFn({ data: { crmKey }, headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({ data: { crmKey } }),
   });
   const [d, setD] = useState({ fieldKey: "", label: "", fieldType: "text", options: "", showInTable: false, required: false });
 
@@ -263,7 +260,7 @@ export function CrmFieldBuilder({ crmKey }: { crmKey: string }) {
           <button
             onClick={async () => {
               if (!confirm("למחוק שדה?")) return;
-              await delFn({ data: { id: f.id }, headers: await getAuthHeaders() });
+              await delFn({ data: { id: f.id } });
               await refresh();
             }}
             className="mr-auto text-muted-foreground hover:text-destructive"
@@ -308,7 +305,6 @@ export function CrmFieldBuilder({ crmKey }: { crmKey: string }) {
                   showInTable: d.showInTable,
                   sortOrder: fields.length,
                 },
-                headers: await getAuthHeaders(),
               });
               setD({ fieldKey: "", label: "", fieldType: "text", options: "", showInTable: false, required: false });
               await refresh();

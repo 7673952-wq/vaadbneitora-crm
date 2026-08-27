@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { Search, Loader2 } from "lucide-react";
 import { globalSearch } from "@/lib/global-search.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 /** Header search box that queries every CRM at once. */
 export function GlobalSearch() {
@@ -47,7 +46,7 @@ export function GlobalSearch() {
 
   const { data: hits = [], isFetching } = useQuery({
     queryKey: ["global_search", debounced],
-    queryFn: async () => fn({ data: { q: debounced }, headers: await getAuthHeaders() }),
+    queryFn: async () => fn({ data: { q: debounced } }),
     enabled: debounced.length >= 2,
     staleTime: 30_000,
     retry: false,

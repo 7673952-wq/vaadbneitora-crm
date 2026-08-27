@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { listAuditLog, listAuditActors, revertAuditEntry, isRevertibleEntry } from "@/lib/audit.functions";
 import { getMyRole } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { Download, Search, ArrowRight, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -69,7 +68,7 @@ function downloadCSV(rows: any[]) {
 function AuditPage() {
   const navigate = useNavigate();
   const meFn = useServerFn(getMyRole);
-  const { data: me, isLoading: meLoading } = useQuery({ queryKey: ["my-role"], queryFn: async () => meFn({ headers: await getAuthHeaders() }) });
+  const { data: me, isLoading: meLoading } = useQuery({ queryKey: ["my-role"], queryFn: async () => meFn({}) });
   useEffect(() => {
     if (!meLoading && me && !me.isSuperAdmin) navigate({ to: "/dashboard", replace: true });
   }, [me, meLoading, navigate]);
@@ -93,10 +92,10 @@ function AuditPage() {
     limit: 1000,
   }), [actorId, action, from, to, appliedSearch]);
 
-  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: async () => actorsFn({ headers: await getAuthHeaders() }), enabled: !!me?.isSuperAdmin });
+  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: async () => actorsFn({}), enabled: !!me?.isSuperAdmin });
   const { data: rows, isLoading } = useQuery({
     queryKey: ["audit-log", filters],
-    queryFn: async () => listFn({ data: filters, headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({ data: filters }),
     enabled: !!me?.isSuperAdmin,
   });
 
@@ -119,7 +118,7 @@ function AuditPage() {
   const qc = useQueryClient();
   const revertFn = useServerFn(revertAuditEntry);
   const revertMut = useMutation({
-    mutationFn: async (id: string) => revertFn({ data: { id }, headers: await getAuthHeaders() }),
+    mutationFn: async (id: string) => revertFn({ data: { id } }),
     onSuccess: () => {
       toast.success("הפעולה בוטלה");
       qc.invalidateQueries({ queryKey: ["audit-log"] });

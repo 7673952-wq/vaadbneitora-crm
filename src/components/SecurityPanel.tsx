@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { ShieldCheck, Phone } from "lucide-react";
 import { listUsersForAdmin } from "@/lib/admin.functions";
 import { listUserSecurity, setUserSecurity, listLoginEvents } from "@/lib/login.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 const KIND_LABELS: Record<string, string> = {
   password: "כניסה עם סיסמה",
@@ -25,20 +24,20 @@ export function SecurityPanel() {
 
   const { data: users } = useQuery({
     queryKey: ["admin_users"],
-    queryFn: async () => usersFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => usersFn({}),
   });
   const { data: security } = useQuery({
     queryKey: ["user_security"],
-    queryFn: async () => secFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => secFn({}),
   });
   const { data: events } = useQuery({
     queryKey: ["login_events"],
-    queryFn: async () => eventsFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => eventsFn({}),
   });
 
   const save = useMutation({
     mutationFn: async (v: { user_id: string; mfa_enabled: boolean; mfa_phone: string | null }) =>
-      saveFn({ data: v, headers: await getAuthHeaders() }),
+      saveFn({ data: v }),
     onSuccess: () => {
       toast.success("הגדרות האבטחה נשמרו");
       qc.invalidateQueries({ queryKey: ["user_security"] });

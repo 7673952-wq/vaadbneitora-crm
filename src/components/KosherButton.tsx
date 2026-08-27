@@ -9,7 +9,6 @@ import {
   deleteKosherInstruction,
 } from "@/lib/crms.functions";
 import { getMyRole } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 /**
  * Header button that opens the kosher instructions in a floating window,
@@ -40,14 +39,14 @@ function KosherDialog({ onClose }: { onClose: () => void }) {
 
   const { data: me } = useQuery({
     queryKey: ["me"],
-    queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => roleFn({}),
     staleTime: 5 * 60_000,
   });
   const canEdit = Boolean((me?.permissions as any)?.settings_manage);
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ["kosher_instructions"],
-    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({}),
   });
 
   const [q, setQ] = useState("");
@@ -70,7 +69,7 @@ function KosherDialog({ onClose }: { onClose: () => void }) {
     if (!title.trim()) { toast.error("נדרשת כותרת"); return; }
     setBusy(true);
     try {
-      await saveFn({ data: { id, title, body, sortOrder }, headers: await getAuthHeaders() });
+      await saveFn({ data: { id, title, body, sortOrder } });
       await qc.invalidateQueries({ queryKey: ["kosher_instructions"] });
       toast.success("נשמר");
       setNewOpen(false); setNewTitle(""); setNewBody(""); setEditing(null);
@@ -84,7 +83,7 @@ function KosherDialog({ onClose }: { onClose: () => void }) {
   async function remove(id: string) {
     if (!confirm("למחוק את ההוראה?")) return;
     try {
-      await delFn({ data: { id }, headers: await getAuthHeaders() });
+      await delFn({ data: { id } });
       await qc.invalidateQueries({ queryKey: ["kosher_instructions"] });
       toast.success("נמחק");
     } catch (e: any) {

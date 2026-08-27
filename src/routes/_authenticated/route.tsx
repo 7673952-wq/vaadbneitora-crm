@@ -5,7 +5,6 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { getMyRole } from "@/lib/admin.functions";
 import { getMyEmailProfile, setMyEmailSignature } from "@/lib/email.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { LogOut, KeyRound, X, Mail, ChevronDown, SlidersHorizontal } from "lucide-react";
 import { useHeaderPrefs, HEADER_PREF_ITEMS } from "@/lib/header-prefs";
 import { toast } from "sonner";
@@ -49,7 +48,7 @@ function AuthedLayout() {
 
   const { data: me } = useQuery({
     queryKey: ["me"],
-    queryFn: async () => myRoleFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => myRoleFn({}),
     enabled: sessionReady,
     retry: false,
     throwOnError: false,
@@ -66,7 +65,7 @@ function AuthedLayout() {
   const setSigFn = useServerFn(setMyEmailSignature);
   const { data: mySig } = useQuery({
     queryKey: ["my_email_profile"],
-    queryFn: async () => getSigFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => getSigFn({}),
     enabled: sigOpen,
   });
   useEffect(() => { if (mySig) setSigText(mySig.signature); }, [mySig]);
@@ -74,7 +73,7 @@ function AuthedLayout() {
     setSigBusy(true);
     try {
       const { cleanEmailContent } = await import("@/lib/email-cleanup");
-      await setSigFn({ data: { signature: cleanEmailContent(sigText, emailCleanupLevel) }, headers: await getAuthHeaders() });
+      await setSigFn({ data: { signature: cleanEmailContent(sigText, emailCleanupLevel) } });
       toast.success("החתימה נשמרה");
       setSigOpen(false);
     } catch (e: any) {
@@ -134,7 +133,6 @@ function AuthedLayout() {
       try {
         const res: any = await securityFn({
           data: { device_id: getDeviceId() },
-          headers: await getAuthHeaders(),
         });
         if (active && res?.mfa_required) {
           await supabase.auth.signOut();
@@ -160,7 +158,6 @@ function AuthedLayout() {
     try {
       await recordLoginEventFn({
         data: { kind: "logout", device_id: getDeviceId() },
-        headers: await getAuthHeaders(),
       });
     } catch { /* journaling must never block sign-out */ }
     setRemembered(false);

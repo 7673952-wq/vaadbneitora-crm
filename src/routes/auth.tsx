@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent } from "@/lib/login.functions";
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -51,7 +50,6 @@ function AuthPage() {
     try {
       await logFn({
         data: { kind: "password", device_id: getDeviceId(), user_agent: describeDevice() },
-        headers: await getAuthHeaders(),
       });
     } catch { /* the journal must never block a valid login */ }
     // This tab already journaled a "password" login — the root layout must not

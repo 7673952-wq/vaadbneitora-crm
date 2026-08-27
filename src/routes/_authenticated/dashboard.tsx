@@ -11,7 +11,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useStatusSettings } from "@/lib/use-status-settings";
 import { perfMark } from "@/lib/perf";
 
-import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, statusRequiresReason, type SystemStatus,
@@ -58,7 +57,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
     const qc = context.queryClient;
     qc.prefetchQuery({
       queryKey: ["me"],
-      queryFn: async () => getMyRole({ headers: await getAuthHeaders() }),
+      queryFn: async () => getMyRole({}),
       staleTime: 5 * 60_000,
     });
     qc.prefetchQuery({ queryKey: ["agents"], queryFn: () => listAgents(), staleTime: 5 * 60_000 });
@@ -277,7 +276,7 @@ function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({}), staleTime: REFERENCE_STALE_TIME });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
   const { data: systemsData, isLoading } = useQuery({

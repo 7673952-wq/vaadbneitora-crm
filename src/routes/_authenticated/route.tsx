@@ -160,7 +160,13 @@ function AuthedLayout() {
         data: { kind: "logout", device_id: getDeviceId() },
       });
     } catch { /* journaling must never block sign-out */ }
+    // Drop the server-side MFA proof for THIS session: the next password
+    // login must pass a fresh code, no matter what the browser remembers.
+    try {
+      await endSessionFn({ data: { device_id: getDeviceId() } });
+    } catch { /* a failed cleanup must never trap the user in the app */ }
     setRemembered(false);
+    clearAccessToken();
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();

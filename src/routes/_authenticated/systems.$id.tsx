@@ -71,6 +71,14 @@ const FIELD_LABELS: Record<string, string> = {
   parent_system_id: "מערכת אב",
 };
 
+type WorkTab = "emails" | "subs" | "files" | "reminders";
+const WORK_TABS: Array<{ key: WorkTab; label: string }> = [
+  { key: "emails", label: "מיילים" },
+  { key: "subs", label: "תתי-מערכות" },
+  { key: "files", label: "קבצים" },
+  { key: "reminders", label: "תזכורות" },
+];
+
 function SystemDetail() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
@@ -81,6 +89,18 @@ function SystemDetail() {
   const sendChoiceBtnRef = useRef<HTMLButtonElement>(null);
   const [showSendPicker, setShowSendPicker] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
+  const [tab, setTab] = useState<WorkTab>(() => {
+    try {
+      const v = window.localStorage.getItem("crm.system.tab") as WorkTab | null;
+      if (v && WORK_TABS.some((t) => t.key === v)) return v;
+    } catch { /* אין גישה לאחסון */ }
+    return "emails";
+  });
+  function selectTab(next: WorkTab) {
+    setTab(next);
+    try { window.localStorage.setItem("crm.system.tab", next); } catch { /* אין גישה לאחסון */ }
+  }
+
 
   function copyToClipboard(value: string, key: string, label: string) {
     navigator.clipboard.writeText(value)

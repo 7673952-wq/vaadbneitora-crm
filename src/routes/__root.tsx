@@ -111,29 +111,8 @@ function RootComponent() {
     // Session lifetime is decided by WHERE the session is stored at login:
     //   remembered     -> localStorage, survives closing the browser
     //   not remembered -> sessionStorage, dies with the browser session
-    // There is deliberately no "force sign-out on startup" heuristic here: it
-    // used to guess from a sessionStorage marker + a BroadcastChannel tab ping,
-    // and any missed ping (new window, restored tabs, a slow first paint)
-    // signed a remembered user out for no reason.
-    const LOGIN_LOGGED = "crm_login_logged";
-
-    // Journal "session" entries: a sign-in that needed no password (restored
-    // session) still shows up in the admin login journal — once per tab.
-    async function logRestoredSession() {
-      try {
-        if (sessionStorage.getItem(LOGIN_LOGGED)) return;
-        sessionStorage.setItem(LOGIN_LOGGED, "1");
-        await recordLoginEvent({
-          data: { kind: "session", device_id: getDeviceId(), user_agent: describeDevice() },
-        });
-      } catch { /* journaling must never block the app */ }
-    }
-
-    void supabase.auth.getSession().then(({ data }) => {
-      if (data.session) void logRestoredSession();
-    });
-
-
+    // No startup "force sign-out" heuristic and no tab-presence channel: both
+    // used to sign remembered users out on a missed ping.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       primeAccessToken(session ?? null);
       if (event === "SIGNED_IN") {
@@ -160,6 +139,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <StatusSettingsHydrator />
+      <SessionJournal />
       <Outlet />
       <Toaster position="top-center" richColors dir="rtl" />
       <PerfOverlay />
@@ -167,6 +147,26 @@ function RootComponent() {
   );
 
 }
+
+const LOGIN_LOGGED = "crm_login_logged";
+
+/**
+ * Journals "session" entries (a sign-in that needed no password) once per tab.
+ * Reads the shared session cache instead of calling getSession() again.
+ */
+function SessionJournal() {
+  const { session } = useSession();
+  useEffect(() => {
+    if (!session) return;
+    if (sessionStorage.getItem(LOGIN_LOGGED)) return;
+    sessionStorage.setItem(LOGIN_LOGGED, "1");
+    void recordLoginEvent({
+      data: { kind: "session", device_id: getDeviceId(), user_agent: describeDevice() },
+    }).catch(() => { /* journaling must never block the app */ });
+  }, [session]);
+  return null;
+}
+
 
 function StatusSettingsHydrator() {
   const fn = useServerFn(listStatusSettings);

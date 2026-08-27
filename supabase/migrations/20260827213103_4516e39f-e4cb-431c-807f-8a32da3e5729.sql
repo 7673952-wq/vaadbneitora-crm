@@ -1,0 +1,1 @@
+REVOKE ALL ON FUNCTION public.apply_request_status_change(uuid, uuid, text, text, text) FROM anon;

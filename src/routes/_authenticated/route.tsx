@@ -21,6 +21,7 @@ import { getSessionSecurity, recordLoginEvent, endSession } from "@/lib/login.fu
 import { clearAccessToken } from "@/lib/session-cache";
 import { getDeviceId, setRemembered } from "@/lib/device-id";
 import { perfMark } from "@/lib/perf";
+import { logAuthEvent } from "@/lib/auth-diagnostics";
 
 
 
@@ -38,6 +39,8 @@ export const Route = createFileRoute("/_authenticated")({
     </GlobalErrorBoundary>
   ),
 });
+
+const MFA_OFF_KEY = "crm_mfa_off";
 
 function AuthedLayout() {
   const navigate = useNavigate();
@@ -118,8 +121,12 @@ function AuthedLayout() {
     // A transient/spurious sign-out can fire while tabs coordinate a token
     // refresh — confirm with the server before bouncing the user out.
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
       if (!active) return;
+      if (error) {
+        logAuthEvent("guard_getSession_error", error.message);
+        toast.error("החיבור פג — התחבר שוב");
+      }
       if (data.session) return;
       setSessionReady(false);
       navigate({ to: "/auth", replace: true });
@@ -132,13 +139,20 @@ function AuthedLayout() {
   const securityFn = useServerFn(getSessionSecurity);
   useEffect(() => {
     if (!sessionReady) return;
+    // Most accounts have no second factor at all; once the server said so we
+    // stop paying for this roundtrip (and its sign-out risk) on every load.
+    try { if (sessionStorage.getItem(MFA_OFF_KEY) === "1") return; } catch { /* ignore */ }
     let active = true;
     (async () => {
       try {
         const res: any = await securityFn({
           data: { device_id: getDeviceId() },
         });
-        if (active && res?.mfa_required) {
+        if (res?.mfa_enabled === false) {
+          try { sessionStorage.setItem(MFA_OFF_KEY, "1"); } catch { /* ignore */ }
+          return;
+        }
+        if (active && res?.mfa_required === true) {
           await supabase.auth.signOut();
           toast.error("נדרש אימות נוסף — התחבר מחדש");
           navigate({ to: "/auth", replace: true });

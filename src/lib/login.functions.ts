@@ -259,14 +259,14 @@ export const getSessionSecurity = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: sec } = await supabaseAdmin
       .from("user_security").select("mfa_enabled").eq("user_id", context.userId).maybeSingle();
-    if (!(sec as any)?.mfa_enabled) return { mfa_required: false as const };
+    if (!(sec as any)?.mfa_enabled) return { mfa_required: false as const, mfa_enabled: false as const };
     const sessionId = (context.claims as any)?.session_id as string | undefined;
-    if (!sessionId) return { mfa_required: true as const };
+    if (!sessionId) return { mfa_required: true as const, mfa_enabled: true as const };
     const { data: passed } = await supabaseAdmin
       .from("mfa_passed_sessions").select("session_id")
       .eq("user_id", context.userId).eq("session_id", sessionId)
       .gt("expires_at", new Date().toISOString()).maybeSingle();
-    return { mfa_required: !passed };
+    return { mfa_required: !passed, mfa_enabled: true as const };
   });
 
 export const recordLoginEvent = createServerFn({ method: "POST" })

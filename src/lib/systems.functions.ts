@@ -2093,7 +2093,7 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
 // Called right after a status change in updateSystem. If the new status is
 // configured for automatic voice sending, either sends immediately (if
 // within the configured hour window) or schedules it for the next window.
-async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string, statusKey: string) {
+export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string, statusKey: string) {
   try {
     const settings = await readStatusSettings(supabaseAdmin);
     const cur = settings.find((r) => r.status_key === statusKey);

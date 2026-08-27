@@ -365,6 +365,52 @@ export const getSystem = createServerFn({ method: "POST" })
  * Paged activity log for a single system, with optional filters. Replaces the
  * old hard `limit(300)` — the card loads a page at a time ("טען עוד").
  */
+// Older notes / transfers on demand — the card only receives the newest page
+// from `getSystem`, mirroring how activity is paged.
+export const listSystemNotes = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { systemId: string; offset?: number; limit?: number }) =>
+    z.object({
+      systemId: z.string().uuid(),
+      offset: z.number().int().min(0).max(100000).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, "yemot");
+    const offset = data.offset ?? 0;
+    const limit = data.limit ?? 50;
+    const { data: rows, error } = await context.supabase
+      .from("system_notes").select("*").eq("system_id", data.systemId)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw new Error(error.message);
+    return { items: rows ?? [], hasMore: (rows ?? []).length === limit };
+  });
+
+export const listSystemTransfers = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { systemId: string; offset?: number; limit?: number }) =>
+    z.object({
+      systemId: z.string().uuid(),
+      offset: z.number().int().min(0).max(100000).optional(),
+      limit: z.number().int().min(1).max(200).optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertCrmAccess } = await import("@/lib/permissions.server");
+    await assertCrmAccess(context.userId, "yemot");
+    const offset = data.offset ?? 0;
+    const limit = data.limit ?? 50;
+    const { data: rows, error } = await context.supabase
+      .from("system_transfers").select("*").eq("system_id", data.systemId)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + limit - 1);
+    if (error) throw new Error(error.message);
+    return { items: rows ?? [], hasMore: (rows ?? []).length === limit };
+  });
+
 export const listSystemActivity = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: {

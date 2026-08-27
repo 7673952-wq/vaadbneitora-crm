@@ -52,7 +52,7 @@ export function SecurityPanel() {
       <section className="rounded-xl border border-border bg-card p-4">
         <h3 className="flex items-center gap-2 font-semibold mb-1"><ShieldCheck className="h-4 w-4" />אימות נוסף בשיחה (ימות המשיח)</h3>
         <p className="text-xs text-muted-foreground mb-3">
-          כשמופעל, לאחר הסיסמה תתבצע שיחה למספר שהוגדר עם קוד בן 8 ספרות. מכשיר שאושר עם "זכור אותי" לא יידרש לקוד במשך 30 יום.
+          כשמופעל, לאחר הסיסמה תתבצע שיחה למספר שהוגדר עם קוד בן 8 ספרות. האישור תקף לחיבור (Session) הנוכחי בלבד — כל התחברות חדשה דורשת קוד חדש.
         </p>
         <div className="divide-y divide-border">
           {(users ?? []).map((u: any) => (
@@ -75,13 +75,14 @@ export function SecurityPanel() {
           ) : (
             <table className="w-full text-right">
               <thead className="text-xs text-muted-foreground">
-                <tr><th className="py-1">משתמש</th><th>פעולה</th><th>מתי</th></tr>
+                <tr><th className="py-1">משתמש</th><th>פעולה</th><th>מכשיר</th><th>מתי</th></tr>
               </thead>
               <tbody>
                 {(events ?? []).map((e: any) => (
                   <tr key={e.id} className="border-t border-border/60">
                     <td className="py-1.5">{e.display_name ?? e.email ?? "—"}</td>
                     <td className={e.kind === "password_failed" ? "text-destructive" : ""}>{KIND_LABELS[e.kind] ?? e.kind}</td>
+                    <td className="text-[11px] font-mono text-muted-foreground" title={e.device_id ?? ""}>{e.device_id ? String(e.device_id).slice(0, 8) : "—"}</td>
                     <td className="text-xs text-muted-foreground">{new Date(e.created_at).toLocaleString("he-IL")}</td>
                   </tr>
                 ))}

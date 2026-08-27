@@ -153,11 +153,7 @@ function RootComponent() {
         queryClient.invalidateQueries({ queryKey: ["my_email_profile"] });
       }
     });
-    return () => {
-      subscription.unsubscribe();
-      if (pingTimer) clearTimeout(pingTimer);
-      channel?.close();
-    };
+    return () => { subscription.unsubscribe(); };
   }, [router, queryClient]);
 
   useEffect(() => { perfMark("APP_START"); }, []);

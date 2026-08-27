@@ -8,7 +8,7 @@ import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMf
 import { getDeviceId, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
 import { primeAccessToken } from "@/lib/session-cache";
-import { setSessionPersistence } from "@/lib/remember-storage";
+import { clearPersistedSession, setSessionPersistence } from "@/lib/remember-storage";
 
 
 export const Route = createFileRoute("/auth")({
@@ -69,6 +69,7 @@ function AuthPage() {
       } catch (err: any) {
         // A session that cannot be marked MFA-approved is useless: every
         // protected server function would reject it. Tear it down instead.
+        clearPersistedSession();
         await supabase.auth.signOut();
         toast.error(err?.message ?? "רישום האימות נכשל — התחבר מחדש");
         return;

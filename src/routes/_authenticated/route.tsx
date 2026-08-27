@@ -19,9 +19,10 @@ import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import { useSession } from "@/lib/use-session";
 import { getSessionSecurity, recordLoginEvent, endSession } from "@/lib/login.functions";
 import { clearAccessToken } from "@/lib/session-cache";
-import { getDeviceId, setRemembered } from "@/lib/device-id";
+import { getDeviceId } from "@/lib/device-id";
 import { perfMark } from "@/lib/perf";
 import { logAuthEvent } from "@/lib/auth-diagnostics";
+import { clearPersistedSession } from "@/lib/remember-storage";
 
 
 
@@ -153,6 +154,7 @@ function AuthedLayout() {
           return;
         }
         if (active && res?.mfa_required === true) {
+          clearPersistedSession();
           await supabase.auth.signOut();
           toast.error("נדרש אימות נוסף — התחבר מחדש");
           navigate({ to: "/auth", replace: true });
@@ -183,7 +185,7 @@ function AuthedLayout() {
     try {
       await endSessionFn({ data: { device_id: getDeviceId() } });
     } catch { /* a failed cleanup must never trap the user in the app */ }
-    setRemembered(false);
+    clearPersistedSession();
     clearAccessToken();
     await queryClient.cancelQueries();
     queryClient.clear();

@@ -107,10 +107,7 @@ export function rememberAwareStorage() {
       // another tab may already have written the valid rotated session there.
       // Intentional logout uses clearPersistedSession() before auth.signOut().
       const selected = targetStore();
-      try { window.localStorage.removeItem(key); } catch { /* ignore */ }
-      if (selected !== window.localStorage) {
-        try { window.sessionStorage.removeItem(key); } catch { /* ignore */ }
-      }
+      try { selected.removeItem(key); } catch { /* ignore */ }
     },
   };
 }

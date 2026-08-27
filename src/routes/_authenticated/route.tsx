@@ -19,7 +19,7 @@ import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import { useSession } from "@/lib/use-session";
 import { getSessionSecurity, recordLoginEvent, endSession } from "@/lib/login.functions";
 import { clearAccessToken } from "@/lib/session-cache";
-import { getDeviceId, setRemembered } from "@/lib/device-id";
+import { getDeviceId } from "@/lib/device-id";
 import { perfMark } from "@/lib/perf";
 import { logAuthEvent } from "@/lib/auth-diagnostics";
 import { clearPersistedSession } from "@/lib/remember-storage";

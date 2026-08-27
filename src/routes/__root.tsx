@@ -216,20 +216,20 @@ function RootComponent() {
 
 function StatusSettingsHydrator() {
   const fn = useServerFn(listStatusSettings);
-  const [hasSession, setHasSession] = useState(false);
+  // One shared session source (useSession) instead of a second auth listener
+  // and a second getSession() call on every page load.
+  const { session } = useSession();
   // The versioned cache is applied at module load inside @/lib/status, so the
   // very first paint already shows the admin's real statuses.
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setHasSession(!!session);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
   const { data } = useQuery({
     queryKey: ["status_settings"],
-    queryFn: async () => fn({}),
-    enabled: hasSession,
+    queryFn: async () => {
+      perfMark("STATUS_SETTINGS_START");
+      const res = await fn({});
+      perfMark("STATUS_SETTINGS_READY");
+      return res;
+    },
+    enabled: !!session,
     staleTime: 60_000,
     retry: false,
     throwOnError: false,

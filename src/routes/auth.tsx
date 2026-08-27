@@ -8,7 +8,7 @@ import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMf
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
 import { primeAccessToken } from "@/lib/session-cache";
-import { syncRememberPlacement } from "@/lib/remember-storage";
+
 
 export const Route = createFileRoute("/auth")({
   head: () => ({

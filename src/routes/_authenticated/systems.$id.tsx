@@ -1417,10 +1417,29 @@ function SystemDetail() {
         </div>
       </div>
 
-      {/* ===== תזכורות + מיילים (side-by-side) ===== */}
-      <div className="grid lg:grid-cols-2 gap-4">
-        {/* תזכורות */}
-        <div className="bg-card border border-border rounded-xl p-4">
+      {/* ===== לשוניות עבודה ===== */}
+      <div className="xl:col-start-1 flex items-center gap-1 overflow-x-auto rounded-xl border border-border bg-card p-1">
+        {WORK_TABS.filter((t) => t.key !== "subs" || !isSub).map((t) => {
+          const count =
+            t.key === "emails" ? (emailThread?.length ?? 0)
+            : t.key === "subs" ? (data.children?.length ?? 0)
+            : t.key === "files" ? (files?.length ?? 0)
+            : (s.reminder_at ? 1 : 0);
+          const active = tab === t.key;
+          return (
+            <button key={t.key} type="button" onClick={() => selectTab(t.key)}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}>
+              {t.label}
+              <span className={`rounded-full px-1.5 text-[10px] ${active ? "bg-white/20" : "bg-muted"}`}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* ===== תזכורות ===== */}
+      {tab === "reminders" && (
+        <div className="bg-card border border-border rounded-xl p-4 xl:col-start-1">
+
           <ReminderSection
             hasReminder={!!s.reminder_at}
             headerSummary={

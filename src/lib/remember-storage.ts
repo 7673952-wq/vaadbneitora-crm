@@ -48,8 +48,18 @@ export function rememberAwareStorage(): StorageLike | undefined {
   return {
     getItem: async (key: string): Promise<string | null> => {
       if (!isAuthKey(key)) return persistentGet(key);
-      if (isRemembered()) return persistentGet(key);
       const fromSession = session.getItem(key);
+      if (isRemembered()) {
+        // Remembered: the persistent copy is the source of truth, but a session
+        // copy written before the flag landed must never be thrown away.
+        const persisted = await persistentGet(key);
+        if (persisted != null) return persisted;
+        if (fromSession != null) {
+          await persistentSet(key, fromSession);
+          return fromSession;
+        }
+        return null;
+      }
       if (fromSession != null) return fromSession;
       // One-time migration of pre-v2 sessions: they live in the persistent
       // store with no remember flag. Adopt them into session storage so they
@@ -82,3 +92,38 @@ export function rememberAwareStorage(): StorageLike | undefined {
     },
   };
 }
+
+/**
+ * Moves an already-written session to the store that matches the current
+ * "זכור אותי" choice. Supabase may have persisted the token a moment before
+ * the flag was read (or in another tab), which used to leave a remembered
+ * login sitting in sessionStorage — gone as soon as the window closed.
+ * Safe to call after every sign-in.
+ */
+export async function syncRememberPlacement(): Promise<void> {
+  if (typeof window === "undefined") return;
+  const persistent = (brokeredPreviewStorage() ?? window.localStorage) as StorageLike;
+  const session = window.sessionStorage;
+  const keys: string[] = [];
+  for (let i = 0; i < session.length; i++) {
+    const k = session.key(i);
+    if (k && isAuthKey(k)) keys.push(k);
+  }
+  for (let i = 0; i < window.localStorage.length; i++) {
+    const k = window.localStorage.key(i);
+    if (k && isAuthKey(k) && !keys.includes(k)) keys.push(k);
+  }
+  const remembered = isRemembered();
+  for (const key of keys) {
+    const value = session.getItem(key) ?? (await persistent.getItem(key)) ?? null;
+    if (value == null) continue;
+    if (remembered) {
+      session.removeItem(key);
+      await persistent.setItem(key, value);
+    } else {
+      session.setItem(key, value);
+      await persistent.removeItem(key);
+    }
+  }
+}
+

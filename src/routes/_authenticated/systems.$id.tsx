@@ -89,17 +89,13 @@ function SystemDetail() {
   const sendChoiceBtnRef = useRef<HTMLButtonElement>(null);
   const [showSendPicker, setShowSendPicker] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
-  const [tab, setTab] = useState<WorkTab>("emails");
-  useEffect(() => {
-    try {
-      const v = window.localStorage.getItem("crm.system.tab") as WorkTab | null;
-      if (v && WORK_TABS.some((t) => t.key === v)) setTab(v);
-    } catch { /* אין גישה לאחסון */ }
-  }, []);
+  // "תתי-מערכות" is the tab a card opens on; the choice is not remembered
+  // between systems so every card starts from the same known place.
+  const [tab, setTab] = useState<WorkTab>("subs");
   function selectTab(next: WorkTab) {
     setTab(next);
-    try { window.localStorage.setItem("crm.system.tab", next); } catch { /* אין גישה לאחסון */ }
   }
+
 
 
 

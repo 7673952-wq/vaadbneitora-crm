@@ -91,7 +91,25 @@ function normalizePermissionSettings(value: unknown): PermissionSettingsValue {
   return { rolePermissions, userPermissions };
 }
 
-async function readPermissionSettings(supabaseAdmin: any): Promise<PermissionSettingsValue> {
+type AdminClient = Awaited<typeof import("@/integrations/supabase/client.server")>["supabaseAdmin"];
+
+/**
+ * Only a super_admin may create or grant the super_admin role, and only a
+ * super_admin may change or delete an existing super_admin. users_manage on
+ * its own must never be a path to full privileges.
+ */
+async function assertCanManageRole(
+  context: { userId: string },
+  opts: { grantRole?: string; targetUserId?: string },
+) {
+  const { assertRole, getUserRoles } = await import("@/lib/permissions.server");
+  const touchesSuperAdmin =
+    opts.grantRole === "super_admin" ||
+    (!!opts.targetUserId && (await getUserRoles(opts.targetUserId)).includes("super_admin"));
+  if (touchesSuperAdmin) await assertRole(context.userId, "super_admin");
+}
+
+async function readPermissionSettings(supabaseAdmin: AdminClient): Promise<PermissionSettingsValue> {
   const { data, error } = await supabaseAdmin
     .from("app_settings")
     .select("value")
@@ -101,7 +119,7 @@ async function readPermissionSettings(supabaseAdmin: any): Promise<PermissionSet
   return normalizePermissionSettings((data as any)?.value);
 }
 
-async function writePermissionSettings(supabaseAdmin: any, value: PermissionSettingsValue, userId: string) {
+async function writePermissionSettings(supabaseAdmin: AdminClient, value: PermissionSettingsValue, userId: string) {
   const { error } = await supabaseAdmin.from("app_settings").upsert({
     key: PERMISSION_SETTINGS_KEY,
     value,
@@ -144,6 +162,7 @@ export const createUser = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
+    await assertCanManageRole(context, { grantRole: data.role });
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -165,6 +184,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
+    await assertCanManageRole(context, { targetUserId: data.user_id });
     if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -179,6 +199,7 @@ export const setUserRole = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
+    await assertCanManageRole(context, { grantRole: data.role, targetUserId: data.user_id });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
@@ -197,6 +218,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
+    await assertCanManageRole(context, { targetUserId: data.user_id });
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
@@ -212,6 +234,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
+    await assertCanManageRole(context, { targetUserId: data.user_id });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw fromSupabase(error);
@@ -225,6 +248,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
+    await assertCanManageRole(context, { targetUserId: data.user_id });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw fromSupabase(error);

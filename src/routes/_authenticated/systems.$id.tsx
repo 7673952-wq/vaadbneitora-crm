@@ -801,7 +801,7 @@ function SystemDetail() {
         };
 
         return (
-          <section className={`rounded-xl border-2 shadow-sm overflow-visible ${cardTone}`}>
+          <section className={`rounded-xl border-2 shadow-sm overflow-visible xl:col-span-2 xl:sticky xl:top-0 xl:z-30 backdrop-blur ${cardTone}`}>
             <div className="px-3 py-2.5 md:px-4">
               {/* שורה 1 — זהות המערכת מימין, פעולות מהירות משמאל. */}
               <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">

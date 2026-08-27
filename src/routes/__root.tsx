@@ -138,12 +138,10 @@ function RootComponent() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       primeAccessToken(session ?? null);
       if (event === "SIGNED_IN") {
-        sessionStorage.setItem(SESSION_MARKER, "1");
         // A fresh password login is journaled by the auth page itself.
         sessionStorage.setItem(LOGIN_LOGGED, "1");
       }
       if (event === "SIGNED_OUT") {
-        sessionStorage.removeItem(SESSION_MARKER);
         sessionStorage.removeItem(LOGIN_LOGGED);
         clearAccessToken();
         queryClient.clear();

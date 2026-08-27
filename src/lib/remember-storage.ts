@@ -32,6 +32,14 @@ function dropAuthKeys(store: Storage) {
   }
 }
 
+function targetStore(): Storage {
+  return isRemembered() ? window.localStorage : window.sessionStorage;
+}
+
+function otherStore(): Storage {
+  return isRemembered() ? window.sessionStorage : window.localStorage;
+}
+
 export function rememberAwareStorage() {
   if (typeof window === "undefined") return undefined;
   const previewStorage = brokeredPreviewStorage();
@@ -40,19 +48,17 @@ export function rememberAwareStorage() {
   // where the real persistent-vs-session choice below must apply.
   if (previewStorage && previewStorage !== window.localStorage) return previewStorage;
 
-  const remembered = isRemembered();
-  const target: Storage = remembered ? window.localStorage : window.sessionStorage;
-  const other: Storage = remembered ? window.sessionStorage : window.localStorage;
-  // Single source of truth from the very first read of this page load.
-  dropAuthKeys(other);
+  // Resolved once per page load, and again only when the login screen changes
+  // the choice through setSessionPersistence (which clears both stores first).
+  dropAuthKeys(otherStore());
 
   return {
     getItem(key: string) {
-      try { return target.getItem(key); } catch { return null; }
+      try { return targetStore().getItem(key); } catch { return null; }
     },
     setItem(key: string, value: string) {
-      try { target.setItem(key, value); } catch { /* ignore */ }
-      if (isAuthKey(key)) { try { other.removeItem(key); } catch { /* ignore */ } }
+      try { targetStore().setItem(key, value); } catch { /* ignore */ }
+      if (isAuthKey(key)) { try { otherStore().removeItem(key); } catch { /* ignore */ } }
     },
     removeItem(key: string) {
       try { window.localStorage.removeItem(key); } catch { /* ignore */ }

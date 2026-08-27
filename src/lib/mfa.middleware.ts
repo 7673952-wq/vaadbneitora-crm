@@ -39,11 +39,25 @@ export async function assertMfaSession(
   if (data !== true) throw new Error(MFA_REQUIRED_ERROR);
 }
 
+// A dashboard load fires several protected server functions at once; without
+// this the second factor costs one extra DB roundtrip each time. Only
+// successes are cached, for a short window, so a revoked session (logout)
+// loses access within seconds.
+const OK_TTL_MS = 30_000;
+const okCache = new Map<string, number>();
+
 export const requireAuthMfa = createMiddleware({ type: "function" })
   .middleware([requireSupabaseAuth])
   .server(async ({ next, context }) => {
     const claims = context.claims as Record<string, unknown> | undefined;
     const sessionId = typeof claims?.["session_id"] === "string" ? (claims["session_id"] as string) : "";
+    const cacheKey = `${context.userId}:${sessionId}`;
+    const cachedAt = sessionId ? okCache.get(cacheKey) : undefined;
+    if (cachedAt !== undefined && Date.now() - cachedAt < OK_TTL_MS) return next();
     await assertMfaSession(context.supabase as unknown as RpcClient, context.userId, sessionId);
+    if (sessionId) {
+      if (okCache.size > 500) okCache.clear();
+      okCache.set(cacheKey, Date.now());
+    }
     return next();
   });

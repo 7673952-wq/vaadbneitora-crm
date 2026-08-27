@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import appCss from "../styles.css?url";
@@ -20,6 +20,8 @@ import { Toaster } from "sonner";
 import { isRemembered, getDeviceId, describeDevice } from "@/lib/device-id";
 import { recordLoginEvent } from "@/lib/login.functions";
 import { perfMark } from "@/lib/perf";
+import { useSession } from "@/lib/use-session";
+import { clearAccessToken, primeAccessToken } from "@/lib/session-cache";
 import { PerfOverlay } from "@/components/PerfOverlay";
 
 
@@ -177,7 +179,8 @@ function RootComponent() {
       resolvePresence(false);
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      primeAccessToken(session ?? null);
       if (event === "SIGNED_IN") {
         sessionStorage.setItem(SESSION_MARKER, "1");
         // A fresh password login is journaled by the auth page itself.
@@ -186,6 +189,8 @@ function RootComponent() {
       if (event === "SIGNED_OUT") {
         sessionStorage.removeItem(SESSION_MARKER);
         sessionStorage.removeItem(LOGIN_LOGGED);
+        clearAccessToken();
+        queryClient.clear();
       }
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();

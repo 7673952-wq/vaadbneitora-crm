@@ -47,3 +47,45 @@ export async function noteLoginFailure(supabaseAdmin: any, email: string): Promi
 export async function clearLoginFailures(supabaseAdmin: any, email: string): Promise<void> {
   await supabaseAdmin.from("api_rate_limits").delete().eq("bucket_key", key(email));
 }
+
+// ---------------------------------------------------------------------------
+// OTP send throttle — independent of any single challenge, so restarting the
+// login flow (beginLogin) cannot reset it the way `resend_count` could.
+const OTP_WINDOW_SECONDS = 15 * 60;
+const OTP_MAX_PER_WINDOW = 5;
+const OTP_MIN_GAP_MS = 30_000;
+
+function otpKey(userId: string) {
+  return `otp_send:${userId}`;
+}
+
+/**
+ * Throws when this user asked for a code too recently (30s) or too often
+ * (5 per 15 minutes). Counts every send — first one and resends alike.
+ */
+export async function throttleOtpSend(supabaseAdmin: any, userId: string): Promise<void> {
+  const windowStart = new Date(
+    Math.floor(Date.now() / 1000 / OTP_WINDOW_SECONDS) * OTP_WINDOW_SECONDS * 1000,
+  ).toISOString();
+  const { data } = await supabaseAdmin
+    .from("api_rate_limits")
+    .select("hits, updated_at")
+    .eq("bucket_key", otpKey(userId))
+    .eq("window_start", windowStart)
+    .maybeSingle();
+  const hits = Number((data as any)?.hits ?? 0);
+  const last = (data as any)?.updated_at ? new Date((data as any).updated_at).getTime() : 0;
+  if (hits >= OTP_MAX_PER_WINDOW) {
+    throw new Error("נשלחו יותר מדי קודי אימות — נסה שוב בעוד רבע שעה");
+  }
+  if (last && Date.now() - last < OTP_MIN_GAP_MS) {
+    throw new Error("הקוד נשלח זה עתה — נסה שוב בעוד כמה שניות");
+  }
+}
+
+export async function noteOtpSend(supabaseAdmin: any, userId: string): Promise<void> {
+  await supabaseAdmin.rpc("bump_rate_limit", {
+    _key: otpKey(userId),
+    _window_seconds: OTP_WINDOW_SECONDS,
+  });
+}

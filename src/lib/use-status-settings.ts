@@ -9,7 +9,7 @@ import { useServerFn } from "@tanstack/react-start";
 import { listStatusSettings } from "@/lib/admin.functions";
 import {
   applyStatusSettings, buildStatusMaps, readStatusCache, writeStatusCache,
-  markStatusSettingsHydrated, statusSettingsHydrated,
+  markStatusSettingsHydrated, statusSettingsHydrated, statusCacheSavedAt,
   type StatusSettingRow, type StatusMaps,
 } from "@/lib/status";
 
@@ -26,6 +26,9 @@ export function useStatusSettings(options?: { staleTime?: number }): {
     queryFn: async () => fn({}),
     staleTime: options?.staleTime ?? 5 * 60_000,
     initialData: cached ?? undefined,
+    // Without this React Query treats the restored cache as "just fetched"
+    // and can serve stale settings for a whole staleTime window.
+    initialDataUpdatedAt: cached ? statusCacheSavedAt || undefined : undefined,
     retry: false,
   });
 

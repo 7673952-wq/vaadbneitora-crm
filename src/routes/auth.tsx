@@ -93,6 +93,7 @@ function AuthPage() {
     e.preventDefault();
     setLoading(true);
     resetPerfTimings();
+    perfMark("LOGIN_FLOW_START");
     perfMark("OTP_SUBMIT_START");
     try {
       const res: any = await beginFn({ data: { email, password, device_id: getDeviceId() } });

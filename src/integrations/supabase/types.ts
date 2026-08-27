@@ -1252,11 +1252,43 @@ export type Database = {
         }
         Returns: Json
       }
+      mfa_consume_grant: {
+        Args: {
+          _expires: string
+          _grant_hash: string
+          _session_id: string
+          _user_id: string
+        }
+        Returns: boolean
+      }
       mfa_session_ok: {
         Args: { _session_id: string; _user_id: string }
         Returns: boolean
       }
+      otp_activate_resend: {
+        Args: { _code_hash: string; _new_id: string; _user_id: string }
+        Returns: boolean
+      }
+      otp_consume_and_grant: {
+        Args: {
+          _challenge_id: string
+          _code_hash: string
+          _grant_expires: string
+          _grant_hash: string
+          _max_attempts: number
+        }
+        Returns: Json
+      }
       purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
+      reports_summary: {
+        Args: {
+          _agent?: string
+          _from?: string
+          _status?: string
+          _to?: string
+        }
+        Returns: Json
+      }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
       systems_status_counts: {
         Args: { _agent?: string; _from?: string; _to?: string }

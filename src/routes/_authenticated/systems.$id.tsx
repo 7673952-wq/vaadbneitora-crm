@@ -7,6 +7,7 @@ import {
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
   updateNote, deleteNote, updateActivityLog, deleteActivityLog, listSystemActivity,
+  listSystemNotes, listSystemTransfers,
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
@@ -142,6 +143,8 @@ function SystemDetail() {
   const voiceFn = useServerFn(sendVoiceMessage);
   const statusSettingsFn = useServerFn(listStatusSettings);
   const activityFn = useServerFn(listSystemActivity);
+  const notesFn = useServerFn(listSystemNotes);
+  const transfersFn = useServerFn(listSystemTransfers);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
   // TanStack reuses this component when only :id changes. Reset from the
@@ -165,6 +168,9 @@ function SystemDetail() {
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
   // Older activity pages loaded on demand ("טען עוד") + activity filters.
   const [olderActivity, setOlderActivity] = useState<any[]>([]);
+  // Notes and transfers are paged the same way (getSystem only sends the newest 50).
+  const [olderNotes, setOlderNotes] = useState<any[]>([]);
+  const [olderTransfers, setOlderTransfers] = useState<any[]>([]);
   const [activityHasMore, setActivityHasMore] = useState(true);
   const [activityLoading, setActivityLoading] = useState(false);
   const [activityActionFilter, setActivityActionFilter] = useState<string>("");
@@ -173,6 +179,8 @@ function SystemDetail() {
   const [activityTo, setActivityTo] = useState<string>("");
   useEffect(() => {
     setOlderActivity([]);
+    setOlderNotes([]);
+    setOlderTransfers([]);
     setActivityHasMore(true);
   }, [id, activityActionFilter, activityActorFilter, activityFrom, activityTo]);
   const loadMoreActivity = async (baseCount: number) => {
@@ -190,6 +198,18 @@ function SystemDetail() {
       });
       setOlderActivity((prev) => [...prev, ...(res?.items ?? [])]);
       setActivityHasMore(!!res?.hasMore);
+      // Pull the matching page of notes/transfers so the merged timeline does
+      // not silently stop at the newest 50 of each.
+      if (!activityActionFilter && !activityActorFilter && !activityFrom && !activityTo) {
+        try {
+          const [n, t]: any[] = await Promise.all([
+            notesFn({ data: { systemId: id, offset: (data?.notes?.length ?? 0) + olderNotes.length } }),
+            transfersFn({ data: { systemId: id, offset: (data?.transfers?.length ?? 0) + olderTransfers.length } }),
+          ]);
+          setOlderNotes((prev) => [...prev, ...(n?.items ?? [])]);
+          setOlderTransfers((prev) => [...prev, ...(t?.items ?? [])]);
+        } catch { /* the activity page already loaded — not worth an error toast */ }
+      }
     } catch (e: any) {
       toast.error(e?.message ?? "טעינת היומן נכשלה");
     } finally {
@@ -664,7 +684,7 @@ function SystemDetail() {
 
   return (
     <div className={splitOpen && data.parent ? "flex gap-3 items-start w-full" : ""}>
-    <div className={`grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_380px] ${splitOpen && data.parent ? "flex-1 min-w-0" : "max-w-[1600px] mx-auto"}`}>
+    <div className={`grid grid-cols-1 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] ${splitOpen && data.parent ? "flex-1 min-w-0" : "max-w-[1600px] mx-auto"}`}>
       <Link to="/dashboard" className="xl:col-span-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground w-fit">
         <ArrowRight className="h-4 w-4" />חזרה לדשבורד
       </Link>
@@ -1095,7 +1115,7 @@ function SystemDetail() {
         )}
 
         {detailsOpen && (
-          <div className="grid lg:grid-cols-[minmax(0,1fr)_290px] gap-4 items-start">
+          <div className="grid xl:grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_290px] gap-4 items-start">
             <div className="min-w-0 rounded-xl border border-border bg-muted/10 p-3">
               <CallerPhonesEditor
                 systemId={id}
@@ -1273,9 +1293,9 @@ function SystemDetail() {
             };
             const filtersActive = !!(activityActionFilter || activityActorFilter || activityFrom || activityTo);
             const allMerged = [
-              ...(filtersActive ? [] : data.notes.map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
+              ...(filtersActive ? [] : [...data.notes, ...olderNotes].map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
               ...baseActivity.filter(passesFilters).map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-              ...(filtersActive ? [] : data.transfers.map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
+              ...(filtersActive ? [] : [...data.transfers, ...olderTransfers].map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
             const merged = mentionFilter
               ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))

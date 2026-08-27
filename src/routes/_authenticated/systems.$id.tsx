@@ -1623,7 +1623,8 @@ function SystemDetail() {
             </div>
           )}
         </div>
-      </div>
+      )}
+
 
 
 

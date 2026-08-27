@@ -2116,7 +2116,6 @@ async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId: string
       void logInfo(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
     } else {
 
-    } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
       await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", systemId);
       void logInfo(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);

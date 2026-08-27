@@ -74,6 +74,13 @@ export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<vo
     try { json = await res.json(); } catch { json = null; }
     if (!res.ok || json?.responseStatus !== "OK") {
       const msg = json?.message || json?.responseMessage || `הפעולה נכשלה (סטטוס ${res.status})`;
+      // Surface ACL rejections as what they are: the API key lacks permission
+      // for this operation/path. Renaming files will not fix it.
+      if (String(msg).includes("API_KEY_ACL_REJECT")) {
+        throw new Error(
+          `ימות המשיח (${endpoint}): למפתח ה־API אין הרשאה לפעולה זו (API_KEY_ACL_REJECT) — יש להרחיב את הרשאות המפתח בימות המשיח`,
+        );
+      }
       throw new Error(`ימות המשיח (${endpoint}): ${msg}`);
     }
     return json;

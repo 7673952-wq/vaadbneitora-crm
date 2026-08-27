@@ -144,6 +144,13 @@ function SystemDetail() {
   const activityFn = useServerFn(listSystemActivity);
 
   const { data, isLoading } = useQuery({ queryKey: ["system", id], queryFn: () => getFn({ data: { id } }) });
+  // TanStack reuses this component when only :id changes. Reset from the
+  // newly loaded record so a child card's "emails" tab cannot leak to its
+  // parent card. This hook stays above loading returns to preserve hook order.
+  useEffect(() => {
+    if (!data?.system) return;
+    setTab(data.system.parent_system_id ? "emails" : "subs");
+  }, [id, data?.system?.parent_system_id]);
   // Reference/settings data changes rarely — cache it longer than the 30s
   // default so opening a system card and returning to the dashboard (which
   // reads the same query keys) doesn't re-fetch it every time.
@@ -614,14 +621,6 @@ function SystemDetail() {
   const s = data.system;
 
   const isSub = !!s.parent_system_id;
-
-  // TanStack reuses this component when only :id changes. Wait for the loaded
-  // record's type as well: during navigation the previous child record can
-  // remain briefly in the query placeholder and must not force its parent to
-  // inherit the "emails" tab.
-  useEffect(() => {
-    setTab(isSub ? "emails" : "subs");
-  }, [id, isSub]);
 
   
   const currentStatusSetting = (statusSettings as any[] | undefined)?.find((r) => r.status_key === s.status);

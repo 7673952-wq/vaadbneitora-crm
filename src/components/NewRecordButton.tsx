@@ -8,7 +8,7 @@ import { useMyCrms } from "@/lib/use-crms";
 import { createRecord, listFieldDefs } from "@/lib/crm-records.functions";
 import { listAgents } from "@/lib/systems.functions";
 import { listStatusSettings } from "@/lib/admin.functions";
-import { YemotCreateModal } from "@/routes/_authenticated/dashboard";
+import { YemotCreateModal } from "@/components/YemotCreateModal";
 
 type Form = { code: string; name: string; phone: string; callerPhone: string; email: string; notes: string };
 const EMPTY: Form = { code: "", name: "", phone: "", callerPhone: "", email: "", notes: "" };

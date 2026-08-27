@@ -108,39 +108,72 @@ RLS: קריאה למאומתים עם `has_crm_access(auth.uid(), crm_key)`; ע�
 
 ## 4. State machine סופי
 
-שני צירים נפרדים, כפי שביקשת:
+שני צירים נפרדים, ו-`failed` **אינו מוחק את נקודת ההמשך** (ההערה נכונה — תוקן):
 
 ```text
-processing_state:  received → parsed → matched → done
-                              ↘ failed (עם error_message, attempts++) → ניסיון חוזר ממשיך מהשלב שנעצר
+last_completed_state:  none → parsed → matched → applied      (השלב האחרון שהושלם בוודאות)
+processing_state:      received → parsed → matched → done
+                                    ↘ failed  (last_error, error_at, attempts++)
 
-decision_status:   auto_applied | kept | needs_decision | ignored | manual_applied
+decision_status:       auto_applied | kept | needs_decision | ignored | manual_applied
 ```
-- קליטה שהצליחה אך אין כלל מתאים → `processing_state = done` + `decision_status = needs_decision`. **Gmail מסומן כנקרא** — הקליטה הצליחה, רק ההחלטה ממתינה.
-- `mark_read` נשלח אך ורק כשהתשובה היא `processing_state = done`.
-- `failed` → לא מסומן כנקרא; הסריקה הבאה מנסה שוב.
+- `processing_state = 'failed'` מסמן רק "הריצה האחרונה נכשלה". נקודת ההמשך היא תמיד `last_completed_state`, שנשמרת בנפרד ולא נדרסת.
+- עמודות שמתווספות למבנה בסעיף 2: `last_completed_state text not null default 'none'`, `last_error text`, `error_at timestamptz` (במקום `error_message` בלבד), ו-CHECK מתאים.
+- קליטה שהצליחה ואין כלל מתאים → `processing_state = done` + `decision_status = needs_decision`. **Gmail מסומן כנקרא**.
+- `mark_read` נשלח רק כאשר התשובה היא `done`. `failed` → לא מסומן, נסיון חוזר בסריקה הבאה מהשלב שב-`last_completed_state`.
 
 ---
 
 ## 5. מנגנון Idempotency סופי
 
-מפתח הפעולה: `system_requests.id` (שנגזר חד-חד-ערכית מ-`gmail_message_id` דרך ה-UNIQUE). כל שלב בודק חותמת לפני שהוא פועל:
+מפתח הפעולה: `system_requests.id` (נגזר חד-חד-ערכית מ-`gmail_message_id`). כל שלב בודק חותמת לפני שהוא פועל:
 
 | פעולה | הגנה |
 |---|---|
 | כתיבת הבקשה | `INSERT … ON CONFLICT (gmail_message_id) DO NOTHING RETURNING *`, ואם ריק — קריאה של השורה הקיימת |
 | שתי הרצות במקביל | נעילת `bump_rate_limit('req:<message_id>', 60)` — השנייה מקבלת skip |
-| יצירת מערכת | `INSERT … ON CONFLICT` על `systems_root_code_norm_uniq` `DO NOTHING`, ואז `SELECT` חוזר |
-| הוספת מספר פונה | מבוצע רק אם `phone_added_at IS NULL`; ובנוסף השוואת ספרות מול `caller_phone` + `additional_caller_phones` לפני הוספה |
-| שינוי סטטוס | מבוצע רק אם `status_applied_at IS NULL`; העדכון עצמו הוא `UPDATE … WHERE id = ? AND status = prev_status` (compare-and-set) |
-| `system_activity_log` | נכתב ע"י הטריגר הקיים רק כשהסטטוס באמת השתנה — compare-and-set מונע רשומה כפולה |
+| יצירת מערכת | RPC אטומי: `INSERT … ON CONFLICT` על `systems_root_code_norm_uniq` `DO NOTHING`, ואז `SELECT` חוזר, בתוך אותה פונקציה |
+| הוספת מספר פונה | RPC אטומי שמעדכן את הפונה **ו**את `phone_added_at` יחד; מבוצע רק אם `phone_added_at IS NULL`, עם השוואת ספרות מול `caller_phone` + `additional_caller_phones` |
+| שינוי סטטוס | **RPC ייעודי `apply_request_status_change()`** (ראה למטה) |
+| `system_activity_log` | נכתב ע"י הטריגר הקיים רק כשהסטטוס באמת השתנה — ה-compare-and-set מונע רשומה כפולה |
 | החלטה ידנית | `UPDATE … WHERE id = ? AND decision_status = 'needs_decision'` — שנייה לא תחול |
 | שמירת כלל מהחלטת נציג | `INSERT … ON CONFLICT` על `system_request_rules_active_uniq` `DO UPDATE` |
 
-תרחישים שביקשת:
-- **א. הסטטוס שונה אך השרת נפל לפני `done`:** `status_applied_at` כבר נכתב באותה טרנזקציה עם העדכון, לכן הניסיון החוזר מדלג על שינוי הסטטוס וממשיך לשלב הסיום בלבד.
-- **ב. הפונה נוסף והשלב הבא נכשל:** `phone_added_at` מסומן; הריצה הבאה לא תוסיף שוב ותמשיך משינוי הסטטוס.
-- **ג. אותה בקשה חוזרת אחרי timeout:** אם `done` → `{ok:true, duplicate:true}` ו-`mark_read`; אחרת המשך מהשלב שנעצר, כל פעולה מוגנת בחותמת שלה.
+### טרנזקציה אמיתית לשינוי הסטטוס (ההערה נכונה — תוקן)
+שתי קריאות Supabase נפרדות אינן טרנזקציה. לכן ייווצר RPC אחד ב-Postgres שמבצע את שני הדברים בגוף אחד, ולכן אטומי:
+
+```sql
+CREATE FUNCTION public.apply_request_status_change(
+  _request_id uuid, _system_id uuid, _from_status text, _to_status text, _reason text
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE _ok boolean := false;
+BEGIN
+  PERFORM 1 FROM public.system_requests
+    WHERE id = _request_id AND status_applied_at IS NULL FOR UPDATE;
+  IF NOT FOUND THEN RETURN false; END IF;
+
+  PERFORM public.set_change_reason(_reason);
+  UPDATE public.systems SET status = _to_status::system_status
+    WHERE id = _system_id AND status::text = _from_status;      -- compare-and-set
+  GET DIAGNOSTICS _ok = FOUND;
+  IF NOT _ok THEN RETURN false; END IF;                          -- הסטטוס השתנה בינתיים
+
+  UPDATE public.system_requests
+    SET status_applied_at = now(), new_status = _to_status,
+        last_completed_state = 'applied'
+    WHERE id = _request_id;
+  RETURN true;
+END $$;
+```
+הפונקציה נקראת מתוך ה-core המשותף `applySystemStatusChange` (חילוץ מ-`updateSystem`), כך שהאוטומציה עוברת באותה לוגיקה עסקית כמו שינוי ידני — יומן, שיוך אוטומטי, תזמון קולי והתראות.
+
+### DRY RUN — ללא שום שינוי תפעולי (ההערה נכונה — הודגש)
+במצב `dry_run` המערכת **לא** משנה סטטוס, **לא** יוצרת מערכת חדשה, **לא** מוסיפה מספר פונה, **לא** מתזמנת או שולחת הודעה קולית ו**לא** כותבת ל-`system_activity_log`. היא כותבת אך ורק לשורת `system_requests`: `dry_run = true`, `proposed_status`, `rule_id`, `system_id` אם זוהה (שיוך לקריאה בלבד), ו-`decision_status` המוצע. הבדיקה בפועל: כל פעולת כתיבה תפעולית עוברת דרך שכבה אחת שמסרבת לפעול כאשר `dry_run` — כדי שלא תישאר דרך עוקפת.
+
+תרחישים:
+- **א. הסטטוס שונה אך השרת נפל לפני `done`:** ה-RPC כתב `status_applied_at` + `last_completed_state='applied'` באותה טרנזקציה — הריצה הבאה מדלגת על שינוי הסטטוס ומסיימת בלבד.
+- **ב. הפונה נוסף והשלב הבא נכשל:** `phone_added_at` מסומן אטומית; הריצה הבאה ממשיכה משינוי הסטטוס.
+- **ג. אותה בקשה חוזרת אחרי timeout:** `done` → `{ok:true, duplicate:true}` ו-`mark_read`; אחרת המשך מ-`last_completed_state`.
 
 ---
 

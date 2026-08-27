@@ -731,7 +731,7 @@ function SystemDetail() {
 
 
       {isSub && data.parent && (
-        <div className={`border-2 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap ${statusCardClasses(data.parent.status)}`}>
+        <div className={`xl:col-span-2 border-2 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap ${statusCardClasses(data.parent.status)}`}>
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <CornerUpRight className="h-4 w-4" />
             <span>זוהי <strong>תת-מערכת</strong> של:</span>

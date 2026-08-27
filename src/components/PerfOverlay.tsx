@@ -10,10 +10,12 @@ import { readPerfTimings, type PerfTiming } from "@/lib/perf";
 export function PerfOverlay({ enabled }: { enabled?: boolean }) {
   const [rows, setRows] = useState<PerfTiming[]>([]);
   const [open, setOpen] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
   const show =
-    enabled ||
-    (typeof window !== "undefined" &&
+    hydrated && (enabled ||
       (import.meta.env.DEV || new URLSearchParams(window.location.search).get("perf") === "1"));
+
+  useEffect(() => setHydrated(true), []);
 
   useEffect(() => {
     if (!show) return;

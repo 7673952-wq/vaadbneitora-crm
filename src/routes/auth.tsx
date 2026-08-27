@@ -5,9 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMfaSession } from "@/lib/login.functions";
-import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
+import { getDeviceId, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
 import { primeAccessToken } from "@/lib/session-cache";
+import { setSessionPersistence } from "@/lib/remember-storage";
 
 
 export const Route = createFileRoute("/auth")({
@@ -52,10 +53,8 @@ function AuthPage() {
    * that only proved a password never becomes MFA-approved without it.
    */
   async function completeSignIn(mfaGrant?: string) {
-    // "זכור אותי" is recorded BEFORE the session is written; the session itself
-    // always goes to localStorage, and the flag decides whether it survives a
-    // browser restart (see @/lib/remember-storage).
-    setRemembered(remember);
+    // Select the actual storage before the auth client writes the session.
+    setSessionPersistence(remember);
     perfMark("SUPABASE_SIGNIN_START");
     const { data: signedIn, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { toast.error("התחברות נכשלה"); return; }
@@ -77,18 +76,17 @@ function AuthPage() {
       perfMark("SESSION_SECURITY_DONE");
     }
 
-    try {
-      await logFn({
+    // The journal is non-critical and must not delay dashboard navigation.
+    void logFn({
         data: { kind: "password", device_id: getDeviceId(), user_agent: describeDevice() },
-      });
-    } catch { /* the journal must never block a valid login */ }
+      }).catch(() => {});
     // This tab already journaled a "password" login — the root layout must not
     // add a second "session" entry for the same sign-in.
     try { sessionStorage.setItem("crm_login_logged", "1"); } catch { /* ignore */ }
     perfMark("AUTH_COMPLETE");
     toast.success("ברוך הבא");
     perfMark("NAVIGATE_START");
-    navigate({ to: "/dashboard" });
+    void navigate({ to: "/dashboard", replace: true });
   }
 
   async function handleSignIn(e: React.FormEvent) {

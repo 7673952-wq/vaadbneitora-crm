@@ -45,6 +45,25 @@ export async function assertMfaSession(
 // loses access within seconds.
 const OK_TTL_MS = 30_000;
 const okCache = new Map<string, number>();
+const inFlightChecks = new Map<string, Promise<void>>();
+
+async function assertMfaSessionOnce(
+  supabase: RpcClient,
+  userId: string,
+  sessionId: string,
+  cacheKey: string,
+): Promise<void> {
+  const existing = inFlightChecks.get(cacheKey);
+  if (existing) return existing;
+  const check = assertMfaSession(supabase, userId, sessionId)
+    .then(() => {
+      if (okCache.size > 500) okCache.clear();
+      okCache.set(cacheKey, Date.now());
+    })
+    .finally(() => inFlightChecks.delete(cacheKey));
+  inFlightChecks.set(cacheKey, check);
+  return check;
+}
 
 export const requireAuthMfa = createMiddleware({ type: "function" })
   .middleware([requireSupabaseAuth])
@@ -54,10 +73,6 @@ export const requireAuthMfa = createMiddleware({ type: "function" })
     const cacheKey = `${context.userId}:${sessionId}`;
     const cachedAt = sessionId ? okCache.get(cacheKey) : undefined;
     if (cachedAt !== undefined && Date.now() - cachedAt < OK_TTL_MS) return next();
-    await assertMfaSession(context.supabase as unknown as RpcClient, context.userId, sessionId);
-    if (sessionId) {
-      if (okCache.size > 500) okCache.clear();
-      okCache.set(cacheKey, Date.now());
-    }
+    await assertMfaSessionOnce(context.supabase as unknown as RpcClient, context.userId, sessionId, cacheKey);
     return next();
   });

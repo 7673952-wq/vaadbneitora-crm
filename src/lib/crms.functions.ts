@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase, AppError } from "@/lib/errors";
 import { sanitizeText } from "@/lib/sanitize";
 
@@ -35,7 +35,7 @@ async function assertCrmAdmin(context: { supabase: any; userId: string }) {
 
 /** All CRMs the signed-in user can see, with their per-CRM role. */
 export const listMyCrms = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }): Promise<CrmSummary[]> => {
     const [{ data: crms, error }, { data: memberships }] = await Promise.all([
       context.supabase.from("crms").select("*").order("sort_order", { ascending: true }),
@@ -62,7 +62,7 @@ export const listMyCrms = createServerFn({ method: "GET" })
   });
 
 export const upsertCrm = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -94,7 +94,7 @@ export const upsertCrm = createServerFn({ method: "POST" })
   });
 
 export const deleteCrm = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ key: z.string().trim().min(1) }).parse(input))
   .handler(async ({ data, context }) => {
     await assertCrmAdmin(context);
@@ -106,7 +106,7 @@ export const deleteCrm = createServerFn({ method: "POST" })
 
 /** Membership matrix: every user and their role in every CRM. */
 export const listCrmMembers = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertCrmAdmin(context);
     const [{ data: profiles, error }, { data: rows }] = await Promise.all([
@@ -125,7 +125,7 @@ export const listCrmMembers = createServerFn({ method: "GET" })
   });
 
 export const setCrmUserRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -158,7 +158,7 @@ export const setCrmUserRole = createServerFn({ method: "POST" })
 /* ===================== Kosher instructions ===================== */
 
 export const listKosherInstructions = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("kosher_instructions")
@@ -177,7 +177,7 @@ export const listKosherInstructions = createServerFn({ method: "GET" })
   });
 
 export const upsertKosherInstruction = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -210,7 +210,7 @@ export const upsertKosherInstruction = createServerFn({ method: "POST" })
   });
 
 export const deleteKosherInstruction = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertPermission } = await import("@/lib/permissions.server");

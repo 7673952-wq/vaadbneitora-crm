@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { BACKUP_TABLES } from "@/lib/backup-tables";
 import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, sendBackupByEmail } from "@/lib/backups.functions";
 import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail, Settings } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/backups")({
@@ -86,7 +85,6 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
     try {
       const res: any = await restoreFn({
         data: { files: restorePrompt.files, mode: restorePrompt.mode, confirm_token: "שחזר" },
-        headers: await getAuthHeaders(),
       });
       const ok = res.filter((r: any) => !r.error).reduce((s: number, r: any) => s + r.inserted, 0);
       const errs = res.filter((r: any) => r.error);
@@ -107,17 +105,17 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
 
   const { data: me } = useQuery({
     queryKey: ["me"],
-    queryFn: async () => meFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => meFn({}),
   });
 
   const { data: backups, isLoading } = useQuery({
     queryKey: ["backups"],
-    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({}),
     enabled: me?.isSuperAdmin === true,
   });
 
   const runMut = useMutation({
-    mutationFn: async () => nowFn({ headers: await getAuthHeaders() }),
+    mutationFn: async () => nowFn({}),
     onSuccess: (r: any) => {
       const m = r.manifest;
       if (m) {
@@ -136,7 +134,7 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
   });
 
   const delMut = useMutation({
-    mutationFn: async (folder: string) => delFn({ data: { folder }, headers: await getAuthHeaders() }),
+    mutationFn: async (folder: string) => delFn({ data: { folder } }),
     onSuccess: () => {
       toast.success("גיבוי נמחק");
       qc.invalidateQueries({ queryKey: ["backups"] });
@@ -148,7 +146,7 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
   async function download(path: string) {
     try {
       setDownloading(path);
-      const { url } = await urlFn({ data: { path }, headers: await getAuthHeaders() });
+      const { url } = await urlFn({ data: { path } });
       window.open(url, "_blank");
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בהורדה");
@@ -162,7 +160,7 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
   async function downloadFolderZip(folder: string) {
     try {
       setZipping(folder);
-      const { url } = await zipUrlFn({ data: { folder }, headers: await getAuthHeaders() });
+      const { url } = await zipUrlFn({ data: { folder } });
       window.open(url, "_blank");
       toast.success("הזיפ מוכן להורדה");
     } catch (e: any) {
@@ -177,7 +175,7 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
   async function emailFolder(folder: string) {
     try {
       setEmailing(folder);
-      const res = await emailFn({ data: { folder }, headers: await getAuthHeaders() });
+      const res = await emailFn({ data: { folder } });
       toast.success(`הגיבוי נשלח בהצלחה דרך Google Script`);
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בשליחת מייל");
@@ -403,14 +401,14 @@ function AutoBackupConfigPanel() {
   const setFn = useServerFn(setBackupWebhookConfig);
   const { data, isLoading } = useQuery({
     queryKey: ["backup_webhook_config"],
-    queryFn: async () => getFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => getFn({}),
   });
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [open, setOpen] = useState(false);
 
   const saveMut = useMutation({
-    mutationFn: async () => setFn({ data: { url, secret: secret || undefined }, headers: await getAuthHeaders() }),
+    mutationFn: async () => setFn({ data: { url, secret: secret || undefined } }),
     onSuccess: () => {
       toast.success("ההגדרות נשמרו");
       setSecret("");

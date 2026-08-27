@@ -8,20 +8,42 @@ import { createMiddleware } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 export const MFA_REQUIRED_ERROR = "נדרש אימות נוסף — התחבר מחדש";
+export const MFA_CHECK_FAILED_ERROR = "בדיקת אבטחה נכשלה — נסה שוב";
+
+type RpcClient = {
+  rpc: (
+    name: "mfa_session_ok",
+    args: { _user_id: string; _session_id: string },
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+};
+
+/**
+ * Throws unless this exact JWT session completed the second factor.
+ * Extracted from the middleware so the rule itself is unit-testable:
+ * a session that only proved a password must never pass.
+ */
+export async function assertMfaSession(
+  supabase: RpcClient,
+  userId: string,
+  sessionId: string,
+): Promise<void> {
+  const { data, error } = await supabase.rpc("mfa_session_ok", {
+    _user_id: userId,
+    _session_id: sessionId,
+  });
+  if (error) {
+    console.error("[mfa] mfa_session_ok failed", error.message);
+    throw new Error(MFA_CHECK_FAILED_ERROR);
+  }
+  // Fail closed: anything other than an explicit `true` is a rejection.
+  if (data !== true) throw new Error(MFA_REQUIRED_ERROR);
+}
 
 export const requireAuthMfa = createMiddleware({ type: "function" })
   .middleware([requireSupabaseAuth])
   .server(async ({ next, context }) => {
     const claims = context.claims as Record<string, unknown> | undefined;
     const sessionId = typeof claims?.["session_id"] === "string" ? (claims["session_id"] as string) : "";
-    const { data, error } = await context.supabase.rpc("mfa_session_ok", {
-      _user_id: context.userId,
-      _session_id: sessionId,
-    });
-    if (error) {
-      console.error("[mfa] mfa_session_ok failed", error.message);
-      throw new Error("בדיקת אבטחה נכשלה — נסה שוב");
-    }
-    if (data !== true) throw new Error(MFA_REQUIRED_ERROR);
+    await assertMfaSession(context.supabase as unknown as RpcClient, context.userId, sessionId);
     return next();
   });

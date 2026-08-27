@@ -7,7 +7,6 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listStatusSettings } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   applyStatusSettings, buildStatusMaps, readStatusCache, writeStatusCache,
   markStatusSettingsHydrated, statusSettingsHydrated,
@@ -24,7 +23,7 @@ export function useStatusSettings(options?: { staleTime?: number }): {
 
   const { data } = useQuery({
     queryKey: ["status_settings"],
-    queryFn: async () => fn({ headers: await getAuthHeaders() }),
+    queryFn: async () => fn({}),
     staleTime: options?.staleTime ?? 5 * 60_000,
     initialData: cached ?? undefined,
     retry: false,

@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import {
   NOTIFICATION_EVENTS,
   NOTIFICATION_EVENT_KEYS,
@@ -31,7 +31,7 @@ export const listNotificationEvents = createServerFn({ method: "GET" })
 
 /** Current user's effective on/off per event (role defaults + own overrides). */
 export const getMyNotificationPrefs = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const roles = await fetchMyRoles(context.supabase, context.userId);
     const [{ data: defaults }, { data: overrides }] = await Promise.all([
@@ -78,7 +78,7 @@ const scopedEventKey = z
 
 /** Admin: full grid role×event of enabled flags, optionally scoped to a CRM. */
 export const listRoleNotificationDefaults = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z.object({ crmKey: z.string().max(60).nullable().optional() }).default({}).parse(input ?? {}),
   )
@@ -110,7 +110,7 @@ export const listRoleNotificationDefaults = createServerFn({ method: "GET" })
 
 /** Admin: set a single (role, event) default. */
 export const updateRoleNotificationDefault = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { role: AppRole; event_key: string; enabled: boolean }) =>
     z.object({
       role: z.enum(["admin", "agent", "super_admin", "viewer"]),
@@ -132,7 +132,7 @@ export const updateRoleNotificationDefault = createServerFn({ method: "POST" })
 
 /** Current user: set an override for themselves. Passing enabled=null clears the override. */
 export const setMyNotificationOverride = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { event_key: string; enabled: boolean | null }) =>
     z.object({
       event_key: z.enum(NOTIFICATION_EVENT_KEYS as [NotificationEventKey, ...NotificationEventKey[]]),

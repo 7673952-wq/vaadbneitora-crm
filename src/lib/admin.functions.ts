@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { AppError, fromSupabase } from "@/lib/errors";
 import { sanitizeText } from "@/lib/sanitize";
 import {
@@ -133,7 +133,7 @@ const strongPassword = z.string().min(10).max(72)
   });
 
 export const createUser = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { email: string; password: string; display_name: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
     z.object({
       email: z.string().email(),
@@ -161,7 +161,7 @@ export const createUser = createServerFn({ method: "POST" })
   });
 
 export const deleteUser = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { user_id: string }) => z.object({ user_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
@@ -173,7 +173,7 @@ export const deleteUser = createServerFn({ method: "POST" })
   });
 
 export const setUserRole = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }) =>
     z.object({ user_id: z.string().uuid(), role: z.enum(["admin", "agent", "super_admin", "viewer"]) }).parse(d),
   )
@@ -191,7 +191,7 @@ export const setUserRole = createServerFn({ method: "POST" })
   });
 
 export const updateUserDisplayName = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { user_id: string; display_name: string }) =>
     z.object({ user_id: z.string().uuid(), display_name: z.string().min(1).max(100) }).parse(d),
   )
@@ -206,7 +206,7 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
   });
 
 export const updateUserEmail = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { user_id: string; email: string }) =>
     z.object({ user_id: z.string().uuid(), email: z.string().email() }).parse(d),
   )
@@ -219,7 +219,7 @@ export const updateUserEmail = createServerFn({ method: "POST" })
   });
 
 export const updateUserPassword = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { user_id: string; password: string }) =>
     z.object({ user_id: z.string().uuid(), password: strongPassword }).parse(d),
   )
@@ -232,7 +232,7 @@ export const updateUserPassword = createServerFn({ method: "POST" })
   });
 
 export const getMyRole = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { getUserPermissionMap, getGlobalPermissionMap, getCrmRoles, getMailPermissionMap } = await import("@/lib/permissions.server");
     const [{ data, error }, { data: prof }] = await Promise.all([
@@ -275,7 +275,7 @@ export const getMyRole = createServerFn({ method: "GET" })
 
 
 export const listUsersForAdmin = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertGlobalPermission(context, "users_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -306,7 +306,7 @@ export const listUsersForAdmin = createServerFn({ method: "GET" })
   });
 
 export const listStatusSettings = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { hasPermission } = await import("@/lib/permissions.server");
@@ -322,7 +322,7 @@ export const listStatusSettings = createServerFn({ method: "GET" })
   });
 
 export const listPendingVoiceSends = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -368,7 +368,7 @@ export const listPendingVoiceSends = createServerFn({ method: "GET" })
   });
 
 export const listVoiceMessageLog = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertPermission(context, "settings_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -382,7 +382,7 @@ export const listVoiceMessageLog = createServerFn({ method: "GET" })
   });
 
 export const upsertStatusSetting = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { status_key: string; label: string; tone: string; sort_order?: number; is_custom?: boolean; is_handled?: boolean; is_mandatory?: boolean; requires_reason?: boolean; assigned_agent_ids?: string[]; enables_voice_message?: boolean; voice_message_template?: string; voice_message_api_key?: string; voice_send_mode?: "manual" | "auto"; auto_send_start_hour?: number; auto_send_end_hour?: number }) =>
     z.object({
       status_key: z.string().min(1).max(60).regex(/^[a-z0-9_]+$/, "מפתח חייב להכיל אותיות אנגליות קטנות, ספרות וקו תחתון בלבד"),
@@ -427,7 +427,7 @@ export const upsertStatusSetting = createServerFn({ method: "POST" })
   });
 
 export const reorderStatusSettings = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { order: string[] }) =>
     z.object({ order: z.array(z.string().min(1).max(60)).max(200) }).parse(d),
   )
@@ -439,7 +439,7 @@ export const reorderStatusSettings = createServerFn({ method: "POST" })
   });
 
 export const deleteStatusSetting = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { status_key: string }) =>
     z.object({ status_key: z.string().min(1).max(60) }).parse(d),
   )
@@ -453,7 +453,7 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
 // ============= Dynamic permissions =============
 
 export const listPermissionSettings = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ crmKey: z.string().min(1).max(60) }).parse(input))
   .handler(async ({ data, context }) => {
     await assertPermission(context, "permissions_manage", data.crmKey);
@@ -497,7 +497,7 @@ export const listPermissionSettings = createServerFn({ method: "GET" })
   });
 
 export const setRolePermission = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { crmKey: string; role: string; permission: string; allowed: boolean }) =>
     z.object({
       crmKey: z.string().min(1).max(60),
@@ -518,7 +518,7 @@ export const setRolePermission = createServerFn({ method: "POST" })
   });
 
 export const setUserPermission = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { crmKey: string; user_id: string; permission: string; allowed: boolean }) =>
     z.object({
       crmKey: z.string().min(1).max(60),
@@ -539,7 +539,7 @@ export const setUserPermission = createServerFn({ method: "POST" })
   });
 
 export const deleteUserPermission = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { crmKey: string; user_id: string; permission: string }) =>
     z.object({ crmKey: z.string().min(1).max(60), user_id: z.string().uuid(), permission: z.enum(PERMISSION_KEYS) }).parse(d),
   )
@@ -558,7 +558,7 @@ type SeriesMode = { strip: number; min: number };
 const DEFAULT_SERIES: { modes: SeriesMode[] } = { modes: [{ strip: 2, min: 10 }, { strip: 3, min: 30 }] };
 
 export const getSeriesDetection = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", SERIES_KEY).maybeSingle();
@@ -568,7 +568,7 @@ export const getSeriesDetection = createServerFn({ method: "GET" })
   });
 
 export const setSeriesDetection = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { modes: SeriesMode[] }) =>
     z.object({
       modes: z.array(z.object({
@@ -593,7 +593,7 @@ export const setSeriesDetection = createServerFn({ method: "POST" })
 const AUTO_SNOOZE_KEY = "auto_snooze";
 
 export const getAutoSnoozeSetting = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", AUTO_SNOOZE_KEY).maybeSingle();
@@ -601,7 +601,7 @@ export const getAutoSnoozeSetting = createServerFn({ method: "GET" })
   });
 
 export const setAutoSnoozeSetting = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { unit: "day"|"week"|"month"|"date"; date?: string|null; threshold_days: number }) =>
     z.object({
       unit: z.enum(["day","week","month","date"]),
@@ -641,7 +641,7 @@ const BACKUP_EMAIL_KEY = "backup_email";
 // Stored as { emails: string[] }. Older rows may still have the legacy
 // single-string { email } shape — read both, always write the new shape.
 export const getBackupEmail = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
@@ -654,7 +654,7 @@ export const getBackupEmail = createServerFn({ method: "GET" })
   });
 
 export const setBackupEmail = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { emails: string[] }) =>
     z.object({ emails: z.array(z.string().email().max(200)).max(20) }).parse(d),
   )
@@ -700,7 +700,7 @@ const DEFAULT_BACKUP_SCHEDULE: BackupSchedule = {
 };
 
 export const getBackupSchedule = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
@@ -716,7 +716,7 @@ export const getBackupSchedule = createServerFn({ method: "GET" })
   });
 
 export const setBackupSchedule = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: Omit<BackupSchedule, "retentionDailyDays" | "retentionWeeklyDays"> & Partial<BackupSchedule>) =>
     z.object({
       frequency: z.enum(["daily", "weekly"]),
@@ -748,7 +748,7 @@ const BACKUP_WEBHOOK_URL_KEY = "backup_webhook_url";
 const BACKUP_WEBHOOK_SECRET_KEY = "backup_webhook_secret";
 
 export const getBackupWebhookConfig = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertAnyPermission(context, ["backup_manage", "settings_manage"]);
     const { data } = await context.supabase
@@ -759,7 +759,7 @@ export const getBackupWebhookConfig = createServerFn({ method: "GET" })
   });
 
 export const setBackupWebhookConfig = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { url: string; secret?: string }) =>
     z.object({ url: z.string().max(300).refine((v) => v === "" || /^https?:\/\//.test(v), "כתובת חייבת להתחיל ב-http/https"), secret: z.string().max(300).optional() }).parse(d),
   )
@@ -793,7 +793,7 @@ export const setBackupWebhookConfig = createServerFn({ method: "POST" })
 const STALE_HOURS_KEY = "stale_warning_hours";
 
 export const getStaleWarningHours = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", STALE_HOURS_KEY).maybeSingle();
@@ -802,7 +802,7 @@ export const getStaleWarningHours = createServerFn({ method: "GET" })
   });
 
 export const setStaleWarningHours = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { hours: number }) =>
     z.object({ hours: z.number().int().min(0).max(8760) }).parse(d),
   )
@@ -832,7 +832,7 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
 // activity are intentionally excluded — those are visible on the system
 // card itself and don't need to interrupt via the bell.
 export const listMyNotifications = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const me = context.userId;
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();

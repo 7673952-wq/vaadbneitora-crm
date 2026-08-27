@@ -11,7 +11,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useStatusSettings } from "@/lib/use-status-settings";
 import { perfMark } from "@/lib/perf";
 
-import { getAuthHeaders } from "@/lib/auth-headers";
 import {
   STATUS_OPTIONS, STATUS_LABEL, STATUS_TONE, STATUS_HANDLED, toneClasses,
   statusCardClasses, statusRequiresReason, type SystemStatus,
@@ -33,7 +32,6 @@ const HandledRatioChart = lazy(() => import("@/components/HandledRatioChart").th
 const StatusFunnelChart = lazy(() => import("@/components/StatusFunnelChart").then((m) => ({ default: m.StatusFunnelChart })));
 
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
-import * as XLSX from "xlsx";
 import { sanitizeCell, sanitizeRows, sanitizeMatrix } from "@/lib/csv-safe";
 import {
   Pagination,
@@ -58,7 +56,7 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
     const qc = context.queryClient;
     qc.prefetchQuery({
       queryKey: ["me"],
-      queryFn: async () => getMyRole({ headers: await getAuthHeaders() }),
+      queryFn: async () => getMyRole({}),
       staleTime: 5 * 60_000,
     });
     qc.prefetchQuery({ queryKey: ["agents"], queryFn: () => listAgents(), staleTime: 5 * 60_000 });
@@ -194,9 +192,16 @@ function Dashboard() {
   useEffect(() => {
     let cancelled = false;
     const poke = () => { pokeVoiceQueueFn().catch(() => {}); };
-    poke();
+    // The first poke waits for the browser to go idle: it must never compete
+    // with the systems list for the first seconds after login.
+    const idle: any = (globalThis as any).requestIdleCallback ?? ((cb: any) => setTimeout(cb, 3000));
+    const idleHandle = idle(() => { if (!cancelled) poke(); }, { timeout: 8000 });
     const interval = setInterval(() => { if (!cancelled) poke(); }, 5 * 60_000);
-    return () => { cancelled = true; clearInterval(interval); };
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      (globalThis as any).cancelIdleCallback?.(idleHandle);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -277,26 +282,34 @@ function Dashboard() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: REFERENCE_STALE_TIME });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({}), staleTime: REFERENCE_STALE_TIME });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
+  // The systems list is the dashboard's first priority: it runs in parallel
+  // with the status summary and renders the moment it resolves, never waiting
+  // for counts or charts.
   const { data: systemsData, isLoading } = useQuery({
     queryKey: ["systems", status, secondaryStatus, agentId, period, dateFrom, dateTo, page, pageSize, debouncedSearch],
-    queryFn: async () => listFn({ data: {
-      status: status || null, secondaryStatus: secondaryStatus || null, agentId: agentId || null, period: period || null,
-      dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
-      dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
-      page, pageSize: serverPageSize,
-      q: debouncedSearch || null,
-    } }),
+    queryFn: async () => {
+      perfMark("SYSTEMS_QUERY_START");
+      const res = await listFn({ data: {
+        status: status || null, secondaryStatus: secondaryStatus || null, agentId: agentId || null, period: period || null,
+        dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
+        dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
+        page, pageSize: serverPageSize,
+        q: debouncedSearch || null,
+      } });
+      perfMark("SYSTEMS_QUERY_DONE");
+      return res;
+    },
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
   // Real-user timing marks (see src/lib/perf.ts) — recorded once per load.
-  useEffect(() => { perfMark("DASHBOARD_RENDERED"); }, []);
-  useEffect(() => { if (systemsData) perfMark("SYSTEMS_READY"); }, [systemsData]);
+  useEffect(() => { perfMark("DASHBOARD_ROUTE_READY"); perfMark("DASHBOARD_RENDERED"); }, []);
+  useEffect(() => { if (systemsData) { perfMark("SYSTEMS_READY"); perfMark("DASHBOARD_ABOVE_FOLD_READY"); } }, [systemsData]);
   useEffect(() => { if (statusReady) perfMark("CONFIG_READY"); }, [statusReady]);
   useEffect(() => { if (systemsData && statusReady) perfMark("DASHBOARD_READY"); }, [systemsData, statusReady]);
 
@@ -589,7 +602,10 @@ function Dashboard() {
   //             (open_only_bimot + close_in_simahedrin), emitted as TWO files:
   //             the open subset with status=OPEN, the block subset with
   //             status=BLOCKED.
-  function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
+  // xlsx is ~400KB — loaded only when an export actually runs, never in the
+  // dashboard's first paint.
+  async function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
+    const XLSX = await import("xlsx");
     const HEADERS = ["number", "note", "active", "call_type", "status"];
     const buildRow = (r: any, statusText: "OPEN" | "BLOCKED") => [
       buildDialNumber(r.system_code),
@@ -626,8 +642,9 @@ function Dashboard() {
     else toast.success(`נוצרו ${filesWritten} קבצים`);
   }
 
-  function exportFullXlsx(rows: any[], label: string) {
+  async function exportFullXlsx(rows: any[], label: string) {
     if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
+    const XLSX = await import("xlsx");
     const data = rows.map((r: any) => ({
       "מזהה מערכת": r.system_code,
       "שם": r.name,
@@ -2383,6 +2400,7 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
     setResult(null);
     setDecisions({});
     try {
+      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
       const wb = XLSX.read(buf, { type: "array" });
       const ws = wb.Sheets[wb.SheetNames[0]];

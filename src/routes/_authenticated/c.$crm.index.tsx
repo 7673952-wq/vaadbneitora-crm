@@ -7,7 +7,6 @@ import { Plus, Search, Phone, Mail, X } from "lucide-react";
 import { useMyCrms } from "@/lib/use-crms";
 import { listRecords, createRecord, listFieldDefs } from "@/lib/crm-records.functions";
 import { getStaleWarningHours } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 export const Route = createFileRoute("/_authenticated/c/$crm/")({
   component: CrmHome,
@@ -39,18 +38,18 @@ function CrmHome() {
   const [search, setSearch] = useState("");
   const { data: records = [], isLoading } = useQuery({
     queryKey: ["crm_records", crm],
-    queryFn: async () => listFn({ data: { crmKey: crm }, headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({ data: { crmKey: crm } }),
   });
   const { data: fields = [] } = useQuery({
     queryKey: ["crm_field_defs", crm],
-    queryFn: async () => fieldsFn({ data: { crmKey: crm }, headers: await getAuthHeaders() }),
+    queryFn: async () => fieldsFn({ data: { crmKey: crm } }),
   });
 
   // "צביעת אזהרה — זמן ללא טיפול" is a general setting, so it applies here too.
   const staleHoursFn = useServerFn(getStaleWarningHours);
   const { data: staleSetting } = useQuery({
     queryKey: ["stale_warning_hours"],
-    queryFn: async () => staleHoursFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => staleHoursFn({}),
     staleTime: 5 * 60_000,
   });
   const staleHours = staleSetting?.hours ?? 0;
@@ -90,7 +89,6 @@ function CrmHome() {
           notes: form.notes || null,
           custom,
         },
-        headers: await getAuthHeaders(),
       });
       await qc.invalidateQueries({ queryKey: ["crm_records", crm] });
       toast.success("הפניה נפתחה");

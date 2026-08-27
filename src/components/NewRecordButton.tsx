@@ -9,7 +9,6 @@ import { createRecord, listFieldDefs } from "@/lib/crm-records.functions";
 import { listAgents } from "@/lib/systems.functions";
 import { listStatusSettings } from "@/lib/admin.functions";
 import { YemotCreateModal } from "@/routes/_authenticated/dashboard";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 type Form = { code: string; name: string; phone: string; callerPhone: string; email: string; notes: string };
 const EMPTY: Form = { code: "", name: "", phone: "", callerPhone: "", email: "", notes: "" };
@@ -34,7 +33,7 @@ export function NewRecordButton() {
   const [custom, setCustom] = useState<Record<string, string>>({});
   const { data: fields = [] } = useQuery({
     queryKey: ["crm_field_defs", crmKey],
-    queryFn: async () => fieldsFn({ data: { crmKey: crmKey ?? "" }, headers: await getAuthHeaders() }),
+    queryFn: async () => fieldsFn({ data: { crmKey: crmKey ?? "" } }),
     enabled: !!crmKey && crmKey !== "yemot",
   });
   const { data: agents = [] } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), enabled: crmKey === "yemot" });
@@ -71,7 +70,6 @@ export function NewRecordButton() {
             notes: form.notes || null,
             custom,
           },
-          headers: await getAuthHeaders(),
         });
         await qc.invalidateQueries({ queryKey: ["crm_records", current.key] });
         toast.success("הפניה נפתחה");

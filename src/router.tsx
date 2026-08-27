@@ -18,6 +18,20 @@ export const getRouter = () => {
     },
   });
 
+  // Reference data ("who am I", agents, status settings, permissions) is read
+  // by many screens with slightly different staleTime values. Since the cache
+  // is keyed by queryKey alone, the shortest staleTime used to win and every
+  // navigation refetched the same rows. Pinning defaults per key keeps a
+  // single fetch per session-ish window regardless of the call site.
+  const REFERENCE_STALE = 5 * 60_000;
+  for (const key of ["me", "agents", "status_settings", "permission_settings", "crms"]) {
+    queryClient.setQueryDefaults([key], {
+      staleTime: REFERENCE_STALE,
+      gcTime: 30 * 60_000,
+      refetchOnMount: false,
+    });
+  }
+
   const router = createRouter({
     routeTree,
     context: { queryClient },

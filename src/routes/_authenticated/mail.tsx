@@ -7,7 +7,6 @@ import {
   Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Users,
   MailOpen, SendHorizontal, Trash2, Pencil, IdCard, X, Check,
 } from "lucide-react";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import {
@@ -87,7 +86,7 @@ function MailboxPage() {
 
   const { data: me } = useQuery({
     queryKey: ["me"],
-    queryFn: async () => roleFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => roleFn({}),
     staleTime: 5 * 60_000,
   });
   const mailPerms = (me as any)?.mailPermissions ?? {};
@@ -115,7 +114,7 @@ function MailboxPage() {
 
   const { data: settings } = useQuery({
     queryKey: ["mailbox_settings"],
-    queryFn: async () => settingsFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => settingsFn({}),
     enabled: canViewMail,
     staleTime: 60_000,
   });
@@ -130,7 +129,7 @@ function MailboxPage() {
   const refreshMs = (settings?.prefs?.refreshSeconds ?? 60) * 1000;
   const { data: threads = [], isFetching, refetch } = useQuery({
     queryKey: ["mail_threads", filter, search],
-    queryFn: async () => listFn({ data: { filter, search: search || undefined }, headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({ data: { filter, search: search || undefined } }),
     enabled: canViewMail,
     refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
@@ -138,7 +137,7 @@ function MailboxPage() {
   const { data: contacts = [] } = useQuery({
     queryKey: ["mail_contacts", search],
     enabled: canViewMail && contactsOpen,
-    queryFn: async () => contactsFn({ data: { search: search || undefined }, headers: await getAuthHeaders() }),
+    queryFn: async () => contactsFn({ data: { search: search || undefined } }),
     staleTime: 60_000,
   });
 
@@ -147,7 +146,7 @@ function MailboxPage() {
     enabled: canViewMail && !!selected,
     queryFn: async () => {
       if (!selected) return [];
-      return threadFn({ data: { threadId: selected }, headers: await getAuthHeaders() });
+      return threadFn({ data: { threadId: selected } });
     },
   });
 
@@ -160,7 +159,7 @@ function MailboxPage() {
     setEditingId(null);
     if (!threadId.startsWith("msg:")) {
       try {
-        await readFn({ data: { threadId }, headers: await getAuthHeaders() });
+        await readFn({ data: { threadId } });
         qc.invalidateQueries({ queryKey: ["mail_threads"] });
       } catch { /* read marking is best-effort */ }
     }
@@ -173,7 +172,7 @@ function MailboxPage() {
 
   const send = useMutation({
     mutationFn: async (vars: { to: string; subject?: string; body: string; threadId?: string | null }) =>
-      sendFn({ data: { ...vars, useGeneralName: useGeneral, cleanupLevel: cleanup }, headers: await getAuthHeaders() }),
+      sendFn({ data: { ...vars, useGeneralName: useGeneral, cleanupLevel: cleanup } }),
     onSuccess: (res) => {
       toast.success("המייל נשלח");
       setComposing(false); setTo(""); setSubject(""); setBody(""); setReply("");
@@ -185,25 +184,25 @@ function MailboxPage() {
 
   const editMsg = useMutation({
     mutationFn: async (vars: { id: string; body: string }) =>
-      editFn({ data: vars, headers: await getAuthHeaders() }),
+      editFn({ data: vars }),
     onSuccess: () => { toast.success("ההודעה עודכנה"); setEditingId(null); refreshMail(); },
     onError: (e: any) => toast.error(e?.message ?? "העריכה נכשלה"),
   });
 
   const removeMsg = useMutation({
-    mutationFn: async (id: string) => deleteMsgFn({ data: { id }, headers: await getAuthHeaders() }),
+    mutationFn: async (id: string) => deleteMsgFn({ data: { id } }),
     onSuccess: () => { toast.success("ההודעה נמחקה"); refreshMail(); },
     onError: (e: any) => toast.error(e?.message ?? "המחיקה נכשלה"),
   });
 
   const removeThread = useMutation({
-    mutationFn: async (threadId: string) => deleteThreadFn({ data: { threadId }, headers: await getAuthHeaders() }),
+    mutationFn: async (threadId: string) => deleteThreadFn({ data: { threadId } }),
     onSuccess: () => { toast.success("השרשור נמחק"); setSelected(null); refreshMail(); },
     onError: (e: any) => toast.error(e?.message ?? "המחיקה נכשלה"),
   });
 
   const saveSignature = useMutation({
-    mutationFn: async () => signatureFn({ data: { signature }, headers: await getAuthHeaders() }),
+    mutationFn: async () => signatureFn({ data: { signature } }),
     onSuccess: () => { toast.success("החתימה נשמרה"); qc.invalidateQueries({ queryKey: ["mailbox_settings"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שמירה נכשלה"),
   });

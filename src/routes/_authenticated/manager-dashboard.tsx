@@ -7,7 +7,6 @@ import { getManagerDashboard, getSystemsByCallerPhone } from "@/lib/manager-dash
 import { getMyRole, listPendingVoiceSends } from "@/lib/admin.functions";
 import { scanSystemSeries, createMissingSystems, manualSendPendingVoice, rescheduleVoicePending } from "@/lib/systems.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send, Phone } from "lucide-react";
 
 export const Route = createFileRoute("/_authenticated/manager-dashboard")({
@@ -15,7 +14,7 @@ export const Route = createFileRoute("/_authenticated/manager-dashboard")({
   loader: ({ context }) => {
     context.queryClient.prefetchQuery({
       queryKey: ["manager-dashboard"],
-      queryFn: async () => getManagerDashboard({ headers: await getAuthHeaders() }),
+      queryFn: async () => getManagerDashboard({}),
       staleTime: 30_000,
     });
   },
@@ -28,10 +27,10 @@ function ManagerDashboard() {
   const [showSeries, setShowSeries] = useState(false);
   const [showPendingMessages, setShowPendingMessages] = useState(false);
   const [tab, setTab] = useState<"overview" | "phones">("overview");
-  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({ headers: await getAuthHeaders() }), staleTime: 5 * 60_000 });
+  const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({}), staleTime: 5 * 60_000 });
   const { data, isLoading } = useQuery({
     queryKey: ["manager-dashboard"],
-    queryFn: async () => fn({ headers: await getAuthHeaders() }),
+    queryFn: async () => fn({}),
     enabled: me?.isAdmin === true,
     staleTime: 30_000,
   });
@@ -169,7 +168,7 @@ function CallerPhoneGroupsPanel() {
   const [openPhone, setOpenPhone] = useState<string | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["caller_phone_groups"],
-    queryFn: async () => fn({ headers: await getAuthHeaders() }),
+    queryFn: async () => fn({}),
     staleTime: 60_000,
   });
 
@@ -268,12 +267,12 @@ function VoiceQueuePanel() {
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["voice_queue"],
-    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({}),
     refetchInterval: 30000,
   });
 
   const sendNowMut = useMutation({
-    mutationFn: async (systemId: string) => sendNowFn({ data: { systemId }, headers: await getAuthHeaders() }),
+    mutationFn: async (systemId: string) => sendNowFn({ data: { systemId } }),
     onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["voice_queue"] });
       if (res?.fail > 0) toast.error(`נשלחו ${res.ok}, נכשלו ${res.fail}`);
@@ -283,7 +282,7 @@ function VoiceQueuePanel() {
   });
 
   const rescheduleMut = useMutation({
-    mutationFn: async (v: { systemId: string; sendAt: string | null }) => rescheduleFn({ data: v, headers: await getAuthHeaders() }),
+    mutationFn: async (v: { systemId: string; sendAt: string | null }) => rescheduleFn({ data: v }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["voice_queue"] }); toast.success("זמן השליחה עודכן"); },
     onError: (e: any) => toast.error(e.message),
   });

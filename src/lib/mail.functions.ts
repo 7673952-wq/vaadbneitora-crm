@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 import { parseMailboxPrefs, type MailboxPrefs } from "@/lib/mailbox-prefs";
@@ -52,7 +52,7 @@ export type MailContact = {
 
 /** Mailbox: conversations grouped by Gmail thread, across the whole CRM. */
 export const listMailThreads = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -123,7 +123,7 @@ export const listMailThreads = createServerFn({ method: "GET" })
 
 /** Contact book built from every address the CRM has corresponded with. */
 export const listMailContacts = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z.object({ search: z.string().max(120).optional() }).parse(input ?? {}),
   )
@@ -169,7 +169,7 @@ export const listMailContacts = createServerFn({ method: "GET" })
 
 /** All messages in one conversation. */
 export const getMailThread = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
   .handler(async ({ data, context }): Promise<MailMessage[]> => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
@@ -205,7 +205,7 @@ export const getMailThread = createServerFn({ method: "POST" })
 
 /** Marks every inbound message in a conversation as read. */
 export const markMailThreadRead = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
@@ -242,7 +242,7 @@ export const markMailThreadRead = createServerFn({ method: "POST" })
 
 /** Edits the stored subject/body of a message (does not touch Gmail). */
 export const updateMailMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z.object({
       id: z.string().uuid(),
@@ -263,7 +263,7 @@ export const updateMailMessage = createServerFn({ method: "POST" })
 
 /** Deletes one stored message from the CRM mailbox. */
 export const deleteMailMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
@@ -276,7 +276,7 @@ export const deleteMailMessage = createServerFn({ method: "POST" })
 
 /** Deletes an entire conversation from the CRM mailbox. */
 export const deleteMailThread = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
@@ -298,7 +298,7 @@ export const deleteMailThread = createServerFn({ method: "POST" })
  * Gmail relay, exactly like the per-system mail — but without needing a card.
  */
 export const sendMailboxMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -380,7 +380,7 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
 // ============= Mailbox preferences (managed in ניהול → תיבת דואר) =============
 
 export const getMailboxPrefs = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }): Promise<MailboxPrefs> => {
     const { data } = await context.supabase
       .from("app_settings").select("value").eq("key", "mailbox_prefs").maybeSingle();
@@ -388,7 +388,7 @@ export const getMailboxPrefs = createServerFn({ method: "GET" })
   });
 
 export const setMailboxPrefs = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -418,7 +418,7 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
 
 /** Everything the mailbox UI needs to know about the current setup. */
 export const getMailboxSettings = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data } = await context.supabase
       .from("app_settings")

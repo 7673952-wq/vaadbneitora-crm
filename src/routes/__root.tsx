@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import appCss from "../styles.css?url";
@@ -15,12 +15,13 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { supabase } from "@/integrations/supabase/client";
 import { applyStatusSettings, markStatusSettingsHydrated, writeStatusCache } from "@/lib/status";
 import { listStatusSettings } from "@/lib/admin.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { useServerFn } from "@tanstack/react-start";
 import { Toaster } from "sonner";
 import { isRemembered, getDeviceId, describeDevice } from "@/lib/device-id";
 import { recordLoginEvent } from "@/lib/login.functions";
 import { perfMark } from "@/lib/perf";
+import { useSession } from "@/lib/use-session";
+import { clearAccessToken, primeAccessToken } from "@/lib/session-cache";
 import { PerfOverlay } from "@/components/PerfOverlay";
 
 
@@ -137,7 +138,6 @@ function RootComponent() {
         sessionStorage.setItem(LOGIN_LOGGED, "1");
         await recordLoginEvent({
           data: { kind: "session", device_id: getDeviceId(), user_agent: describeDevice() },
-          headers: await getAuthHeaders(),
         });
       } catch { /* journaling must never block the app */ }
     }
@@ -179,7 +179,8 @@ function RootComponent() {
       resolvePresence(false);
     }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      primeAccessToken(session ?? null);
       if (event === "SIGNED_IN") {
         sessionStorage.setItem(SESSION_MARKER, "1");
         // A fresh password login is journaled by the auth page itself.
@@ -188,6 +189,8 @@ function RootComponent() {
       if (event === "SIGNED_OUT") {
         sessionStorage.removeItem(SESSION_MARKER);
         sessionStorage.removeItem(LOGIN_LOGGED);
+        clearAccessToken();
+        queryClient.clear();
       }
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       router.invalidate();
@@ -218,20 +221,20 @@ function RootComponent() {
 
 function StatusSettingsHydrator() {
   const fn = useServerFn(listStatusSettings);
-  const [hasSession, setHasSession] = useState(false);
+  // One shared session source (useSession) instead of a second auth listener
+  // and a second getSession() call on every page load.
+  const { session } = useSession();
   // The versioned cache is applied at module load inside @/lib/status, so the
   // very first paint already shows the admin's real statuses.
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setHasSession(!!data.session));
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setHasSession(!!session);
-    });
-    return () => subscription.unsubscribe();
-  }, []);
   const { data } = useQuery({
     queryKey: ["status_settings"],
-    queryFn: async () => fn({ headers: await getAuthHeaders() }),
-    enabled: hasSession,
+    queryFn: async () => {
+      perfMark("STATUS_SETTINGS_START");
+      const res = await fn({});
+      perfMark("STATUS_SETTINGS_READY");
+      return res;
+    },
+    enabled: !!session,
     staleTime: 60_000,
     retry: false,
     throwOnError: false,

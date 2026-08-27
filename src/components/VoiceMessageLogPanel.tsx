@@ -5,7 +5,6 @@ import { toast } from "sonner";
 import { listVoiceMessageLog } from "@/lib/admin.functions";
 import { sendVoiceMessage } from "@/lib/systems.functions";
 import { STATUS_LABEL } from "@/lib/status";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { Volume2, RefreshCw, Check, X, Send } from "lucide-react";
 
 const MODE_LABEL: Record<string, string> = { manual: "ידני", auto: "אוטומטי", queue: "מהתור" };
@@ -20,7 +19,7 @@ export function VoiceMessageLogPanel() {
   const [resendingId, setResendingId] = useState<string | null>(null);
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["voice_message_log"],
-    queryFn: async () => listFn({ headers: await getAuthHeaders() }),
+    queryFn: async () => listFn({}),
     refetchInterval: 30000,
   });
 

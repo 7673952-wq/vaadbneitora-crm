@@ -1,7 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { listMyCrms, type CrmSummary } from "@/lib/crms.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 
 export type { CrmSummary };
 
@@ -10,7 +9,7 @@ export function useMyCrms(enabled = true) {
   const fn = useServerFn(listMyCrms);
   return useQuery({
     queryKey: ["my_crms"],
-    queryFn: async () => fn({ headers: await getAuthHeaders() }),
+    queryFn: async () => fn({}),
     enabled,
     staleTime: 5 * 60_000,
     retry: false,

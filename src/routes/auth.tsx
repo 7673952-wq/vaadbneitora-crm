@@ -4,9 +4,10 @@ import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
-import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent } from "@/lib/login.functions";
+import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMfaSession } from "@/lib/login.functions";
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
-import { getAuthHeaders } from "@/lib/auth-headers";
+import { perfMark, resetPerfTimings } from "@/lib/perf";
+import { primeAccessToken } from "@/lib/session-cache";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -28,6 +29,7 @@ function AuthPage() {
   const verifyFn = useServerFn(verifyLoginOtp);
   const resendFn = useServerFn(resendLoginOtp);
   const logFn = useServerFn(recordLoginEvent);
+  const confirmFn = useServerFn(confirmMfaSession);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
@@ -43,27 +45,55 @@ function AuthPage() {
     return () => clearTimeout(t);
   }, [resendCooldown]);
 
-  /** Creates the browser session only after every check has passed. */
-  async function completeSignIn() {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) { toast.error("התחברות נכשלה"); return; }
+  /**
+   * Creates the browser session only after every check has passed.
+   * `mfaGrant` is the one-time proof handed out by verifyLoginOtp — a session
+   * that only proved a password never becomes MFA-approved without it.
+   */
+  async function completeSignIn(mfaGrant?: string) {
+    // "זכור אותי" is decided BEFORE the session is written, so the storage
+    // adapter persists it in the right place from the very first write.
     setRemembered(remember);
+    perfMark("SUPABASE_SIGNIN_START");
+    const { data: signedIn, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) { toast.error("התחברות נכשלה"); return; }
+    perfMark("SUPABASE_SIGNIN_DONE");
+    primeAccessToken(signedIn.session ?? null);
+    perfMark("SESSION_READY");
+
+    if (mfaGrant) {
+      perfMark("SESSION_SECURITY_START");
+      try {
+        await confirmFn({ data: { grant: mfaGrant } });
+      } catch (err: any) {
+        // A session that cannot be marked MFA-approved is useless: every
+        // protected server function would reject it. Tear it down instead.
+        await supabase.auth.signOut();
+        toast.error(err?.message ?? "רישום האימות נכשל — התחבר מחדש");
+        return;
+      }
+      perfMark("SESSION_SECURITY_DONE");
+    }
+
     try {
       await logFn({
         data: { kind: "password", device_id: getDeviceId(), user_agent: describeDevice() },
-        headers: await getAuthHeaders(),
       });
     } catch { /* the journal must never block a valid login */ }
     // This tab already journaled a "password" login — the root layout must not
     // add a second "session" entry for the same sign-in.
     try { sessionStorage.setItem("crm_login_logged", "1"); } catch { /* ignore */ }
+    perfMark("AUTH_COMPLETE");
     toast.success("ברוך הבא");
+    perfMark("NAVIGATE_START");
     navigate({ to: "/dashboard" });
   }
 
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
+    resetPerfTimings();
+    perfMark("OTP_SUBMIT_START");
     try {
       const res: any = await beginFn({ data: { email, password, device_id: getDeviceId() } });
       if (res?.mfa) {
@@ -86,8 +116,9 @@ function AuthPage() {
     if (!challengeId) return;
     setLoading(true);
     try {
-      await verifyFn({ data: { challenge_id: challengeId, code, device_id: getDeviceId(), remember } });
-      await completeSignIn();
+      const res: any = await verifyFn({ data: { challenge_id: challengeId, code, device_id: getDeviceId() } });
+      perfMark("OTP_VERIFY_DONE");
+      await completeSignIn(res?.mfa_grant);
     } catch (err: any) {
       toast.error(err?.message ?? "האימות נכשל");
     } finally {

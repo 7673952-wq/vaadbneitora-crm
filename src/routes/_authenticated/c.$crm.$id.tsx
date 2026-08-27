@@ -8,7 +8,6 @@ import { useMyCrms } from "@/lib/use-crms";
 import { getRecord, updateRecord, addRecordNote, deleteRecord, deleteRecordNote, listFieldDefs, updateRecordNote } from "@/lib/crm-records.functions";
 import { listAgents } from "@/lib/systems.functions";
 import { listRecordEmailThread, sendRecordEmail } from "@/lib/email.functions";
-import { getAuthHeaders } from "@/lib/auth-headers";
 import { GENERIC_STATUSES } from "./c.$crm.index";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
@@ -37,14 +36,14 @@ function RecordDetail() {
 
   const { data, isLoading } = useQuery({
     queryKey: ["crm_record", id],
-    queryFn: async () => getFn({ data: { id }, headers: await getAuthHeaders() }),
+    queryFn: async () => getFn({ data: { id } }),
   });
   const { data: fields = [] } = useQuery({
     queryKey: ["crm_field_defs", crm],
-    queryFn: async () => fieldsFn({ data: { crmKey: crm }, headers: await getAuthHeaders() }),
+    queryFn: async () => fieldsFn({ data: { crmKey: crm } }),
   });
   const { data: agents = [] } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: 5 * 60_000 });
-  const { data: emails = [] } = useQuery({ queryKey: ["crm_record_emails", id], queryFn: async () => emailFn({ data: { record_id: id }, headers: await getAuthHeaders() }) });
+  const { data: emails = [] } = useQuery({ queryKey: ["crm_record_emails", id], queryFn: async () => emailFn({ data: { record_id: id } }) });
 
   const [noteText, setNoteText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -64,7 +63,7 @@ function RecordDetail() {
   async function sendMail(threadId?: string | null) {
     if (!r.email || !mailBody.trim()) return;
     try {
-      await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId, cleanup_level: emailCleanupLevel }, headers: await getAuthHeaders() });
+      await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId, cleanup_level: emailCleanupLevel } });
       setMailBody(""); setMailOpen(false);
       await qc.invalidateQueries({ queryKey: ["crm_record_emails", id] });
       toast.success("המייל נשלח");
@@ -74,7 +73,7 @@ function RecordDetail() {
   async function patch(p: Record<string, any>) {
     setBusy(true);
     try {
-      await updateFn({ data: { id, patch: p }, headers: await getAuthHeaders() });
+      await updateFn({ data: { id, patch: p } });
       await qc.invalidateQueries({ queryKey: ["crm_record", id] });
       await qc.invalidateQueries({ queryKey: ["crm_records", crm] });
       toast.success("נשמר");
@@ -88,7 +87,7 @@ function RecordDetail() {
   async function addNote() {
     if (!noteText.trim()) return;
     try {
-      await noteFn({ data: { recordId: id, crmKey: crm, body: noteText }, headers: await getAuthHeaders() });
+      await noteFn({ data: { recordId: id, crmKey: crm, body: noteText } });
       setNoteText("");
       await qc.invalidateQueries({ queryKey: ["crm_record", id] });
     } catch (e: any) {
@@ -129,7 +128,7 @@ function RecordDetail() {
           <button
             onClick={async () => {
               if (!confirm("למחוק את הפניה?")) return;
-              await delFn({ data: { id }, headers: await getAuthHeaders() });
+              await delFn({ data: { id } });
               await qc.invalidateQueries({ queryKey: ["crm_records", crm] });
               window.history.back();
             }}
@@ -194,8 +193,8 @@ function RecordDetail() {
                     {n.authorName ?? "—"} · {new Date(n.createdAt).toLocaleString("he-IL")}
                   </div>
                   {canWrite && <div className="flex gap-2 mt-1 text-[11px]">
-                    <button onClick={async () => { const body = prompt("עריכת הערה", n.body); if (!body?.trim()) return; await editNoteFn({ data: { id: n.id, body }, headers: await getAuthHeaders() }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-primary">ערוך</button>
-                    <button onClick={async () => { if (!confirm("למחוק הערה?")) return; await deleteNoteFn({ data: { id: n.id }, headers: await getAuthHeaders() }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-destructive">מחק</button>
+                    <button onClick={async () => { const body = prompt("עריכת הערה", n.body); if (!body?.trim()) return; await editNoteFn({ data: { id: n.id, body } }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-primary">ערוך</button>
+                    <button onClick={async () => { if (!confirm("למחוק הערה?")) return; await deleteNoteFn({ data: { id: n.id } }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-destructive">מחק</button>
                   </div>}
                 </div>
               ))}

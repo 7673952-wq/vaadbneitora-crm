@@ -8,7 +8,7 @@ import { beginLogin, verifyLoginOtp, resendLoginOtp, recordLoginEvent, confirmMf
 import { getDeviceId, setRemembered, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
 import { primeAccessToken } from "@/lib/session-cache";
-import { syncRememberPlacement } from "@/lib/remember-storage";
+
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -52,17 +52,15 @@ function AuthPage() {
    * that only proved a password never becomes MFA-approved without it.
    */
   async function completeSignIn(mfaGrant?: string) {
-    // "זכור אותי" is decided BEFORE the session is written, so the storage
-    // adapter persists it in the right place from the very first write.
+    // "זכור אותי" is recorded BEFORE the session is written; the session itself
+    // always goes to localStorage, and the flag decides whether it survives a
+    // browser restart (see @/lib/remember-storage).
     setRemembered(remember);
     perfMark("SUPABASE_SIGNIN_START");
     const { data: signedIn, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) { toast.error("התחברות נכשלה"); return; }
     perfMark("SUPABASE_SIGNIN_DONE");
     primeAccessToken(signedIn.session ?? null);
-    // Make sure the freshly written session actually sits in the store that
-    // matches "זכור אותי" — otherwise it dies when the window closes.
-    await syncRememberPlacement();
     perfMark("SESSION_READY");
 
     if (mfaGrant) {

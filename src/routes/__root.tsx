@@ -23,6 +23,7 @@ import { perfMark } from "@/lib/perf";
 import { useSession } from "@/lib/use-session";
 import { clearAccessToken, primeAccessToken } from "@/lib/session-cache";
 import { PerfOverlay } from "@/components/PerfOverlay";
+import { startPresenceHeartbeat } from "@/lib/remember-storage";
 
 
 function NotFoundComponent() {
@@ -157,6 +158,11 @@ function RootComponent() {
   }, [router, queryClient]);
 
   useEffect(() => { perfMark("APP_START"); }, []);
+
+  // Keeps "the browser is still open" fresh, so a session saved WITHOUT
+  // "זכור אותי" is dropped on the next browser start — while a remembered one
+  // (and a second tab of a live browser) is never touched.
+  useEffect(() => startPresenceHeartbeat(), []);
 
   return (
     <QueryClientProvider client={queryClient}>

@@ -3,10 +3,10 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Inbox, Play, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Headphones, Inbox, Play, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  listSystemRequests, decideSystemRequest, getRequestAutomationSettings,
+  listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
 } from "@/lib/system-requests.functions";
 
 export const Route = createFileRoute("/_authenticated/requests")({
@@ -48,6 +48,15 @@ function RequestsPage() {
   const fetchList = useServerFn(listSystemRequests);
   const fetchSettings = useServerFn(getRequestAutomationSettings);
   const decide = useServerFn(decideSystemRequest);
+  const fetchAudio = useServerFn(getRequestAudio);
+  const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
+
+  // Recordings are streamed from Gmail on demand and never stored in the CRM.
+  const audioMutation = useMutation({
+    mutationFn: (id: string) => fetchAudio({ data: { id } }),
+    onSuccess: (res: any, id) => setAudio({ id, url: res.dataUrl }),
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
 
   const settings = useQuery({
     queryKey: ["request-automation-settings"],
@@ -164,6 +173,20 @@ function RequestsPage() {
                   <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
                     <ShieldQuestion className="size-3.5" /> {r.last_error}
                   </p>
+                )}
+
+                {r.attachment_name && (
+                  <div className="mt-3">
+                    {audio?.id === r.id ? (
+                      <audio controls autoPlay src={audio.url} className="w-full max-w-sm" />
+                    ) : (
+                      <Button size="sm" variant="outline" disabled={audioMutation.isPending}
+                        onClick={() => audioMutation.mutate(r.id)}>
+                        <Headphones className="size-4" />
+                        השמע הקלטה
+                      </Button>
+                    )}
+                  </div>
                 )}
 
                 {pending && (

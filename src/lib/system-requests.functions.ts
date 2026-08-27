@@ -182,3 +182,45 @@ export const setRequestAutomationSettings = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ============= Recording playback =============
+
+/**
+ * Streams the request's recording straight from Gmail through the relay and
+ * returns it as a data URL. Nothing is persisted in storage — deliberately, so
+ * recordings stay in Gmail and the CRM keeps no copy.
+ */
+export const getRequestAudio = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if (!(await hasPermission(context.userId, "systems_read"))) throw new Error("אין הרשאה");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: req } = await supabaseAdmin
+      .from("system_requests")
+      .select("gmail_message_id, attachment_index, attachment_name")
+      .eq("id", data.id).maybeSingle();
+    if (!req?.gmail_message_id) throw new Error("לא נמצאה הקלטה לבקשה זו");
+
+    const [urlRow, secretRow] = await Promise.all([
+      supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_url").maybeSingle(),
+      supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_secret").maybeSingle(),
+    ]);
+    const relayUrl = (urlRow.data?.value as { url?: string } | null)?.url;
+    const relaySecret = (secretRow.data?.value as { secret?: string } | null)?.secret;
+    if (!relayUrl || !relaySecret) throw new Error("ממשק ה-Gmail אינו מוגדר");
+
+    const { postToRelay } = await import("@/lib/relay.server");
+    const res: any = await postToRelay(relayUrl, {
+      secret: relaySecret,
+      action: "get_attachment",
+      gmailMessageId: (req as any).gmail_message_id,
+      attachmentIndex: (req as any).attachment_index ?? 0,
+    });
+    const base64 = res?.base64 ?? res?.data;
+    if (!base64) throw new Error("ההקלטה לא נמצאה בגמייל");
+    const mime = res?.mimeType || "audio/mpeg";
+    return { dataUrl: `data:${mime};base64,${base64}`, name: (req as any).attachment_name ?? "recording" };
+  });

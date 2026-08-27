@@ -34,10 +34,22 @@ export function normalizePhone(raw: string): string {
 }
 
 /**
+ * Base recording copied into the caller's extension, exactly like the working
+ * voice-message flow (`ivr2:0CRM/files/<n>.wav`). The API key is only allowed
+ * to write the "<fileId>-Title.tts" companion of a copied file — uploading a
+ * standalone "<n>.tts" is rejected with API_KEY_ACL_REJECT, which is a key
+ * permission matter, not a filename matter.
+ */
+function otpTemplateFile(): string {
+  const raw = String(process.env.YEMOT_OTP_TEMPLATE || "4").trim();
+  return /^\d+$/.test(raw) ? raw : "4";
+}
+
+/**
  * Calls the user and reads the one-time code digit by digit.
  * Mirrors the voice-message flow 1:1 (which is proven to reach the phone):
- * a per-phone extension under 0CRM/Phone holding a single TTS file, then a
- * bridged call to that extension.
+ * copy the base wav into the per-phone extension, write its Title TTS with the
+ * spoken code, then place a bridged call to that extension.
  */
 export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<void> {
   const apiKey = (process.env.YEMOT_API_KEY || "").trim();

@@ -843,6 +843,41 @@ export const setStaleWarningHours = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ============= Voice-message debounce (seconds) =============
+// Grace period between a status change and the automatic voice send, so a
+// mistyped status doesn't immediately call the callers.
+
+const VOICE_DEBOUNCE_KEY = "voice_debounce_seconds";
+
+export const getVoiceDebounceSeconds = createServerFn({ method: "GET" })
+  .middleware([requireAuthMfa])
+  .handler(async ({ context }) => {
+    const { data } = await context.supabase
+      .from("app_settings").select("value").eq("key", VOICE_DEBOUNCE_KEY).maybeSingle();
+    const v = (data?.value as { seconds?: number } | null) ?? null;
+    return { seconds: typeof v?.seconds === "number" ? v.seconds : 90 };
+  });
+
+export const setVoiceDebounceSeconds = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { seconds: number }) =>
+    z.object({ seconds: z.number().int().min(0).max(3600) }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    await assertGlobalPermission(context, "settings_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("app_settings").upsert({
+      key: VOICE_DEBOUNCE_KEY,
+      value: { seconds: data.seconds },
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+    });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+
+
 // ============= Notification center =============
 // Returns recent events relevant to the current user:
 //  - transfers to/from me

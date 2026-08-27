@@ -63,6 +63,7 @@ export function AuthDebugPanel() {
               ? snapshot.session.map((k) => <div key={k.key}>{k.key} · פג {k.expiresAt ?? "—"} · refresh {k.hasRefresh ? "✓" : "✗"}</div>)
               : <div className="text-muted-foreground">ריק</div>}
           </div>
+          <div>גיבוי בעוגייה: <b>{snapshot?.cookieMirror ? "קיים" : "אין"}</b></div>
           <div>
             <div className="font-semibold">אירועים</div>
             {log.length

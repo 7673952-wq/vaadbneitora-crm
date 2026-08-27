@@ -1137,7 +1137,7 @@ function SystemDetail() {
       </div>
 
       {/* ===== פעילות ===== */}
-      <div className="bg-card border border-border rounded-xl p-4">
+      <div className="bg-card border border-border rounded-xl p-4 xl:col-start-2 xl:row-span-6 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
         {/* ===== פעילות: הערות + היסטוריה ===== */}
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="font-semibold flex items-center gap-2 text-sm">

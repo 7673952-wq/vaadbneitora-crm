@@ -37,19 +37,36 @@ export function NotificationBell() {
   const prefsFn = useServerFn(getMyNotificationPrefs);
   const qc = useQueryClient();
 
+  // The bell mounts with the header, but its three queries must not compete
+  // with the first screen's data — start them once the browser is idle.
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    const w = window as any;
+    const id = typeof w.requestIdleCallback === "function"
+      ? w.requestIdleCallback(() => setActive(true), { timeout: 3000 })
+      : window.setTimeout(() => setActive(true), 1200);
+    return () => {
+      if (typeof w.cancelIdleCallback === "function") w.cancelIdleCallback(id);
+      else clearTimeout(id);
+    };
+  }, []);
+
   const { data } = useQuery({
     queryKey: ["my_notifications"],
     queryFn: () => fn(),
+    enabled: active,
     refetchInterval: 60_000,
   });
   const { data: remindersData } = useQuery({
     queryKey: ["my_due_reminders"],
     queryFn: () => remindersFn(),
+    enabled: active,
     refetchInterval: 60_000,
   });
   const { data: prefs } = useQuery({
     queryKey: ["my_notification_prefs"],
     queryFn: () => prefsFn(),
+    enabled: active,
     staleTime: 5 * 60_000,
   });
 

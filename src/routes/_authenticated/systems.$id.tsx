@@ -89,17 +89,18 @@ function SystemDetail() {
   const sendChoiceBtnRef = useRef<HTMLButtonElement>(null);
   const [showSendPicker, setShowSendPicker] = useState(false);
   const [batchSending, setBatchSending] = useState(false);
-  const [tab, setTab] = useState<WorkTab>(() => {
+  const [tab, setTab] = useState<WorkTab>("emails");
+  useEffect(() => {
     try {
       const v = window.localStorage.getItem("crm.system.tab") as WorkTab | null;
-      if (v && WORK_TABS.some((t) => t.key === v)) return v;
+      if (v && WORK_TABS.some((t) => t.key === v)) setTab(v);
     } catch { /* אין גישה לאחסון */ }
-    return "emails";
-  });
+  }, []);
   function selectTab(next: WorkTab) {
     setTab(next);
     try { window.localStorage.setItem("crm.system.tab", next); } catch { /* אין גישה לאחסון */ }
   }
+
 
 
   function copyToClipboard(value: string, key: string, label: string) {

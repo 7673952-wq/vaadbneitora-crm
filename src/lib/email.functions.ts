@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 
@@ -16,7 +16,7 @@ const RELAY_ADDRESS_KEY = "email_relay_address";
 const GENERAL_NAME_KEY = "email_general_name";
 
 export const getEmailRelayConfig = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { assertAnyPermission } = await import("@/lib/permissions.server");
     await assertAnyPermission(context.userId, ["backup_manage", "settings_manage"]);
@@ -32,7 +32,7 @@ export const getEmailRelayConfig = createServerFn({ method: "GET" })
   });
 
 export const setEmailRelayConfig = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { url: string; address: string; generalName?: string; secret?: string }) =>
     z.object({
       url: z.string().max(300).refine((v) => v === "" || /^https:\/\//.test(v), "כתובת חייבת להתחיל ב-https"),
@@ -112,7 +112,7 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
 // whether a "general name" option exists, without exposing the rest of the
 // relay config (URL/secret) which stays admin-only.
 export const getEmailGeneralName = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data } = await context.supabase.from("app_settings").select("value").eq("key", GENERAL_NAME_KEY).maybeSingle();
     return { generalName: (data?.value as { name?: string } | null)?.name ?? "" };
@@ -120,7 +120,7 @@ export const getEmailGeneralName = createServerFn({ method: "GET" })
 
 // ============= Agent display name + signature =============
 export const getMyEmailProfile = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("profiles").select("display_name, email_signature" as any).eq("id", context.userId).maybeSingle();
@@ -129,7 +129,7 @@ export const getMyEmailProfile = createServerFn({ method: "GET" })
   });
 
 export const setMyEmailSignature = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { signature: string }) => z.object({ signature: z.string().max(2000) }).parse(d))
   .handler(async ({ data, context }) => {
     const { error } = await context.supabase
@@ -140,7 +140,7 @@ export const setMyEmailSignature = createServerFn({ method: "POST" })
 
 // ============= Templates =============
 export const listEmailTemplates = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("email_templates" as any).select("*").order("name", { ascending: true });
@@ -149,7 +149,7 @@ export const listEmailTemplates = createServerFn({ method: "GET" })
   });
 
 export const upsertEmailTemplate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id?: string; name: string; subject: string; body: string }) =>
     z.object({
       id: z.string().uuid().optional(),
@@ -173,7 +173,7 @@ export const upsertEmailTemplate = createServerFn({ method: "POST" })
   });
 
 export const deleteEmailTemplate = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
@@ -187,7 +187,7 @@ export const deleteEmailTemplate = createServerFn({ method: "POST" })
 // Lets an admin decide what name each agent's outgoing mail shows as,
 // regardless of their regular in-app display_name.
 export const listAgentEmailNames = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
     await assertPermissionInAnyCrm(context.userId, "users_manage");
@@ -199,7 +199,7 @@ export const listAgentEmailNames = createServerFn({ method: "GET" })
   });
 
 export const setAgentEmailDisplayName = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { user_id: string; email_display_name: string }) =>
     z.object({ user_id: z.string().uuid(), email_display_name: z.string().max(200) }).parse(d),
   )
@@ -217,7 +217,7 @@ export const setAgentEmailDisplayName = createServerFn({ method: "POST" })
 
 // ============= Thread for a system =============
 export const listSystemEmailThread = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string }) => z.object({ system_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: rows, error } = await context.supabase
@@ -227,7 +227,7 @@ export const listSystemEmailThread = createServerFn({ method: "POST" })
   });
 
 export const listRecordEmailThread = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { record_id: string }) => z.object({ record_id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: record } = await context.supabase.from("crm_records").select("crm_key").eq("id", data.record_id).maybeSingle();
@@ -241,7 +241,7 @@ export const listRecordEmailThread = createServerFn({ method: "POST" })
 
 // ============= Send / reply =============
 export const sendSystemEmail = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel }) =>
     z.object({
       system_id: z.string().uuid(),
@@ -321,7 +321,7 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
   });
 
 export const sendRecordEmail = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { record_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; cleanup_level?: EmailCleanupLevel }) => z.object({
     record_id: z.string().uuid(), to: z.string().email(), subject: z.string().max(300), body: z.string().min(1).max(20000), gmail_thread_id: z.string().nullable().optional(), cleanup_level: z.enum(["none", "light", "standard", "strict"]).optional(),
   }).parse(d))

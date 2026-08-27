@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { sanitizeText } from "@/lib/sanitize";
 
 export const listSystemFiles = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string }) =>
     z.object({ system_id: z.string().uuid() }).parse(d),
   )
@@ -29,7 +29,7 @@ export const listSystemFiles = createServerFn({ method: "GET" })
   });
 
 export const uploadSystemFile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string; file_name: string; mime_type: string; data_base64: string }) =>
     z.object({
       system_id: z.string().uuid(),
@@ -95,7 +95,7 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
   });
 
 export const getSystemFileUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { file_id: string }) =>
     z.object({ file_id: z.string().uuid() }).parse(d),
   )
@@ -111,7 +111,7 @@ export const getSystemFileUrl = createServerFn({ method: "POST" })
   });
 
 export const deleteSystemFile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { file_id: string }) =>
     z.object({ file_id: z.string().uuid() }).parse(d),
   )

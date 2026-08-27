@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase, AppError } from "@/lib/errors";
 import { sanitizeText } from "@/lib/sanitize";
 
@@ -48,7 +48,7 @@ function mapRecord(r: any): CrmRecord {
 /* ============ field definitions ============ */
 
 export const listFieldDefs = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ crmKey: z.string().min(1) }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertCrmAccess } = await import("@/lib/permissions.server");
@@ -73,7 +73,7 @@ export const listFieldDefs = createServerFn({ method: "GET" })
   });
 
 export const upsertFieldDef = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -113,7 +113,7 @@ export const upsertFieldDef = createServerFn({ method: "POST" })
   });
 
 export const deleteFieldDef = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { assertPermission } = await import("@/lib/permissions.server");
@@ -126,7 +126,7 @@ export const deleteFieldDef = createServerFn({ method: "POST" })
 /* ============ records ============ */
 
 export const listRecords = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z.object({ crmKey: z.string().min(1), search: z.string().max(120).optional() }).parse(input),
   )
@@ -157,7 +157,7 @@ export const listRecords = createServerFn({ method: "GET" })
   });
 
 export const getRecord = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await context.supabase
@@ -227,7 +227,7 @@ async function actorName(context: { supabase: any; userId: string }) {
 }
 
 export const createRecord = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => recordInput.parse(input))
   .handler(async ({ data, context }) => {
     const { assertCanWrite } = await import("@/lib/permissions.server");
@@ -263,7 +263,7 @@ export const createRecord = createServerFn({ method: "POST" })
   });
 
 export const updateRecord = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
@@ -322,7 +322,7 @@ export const updateRecord = createServerFn({ method: "POST" })
   });
 
 export const deleteRecord = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: row } = await context.supabase.from("crm_records").select("crm_key").eq("id", data.id).maybeSingle();
@@ -335,7 +335,7 @@ export const deleteRecord = createServerFn({ method: "POST" })
   });
 
 export const addRecordNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z.object({ recordId: z.string().uuid(), crmKey: z.string().min(1), body: z.string().trim().min(1).max(5000) }).parse(input),
   )
@@ -354,7 +354,7 @@ export const addRecordNote = createServerFn({ method: "POST" })
   });
 
 export const updateRecordNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid(), body: z.string().trim().min(1).max(5000) }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: note } = await context.supabase.from("crm_record_notes").select("crm_key, author_id").eq("id", data.id).maybeSingle();
@@ -367,7 +367,7 @@ export const updateRecordNote = createServerFn({ method: "POST" })
   });
 
 export const deleteRecordNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
   .handler(async ({ data, context }) => {
     const { data: note } = await context.supabase.from("crm_record_notes").select("crm_key, author_id").eq("id", data.id).maybeSingle();

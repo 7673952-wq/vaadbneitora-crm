@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { logAndThrow } from "@/lib/errors";
 import { BACKUP_TABLES } from "@/lib/backup-tables";
@@ -18,7 +18,7 @@ async function assertSuperAdmin(context: { userId: string }) {
 }
 
 export const backupNow = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: unknown) => z.object({}).optional().parse(d))
   .handler(async ({ context }) => {
     checkRateLimit(`${context.userId}:backupNow`, 3, 60_000);
@@ -33,7 +33,7 @@ export const backupNow = createServerFn({ method: "POST" })
   });
 
 export const listBackups = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     await assertAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -64,7 +64,7 @@ export const listBackups = createServerFn({ method: "GET" })
   });
 
 export const getBackupFileUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { path: string }) =>
     z.object({ path: z.string().min(1).max(500).regex(/^[A-Za-z0-9._\-/:]+$/) }).parse(d),
   )
@@ -77,7 +77,7 @@ export const getBackupFileUrl = createServerFn({ method: "POST" })
   });
 
 export const deleteBackup = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { folder: string }) =>
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
   )
@@ -97,7 +97,7 @@ export const deleteBackup = createServerFn({ method: "POST" })
 // Done server-side because fetching individual signed URLs from the browser to
 // stitch a ZIP triggers CORS preflight that Supabase Storage doesn't allow.
 export const getBackupZipUrl = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { folder: string }) =>
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
   )
@@ -142,7 +142,7 @@ export const getBackupZipUrl = createServerFn({ method: "POST" })
 // minted by the UI's double-confirm dialog. The audit log is written both
 // before the restore (intent) and after (result) for full traceability.
 export const restoreBackup = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { files: { table: string; csv: string }[]; mode?: "merge" | "replace"; confirm_token?: string }) =>
     z.object({
       files: z.array(z.object({
@@ -227,7 +227,7 @@ export const restoreBackup = createServerFn({ method: "POST" })
 // by scheduled backups. Keeping one delivery path prevents the manual button
 // from silently bypassing a healthy Apps Script connection and using Resend.
 export const sendBackupByEmail = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { folder: string }) =>
     z.object({ folder: z.string().min(1).max(200).regex(/^[A-Za-z0-9._\-:]+$/) }).parse(d),
   )

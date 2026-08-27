@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 
 export const getManagerDashboard = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { assertPermission, hasRole } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "systems_read", "yemot");
@@ -83,7 +83,7 @@ export const getManagerDashboard = createServerFn({ method: "GET" })
 // Group systems by caller phone. Includes primary caller_phone as well as
 // entries from additional_caller_phones (jsonb array of {phone}).
 export const getSystemsByCallerPhone = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { assertPermission, hasRole } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "systems_read", "yemot");

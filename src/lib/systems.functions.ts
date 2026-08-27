@@ -7,7 +7,7 @@ async function logInfo(message: string, context?: Record<string, unknown>) {
   logger.info(message, context);
 }
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { checkRateLimit } from "@/lib/rate-limit.server";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { readStatusSettings } from "@/lib/status-settings";
@@ -119,7 +119,7 @@ const listSystemsInputSchema = z.object({
 }).strict();
 
 export const listSystems = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: unknown) => listSystemsInputSchema.parse(d ?? {}))
   .handler(async ({ data, context }) => {
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
@@ -173,7 +173,7 @@ export const listSystems = createServerFn({ method: "POST" })
 // Global per-status counts across ALL systems (with optional agent/period
 // filters), independent of dashboard pagination.
 export const getStatusCounts = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: unknown) =>
     z.object({
       agentId: z.string().uuid().nullable().optional(),
@@ -257,7 +257,7 @@ async function enrichSystemRows(supabase: any, rows: any[]) {
 }
 
 export const getSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { data: sys, error } = await context.supabase
@@ -356,7 +356,7 @@ export const getSystem = createServerFn({ method: "POST" })
  * old hard `limit(300)` — the card loads a page at a time ("טען עוד").
  */
 export const listSystemActivity = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: {
     systemId: string; offset?: number; limit?: number;
     action?: string | null; actorId?: string | null; from?: string | null; to?: string | null;
@@ -406,7 +406,7 @@ export const listSystemActivity = createServerFn({ method: "POST" })
 
 
 export const addSubSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: {
     parent_id: string; system_code: string; name?: string; status?: string;
     notes?: string; phone?: string; source?: string; caller_phone?: string; email?: string;
@@ -473,7 +473,7 @@ export const addSubSystem = createServerFn({ method: "POST" })
   });
 
 export const createSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: {
     system_code: string; name: string; status: string;
     assigned_agent_id?: string | null; notes?: string; phone?: string;
@@ -539,7 +539,7 @@ export const createSystem = createServerFn({ method: "POST" })
 
 
 export const updateSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: {
     id: string; status?: string; secondary_status?: string | null; assigned_agent_id?: string | null;
     name?: string; system_code?: string; notes?: string; phone?: string | null;
@@ -721,7 +721,7 @@ export const updateSystem = createServerFn({ method: "POST" })
   });
 
 export const transferAgent = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string; to_agent_id: string | null; reason?: string }) =>
     z.object({
       id: z.string().uuid(),
@@ -757,7 +757,7 @@ export const transferAgent = createServerFn({ method: "POST" })
   });
 
 export const deleteSystem = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string; mode?: "cascade" | "promote"; promote_to_id?: string }) =>
     z.object({
       id: z.string().uuid(),
@@ -807,7 +807,7 @@ export const deleteSystem = createServerFn({ method: "POST" })
   });
 
 export const updateActivityLog = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string; reason?: string | null; old_value?: string | null; new_value?: string | null }) =>
     z.object({
       id: z.string().uuid(),
@@ -828,7 +828,7 @@ export const updateActivityLog = createServerFn({ method: "POST" })
   });
 
 export const deleteActivityLog = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
@@ -841,7 +841,7 @@ export const deleteActivityLog = createServerFn({ method: "POST" })
   });
 
 export const addNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string; body: string }) =>
     z.object({ system_id: z.string().uuid(), body: z.string().min(1).max(2000) }).parse(d),
   )
@@ -855,7 +855,7 @@ export const addNote = createServerFn({ method: "POST" })
   });
 
 export const updateNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string; body: string }) =>
     z.object({ id: z.string().uuid(), body: z.string().min(1).max(2000) }).parse(d),
   )
@@ -876,7 +876,7 @@ export const updateNote = createServerFn({ method: "POST" })
   });
 
 export const deleteNote = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
@@ -895,7 +895,7 @@ export const deleteNote = createServerFn({ method: "POST" })
   });
 
 export const setReminder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string; repeat?: string; custom_date?: string | null; agent_ids?: string[] }) =>
     z.object({
       system_id: z.string().uuid(),
@@ -932,7 +932,7 @@ export const setReminder = createServerFn({ method: "POST" })
   });
 
 export const dismissReminder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string; scope?: "all" | "me" | "agents"; agent_ids?: string[] }) =>
     z.object({
       system_id: z.string().uuid(),
@@ -992,7 +992,7 @@ export const dismissReminder = createServerFn({ method: "POST" })
   });
 
 export const snoozeReminder = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { system_id: string; minutes: number }) =>
     z.object({ system_id: z.string().uuid(), minutes: z.number().int().min(1).max(60 * 24 * 365) }).parse(d),
   )
@@ -1008,7 +1008,7 @@ export const snoozeReminder = createServerFn({ method: "POST" })
   });
 
 export const listDueReminders = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const nowIso = new Date().toISOString();
     const { data: manual, error: e1 } = await context.supabase
@@ -1149,7 +1149,7 @@ export const listDueReminders = createServerFn({ method: "GET" })
   });
 
 export const listWeeklyCrmReportRecipients = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לצפות ברשימת נמענים");
@@ -1160,7 +1160,7 @@ export const listWeeklyCrmReportRecipients = createServerFn({ method: "GET" })
   });
 
 export const setParent = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string; parent_system_id: string | null }) =>
     z.object({ id: z.string().uuid(), parent_system_id: z.string().uuid().nullable() }).parse(d),
   )
@@ -1185,7 +1185,7 @@ export const setParent = createServerFn({ method: "POST" })
   });
 
 export const listAgents = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data: profiles } = await context.supabase
       .from("profiles").select("id, display_name");
@@ -1193,7 +1193,7 @@ export const listAgents = createServerFn({ method: "GET" })
   });
 
 export const listMainSystems = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("systems")
@@ -1205,7 +1205,7 @@ export const listMainSystems = createServerFn({ method: "GET" })
   });
 
 export const detectMissingSystemSeries = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: unknown) =>
     z.object({
       start: z.string().min(1).max(60),
@@ -1253,7 +1253,7 @@ export const detectMissingSystemSeries = createServerFn({ method: "POST" })
   });
 
 export const createMissingSystems = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: unknown) =>
     z.object({
       codes: z.array(z.string().min(1).max(60)).min(1).max(500),
@@ -1284,7 +1284,7 @@ export const createMissingSystems = createServerFn({ method: "POST" })
   });
 
 export const findSystemByName = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     // Two passes so a name shared by many sub-systems never buries the true
@@ -1317,7 +1317,7 @@ export const findSystemByName = createServerFn({ method: "POST" })
   });
 
 export const findSystemByCode = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { code: string }) => z.object({ code: z.string().min(1).max(60) }).parse(d))
   .handler(async ({ data, context }) => {
     // Build all reasonable variants of the input: forward + reversed,
@@ -1363,7 +1363,7 @@ export const findSystemByCode = createServerFn({ method: "POST" })
 // the dial phone, and any entry in additional_caller_phones. Digits only, so
 // 052-767..., +97252767... and 052767... all match each other.
 export const findSystemsByCallerPhone = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { phone: string }) => z.object({ phone: z.string().min(1).max(60) }).parse(d))
   .handler(async ({ data, context }) => {
     const digits = String(data.phone).replace(/\D/g, "");
@@ -1422,7 +1422,7 @@ export const findSystemsByCallerPhone = createServerFn({ method: "POST" })
 // "category" parents like "קו ההגנה" that group many sub-systems). If a root
 // with that exact name is missing it is created on-the-fly and returned.
 export const ensureCategoryRoot = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
@@ -1458,7 +1458,7 @@ export const ensureCategoryRoot = createServerFn({ method: "POST" })
 // how many systems reached a "handled" status (throughput) and the average
 // hours from system creation to that first handled transition (avgHours).
 export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { period: string; compareToPrevious?: boolean }) =>
     z.object({
       period: z.enum(["day", "3days", "week", "month", "year"]),
@@ -1564,7 +1564,7 @@ export const getHandlingSpeedTrend = createServerFn({ method: "POST" })
 // status transition to a "handled" status in the activity log (falls back to
 // updated_at when no log entry exists).
 export const getHandledRatio = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { openedPeriod: string; withinDays: number; compareToPrevious?: boolean }) =>
     z.object({
       openedPeriod: z.enum(["day", "3days", "week", "month", "year"]),
@@ -1641,7 +1641,7 @@ export const getHandledRatio = createServerFn({ method: "POST" })
 
 // Status funnel: count of systems per status for a period (by created_at).
 export const getStatusFunnel = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { period: string }) =>
     z.object({ period: z.enum(["day", "3days", "week", "month", "year", "all"]) }).parse(d))
   .handler(async ({ data, context }) => {
@@ -2064,7 +2064,7 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
 // business hours. Throttled so many simultaneously-open dashboards don't
 // hammer Yemot with duplicate work.
 export const pokeVoiceQueue = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async () => {
     try {
       checkRateLimit("global:pokeVoiceQueue", 1, 4 * 60_000);
@@ -2085,7 +2085,7 @@ export const pokeVoiceQueue = createServerFn({ method: "POST" })
 // Lets an admin directly override when a queued system's voice message will
 // send (instead of waiting for the status's configured hour window).
 export const rescheduleVoicePending = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { systemId: string; sendAt: string | null }) =>
     z.object({ systemId: z.string().uuid(), sendAt: z.string().datetime().nullable() }).parse(d))
   .handler(async ({ data, context }) => {
@@ -2100,7 +2100,7 @@ export const rescheduleVoicePending = createServerFn({ method: "POST" })
   });
 
 export const manualSendPendingVoice = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { systemId: string }) => z.object({ systemId: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { hasPermission } = await import("@/lib/permissions.server");
@@ -2113,7 +2113,7 @@ export const manualSendPendingVoice = createServerFn({ method: "POST" })
   });
 
 export const sendVoiceMessage = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { systemId: string; phoneIndex?: number }) =>
     z.object({
       systemId: z.string().uuid(),
@@ -2135,7 +2135,7 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
 // allowed to edit systems.
 
 export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { systemId: string; phone: string }) =>
     z.object({ systemId: z.string().uuid(), phone: z.string().min(1).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
@@ -2165,7 +2165,7 @@ export const addAdditionalCallerPhone = createServerFn({ method: "POST" })
   });
 
 export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { systemId: string; index: number; phone: string }) =>
     z.object({ systemId: z.string().uuid(), index: z.number().int().min(0).max(50), phone: z.string().min(1).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
@@ -2190,7 +2190,7 @@ export const updateAdditionalCallerPhone = createServerFn({ method: "POST" })
   });
 
 export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { systemId: string; index: number }) =>
     z.object({ systemId: z.string().uuid(), index: z.number().int().min(0).max(50) }).parse(d))
   .handler(async ({ data, context }) => {
@@ -2213,7 +2213,7 @@ export const removeAdditionalCallerPhone = createServerFn({ method: "POST" })
   });
 
 export const importSystems = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { rows: Array<Record<string, any>> }) =>
     z.object({
       rows: z.array(z.record(z.any())).min(1).max(2000),
@@ -2459,7 +2459,7 @@ export const importSystems = createServerFn({ method: "POST" })
 // the missing numeric slots in the range [min..max] are returned so the
 // admin can decide which ones to create.
 export const scanSystemSeries = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const isAdmin = await userHasRole(context.userId, "admin");
     if (!isAdmin) throw new Error("רק מנהל יכול לסרוק סדרות");

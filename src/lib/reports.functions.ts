@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 
 const inputSchema = z.object({
   from: z.string().datetime().nullable().optional(),
@@ -12,7 +12,7 @@ const inputSchema = z.object({
 type Input = z.infer<typeof inputSchema>;
 
 export const getReports = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: Input) => inputSchema.parse(d))
   .handler(async ({ data, context }) => {
     const { assertPermission, hasRole } = await import("@/lib/permissions.server");

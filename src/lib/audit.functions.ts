@@ -1,10 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { readStatusSettings } from "@/lib/status-settings";
 
 export const listAuditLog = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: {
     actor_id?: string | null;
     action?: string | null;
@@ -141,7 +141,7 @@ export const listAuditLog = createServerFn({ method: "POST" })
   });
 
 export const listAuditActors = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const { assertRole } = await import("@/lib/permissions.server");
     await assertRole(context.userId, "super_admin");
@@ -168,7 +168,7 @@ export function isRevertibleEntry(row: { action?: string | null; field?: string 
 }
 
 export const revertAuditEntry = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertRole } = await import("@/lib/permissions.server");

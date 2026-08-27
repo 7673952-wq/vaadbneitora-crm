@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
-import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase } from "@/lib/errors";
 
 export type GlobalSearchHit = {
@@ -18,7 +18,7 @@ export type GlobalSearchHit = {
 
 /** Cross-CRM search: id / name / caller / phone / email / notes. */
 export const globalSearch = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([requireAuthMfa])
   .inputValidator((input: unknown) => z.object({ q: z.string().trim().min(2).max(120) }).parse(input))
   .handler(async ({ data, context }): Promise<GlobalSearchHit[]> => {
     const { hasCrmAccess } = await import("@/lib/permissions.server");

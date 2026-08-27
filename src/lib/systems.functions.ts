@@ -167,10 +167,17 @@ export const listSystems = createServerFn({ method: "POST" })
       _offset: offset,
       _q: data.q?.trim() || null,
     } as any);
+    const dbMs = Date.now() - tDbStart;
     if (rpcErr) throw new Error(rpcErr.message);
     const payload = (rpcData ?? {}) as { items?: any[]; total?: number };
+    const tEnrich = Date.now();
     const items = await enrichSystemRows(db, payload.items ?? []);
-    return { items, total: payload.total ?? items.length, page, pageSize };
+    const enrichMs = Date.now() - tEnrich;
+    const result = { items, total: payload.total ?? items.length, page, pageSize };
+    console.log(
+      `[perf] listSystems db=${dbMs}ms enrich=${enrichMs}ms rows=${items.length} bytes=${JSON.stringify(result).length}`,
+    );
+    return result;
   });
 
 // Global per-status counts across ALL systems (with optional agent/period

@@ -40,7 +40,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     }).parse(d))
   .handler(async ({ data, context }) => {
     const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "systems_edit"))) throw new Error("אין הרשאה");
+    if (!(await hasPermission(context.userId, "status_change"))) throw new Error("אין הרשאה");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: req } = await supabaseAdmin

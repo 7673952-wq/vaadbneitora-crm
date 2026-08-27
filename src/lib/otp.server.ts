@@ -112,11 +112,25 @@ export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<vo
     await tryPost("FileAction", { action: "delete", what: `${extensionPath}/${name}` });
   }
 
+  // Copy the approved base recording into the extension — this is the step
+  // that yields a fileId whose "-Title.tts" the API key IS allowed to write.
+  const templateFile = otpTemplateFile();
+  const copyJson = await post("FileAction", {
+    what: `ivr2:0CRM/files/${templateFile}.wav`,
+    target: extensionPath,
+  });
+  const copiedTarget = String(copyJson?.reports?.[0]?.target || copyJson?.target || "");
+  const fileId = copiedTarget.match(/\/([^/]+)\.wav$/i)?.[1];
+  if (!fileId) {
+    throw new Error(
+      `ימות המשיח (FileAction): לא התקבל מזהה קובץ לשליחת קוד הכניסה (שלוחה ${extensionPath})`,
+    );
+  }
+
   // "!" between digits forces Yemot's TTS to read each digit separately.
-  // The login code rides the exact voice-message flow, in file '004'.
   const spoken = code.split("").join("!");
   await post("UploadTextFile", {
-    what: `${extensionPath}/004.tts`,
+    what: `${extensionPath}/${fileId}-Title.tts`,
     contents: `קוד הכניסה שלך למערכת הוא ${spoken} . שוב, ${spoken}`,
   });
 

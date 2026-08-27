@@ -286,23 +286,31 @@ function Dashboard() {
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: async () => meFn({}), staleTime: REFERENCE_STALE_TIME });
   const { data: agents } = useQuery({ queryKey: ["agents"], queryFn: () => agentsFn(), staleTime: REFERENCE_STALE_TIME });
   const serverPageSize = pageSize === 0 ? 100000 : pageSize;
+  // The systems list is the dashboard's first priority: it runs in parallel
+  // with the status summary and renders the moment it resolves, never waiting
+  // for counts or charts.
   const { data: systemsData, isLoading } = useQuery({
     queryKey: ["systems", status, secondaryStatus, agentId, period, dateFrom, dateTo, page, pageSize, debouncedSearch],
-    queryFn: async () => listFn({ data: {
-      status: status || null, secondaryStatus: secondaryStatus || null, agentId: agentId || null, period: period || null,
-      dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
-      dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
-      page, pageSize: serverPageSize,
-      q: debouncedSearch || null,
-    } }),
+    queryFn: async () => {
+      perfMark("SYSTEMS_QUERY_START");
+      const res = await listFn({ data: {
+        status: status || null, secondaryStatus: secondaryStatus || null, agentId: agentId || null, period: period || null,
+        dateFrom: dateFrom ? new Date(dateFrom).toISOString() : null,
+        dateTo: dateTo ? new Date(dateTo + "T23:59:59").toISOString() : null,
+        page, pageSize: serverPageSize,
+        q: debouncedSearch || null,
+      } });
+      perfMark("SYSTEMS_QUERY_DONE");
+      return res;
+    },
     staleTime: 30_000,
     placeholderData: (prev) => prev,
   });
   const systems = systemsData?.items ?? [];
   const total = systemsData?.total ?? 0;
   // Real-user timing marks (see src/lib/perf.ts) — recorded once per load.
-  useEffect(() => { perfMark("DASHBOARD_RENDERED"); }, []);
-  useEffect(() => { if (systemsData) perfMark("SYSTEMS_READY"); }, [systemsData]);
+  useEffect(() => { perfMark("DASHBOARD_ROUTE_READY"); perfMark("DASHBOARD_RENDERED"); }, []);
+  useEffect(() => { if (systemsData) { perfMark("SYSTEMS_READY"); perfMark("DASHBOARD_ABOVE_FOLD_READY"); } }, [systemsData]);
   useEffect(() => { if (statusReady) perfMark("CONFIG_READY"); }, [statusReady]);
   useEffect(() => { if (systemsData && statusReady) perfMark("DASHBOARD_READY"); }, [systemsData, statusReady]);
 

@@ -1761,6 +1761,8 @@ function SystemDetail() {
           </div>
         )}
       </div>
+      )}
+
     </div>
     {splitOpen && data.parent && (
       <div className="flex-1 min-w-0 sticky top-4 border-2 border-primary/40 rounded-xl overflow-hidden bg-card shadow-lg" style={{ height: "calc(100vh - 2rem)" }}>

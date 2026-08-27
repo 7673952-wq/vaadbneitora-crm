@@ -19,6 +19,10 @@ import {
   listAgentEmailNames, setAgentEmailDisplayName,
 } from "@/lib/email.functions";
 import { getMailboxPrefs, setMailboxPrefs } from "@/lib/mail.functions";
+import {
+  getRequestAutomationSettings, setRequestAutomationSettings,
+  listRequestRules, saveRequestRule, deleteRequestRule,
+} from "@/lib/system-requests.functions";
 import { MAILBOX_PREFS_DEFAULTS, type MailboxPrefs } from "@/lib/mailbox-prefs";
 import { Button } from "@/components/ui/button";
 import { AVAILABLE_TONES, toneClasses, applyStatusSettings, STATUS_OPTIONS } from "@/lib/status";
@@ -163,6 +167,7 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         <AutoSnoozePanel />
         <StaleHoursPanel />
         <VoiceDebouncePanel />
+        <RequestAutomationPanel />
         <RequestAutomationPanel />
         <BackupEmailPanel />
         <BackupSchedulePanel />

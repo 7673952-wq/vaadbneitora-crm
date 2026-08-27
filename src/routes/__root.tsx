@@ -23,7 +23,6 @@ import { perfMark } from "@/lib/perf";
 import { useSession } from "@/lib/use-session";
 import { clearAccessToken, primeAccessToken } from "@/lib/session-cache";
 import { PerfOverlay } from "@/components/PerfOverlay";
-import { startPresenceHeartbeat } from "@/lib/remember-storage";
 
 
 function NotFoundComponent() {
@@ -109,8 +108,7 @@ function RootComponent() {
   const router = useRouter();
 
   useEffect(() => {
-    // Session lifetime is decided by WHERE the session is stored, chosen at
-    // login time by "זכור אותי" (see @/lib/remember-storage):
+    // Session lifetime is decided by WHERE the session is stored at login:
     //   remembered     -> localStorage, survives closing the browser
     //   not remembered -> sessionStorage, dies with the browser session
     // There is deliberately no "force sign-out on startup" heuristic here: it
@@ -158,11 +156,6 @@ function RootComponent() {
   }, [router, queryClient]);
 
   useEffect(() => { perfMark("APP_START"); }, []);
-
-  // Keeps "the browser is still open" fresh, so a session saved WITHOUT
-  // "זכור אותי" is dropped on the next browser start — while a remembered one
-  // (and a second tab of a live browser) is never touched.
-  useEffect(() => startPresenceHeartbeat(), []);
 
   return (
     <QueryClientProvider client={queryClient}>

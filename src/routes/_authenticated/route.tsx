@@ -46,7 +46,9 @@ function AuthedLayout() {
   const recordLoginEventFn = useServerFn(recordLoginEvent);
   const endSessionFn = useServerFn(endSession);
   const { session, ready: sessionResolved } = useSession();
-  const [sessionReady, setSessionReady] = useState(false);
+  // beforeLoad has already verified a browser session. Do not hold the entire
+  // dashboard behind a second client-side session read after navigation.
+  const [sessionReady, setSessionReady] = useState(true);
 
   const { data: me } = useQuery({
     queryKey: ["me"],

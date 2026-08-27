@@ -1,12 +1,35 @@
-// Auth storage is selected at write/read time, not after login:
-// remembered sessions live in localStorage; temporary sessions in sessionStorage.
-// This is deterministic across a full browser close and does not rely on timing.
+// Auth storage is chosen ONCE per page load, not re-decided on every read:
+//   remembered sessions -> localStorage (survive a full browser close)
+//   temporary sessions  -> sessionStorage (die with the browser session)
+//
+// Deciding per call made it possible for the same auth key to exist in BOTH
+// stores; the stale copy could then win and its already-rotated refresh token
+// would fail the first refresh after reopening the browser — which looks
+// exactly like "remember me is broken". The adapter now keeps exactly one copy.
 
 import { brokeredPreviewStorage } from "@/integrations/supabase/previewAuthStorage";
 import { isRemembered, setRemembered } from "@/lib/device-id";
 
 function isAuthKey(key: string): boolean {
   return key.startsWith("sb-") && key.includes("-auth-token");
+}
+
+function authKeysIn(store: Storage): string[] {
+  const keys: string[] = [];
+  try {
+    for (let i = 0; i < store.length; i++) {
+      const key = store.key(i);
+      if (key && isAuthKey(key)) keys.push(key);
+    }
+  } catch { /* blocked storage */ }
+  return keys;
+}
+
+/** Removes every auth copy from the store that must not hold the session. */
+function dropAuthKeys(store: Storage) {
+  for (const key of authKeysIn(store)) {
+    try { store.removeItem(key); } catch { /* ignore */ }
+  }
 }
 
 export function rememberAwareStorage() {
@@ -17,39 +40,59 @@ export function rememberAwareStorage() {
   // where the real persistent-vs-session choice below must apply.
   if (previewStorage && previewStorage !== window.localStorage) return previewStorage;
 
+  const remembered = isRemembered();
+  const target: Storage = remembered ? window.localStorage : window.sessionStorage;
+  const other: Storage = remembered ? window.sessionStorage : window.localStorage;
+  // Single source of truth from the very first read of this page load.
+  dropAuthKeys(other);
+
   return {
     getItem(key: string) {
-      return (isRemembered() ? window.localStorage : window.sessionStorage).getItem(key);
+      try { return target.getItem(key); } catch { return null; }
     },
     setItem(key: string, value: string) {
-      const target = isRemembered() ? window.localStorage : window.sessionStorage;
-      const other = isRemembered() ? window.sessionStorage : window.localStorage;
-      target.setItem(key, value);
-      if (isAuthKey(key)) other.removeItem(key);
+      try { target.setItem(key, value); } catch { /* ignore */ }
+      if (isAuthKey(key)) { try { other.removeItem(key); } catch { /* ignore */ } }
     },
     removeItem(key: string) {
-      window.localStorage.removeItem(key);
-      window.sessionStorage.removeItem(key);
+      try { window.localStorage.removeItem(key); } catch { /* ignore */ }
+      try { window.sessionStorage.removeItem(key); } catch { /* ignore */ }
     },
   };
 }
 
-/** Selects persistence before sign-in and migrates any already-written token. */
+/**
+ * Selects persistence before sign-in. The session itself is NOT copied between
+ * stores: any pre-existing token is discarded so only the token written by the
+ * upcoming sign-in survives, and no rotated refresh token can compete with it.
+ */
 export function setSessionPersistence(remember: boolean) {
   if (typeof window === "undefined") return;
   try {
-    const source = remember ? window.sessionStorage : window.localStorage;
-    const target = remember ? window.localStorage : window.sessionStorage;
-    const keys: string[] = [];
-    for (let i = 0; i < source.length; i++) {
-      const key = source.key(i);
-      if (key && isAuthKey(key)) keys.push(key);
-    }
     setRemembered(remember);
-    for (const key of keys) {
-      const value = source.getItem(key);
-      if (value != null) target.setItem(key, value);
-      source.removeItem(key);
-    }
+    dropAuthKeys(window.localStorage);
+    dropAuthKeys(window.sessionStorage);
   } catch { /* blocked storage must not prevent sign-in */ }
+}
+
+/** Read-only snapshot for the ?authdebug=1 panel. Never exposes token values. */
+export function authStorageDiagnostics() {
+  if (typeof window === "undefined") return null;
+  const describe = (store: Storage) =>
+    authKeysIn(store).map((key) => {
+      let expiresAt: string | null = null;
+      let hasRefresh = false;
+      try {
+        const parsed = JSON.parse(store.getItem(key) ?? "{}");
+        const exp = parsed?.expires_at;
+        if (typeof exp === "number") expiresAt = new Date(exp * 1000).toLocaleString("he-IL");
+        hasRefresh = typeof parsed?.refresh_token === "string" && parsed.refresh_token.length > 0;
+      } catch { /* malformed entry */ }
+      return { key, expiresAt, hasRefresh };
+    });
+  return {
+    remembered: isRemembered(),
+    local: describe(window.localStorage),
+    session: describe(window.sessionStorage),
+  };
 }

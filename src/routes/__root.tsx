@@ -23,6 +23,8 @@ import { perfMark } from "@/lib/perf";
 import { useSession } from "@/lib/use-session";
 import { clearAccessToken, primeAccessToken } from "@/lib/session-cache";
 import { PerfOverlay } from "@/components/PerfOverlay";
+import { AuthDebugPanel } from "@/components/AuthDebugPanel";
+import { logAuthEvent } from "@/lib/auth-diagnostics";
 
 
 function NotFoundComponent() {
@@ -115,6 +117,7 @@ function RootComponent() {
     // used to sign remembered users out on a missed ping.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       primeAccessToken(session ?? null);
+      logAuthEvent(event, session ? "יש סשן" : "אין סשן");
       if (event === "SIGNED_IN") {
         // A fresh password login is journaled by the auth page itself.
         sessionStorage.setItem(LOGIN_LOGGED, "1");
@@ -136,6 +139,15 @@ function RootComponent() {
 
   useEffect(() => { perfMark("APP_START"); }, []);
 
+  // A silent refresh failure is the one way a remembered session disappears
+  // without a SIGNED_OUT event — surface it instead of losing the evidence.
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (error) logAuthEvent("getSession_error", error.message);
+      else logAuthEvent("startup_session", data.session ? "נטען מהאחסון" : "אין סשן באחסון");
+    });
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <StatusSettingsHydrator />
@@ -143,6 +155,7 @@ function RootComponent() {
       <Outlet />
       <Toaster position="top-center" richColors dir="rtl" />
       <PerfOverlay />
+      <AuthDebugPanel />
     </QueryClientProvider>
   );
 

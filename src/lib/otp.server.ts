@@ -34,10 +34,22 @@ export function normalizePhone(raw: string): string {
 }
 
 /**
+ * Base recording copied into the caller's extension, exactly like the working
+ * voice-message flow (`ivr2:0CRM/files/<n>.wav`). The API key is only allowed
+ * to write the "<fileId>-Title.tts" companion of a copied file — uploading a
+ * standalone "<n>.tts" is rejected with API_KEY_ACL_REJECT, which is a key
+ * permission matter, not a filename matter.
+ */
+function otpTemplateFile(): string {
+  const raw = String(process.env.YEMOT_OTP_TEMPLATE || "4").trim();
+  return /^\d+$/.test(raw) ? raw : "4";
+}
+
+/**
  * Calls the user and reads the one-time code digit by digit.
  * Mirrors the voice-message flow 1:1 (which is proven to reach the phone):
- * a per-phone extension under 0CRM/Phone holding a single TTS file, then a
- * bridged call to that extension.
+ * copy the base wav into the per-phone extension, write its Title TTS with the
+ * spoken code, then place a bridged call to that extension.
  */
 export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<void> {
   const apiKey = (process.env.YEMOT_API_KEY || "").trim();
@@ -62,6 +74,13 @@ export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<vo
     try { json = await res.json(); } catch { json = null; }
     if (!res.ok || json?.responseStatus !== "OK") {
       const msg = json?.message || json?.responseMessage || `הפעולה נכשלה (סטטוס ${res.status})`;
+      // Surface ACL rejections as what they are: the API key lacks permission
+      // for this operation/path. Renaming files will not fix it.
+      if (String(msg).includes("API_KEY_ACL_REJECT")) {
+        throw new Error(
+          `ימות המשיח (${endpoint}): למפתח ה־API אין הרשאה לפעולה זו (API_KEY_ACL_REJECT) — יש להרחיב את הרשאות המפתח בימות המשיח`,
+        );
+      }
       throw new Error(`ימות המשיח (${endpoint}): ${msg}`);
     }
     return json;
@@ -93,11 +112,25 @@ export async function sendOtpByPhone(phoneRaw: string, code: string): Promise<vo
     await tryPost("FileAction", { action: "delete", what: `${extensionPath}/${name}` });
   }
 
+  // Copy the approved base recording into the extension — this is the step
+  // that yields a fileId whose "-Title.tts" the API key IS allowed to write.
+  const templateFile = otpTemplateFile();
+  const copyJson = await post("FileAction", {
+    what: `ivr2:0CRM/files/${templateFile}.wav`,
+    target: extensionPath,
+  });
+  const copiedTarget = String(copyJson?.reports?.[0]?.target || copyJson?.target || "");
+  const fileId = copiedTarget.match(/\/([^/]+)\.wav$/i)?.[1];
+  if (!fileId) {
+    throw new Error(
+      `ימות המשיח (FileAction): לא התקבל מזהה קובץ לשליחת קוד הכניסה (שלוחה ${extensionPath})`,
+    );
+  }
+
   // "!" between digits forces Yemot's TTS to read each digit separately.
-  // The login code rides the exact voice-message flow, in file '004'.
   const spoken = code.split("").join("!");
   await post("UploadTextFile", {
-    what: `${extensionPath}/004.tts`,
+    what: `${extensionPath}/${fileId}-Title.tts`,
     contents: `קוד הכניסה שלך למערכת הוא ${spoken} . שוב, ${spoken}`,
   });
 

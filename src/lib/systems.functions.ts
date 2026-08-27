@@ -2015,22 +2015,63 @@ async function runYemotVoiceSend(
   }
 }
 
-// Sends to every caller (primary + additional) who hasn't received the
-// message yet for this system. Used by the automatic status-triggered send
-// and by the queued/cron sender. Never throws — collects per-target results.
+// Source of truth for "did this caller already get a message about this exact
+// status": voice_message_log. Returns the set of normalized phone digits that
+// were successfully messaged for the given system + status.
+async function sentPhoneDigitsForStatus(supabaseAdmin: any, systemId: string, statusKey: string | null) {
+  const set = new Set<string>();
+  if (!statusKey) return set;
+  const { data } = await supabaseAdmin
+    .from("voice_message_log")
+    .select("phone")
+    .eq("system_id", systemId)
+    .eq("status_key", statusKey)
+    .eq("success", true)
+    .limit(500);
+  for (const row of (data ?? []) as any[]) {
+    const digits = String(row?.phone ?? "").replace(/\D/g, "");
+    if (digits) set.add(digits);
+  }
+  return set;
+}
+
+// Configurable debounce (seconds) between a status change and the automatic
+// voice send, so a mistaken status keystroke doesn't immediately call callers.
+export async function readVoiceDebounceSeconds(supabaseAdmin: any): Promise<number> {
+  try {
+    const { data } = await supabaseAdmin
+      .from("app_settings").select("value").eq("key", "voice_debounce_seconds").maybeSingle();
+    const raw = (data as any)?.value;
+    const num = Number(typeof raw === "object" && raw !== null ? raw.seconds ?? raw.value : raw);
+    if (Number.isFinite(num) && num >= 0 && num <= 3600) return Math.round(num);
+  } catch {
+    // fall through to default
+  }
+  return 90;
+}
+
+// Sends to every caller (primary + additional) who hasn't yet received a
+// message for the system's CURRENT status. Used by the automatic
+// status-triggered send and by the queued/cron sender. Never throws.
 async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: "auto" | "queue" | "manual" = "auto", userId?: string | null) {
   const { data: sysRow, error: sysErr } = await supabaseAdmin
     .from("systems")
-    .select("caller_phone, phone, voice_message_sent_at, additional_caller_phones")
+    .select("caller_phone, phone, status, additional_caller_phones")
     .eq("id", systemId)
     .maybeSingle();
   if (sysErr || !sysRow) return { ok: 0, fail: 0, targets: 0 };
   const sys = sysRow as any;
   const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
+  const alreadySent = await sentPhoneDigitsForStatus(supabaseAdmin, systemId, sys.status ?? null);
+  const digitsOf = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 
   const targets: number[] = [];
-  if ((sys.caller_phone || sys.phone) && !sys.voice_message_sent_at) targets.push(-1);
-  additional.forEach((p, i) => { if (p?.phone && !p.sent_at) targets.push(i); });
+  const primary = digitsOf(sys.caller_phone || sys.phone);
+  if (primary && !alreadySent.has(primary)) targets.push(-1);
+  additional.forEach((p, i) => {
+    const d = digitsOf(p?.phone);
+    if (d && !alreadySent.has(d)) targets.push(i);
+  });
 
   let ok = 0, fail = 0;
   for (const phoneIndex of targets) {
@@ -2043,6 +2084,7 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
   }
   return { ok, fail, targets: targets.length };
 }
+
 
 // Called right after a status change in updateSystem. If the new status is
 // configured for automatic voice sending, either sends immediately (if

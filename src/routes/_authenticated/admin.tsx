@@ -163,6 +163,7 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         <AutoSnoozePanel />
         <StaleHoursPanel />
         <VoiceDebouncePanel />
+        <RequestAutomationPanel />
         <BackupEmailPanel />
         <BackupSchedulePanel />
       </TabsContent>}

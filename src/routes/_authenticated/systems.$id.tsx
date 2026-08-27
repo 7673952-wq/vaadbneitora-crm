@@ -1504,9 +1504,12 @@ function SystemDetail() {
             </div>
           </ReminderSection>
         </div>
+      )}
 
-        {/* מיילים */}
-        <div className="bg-card border border-border rounded-xl p-4">
+      {/* ===== מיילים ===== */}
+      {tab === "emails" && (
+        <div className="bg-card border border-border rounded-xl p-4 xl:col-start-1">
+
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold flex items-center gap-2 text-sm">
               <Mail className="h-4 w-4" />

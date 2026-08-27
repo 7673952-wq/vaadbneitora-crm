@@ -1019,7 +1019,7 @@ function SystemDetail() {
       })()}
 
       {/* ===== פרטי קשר + מספרי פונה ===== */}
-      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm">
+      <div className="bg-card border border-border rounded-2xl p-4 shadow-sm xl:col-start-1">
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <button type="button" onClick={() => setDetailsOpen((v) => !v)}
             className="flex items-center gap-2 text-sm font-semibold hover:text-primary transition"

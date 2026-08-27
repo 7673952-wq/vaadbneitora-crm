@@ -33,6 +33,22 @@ export function validateFileSignature(buf: Uint8Array, mime: string): string | n
   }
 
   const rule = SIGNATURES.find((s) => s.mime.test(mime));
-  if (rule && !rule.test(buf)) return "תוכן הקובץ אינו תואם לסוג הקובץ שהוצהר";
+  if (rule) {
+    return rule.test(buf) ? null : "תוכן הקובץ אינו תואם לסוג הקובץ שהוצהר";
+  }
+
+  // An empty or generic declared type ("", application/octet-stream) proves
+  // nothing, so the BYTES must match one of the formats we accept. Plain
+  // text/CSV is allowed as long as it decodes cleanly and has no NUL bytes.
+  const generic = !mime || /^application\/octet-stream$/i.test(mime);
+  if (generic) {
+    const known = SIGNATURES.some((s) => s.test(buf));
+    if (known) return null;
+    const sample = buf.slice(0, 1024);
+    const printable = !sample.includes(0)
+      && new TextDecoder("utf-8", { fatal: false }).decode(sample).indexOf("\uFFFD") === -1;
+    if (printable) return null;
+    return "לא ניתן לזהות את סוג הקובץ — העלה קובץ בפורמט נתמך";
+  }
   return null;
 }

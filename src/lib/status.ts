@@ -128,6 +128,9 @@ function isValidRows(rows: any): rows is StatusSettingRow[] {
     && rows.every((r) => r && typeof r.status_key === "string" && typeof r.label === "string");
 }
 
+/** Timestamp (ms) of the cache entry last returned by readStatusCache(). */
+export let statusCacheSavedAt = 0;
+
 export function readStatusCache(): StatusSettingRow[] | null {
   if (typeof window === "undefined") return null;
   try {
@@ -136,6 +139,7 @@ export function readStatusCache(): StatusSettingRow[] | null {
       const parsed = JSON.parse(raw);
       if (parsed?.v === STATUS_CACHE_VERSION && isValidRows(parsed.rows)
         && Date.now() - Number(parsed.savedAt ?? 0) < STATUS_CACHE_TTL_MS) {
+        statusCacheSavedAt = Number(parsed.savedAt ?? 0);
         return parsed.rows;
       }
       window.localStorage.removeItem(STATUS_CACHE_KEY);

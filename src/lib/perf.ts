@@ -4,6 +4,7 @@
 
 export const PERF_MARKS = [
   "APP_START",
+  "LOGIN_FLOW_START",
   // Login flow (recorded on the SPA, so APP_START may precede them by a lot —
   // read the delta column in the overlay for the login timeline).
   "OTP_SUBMIT_START",
@@ -57,8 +58,15 @@ export function readPerfTimings(reference: PerfMark = "APP_START"): PerfTiming[]
   });
 }
 
-/** Clears all marks — used before a fresh login so a second measurement works. */
+/**
+ * Clears the login-flow marks before a fresh attempt so a second measurement
+ * works. APP_START is deliberately preserved — it is the page-load reference
+ * that readPerfTimings() measures against.
+ */
 export function resetPerfTimings() {
   if (typeof performance === "undefined" || typeof performance.clearMarks !== "function") return;
-  performance.clearMarks();
+  for (const name of PERF_MARKS) {
+    if (name === "APP_START") continue;
+    performance.clearMarks(name);
+  }
 }

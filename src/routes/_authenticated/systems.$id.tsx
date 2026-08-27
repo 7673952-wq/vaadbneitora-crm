@@ -1710,7 +1710,9 @@ function SystemDetail() {
       )}
 
       {/* ===== קבצים ===== */}
-      <div className="bg-card border border-border rounded-2xl p-6">
+      {tab === "files" && (
+      <div className="bg-card border border-border rounded-2xl p-4 xl:col-start-1">
+
         <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
           <h2 className="font-semibold flex items-center gap-2"><Paperclip className="h-4 w-4" />קבצים ({files?.length ?? 0})</h2>
           {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (

@@ -177,7 +177,7 @@ function RequestsPage() {
 
                 {r.attachment_name && (
                   <div className="mt-3">
-                    {audio?.id === r.id ? (
+                    {audio && audio.id === r.id ? (
                       <audio controls autoPlay src={audio.url} className="w-full max-w-sm" />
                     ) : (
                       <Button size="sm" variant="outline" disabled={audioMutation.isPending}

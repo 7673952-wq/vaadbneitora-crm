@@ -1036,6 +1036,7 @@ export type Database = {
           phone_added_at: string | null
           prev_status: string | null
           processing_state: string
+          proposed_action: string | null
           proposed_status: string | null
           received_at: string
           request_number: string | null
@@ -1070,6 +1071,7 @@ export type Database = {
           phone_added_at?: string | null
           prev_status?: string | null
           processing_state?: string
+          proposed_action?: string | null
           proposed_status?: string | null
           received_at?: string
           request_number?: string | null
@@ -1104,6 +1106,7 @@ export type Database = {
           phone_added_at?: string | null
           prev_status?: string | null
           processing_state?: string
+          proposed_action?: string | null
           proposed_status?: string | null
           received_at?: string
           request_number?: string | null
@@ -1396,6 +1399,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_request_caller_phone: {
+        Args: { _phone: string; _request_id: string; _system_id: string }
+        Returns: boolean
+      }
       apply_request_status_change: {
         Args: {
           _from_status: string

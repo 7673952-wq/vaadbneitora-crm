@@ -11,6 +11,19 @@ export function normalizeSystemCode(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");
 }
 
+/**
+ * The single comparison key for "is this the same system code?", used by the
+ * email automation, by lookups and by the SQL unique index, which is exactly
+ * `ltrim(regexp_replace(system_code, '\D', '', 'g'), '0')`.
+ *
+ * Leading zeros are stripped because the CRM stores short codes with a leading
+ * "0" (`0882309477`) while the request emails send them bare (`882309477`) —
+ * without this the same system would be matched as two different ones.
+ */
+export function systemCodeMatchKey(value: unknown): string {
+  return normalizeSystemCode(value).replace(/^0+/, "");
+}
+
 /** Same normalization rule for phones (digits only, zeros preserved). */
 export function normalizePhone(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");
@@ -60,16 +73,21 @@ export function parseRequestEmail(input: { subject?: string | null; body?: strin
     }
   }
 
+  // The real emails write "מס. בקשה: 1516" (period, not apostrophe) and put
+  // the number in the subject as "pticha-1516"; both forms are accepted.
   const requestNumber = firstMatch(text, [
-    /(?:מספר\s*בקשה|מס['׳]?\s*בקשה|request\s*(?:number|no\.?|id))\s*[:\-]?\s*([A-Za-z0-9\-]{1,32})/i,
+    /(?:מספר\s*ה?בקשה|מס[.'׳]?\s*ה?בקשה|בקשה\s*מס[.'׳]?|request\s*(?:number|no\.?|id))\s*[:\-]?\s*([A-Za-z0-9\-]{1,32})/i,
+    /\b(?:pticha|ptixa|sgira|sgirah)\s*[-_]\s*([0-9]{1,12})\b/i,
   ]);
 
+  // The real emails write "מספר המערכת" (with ה) — the definite article is
+  // optional everywhere below for the same reason.
   const systemCodeRaw = firstMatch(text, [
-    /(?:מספר\s*מערכת|מזהה\s*מערכת|מס['׳]?\s*מערכת|system\s*(?:number|code|id))\s*[:\-]?\s*([0-9][0-9\-\s]{4,24})/i,
+    /(?:מספר\s*ה?מערכת|מזהה\s*ה?מערכת|מס[.'׳]?\s*ה?מערכת|system\s*(?:number|code|id))\s*[:\-]?\s*([0-9][0-9\- ]{3,23})/i,
   ]);
 
   const callerPhone = firstMatch(text, [
-    /(?:טלפון\s*(?:ה?פונה)?|מספר\s*פונה|נייד|phone|caller)\s*[:\-]?\s*(\+?[0-9][0-9\-\s]{6,20})/i,
+    /(?:טלפון\s*(?:ה?פונה)?|מספר\s*ה?פונה|לזיהוי|נייד|phone|caller)\s*[:\-]?\s*(\+?[0-9][0-9\- ]{6,20})/i,
   ]);
 
   const systemCodeNorm = systemCodeRaw ? normalizeSystemCode(systemCodeRaw) : null;

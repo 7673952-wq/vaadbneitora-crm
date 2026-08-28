@@ -2,7 +2,7 @@
 // Everything here is idempotent per gmail_message_id and refuses to perform any
 // operational write while the automation is in `off` or `dry_run` mode.
 
-import { evaluateRules, normalizePhone, normalizeSystemCode, parseRequestEmail, type RequestRule } from "@/lib/system-code";
+import { evaluateRules, parseRequestEmail, systemCodeMatchKey, type RequestRule } from "@/lib/system-code";
 
 export type AutomationMode = "off" | "dry_run" | "live";
 
@@ -40,17 +40,45 @@ async function readRules(supabaseAdmin: any, crmKey: string): Promise<RequestRul
   return (data ?? []) as RequestRule[];
 }
 
-/** All systems whose normalized code matches, parents and sub-systems alike. */
+/**
+ * All systems whose code matches, parents and sub-systems alike. Matching uses
+ * the shared `systemCodeMatchKey` (digits, leading zeros stripped) so a code
+ * stored as `0882309477` still matches the `882309477` the email carries.
+ */
 async function findSystemsByNormalizedCode(supabaseAdmin: any, codeNorm: string) {
+  const key = systemCodeMatchKey(codeNorm);
+  if (!key) return [];
   const { data } = await supabaseAdmin
     .from("systems")
     .select("id, system_code, status, caller_phone, phone, additional_caller_phones, parent_system_id")
     .limit(2000);
-  return ((data ?? []) as any[]).filter((s) => normalizeSystemCode(s.system_code) === codeNorm);
+  return ((data ?? []) as any[]).filter((s) => systemCodeMatchKey(s.system_code) === key);
 }
 
 async function finish(supabaseAdmin: any, id: string, patch: Record<string, unknown>) {
   await supabaseAdmin.from("system_requests").update(patch).eq("id", id);
+}
+
+/**
+ * The business logic a status change must trigger regardless of who made it:
+ * status-based auto-assignment and the automatic voice message. Applied here
+ * so a change coming from the email automation behaves like a manual one.
+ * (History/audit rows are written by the DB trigger on `systems`.)
+ */
+export async function applyStatusSideEffects(supabaseAdmin: any, systemId: string, toStatus: string) {
+  try {
+    const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+    const auto = await resolveAutoAssign(supabaseAdmin, toStatus);
+    if (auto) {
+      const patch: Record<string, unknown> = { assigned_agent_id: auto.agentId };
+      if (auto.otherAgentIds.length) patch.reminder_agent_ids = auto.otherAgentIds;
+      await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+    }
+  } catch {
+    // Assignment is best-effort — never block the status change itself.
+  }
+  const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");
+  await maybeScheduleOrSendAutoVoice(supabaseAdmin, systemId, toStatus);
 }
 
 export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPayload, crmKey = "yemot") {
@@ -176,6 +204,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       system_id: system.id,
       prev_status: currentStatus,
       rule_id: outcome.rule?.id ?? null,
+      proposed_action: outcome.action,
       proposed_status: outcome.toStatus,
       dry_run: dryRun,
     });
@@ -183,39 +212,18 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     if (dryRun) {
       await finish(supabaseAdmin, req.id, {
         processing_state: "done",
-        decision_status: outcome.action === "set_status" ? "needs_decision" : "needs_decision",
+        decision_status: "needs_decision",
       });
       return { ok: true, requestId: req.id, mode, decision: "needs_decision", proposed: outcome.action };
     }
 
-    // ---- caller phone (idempotent claim, then apply) ----
-    if (parsed.callerPhoneNorm && !req.phone_added_at) {
-      const { data: claimed } = await supabaseAdmin
-        .from("system_requests")
-        .update({ phone_added_at: new Date().toISOString() })
-        .eq("id", req.id)
-        .is("phone_added_at", null)
-        .select("id")
-        .maybeSingle();
-      if (claimed) {
-        const existing = new Set<string>();
-        const primary = normalizePhone(system.caller_phone || system.phone);
-        if (primary) existing.add(primary);
-        const additional = Array.isArray(system.additional_caller_phones) ? system.additional_caller_phones : [];
-        for (const p of additional as any[]) {
-          const d = normalizePhone(p?.phone);
-          if (d) existing.add(d);
-        }
-        if (!existing.has(parsed.callerPhoneNorm)) {
-          if (!primary) {
-            await supabaseAdmin.from("systems").update({ caller_phone: parsed.callerPhone }).eq("id", system.id);
-          } else {
-            await supabaseAdmin.from("systems")
-              .update({ additional_caller_phones: [...additional, { phone: parsed.callerPhone }] })
-              .eq("id", system.id);
-          }
-        }
-      }
+    // ---- caller phone (atomic: lock, dedupe and stamp in one transaction) ----
+    if (parsed.callerPhone && !req.phone_added_at) {
+      await supabaseAdmin.rpc("add_request_caller_phone", {
+        _request_id: req.id,
+        _system_id: system.id,
+        _phone: parsed.callerPhone,
+      });
     }
 
     // ---- decision ----
@@ -245,8 +253,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       _reason: `בקשת ${parsed.requestType === "pticha" ? "פתיחה" : "סגירה"} אוטומטית מהמייל`,
     });
     if (applied === true) {
-      const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");
-      await maybeScheduleOrSendAutoVoice(supabaseAdmin, system.id, outcome.toStatus);
+      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus);
       await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "auto_applied" });
       return { ok: true, requestId: req.id, mode, decision: "auto_applied", newStatus: outcome.toStatus };
     }

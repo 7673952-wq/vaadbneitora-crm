@@ -11,6 +11,19 @@ export function normalizeSystemCode(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");
 }
 
+/**
+ * The single comparison key for "is this the same system code?", used by the
+ * email automation, by lookups and by the SQL unique index, which is exactly
+ * `ltrim(regexp_replace(system_code, '\D', '', 'g'), '0')`.
+ *
+ * Leading zeros are stripped because the CRM stores short codes with a leading
+ * "0" (`0882309477`) while the request emails send them bare (`882309477`) —
+ * without this the same system would be matched as two different ones.
+ */
+export function systemCodeMatchKey(value: unknown): string {
+  return normalizeSystemCode(value).replace(/^0+/, "");
+}
+
 /** Same normalization rule for phones (digits only, zeros preserved). */
 export function normalizePhone(value: unknown): string {
   return String(value ?? "").replace(/\D/g, "");

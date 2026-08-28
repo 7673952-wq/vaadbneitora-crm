@@ -73,16 +73,21 @@ export function parseRequestEmail(input: { subject?: string | null; body?: strin
     }
   }
 
+  // The real emails write "מס. בקשה: 1516" (period, not apostrophe) and put
+  // the number in the subject as "pticha-1516"; both forms are accepted.
   const requestNumber = firstMatch(text, [
-    /(?:מספר\s*בקשה|מס['׳]?\s*בקשה|request\s*(?:number|no\.?|id))\s*[:\-]?\s*([A-Za-z0-9\-]{1,32})/i,
+    /(?:מספר\s*ה?בקשה|מס[.'׳]?\s*ה?בקשה|בקשה\s*מס[.'׳]?|request\s*(?:number|no\.?|id))\s*[:\-]?\s*([A-Za-z0-9\-]{1,32})/i,
+    /\b(?:pticha|ptixa|sgira|sgirah)\s*[-_]\s*([0-9]{1,12})\b/i,
   ]);
 
+  // The real emails write "מספר המערכת" (with ה) — the definite article is
+  // optional everywhere below for the same reason.
   const systemCodeRaw = firstMatch(text, [
-    /(?:מספר\s*מערכת|מזהה\s*מערכת|מס['׳]?\s*מערכת|system\s*(?:number|code|id))\s*[:\-]?\s*([0-9][0-9\-\s]{4,24})/i,
+    /(?:מספר\s*ה?מערכת|מזהה\s*ה?מערכת|מס[.'׳]?\s*ה?מערכת|system\s*(?:number|code|id))\s*[:\-]?\s*([0-9][0-9\- ]{3,23})/i,
   ]);
 
   const callerPhone = firstMatch(text, [
-    /(?:טלפון\s*(?:ה?פונה)?|מספר\s*פונה|נייד|phone|caller)\s*[:\-]?\s*(\+?[0-9][0-9\-\s]{6,20})/i,
+    /(?:טלפון\s*(?:ה?פונה)?|מספר\s*ה?פונה|לזיהוי|נייד|phone|caller)\s*[:\-]?\s*(\+?[0-9][0-9\- ]{6,20})/i,
   ]);
 
   const systemCodeNorm = systemCodeRaw ? normalizeSystemCode(systemCodeRaw) : null;

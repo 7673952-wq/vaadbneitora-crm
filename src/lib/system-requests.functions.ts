@@ -46,6 +46,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     const { data: req } = await supabaseAdmin
       .from("system_requests").select("*").eq("id", data.id).maybeSingle();
     if (!req) throw new Error("הבקשה לא נמצאה");
+    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
     if ((req as any).decision_status && (req as any).decision_status !== "needs_decision") {
       return { ok: true, alreadyDecided: true };
     }
@@ -70,8 +71,8 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         _reason: "החלטה ידנית על בקשה מהמייל",
       });
       if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
-      const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");
-      await maybeScheduleOrSendAutoVoice(supabaseAdmin, systemId, toStatus);
+      const { applyStatusSideEffects } = await import("@/lib/system-requests.server");
+      await applyStatusSideEffects(supabaseAdmin, systemId, toStatus);
       patch.decision_status = "manual_applied";
     } else {
       patch.decision_status = data.action === "keep" ? "kept" : "ignored";
@@ -200,9 +201,10 @@ export const getRequestAudio = createServerFn({ method: "POST" })
 
     const { data: req } = await supabaseAdmin
       .from("system_requests")
-      .select("gmail_message_id, attachment_index, attachment_name")
+      .select("gmail_message_id, attachment_index, attachment_name, crm_key")
       .eq("id", data.id).maybeSingle();
     if (!req?.gmail_message_id) throw new Error("לא נמצאה הקלטה לבקשה זו");
+    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
 
     const [urlRow, secretRow] = await Promise.all([
       supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_url").maybeSingle(),
@@ -213,14 +215,43 @@ export const getRequestAudio = createServerFn({ method: "POST" })
     if (!relayUrl || !relaySecret) throw new Error("ממשק ה-Gmail אינו מוגדר");
 
     const { postToRelay } = await import("@/lib/relay.server");
-    const res: any = await postToRelay(relayUrl, {
+    const relayRes = await postToRelay(relayUrl, {
       secret: relaySecret,
       action: "get_attachment",
       gmailMessageId: (req as any).gmail_message_id,
       attachmentIndex: (req as any).attachment_index ?? 0,
     });
-    const base64 = res?.base64 ?? res?.data;
+    // postToRelay returns a Response — the JSON body has to be read out of it.
+    let res: any = null;
+    try {
+      res = await relayRes.json();
+    } catch {
+      throw new Error("תשובה לא תקינה מממשק ה-Gmail");
+    }
+    if (res?.ok === false) throw new Error(String(res?.error ?? "ההקלטה לא נמצאה בגמייל"));
+
+    const base64: string | undefined = res?.base64 ?? res?.data;
     if (!base64) throw new Error("ההקלטה לא נמצאה בגמייל");
-    const mime = res?.mimeType || "audio/mpeg";
-    return { dataUrl: `data:${mime};base64,${base64}`, name: (req as any).attachment_name ?? "recording" };
+
+    // ~15MB cap (base64 is ~4/3 of the raw size) so a huge attachment cannot
+    // be streamed into the browser as a data URL.
+    if (base64.length > 20_000_000) throw new Error("ההקלטה גדולה מדי להשמעה בדפדפן");
+
+    const mime = String(res?.mimeType || "audio/mpeg");
+    if (!/^audio\/|^application\/octet-stream$/.test(mime)) {
+      throw new Error("הקובץ המצורף אינו קובץ שמע");
+    }
+    return {
+      dataUrl: `data:${mime.startsWith("audio/") ? mime : "audio/mpeg"};base64,${base64}`,
+      name: (req as any).attachment_name ?? "recording",
+    };
   });
+
+/** Throws unless the caller has access to the CRM the request belongs to. */
+async function assertCrmAccess(supabase: any, userId: string, crmKey: string | null | undefined) {
+  const { data: ok } = await supabase.rpc("has_crm_access", {
+    _user_id: userId,
+    _crm_key: crmKey ?? "yemot",
+  });
+  if (ok !== true) throw new Error("אין הרשאה לבקשה זו");
+}

@@ -59,6 +59,28 @@ async function finish(supabaseAdmin: any, id: string, patch: Record<string, unkn
   await supabaseAdmin.from("system_requests").update(patch).eq("id", id);
 }
 
+/**
+ * The business logic a status change must trigger regardless of who made it:
+ * status-based auto-assignment and the automatic voice message. Applied here
+ * so a change coming from the email automation behaves like a manual one.
+ * (History/audit rows are written by the DB trigger on `systems`.)
+ */
+export async function applyStatusSideEffects(supabaseAdmin: any, systemId: string, toStatus: string) {
+  try {
+    const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+    const auto = await resolveAutoAssign(supabaseAdmin, toStatus);
+    if (auto) {
+      const patch: Record<string, unknown> = { assigned_agent_id: auto.agentId };
+      if (auto.otherAgentIds.length) patch.reminder_agent_ids = auto.otherAgentIds;
+      await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+    }
+  } catch {
+    // Assignment is best-effort — never block the status change itself.
+  }
+  const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");
+  await maybeScheduleOrSendAutoVoice(supabaseAdmin, systemId, toStatus);
+}
+
 export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPayload, crmKey = "yemot") {
   const messageId = String(payload.gmailMessageId || "").trim();
   if (!messageId) return { ok: false, error: "gmailMessageId required" };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRules, normalizePhone, normalizeSystemCode, parseRequestEmail, type RequestRule } from "@/lib/system-code";
+import { evaluateRules, normalizePhone, normalizeSystemCode, parseRequestEmail, systemCodeMatchKey, type RequestRule } from "@/lib/system-code";
 
 describe("normalizeSystemCode / normalizePhone", () => {
   it("keeps leading zeros and strips separators", () => {

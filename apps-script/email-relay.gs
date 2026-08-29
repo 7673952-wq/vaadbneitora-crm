@@ -77,13 +77,30 @@
 //  - The secret can be stored in Script Properties (key: CRM_SECRET); the
 //    value below is used only when that property is not set.
 
+// v21 additions (nothing from v20 was removed):
+//  - The secret is read ONLY from Script Properties (CRM_SECRET). There is no
+//    hardcoded fallback anymore; the script refuses to run without it.
+//  - Request labels default to the Hebrew names "מספרים לפתיחה" /
+//    "מספרים לחסימה" and can be overridden with the Script Properties
+//    PTICHA_LABEL / SGIRA_LABEL.
+//  - Each message is posted with sourceRequestType, taken from the label it
+//    was found under, so the CRM does not have to guess from the body.
+//  - The 'rq_' per-message markers were dropped: duplicates are prevented by a
+//    unique index on gmail_message_id in the CRM database. Instead, a message
+//    is marked as READ in Gmail only once the CRM answers completed:true.
+//  - The cursor never jumps past an unfinished message: it is set to the
+//    earliest message that did not complete, so nothing can fall out of the
+//    scan window after a failure or a 409 (in progress).
+
 function CFG_() {
   return {
-    SECRET: PropertiesService.getScriptProperties().getProperty('CRM_SECRET')
-      || '0acbcb85408bac61290e49fac924746f',
+    // v21: the secret lives ONLY in Script Properties (File > Project
+    // Settings > Script Properties, key: CRM_SECRET). No fallback in code.
+    SECRET: PropertiesService.getScriptProperties().getProperty('CRM_SECRET') || '',
     // Gmail labels that carry the automatic open/close request emails.
-    PTICHA_LABEL: 'pticha',
-    SGIRA_LABEL: 'sgira',
+    // Overridable via Script Properties PTICHA_LABEL / SGIRA_LABEL.
+    PTICHA_LABEL: PropertiesService.getScriptProperties().getProperty('PTICHA_LABEL') || 'מספרים לפתיחה',
+    SGIRA_LABEL: PropertiesService.getScriptProperties().getProperty('SGIRA_LABEL') || 'מספרים לחסימה',
     REQUEST_WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/system-request',
     WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/inbound-email',
     MAILBOX_EMAIL: 'a033135556@gmail.com',
@@ -288,12 +305,12 @@ function doPost(e) {
     if (d.action === 'send_backup') return json_(backup_(d));
     if (d.action === 'mark_read') return json_(markRead_(d));
     if (d.action === 'get_attachment') return json_(getAttachment_(d));
-    if (d.action === 'ping') return json_({ ok: true, version: 20 });
+    if (d.action === 'ping') return json_({ ok: true, version: 21 });
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
 
-function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 20 }); }
+function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 21 }); }
 
 function send_(d) {
   var body = body_(d.body, d.agentSignature);
@@ -665,25 +682,38 @@ function findSent_(to, subject) {
 // conversation thread.
 function POLL_REQUEST_LABELS() {
   var cfg = CFG_();
+  if (!cfg.SECRET) {
+    Logger.log('CRM_SECRET is not set in Script Properties — request sync skipped.');
+    return { skippedNoSecret: true };
+  }
   var props = store_();
   var started = new Date().getTime();
   var last = Number(props.getProperty('LAST_REQ_SYNC_MS') || 0);
   var floor = last > 0 ? last - 900000 : started - (3 * 24 * 60 * 60 * 1000);
   var afterSeconds = Math.floor(floor / 1000);
-  var stats = { sent: 0, duplicate: 0, failed: 0, skipped: 0, timedOut: false };
+  // oldestUnfinishedMs: the earliest message this pass did NOT complete.
+  // The cursor is pinned just before it, so a failed or still-processing
+  // message is guaranteed to be picked up again on the next pass.
+  var stats = { sent: 0, duplicate: 0, failed: 0, inProgress: 0, skipped: 0, timedOut: false, oldestUnfinishedMs: 0 };
 
-  var labels = [cfg.PTICHA_LABEL, cfg.SGIRA_LABEL];
-  for (var i = 0; i < labels.length; i++) {
-    if (!labels[i]) continue;
-    syncRequestLabel_(labels[i], afterSeconds, stats, started);
+  var pairs = [
+    { name: cfg.PTICHA_LABEL, type: 'pticha' },
+    { name: cfg.SGIRA_LABEL, type: 'sgira' }
+  ];
+  for (var i = 0; i < pairs.length; i++) {
+    if (!pairs[i].name) continue;
+    syncRequestLabel_(pairs[i].name, pairs[i].type, afterSeconds, stats, started);
     if (stats.timedOut) break;
   }
-  if (!stats.timedOut) props.setProperty('LAST_REQ_SYNC_MS', String(started));
-  Logger.log('V20 request sync: ' + JSON.stringify(stats));
+  var nextCursor = started;
+  if (stats.oldestUnfinishedMs) nextCursor = Math.min(nextCursor, stats.oldestUnfinishedMs - 1000);
+  if (stats.timedOut) nextCursor = Math.min(nextCursor, last || nextCursor);
+  props.setProperty('LAST_REQ_SYNC_MS', String(nextCursor));
+  Logger.log('V21 request sync: ' + JSON.stringify(stats));
   return stats;
 }
 
-function syncRequestLabel_(labelName, afterSeconds, stats, started) {
+function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
   var threads = GmailApp.search(query, 0, 100);
@@ -694,9 +724,10 @@ function syncRequestLabel_(labelName, afterSeconds, stats, started) {
       var msg = messages[m];
       var id = msg.getId();
       if (msg.isDraft()) continue;
-      if (store_().getProperty('rq_' + id) === '1') { stats.skipped++; continue; }
+      var msgMs = msg.getDate().getTime();
 
       var att = firstAudioAttachment_(msg);
+      var completed = false;
       try {
         var res = UrlFetchApp.fetch(cfg.REQUEST_WEBHOOK_URL, {
           method: 'post',
@@ -709,22 +740,41 @@ function syncRequestLabel_(labelName, afterSeconds, stats, started) {
             body: msg.getPlainBody(),
             receivedAt: msg.getDate().toISOString(),
             attachmentName: att ? att.name : null,
-            attachmentIndex: att ? att.index : null
+            attachmentIndex: att ? att.index : null,
+            // The label the message was found under is the authoritative
+            // request type; the CRM cross-checks it against the body.
+            sourceRequestType: requestType,
+            sourceLabel: labelName
           }),
           muteHttpExceptions: true
         });
+        var code = res.getResponseCode();
         var text = res.getContentText() || '{}';
-        var parsed = JSON.parse(text);
-        if (res.getResponseCode() >= 200 && res.getResponseCode() < 300 && parsed.ok) {
-          store_().setProperty('rq_' + id, '1');
+        var parsed = {};
+        try { parsed = JSON.parse(text); } catch (e) { parsed = {}; }
+        // completed:true is the ONLY signal that the CRM finished with this
+        // message. 409/in_progress and every failure leave it untouched.
+        completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
+        if (completed) {
           if (parsed.duplicate) stats.duplicate++; else stats.sent++;
+        } else if (parsed.processingState === 'in_progress' || code === 409) {
+          stats.inProgress++;
+          Logger.log('Request still in progress ' + id);
         } else {
           stats.failed++;
-          Logger.log('Request rejected ' + id + ': ' + res.getResponseCode() + ' ' + text);
+          Logger.log('Request rejected ' + id + ': ' + code + ' ' + text);
         }
       } catch (err) {
         stats.failed++;
         Logger.log('Request failed ' + id + ': ' + err);
+      }
+
+      if (completed) {
+        // Read state is the visible "handled" marker for the operator, so it
+        // is set only after the CRM is done with the message.
+        try { msg.markRead(); } catch (e) { /* read state is cosmetic */ }
+      } else if (!stats.oldestUnfinishedMs || msgMs < stats.oldestUnfinishedMs) {
+        stats.oldestUnfinishedMs = msgMs;
       }
     }
   }
@@ -774,7 +824,8 @@ function getAttachment_(d) {
 function RESET_REQUEST_CURSOR() {
   var props = store_().getProperties();
   var removed = 0;
+  // v21 no longer writes 'rq_' markers; clean up leftovers from v20.
   for (var k in props) { if (k.indexOf('rq_') === 0) { store_().deleteProperty(k); removed++; } }
   store_().deleteProperty('LAST_REQ_SYNC_MS');
-  Logger.log('Cleared ' + removed + ' request marker(s) and the request cursor.');
+  Logger.log('Cleared ' + removed + ' legacy marker(s) and the request cursor.');
 }

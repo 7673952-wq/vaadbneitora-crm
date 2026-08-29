@@ -13,7 +13,12 @@ export const listSystemRequests = createServerFn({ method: "GET" })
       limit: z.number().int().min(1).max(200).optional(),
     }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    let q = context.supabase
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
+    // Direct browser access to system_requests is revoked in the DB — reads go
+    // through the service-role client behind this permission check.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    let q = supabaseAdmin
       .from("system_requests")
       .select("*")
       .order("received_at", { ascending: false })
@@ -39,6 +44,8 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       toStatus: z.string().max(60).nullable().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
+    const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_decide");
     const { hasPermission } = await import("@/lib/permissions.server");
     if (!(await hasPermission(context.userId, "status_change"))) throw new Error("אין הרשאה");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -90,8 +97,11 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
 export const listRequestRules = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
-      .from("system_request_rules").select("*").order("sort_order", { ascending: true });
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
+      .from("system_request_rules").select("*").eq("crm_key", "yemot").order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
     return data ?? [];
   });
@@ -110,8 +120,8 @@ export const saveRequestRule = createServerFn({ method: "POST" })
     is_active: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "settings_manage"))) throw new Error("אין הרשאה");
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_manage");
     if (data.action === "set_status" && !data.to_status) throw new Error("יש לבחור סטטוס יעד");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const row = {
@@ -137,8 +147,8 @@ export const deleteRequestRule = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "settings_manage"))) throw new Error("אין הרשאה");
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("system_request_rules").delete().eq("id", data.id);
     if (error) throw new Error(error.message);
@@ -150,6 +160,8 @@ export const deleteRequestRule = createServerFn({ method: "POST" })
 export const getRequestAutomationSettings = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
     const { data } = await context.supabase
       .from("app_settings").select("key, value")
       .in("key", ["request_automation_mode", "request_default_status_pticha", "request_default_status_sgira"]);
@@ -170,8 +182,8 @@ export const setRequestAutomationSettings = createServerFn({ method: "POST" })
       defaultSgira: z.string().max(60).nullable().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
-    const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "settings_manage"))) throw new Error("אין הרשאה");
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date().toISOString();
     const rows = [
@@ -195,8 +207,8 @@ export const getRequestAudio = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "systems_read"))) throw new Error("אין הרשאה");
+    const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const { data: req } = await supabaseAdmin
@@ -247,11 +259,70 @@ export const getRequestAudio = createServerFn({ method: "POST" })
     };
   });
 
-/** Throws unless the caller has access to the CRM the request belongs to. */
-async function assertCrmAccess(supabase: any, userId: string, crmKey: string | null | undefined) {
-  const { data: ok } = await supabase.rpc("has_crm_access", {
-    _user_id: userId,
-    _crm_key: crmKey ?? "yemot",
+
+/**
+ * Badge count for the "requests" tab. Gated by `requests_view` so a user
+ * without the permission never even triggers a background count query.
+ */
+export const countPendingRequests = createServerFn({ method: "GET" })
+  .middleware([requireAuthMfa])
+  .handler(async ({ context }) => {
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { count } = await supabaseAdmin
+      .from("system_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("crm_key", "yemot")
+      .eq("processing_state", "done")
+      .eq("decision_status", "needs_decision");
+    return { count: count ?? 0 };
   });
-  if (ok !== true) throw new Error("אין הרשאה לבקשה זו");
-}
+
+/** Compact daily summary for the dashboard strip. */
+export const getRequestsSummary = createServerFn({ method: "GET" })
+  .middleware([requireAuthMfa])
+  .handler(async ({ context }) => {
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabaseAdmin
+      .from("system_requests")
+      .select("decision_status, request_type, dry_run, received_at")
+      .eq("crm_key", "yemot")
+      .gte("received_at", since)
+      .limit(1000);
+    const rows = (data ?? []) as any[];
+    const { count: pending } = await supabaseAdmin
+      .from("system_requests")
+      .select("id", { count: "exact", head: true })
+      .eq("crm_key", "yemot")
+      .eq("decision_status", "needs_decision");
+    return {
+      today: rows.length,
+      pticha: rows.filter((r) => r.request_type === "pticha").length,
+      sgira: rows.filter((r) => r.request_type === "sgira").length,
+      applied: rows.filter((r) => r.decision_status === "auto_applied" || r.decision_status === "manual_applied").length,
+      dryRun: rows.filter((r) => r.dry_run).length,
+      pending: pending ?? 0,
+    };
+  });
+
+/** Request history shown inside a system card (requests_view only). */
+export const listRequestsForSystem = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { systemId: string; limit?: number }) =>
+    z.object({ systemId: z.string().uuid(), limit: z.number().int().min(1).max(50).optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows } = await supabaseAdmin
+      .from("system_requests")
+      .select("id, request_type, decision_status, proposed_action, proposed_status, new_status, prev_status, dry_run, received_at, request_number, last_error")
+      .eq("system_id", data.systemId)
+      .order("received_at", { ascending: false })
+      .limit(data.limit ?? 10);
+    return rows ?? [];
+  });

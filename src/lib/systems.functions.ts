@@ -709,6 +709,10 @@ export const updateSystem = createServerFn({ method: "POST" })
 
     const { id, reason: _r, email, apply_to_children: _ac, ...patch } = data as any;
     if (email !== undefined) (patch as any).email = email || null;
+    // A name typed by a human clears the "temporary name" flag set when the
+    // automation created the system from an email.
+    if (data.name !== undefined) (patch as any).name_pending = false;
+
     // A transfer to another agent is a privileged action: RLS only lets an
     // agent keep a system within their own scope, so the assignment is written
     // separately and, when RLS blocks it, re-applied with elevated rights after

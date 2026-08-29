@@ -1,8 +1,12 @@
 // Server-only pipeline for pticha/sgira request emails relayed from Gmail.
 // Everything here is idempotent per gmail_message_id and refuses to perform any
 // operational write while the automation is in `off` or `dry_run` mode.
-
-import { evaluateRules, parseRequestEmail, systemCodeMatchKey, type RequestRule } from "@/lib/system-code";
+//
+// Response contract with the Apps Script relay:
+//   { ok: true,  completed: true,  ... }  → safe to mark the mail as read
+//   { ok: true,  completed: false, ... }  → still in progress, do NOT mark read
+//   { ok: false, retry: true|false }      → failure, do NOT mark read, keep cursor
+import { evaluateRules, parseRequestEmail, systemCodeMatchKey, type RequestRule, type RequestType } from "@/lib/system-code";
 
 export type AutomationMode = "off" | "dry_run" | "live";
 
@@ -14,6 +18,9 @@ export type IngestPayload = {
   receivedAt?: string | null;
   attachmentName?: string | null;
   attachmentIndex?: number | null;
+  /** Request type derived from the Gmail label the message was found under. */
+  sourceRequestType?: string | null;
+  sourceLabel?: string | null;
 };
 
 export async function readAutomationMode(supabaseAdmin: any): Promise<AutomationMode> {
@@ -23,7 +30,7 @@ export async function readAutomationMode(supabaseAdmin: any): Promise<Automation
   return mode === "live" || mode === "off" ? mode : "dry_run";
 }
 
-async function readDefaultStatus(supabaseAdmin: any, type: "pticha" | "sgira"): Promise<string | null> {
+async function readDefaultStatus(supabaseAdmin: any, type: RequestType): Promise<string | null> {
   const { data } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", `request_default_status_${type}`).maybeSingle();
   const status = (data?.value as { status?: string | null } | null)?.status;
@@ -41,22 +48,34 @@ async function readRules(supabaseAdmin: any, crmKey: string): Promise<RequestRul
 }
 
 /**
- * All systems whose code matches, parents and sub-systems alike. Matching uses
- * the shared `systemCodeMatchKey` (digits, leading zeros stripped) so a code
- * stored as `0882309477` still matches the `882309477` the email carries.
+ * All systems whose code matches, parents and sub-systems alike. Matching runs
+ * in Postgres through `find_systems_by_code_key`, using the shared match key
+ * (digits, leading zeros stripped) so a code stored as `0882309477` still
+ * matches the `882309477` the email carries.
  */
-async function findSystemsByNormalizedCode(supabaseAdmin: any, codeNorm: string) {
+export async function findSystemsByNormalizedCode(supabaseAdmin: any, codeNorm: string) {
   const key = systemCodeMatchKey(codeNorm);
   if (!key) return [];
-  const { data } = await supabaseAdmin
-    .from("systems")
-    .select("id, system_code, status, caller_phone, phone, additional_caller_phones, parent_system_id")
-    .limit(2000);
-  return ((data ?? []) as any[]).filter((s) => systemCodeMatchKey(s.system_code) === key);
+  const { data, error } = await supabaseAdmin.rpc("find_systems_by_code_key", { _key: key });
+  if (error) throw new Error(error.message);
+  return (data ?? []) as any[];
 }
 
 async function finish(supabaseAdmin: any, id: string, patch: Record<string, unknown>) {
   await supabaseAdmin.from("system_requests").update(patch).eq("id", id);
+}
+
+function done(supabaseAdmin: any, id: string, patch: Record<string, unknown>) {
+  return finish(supabaseAdmin, id, { processing_state: "done", ...patch });
+}
+
+/** Normalizes the request type sent by the relay label into our enum. */
+export function normalizeSourceRequestType(value: unknown): RequestType | null {
+  const v = String(value ?? "").trim().toLowerCase();
+  if (!v) return null;
+  if (v === "pticha" || v === "ptixa" || v.includes("פתיח")) return "pticha";
+  if (v === "sgira" || v === "sgirah" || v.includes("סגיר") || v.includes("חסימ")) return "sgira";
+  return null;
 }
 
 /**
@@ -64,47 +83,77 @@ async function finish(supabaseAdmin: any, id: string, patch: Record<string, unkn
  * status-based auto-assignment and the automatic voice message. Applied here
  * so a change coming from the email automation behaves like a manual one.
  * (History/audit rows are written by the DB trigger on `systems`.)
+ *
+ * Every step is individually idempotent, so a crash right before the
+ * `side_effects_completed_at` stamp cannot cause a double assignment or a
+ * duplicate voice message on the next retry.
  */
-export async function applyStatusSideEffects(supabaseAdmin: any, systemId: string, toStatus: string) {
+export async function applyStatusSideEffects(
+  supabaseAdmin: any,
+  systemId: string,
+  toStatus: string,
+  requestId?: string | null,
+) {
   try {
     const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
     const auto = await resolveAutoAssign(supabaseAdmin, toStatus);
     if (auto) {
-      const patch: Record<string, unknown> = { assigned_agent_id: auto.agentId };
-      if (auto.otherAgentIds.length) patch.reminder_agent_ids = auto.otherAgentIds;
-      await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+      // Idempotent by construction: assigning the same agent twice is a no-op,
+      // and we only claim an unassigned/differently-assigned system once.
+      const { data: cur } = await supabaseAdmin
+        .from("systems").select("assigned_agent_id").eq("id", systemId).maybeSingle();
+      if ((cur as any)?.assigned_agent_id !== auto.agentId) {
+        const patch: Record<string, unknown> = { assigned_agent_id: auto.agentId };
+        if (auto.otherAgentIds.length) patch.reminder_agent_ids = auto.otherAgentIds;
+        await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
+      }
     }
   } catch {
     // Assignment is best-effort — never block the status change itself.
   }
+  // The voice helper deduplicates against `voice_message_log` and the debounce
+  // window, so calling it again after a crash does not resend.
   const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");
   await maybeScheduleOrSendAutoVoice(supabaseAdmin, systemId, toStatus);
+
+  if (requestId) {
+    await finish(supabaseAdmin, requestId, { side_effects_completed_at: new Date().toISOString() });
+  }
 }
 
 export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPayload, crmKey = "yemot") {
   const messageId = String(payload.gmailMessageId || "").trim();
-  if (!messageId) return { ok: false, error: "gmailMessageId required" };
+  if (!messageId) return { ok: false, completed: false, retry: false, error: "gmailMessageId required" };
 
   // Concurrency guard: a second simultaneous delivery of the same message
-  // backs off instead of racing the first one.
+  // backs off instead of racing the first one. It is explicitly NOT a success:
+  // the relay must not mark the mail as read on this answer.
   try {
     const { data: hits } = await supabaseAdmin.rpc("bump_rate_limit", {
       _key: `req:${messageId}`,
       _window_seconds: 60,
     });
-    if (Number(hits ?? 0) > 1) return { ok: true, skipped: true, reason: "in_progress" };
+    if (Number(hits ?? 0) > 1) {
+      return { ok: false, completed: false, retry: true, processingState: "in_progress", reason: "in_progress" };
+    }
   } catch {
     // Lock is best-effort; the unique key below still prevents duplicates.
   }
 
   const receivedIso = payload.receivedAt ?? new Date().toISOString();
   const parsed = parseRequestEmail({ subject: payload.subject, body: payload.body });
+  const labelType = normalizeSourceRequestType(payload.sourceRequestType ?? payload.sourceLabel);
+  // The Gmail label is the primary signal; the body is used only to confirm it
+  // or, when there is no label, on its own. No silent "pticha" default.
+  const typeConflict = Boolean(labelType && parsed.requestType && labelType !== parsed.requestType);
+  const requestType: RequestType | null = labelType ?? parsed.requestType;
 
   const insertRow = {
     crm_key: crmKey,
     gmail_message_id: messageId,
     gmail_thread_id: payload.gmailThreadId ?? null,
-    request_type: parsed.requestType ?? "pticha",
+    request_type: requestType ?? "pticha",
+    source_request_type: labelType,
     request_number: parsed.requestNumber,
     system_code_raw: parsed.systemCodeRaw,
     system_code_norm: parsed.systemCodeNorm,
@@ -120,29 +169,52 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   await supabaseAdmin.from("system_requests").insert(insertRow).then(() => {}, () => {});
   const { data: row } = await supabaseAdmin
     .from("system_requests").select("*").eq("gmail_message_id", messageId).maybeSingle();
-  if (!row) return { ok: false, error: "could not persist request" };
+  if (!row) return { ok: false, completed: false, retry: true, error: "could not persist request" };
   const req = row as any;
-  if (req.processing_state === "done") return { ok: true, duplicate: true, requestId: req.id };
+  if (req.processing_state === "done") {
+    return { ok: true, completed: true, duplicate: true, requestId: req.id, decision: req.decision_status };
+  }
 
   const mode = await readAutomationMode(supabaseAdmin);
   if (mode === "off") {
-    await finish(supabaseAdmin, req.id, {
-      processing_state: "done", last_completed_state: "parsed",
+    await done(supabaseAdmin, req.id, {
+      last_completed_state: "parsed",
       decision_status: "needs_decision", dry_run: true,
     });
-    return { ok: true, requestId: req.id, mode, decision: "needs_decision" };
+    return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
   }
   const dryRun = mode !== "live";
 
   try {
-    // ---- parse ----
-    if (!parsed.requestType || !parsed.systemCodeNorm) {
-      await finish(supabaseAdmin, req.id, {
-        processing_state: "done", last_completed_state: "parsed",
-        decision_status: "needs_decision", dry_run: dryRun,
-        last_error: !parsed.requestType ? "לא זוהה סוג הבקשה" : "לא זוהה מספר מערכת",
+    // ---- resume: the status was already applied on an earlier attempt ----
+    // Never re-run matching or the rule engine in that case — only finish the
+    // side effects that may still be missing.
+    if (req.status_applied_at && req.system_id && req.new_status) {
+      if (!req.side_effects_completed_at) {
+        await applyStatusSideEffects(supabaseAdmin, req.system_id, req.new_status, req.id);
+      }
+      await done(supabaseAdmin, req.id, {
+        decision_status: req.decision_status ?? "auto_applied",
       });
-      return { ok: true, requestId: req.id, mode, decision: "needs_decision" };
+      return { ok: true, completed: true, requestId: req.id, mode, decision: req.decision_status ?? "auto_applied", resumed: true };
+    }
+
+    // ---- parse ----
+    if (typeConflict) {
+      await done(supabaseAdmin, req.id, {
+        last_completed_state: "parsed",
+        decision_status: "needs_decision", dry_run: dryRun,
+        last_error: `סתירה בין תגית הגמייל (${labelType}) לתוכן המייל (${parsed.requestType})`,
+      });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
+    }
+    if (!requestType || !parsed.systemCodeNorm) {
+      await done(supabaseAdmin, req.id, {
+        last_completed_state: "parsed",
+        decision_status: "needs_decision", dry_run: dryRun,
+        last_error: !requestType ? "לא זוהה סוג הבקשה" : "לא זוהה מספר מערכת",
+      });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
     }
 
     // ---- match ----
@@ -150,32 +222,34 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     let system = matches.length === 1 ? matches[0] : null;
 
     if (matches.length > 1) {
-      await finish(supabaseAdmin, req.id, {
-        processing_state: "done", last_completed_state: "parsed",
+      await done(supabaseAdmin, req.id, {
+        last_completed_state: "parsed",
         decision_status: "needs_decision", dry_run: dryRun,
         last_error: "נמצאה יותר ממערכת אחת עם מספר זה",
       });
-      return { ok: true, requestId: req.id, mode, decision: "needs_decision" };
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
     }
 
     if (!system) {
-      const defaultStatus = await readDefaultStatus(supabaseAdmin, parsed.requestType);
+      const defaultStatus = await readDefaultStatus(supabaseAdmin, requestType);
       if (!defaultStatus) {
-        await finish(supabaseAdmin, req.id, {
-          processing_state: "done", last_completed_state: "parsed",
+        await done(supabaseAdmin, req.id, {
+          last_completed_state: "parsed",
           decision_status: "needs_decision", dry_run: dryRun,
           last_error: "לא הוגדר סטטוס ברירת מחדל ליצירת מערכת חדשה",
         });
-        return { ok: true, requestId: req.id, mode, decision: "needs_decision" };
+        return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
       }
       if (dryRun) {
-        await finish(supabaseAdmin, req.id, {
-          processing_state: "done", last_completed_state: "parsed",
+        // DRY RUN: nothing is created. Only the proposal is recorded.
+        await done(supabaseAdmin, req.id, {
+          last_completed_state: "parsed",
           decision_status: "needs_decision", dry_run: true,
+          proposed_action: "create_system",
           proposed_status: defaultStatus,
           last_error: "הרצת בדיקה — מערכת חדשה לא נוצרה",
         });
-        return { ok: true, requestId: req.id, mode, decision: "needs_decision", wouldCreate: true };
+        return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", wouldCreate: true };
       }
       const { data: created } = await supabaseAdmin.from("systems").insert({
         system_code: parsed.systemCodeRaw ?? parsed.systemCodeNorm,
@@ -196,11 +270,12 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
 
     const currentStatus = String(system.status ?? "");
     const rules = await readRules(supabaseAdmin, crmKey);
-    const outcome = evaluateRules(rules, parsed.requestType, currentStatus);
+    const outcome = evaluateRules(rules, requestType, currentStatus);
 
     await finish(supabaseAdmin, req.id, {
       processing_state: "matched",
       last_completed_state: "matched",
+      request_type: requestType,
       system_id: system.id,
       prev_status: currentStatus,
       rule_id: outcome.rule?.id ?? null,
@@ -210,11 +285,9 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     });
 
     if (dryRun) {
-      await finish(supabaseAdmin, req.id, {
-        processing_state: "done",
-        decision_status: "needs_decision",
-      });
-      return { ok: true, requestId: req.id, mode, decision: "needs_decision", proposed: outcome.action };
+      // DRY RUN stops here: no phone added, no status changed, no side effects.
+      await done(supabaseAdmin, req.id, { decision_status: "needs_decision" });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", proposed: outcome.action };
     }
 
     // ---- caller phone (atomic: lock, dedupe and stamp in one transaction) ----
@@ -228,21 +301,21 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
 
     // ---- decision ----
     if (outcome.action === "ignore") {
-      await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "ignored" });
-      return { ok: true, requestId: req.id, mode, decision: "ignored" };
+      await done(supabaseAdmin, req.id, { decision_status: "ignored" });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "ignored" };
     }
     if (outcome.action === "keep") {
-      await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "kept" });
-      return { ok: true, requestId: req.id, mode, decision: "kept" };
+      await done(supabaseAdmin, req.id, { decision_status: "kept" });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "kept" };
     }
     if (outcome.action === "needs_decision" || !outcome.toStatus) {
-      await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "needs_decision" });
-      return { ok: true, requestId: req.id, mode, decision: "needs_decision" };
+      await done(supabaseAdmin, req.id, { decision_status: "needs_decision" });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
     }
 
     if (outcome.toStatus === currentStatus) {
-      await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "kept" });
-      return { ok: true, requestId: req.id, mode, decision: "kept" };
+      await done(supabaseAdmin, req.id, { decision_status: "kept" });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "kept" };
     }
 
     const { data: applied } = await supabaseAdmin.rpc("apply_request_status_change", {
@@ -250,18 +323,18 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       _system_id: system.id,
       _from_status: currentStatus,
       _to_status: outcome.toStatus,
-      _reason: `בקשת ${parsed.requestType === "pticha" ? "פתיחה" : "סגירה"} אוטומטית מהמייל`,
+      _reason: `בקשת ${requestType === "pticha" ? "פתיחה" : "סגירה"} אוטומטית מהמייל`,
     });
     if (applied === true) {
-      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus);
-      await finish(supabaseAdmin, req.id, { processing_state: "done", decision_status: "auto_applied" });
-      return { ok: true, requestId: req.id, mode, decision: "auto_applied", newStatus: outcome.toStatus };
+      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus, req.id);
+      await done(supabaseAdmin, req.id, { decision_status: "auto_applied" });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "auto_applied", newStatus: outcome.toStatus };
     }
-    await finish(supabaseAdmin, req.id, {
-      processing_state: "done", decision_status: "needs_decision",
+    await done(supabaseAdmin, req.id, {
+      decision_status: "needs_decision",
       last_error: "הסטטוס השתנה בינתיים — נדרשת החלטה ידנית",
     });
-    return { ok: true, requestId: req.id, mode, decision: "needs_decision" };
+    return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
   } catch (e: any) {
     await finish(supabaseAdmin, req.id, {
       processing_state: "failed",
@@ -269,6 +342,6 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       last_error: String(e?.message ?? e).slice(0, 500),
       error_at: new Date().toISOString(),
     });
-    return { ok: false, requestId: req.id, error: String(e?.message ?? e) };
+    return { ok: false, completed: false, retry: true, requestId: req.id, error: String(e?.message ?? e) };
   }
 }

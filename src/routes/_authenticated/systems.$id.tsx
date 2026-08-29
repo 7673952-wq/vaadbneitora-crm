@@ -29,6 +29,7 @@ import {
 
 import { useNavigate } from "@tanstack/react-router";
 import { SystemPresence } from "@/components/SystemPresence";
+import { SystemRequestsCard } from "@/components/SystemRequestsCard";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 
@@ -871,6 +872,12 @@ function SystemDetail() {
                     <h1 className="min-w-0 max-w-[380px] truncate text-xl md:text-2xl font-bold tracking-tight">{s.name}</h1>
                   )}
                   <span className="text-[11px] opacity-60 font-mono" dir="ltr">#{s.system_code}</span>
+                  {(s as any).name_pending && (
+                    <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-900"
+                      title="השם נוצר אוטומטית מבקשת מייל — עדכן אותו לשם האמיתי">
+                      שם זמני — נדרש עדכון
+                    </span>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-1.5 flex-wrap lg:justify-end">
@@ -1063,6 +1070,13 @@ function SystemDetail() {
           </section>
         );
       })()}
+
+      <SystemRequestsCard
+        systemId={id}
+        canView={Boolean(me?.isSuperAdmin || (me as any)?.permissions?.requests_view)}
+      />
+
+
 
       {/* ===== פרטי קשר + מספרי פונה ===== */}
       <div className="bg-card border border-border rounded-2xl p-4 shadow-sm xl:col-start-1">

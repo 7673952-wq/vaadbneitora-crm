@@ -76,13 +76,16 @@ function AdminPage() {
   const canSeries = !!perms.series_manage;
   const canPermissions = !!gperms.permissions_manage;
   const canVoiceLog = !!perms.settings_manage;
+  // Request automation lives under "ימות המשיח" and needs its own permission
+  // (which itself requires requests_view).
+  const canRequestsManage = !!(perms.requests_view && perms.requests_manage) || !!me?.isSuperAdmin;
   const canBackups = !!me?.isSuperAdmin;
   const canEmail = !!(gperms.settings_manage || gperms.backup_manage);
   const canNotifs = !!(gperms.settings_manage || gperms.users_manage || gperms.permissions_manage);
   const canCrms = !!(gperms.settings_manage || gperms.permissions_manage || me?.isSuperAdmin);
 
 
-  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canBackups || canEmail || canNotifs;
+  const canOpenAdmin = me?.isAdmin || canUsers || canGeneral || canStatuses || canSeries || canPermissions || canVoiceLog || canRequestsManage || canBackups || canEmail || canNotifs;
 
   if (me && !canOpenAdmin) {
     return <div className="text-center py-20"><h2 className="text-xl font-semibold">אין הרשאה</h2><p className="text-muted-foreground mt-2">דף זה מיועד למנהלים בלבד.</p></div>;
@@ -133,7 +136,7 @@ function AdminPage() {
         {crms.map((c) => (
           <TabsContent key={c.key} value={`crm:${c.key}`} className="mt-4">
             {c.key === "yemot" ? (
-              <YemotAdminTabs flags={{ canStatuses, canSeries, canVoiceLog, canCrms }} />
+              <YemotAdminTabs flags={{ canStatuses, canSeries, canVoiceLog, canCrms, canRequestsManage }} />
             ) : (
               <GenericCrmAdminTabs crmKey={c.key} canCrms={canCrms} />
             )}
@@ -167,7 +170,6 @@ function GeneralAdminTabs({ me, flags, crms }: { me: any; flags: Record<string, 
         <AutoSnoozePanel />
         <StaleHoursPanel />
         <VoiceDebouncePanel />
-        <RequestAutomationPanel />
         <BackupEmailPanel />
         <BackupSchedulePanel />
       </TabsContent>}
@@ -205,8 +207,8 @@ function MailAdminTabs({ canPermissions }: { canPermissions: boolean }) {
 
 /** "ימות המשיח" — settings that only belong to the original CRM. */
 function YemotAdminTabs({ flags }: { flags: Record<string, boolean> }) {
-  const { canStatuses, canSeries, canVoiceLog, canCrms } = flags;
-  const first = canStatuses ? "statuses" : canCrms ? "access" : canVoiceLog ? "voice_log" : "series";
+  const { canStatuses, canSeries, canVoiceLog, canCrms, canRequestsManage } = flags;
+  const first = canStatuses ? "statuses" : canCrms ? "access" : canRequestsManage ? "requests" : canVoiceLog ? "voice_log" : "series";
   return (
     <Tabs defaultValue={first} dir="rtl">
       <TabsList className="flex flex-wrap gap-1 h-auto">
@@ -214,12 +216,14 @@ function YemotAdminTabs({ flags }: { flags: Record<string, boolean> }) {
         {canCrms && <TabsTrigger value="access" className="flex items-center gap-1.5"><LockKeyhole className="h-3.5 w-3.5" />הרשאות למערכת</TabsTrigger>}
         {canCrms && <TabsTrigger value="actions" className="flex items-center gap-1.5"><Shield className="h-3.5 w-3.5" />הרשאות פעולות</TabsTrigger>}
         {canVoiceLog && <TabsTrigger value="voice_log" className="flex items-center gap-1.5"><Volume2 className="h-3.5 w-3.5" />יומן הודעות קוליות</TabsTrigger>}
+        {canRequestsManage && <TabsTrigger value="requests" className="flex items-center gap-1.5"><Inbox className="h-3.5 w-3.5" />אוטומציית בקשות</TabsTrigger>}
         {canSeries && <TabsTrigger value="series" className="flex items-center gap-1.5"><SearchIcon className="h-3.5 w-3.5" />השלמת סדרות</TabsTrigger>}
       </TabsList>
       {canStatuses && <TabsContent value="statuses" className="mt-4"><StatusSettingsPanel /></TabsContent>}
       {canCrms && <TabsContent value="access" className="mt-4"><CrmPermissionsPanel crmKey="yemot" /></TabsContent>}
       {canCrms && <TabsContent value="actions" className="mt-4"><PermissionsPanel crmKey="yemot" /></TabsContent>}
       {canVoiceLog && <TabsContent value="voice_log" className="mt-4"><VoiceMessageLogPanel /></TabsContent>}
+      {canRequestsManage && <TabsContent value="requests" className="mt-4"><RequestAutomationPanel /></TabsContent>}
       {canSeries && <TabsContent value="series" className="mt-4"><SeriesSettingsPanel /></TabsContent>}
     </Tabs>
   );

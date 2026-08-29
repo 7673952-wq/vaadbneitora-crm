@@ -1042,6 +1042,8 @@ export type Database = {
           request_number: string | null
           request_type: string
           rule_id: string | null
+          side_effects_completed_at: string | null
+          source_request_type: string | null
           status_applied_at: string | null
           subject: string | null
           system_code_norm: string | null
@@ -1077,6 +1079,8 @@ export type Database = {
           request_number?: string | null
           request_type: string
           rule_id?: string | null
+          side_effects_completed_at?: string | null
+          source_request_type?: string | null
           status_applied_at?: string | null
           subject?: string | null
           system_code_norm?: string | null
@@ -1112,6 +1116,8 @@ export type Database = {
           request_number?: string | null
           request_type?: string
           rule_id?: string | null
+          side_effects_completed_at?: string | null
+          source_request_type?: string | null
           status_applied_at?: string | null
           subject?: string | null
           system_code_norm?: string | null
@@ -1416,6 +1422,19 @@ export type Database = {
       bump_rate_limit: {
         Args: { _key: string; _window_seconds: number }
         Returns: number
+      }
+      find_systems_by_code_key: {
+        Args: { _key: string }
+        Returns: {
+          additional_caller_phones: Json
+          caller_phone: string
+          id: string
+          name: string
+          parent_system_id: string
+          phone: string
+          status: string
+          system_code: string
+        }[]
       }
       has_crm_access: {
         Args: { _crm_key: string; _user_id: string }

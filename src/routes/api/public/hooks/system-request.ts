@@ -38,9 +38,15 @@ async function handleSystemRequest(request: Request) {
       receivedAt: body.receivedAt ?? null,
       attachmentName: body.attachmentName ?? null,
       attachmentIndex: typeof body.attachmentIndex === "number" ? body.attachmentIndex : null,
+      // Request type derived from the Gmail label the relay found the mail in.
+      sourceRequestType: body.sourceRequestType ?? null,
+      sourceLabel: body.sourceLabel ?? null,
     });
+    // 409 = still in progress: the relay must retry and must NOT mark the mail
+    // as read. Anything with completed=false is never a "done" answer.
+    const status = result.ok ? 200 : (result as any).processingState === "in_progress" ? 409 : 500;
     return new Response(JSON.stringify(result), {
-      status: result.ok ? 200 : 500, headers: { "Content-Type": "application/json" },
+      status, headers: { "Content-Type": "application/json" },
     });
   } catch (e: any) {
     return new Response(JSON.stringify({ ok: false, error: String(e?.message ?? e) }), {

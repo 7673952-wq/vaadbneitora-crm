@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
 } from "@/lib/system-requests.functions";
+import { getMyRole } from "@/lib/admin.functions";
 
 export const Route = createFileRoute("/_authenticated/requests")({
   component: RequestsPage,
@@ -58,6 +59,16 @@ function RequestsPage() {
   const fetchAudio = useServerFn(getRequestAudio);
   const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
 
+  // Permissions: the server enforces them too — this only hides what the user
+  // cannot do. `requests_decide` already implies `requests_view` server-side.
+  const meFn = useServerFn(getMyRole);
+  const { data: me, isLoading: meLoading } = useQuery({ queryKey: ["my-role"], queryFn: async () => meFn({}) });
+  const perms = ((me as any)?.permissions ?? {}) as Record<string, boolean>;
+  const isSuper = Boolean((me as any)?.isSuperAdmin);
+  const canView = isSuper || perms.requests_view === true;
+  const canDecide = isSuper || (perms.requests_view === true && perms.requests_decide === true);
+  const canManage = isSuper || (perms.requests_view === true && perms.requests_manage === true);
+
   // Recordings are streamed from Gmail on demand and never stored in the CRM.
   const audioMutation = useMutation({
     mutationFn: (id: string) => fetchAudio({ data: { id } }),
@@ -69,12 +80,14 @@ function RequestsPage() {
     queryKey: ["request-automation-settings"],
     queryFn: () => fetchSettings(),
     staleTime: 60_000,
+    enabled: canView,
   });
 
   const list = useQuery({
     queryKey: ["system-requests", onlyPending],
     queryFn: () => fetchList({ data: { decision: onlyPending ? "needs_decision" : null, limit: 100 } }),
     refetchInterval: 60_000,
+    enabled: canView,
   });
 
   const decideMutation = useMutation({
@@ -84,6 +97,7 @@ function RequestsPage() {
       toast.success(res?.alreadyDecided ? "הבקשה כבר טופלה" : "הבקשה טופלה");
       qc.invalidateQueries({ queryKey: ["system-requests"] });
       qc.invalidateQueries({ queryKey: ["systems"] });
+      qc.invalidateQueries({ queryKey: ["requests", "pending-count"] });
     },
     onError: (e: any) => toast.error(String(e?.message ?? e)),
   });
@@ -93,6 +107,19 @@ function RequestsPage() {
     () => rows.filter((r) => r.decision_status === "needs_decision").length,
     [rows],
   );
+
+  if (meLoading) {
+    return <div dir="rtl" className="py-16 text-center text-sm text-muted-foreground">טוען…</div>;
+  }
+  if (!canView) {
+    return (
+      <div dir="rtl" className="mx-auto max-w-lg px-4 py-16 text-center space-y-2">
+        <ShieldQuestion className="mx-auto size-7 text-muted-foreground" />
+        <h1 className="text-lg font-semibold">אין הרשאה לצפייה בבקשות</h1>
+        <p className="text-sm text-muted-foreground">נדרשת הרשאת "צפייה בבקשות". פנה למנהל המערכת.</p>
+      </div>
+    );
+  }
 
   return (
     <div dir="rtl" className="mx-auto w-full max-w-6xl px-4 py-6 space-y-5">
@@ -122,7 +149,9 @@ function RequestsPage() {
           <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600" />
           <span>
             האוטומציה אינה במצב פעיל, ולכן אף סטטוס לא משתנה מעצמו. הבקשות נרשמות בלבד וממתינות להחלטה ידנית.
-            ניתן לשנות את המצב במסך <Link to="/admin" className="underline font-medium">ניהול</Link>.
+            {canManage
+              ? <>ניתן לשנות את המצב במסך <Link to="/admin" className="underline font-medium">ניהול</Link>.</>
+              : "שינוי המצב מחייב הרשאת ניהול אוטומציה."}
           </span>
         </div>
       )}
@@ -203,7 +232,11 @@ function RequestsPage() {
                   </div>
                 )}
 
-                {pending && (
+                {pending && !canDecide && (
+                  <p className="mt-3 text-xs text-muted-foreground">אין לך הרשאת טיפול בבקשות.</p>
+                )}
+
+                {pending && canDecide && (
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button
                       size="sm"

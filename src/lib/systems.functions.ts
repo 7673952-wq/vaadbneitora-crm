@@ -12,6 +12,7 @@ import { checkRateLimit } from "@/lib/rate-limit.server";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { readStatusSettings } from "@/lib/status-settings";
 import { normalizeAdditionalCallerPhones } from "@/lib/caller-phones";
+import { systemCodeMatchKey } from "@/lib/system-code";
 
 // If a system_code doesn't already start with "0" or "972", and has
 // fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->
@@ -2390,13 +2391,12 @@ export const importSystems = createServerFn({ method: "POST" })
       candidates: Array<{ id: string; system_code: string; name: string }>;
     }> = [];
 
-    // Normalize phone-like codes: strip non-digits, then strip leading 0 / 972 / +972
+    // Same comparison key as the email automation and the SQL unique index
+    // (digits, leading zeros stripped), with a country prefix removed first.
     const normalizeCode = (v: string): string => {
       const digits = String(v).replace(/\D/g, "");
       if (!digits) return "";
-      if (digits.startsWith("972")) return digits.slice(3).replace(/^0+/, "");
-      if (digits.startsWith("0")) return digits.replace(/^0+/, "");
-      return digits;
+      return systemCodeMatchKey(digits.startsWith("972") ? digits.slice(3) : digits);
     };
 
     // Existing codes + names for duplicate/parent detection

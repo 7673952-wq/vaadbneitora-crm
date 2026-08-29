@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateRules, normalizePhone, normalizeSystemCode, parseRequestEmail, type RequestRule } from "@/lib/system-code";
+import { evaluateRules, normalizePhone, normalizeSystemCode, parseRequestEmail, systemCodeMatchKey, type RequestRule } from "@/lib/system-code";
 
 describe("normalizeSystemCode / normalizePhone", () => {
   it("keeps leading zeros and strips separators", () => {
@@ -58,5 +58,43 @@ describe("evaluateRules", () => {
 
   it("needs a decision when no rule matches", () => {
     expect(evaluateRules([], "pticha", "open").action).toBe("needs_decision");
+  });
+});
+
+describe("parseRequestEmail — real production email", () => {
+  // Copied verbatim from a real incoming request email.
+  const real = {
+    subject: "הכנסת נתונים pticha-1516 לזיהוי 0527122642",
+    body: [
+      "מס. בקשה: 1516",
+      "מספר המערכת: 882309477",
+      "טלפון הפונה: 0527122642",
+    ].join("\n"),
+  };
+
+  it("parses the exact production format", () => {
+    const p = parseRequestEmail(real);
+    expect(p.requestType).toBe("pticha");
+    expect(p.requestNumber).toBe("1516");
+    expect(p.systemCodeNorm).toBe("882309477");
+    expect(p.callerPhoneNorm).toBe("0527122642");
+  });
+
+  it("does not swallow the next line into the system code", () => {
+    const p = parseRequestEmail({
+      subject: "sgira-22",
+      body: "מספר המערכת: 882309477\n0527122642",
+    });
+    expect(p.systemCodeNorm).toBe("882309477");
+  });
+});
+
+describe("systemCodeMatchKey", () => {
+  it("matches a stored 0-prefixed code with the bare code from an email", () => {
+    expect(systemCodeMatchKey("0882309477")).toBe(systemCodeMatchKey("882309477"));
+  });
+
+  it("returns an empty key for codes with no digits", () => {
+    expect(systemCodeMatchKey("cat-abc")).toBe("");
   });
 });

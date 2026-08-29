@@ -31,6 +31,13 @@ const DECISION_LABELS: Record<string, string> = {
   ignored: "התעלמות",
 };
 
+const ACTION_LABELS: Record<string, string> = {
+  set_status: "שינוי סטטוס",
+  keep: "השארה ללא שינוי",
+  needs_decision: "העברה להחלטה ידנית",
+  ignore: "התעלמות",
+};
+
 const MODE_LABELS: Record<string, string> = {
   off: "כבוי",
   dry_run: "מצב בדיקה (ללא שינויים)",
@@ -166,7 +173,14 @@ function RequestsPage() {
                   <span>סטטוס נוכחי: {r.system?.status ?? r.prev_status ?? "—"}</span>
                   <span>סטטוס מוצע: {r.proposed_status || "—"}</span>
                   <span>מצב: {DECISION_LABELS[r.decision_status] ?? r.decision_status ?? "בעיבוד"}</span>
-                  {r.dry_run && <span>נרשם במצב בדיקה</span>}
+                  {r.proposed_action && (
+                    <span>פעולה שהכלל קבע: {ACTION_LABELS[r.proposed_action] ?? r.proposed_action}</span>
+                  )}
+                  {r.dry_run && (
+                    <span className="font-medium text-amber-700">
+                      הרצת בדיקה — שום שינוי לא בוצע בפועל
+                    </span>
+                  )}
                 </div>
 
                 {r.last_error && (

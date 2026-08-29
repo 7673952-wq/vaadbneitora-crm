@@ -65,9 +65,26 @@
 //    once after installing this to clear out anything wrongly marked known
 //    by the old logic.
 
+// v20 additions (nothing from v19 was changed or removed):
+//  - POLL_REQUEST_LABELS scans the two request labels (pticha / sgira) and
+//    posts each message to the CRM's /api/public/hooks/system-request
+//    endpoint. It has its own cursor and its own message markers, and is
+//    completely independent of ONLY_SYNC_CRM_THREADS and of the CRM label.
+//  - doPost supports 'get_attachment', so the CRM can stream a request's
+//    recording straight out of Gmail without ever storing a copy.
+//  - SETUP() now deletes and replaces only the POLL_MAILBOX trigger instead
+//    of wiping every trigger in the project.
+//  - The secret can be stored in Script Properties (key: CRM_SECRET); the
+//    value below is used only when that property is not set.
+
 function CFG_() {
   return {
-    SECRET: '0acbcb85408bac61290e49fac924746f',
+    SECRET: PropertiesService.getScriptProperties().getProperty('CRM_SECRET')
+      || '0acbcb85408bac61290e49fac924746f',
+    // Gmail labels that carry the automatic open/close request emails.
+    PTICHA_LABEL: 'pticha',
+    SGIRA_LABEL: 'sgira',
+    REQUEST_WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/system-request',
     WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/inbound-email',
     MAILBOX_EMAIL: 'a033135556@gmail.com',
     SENDER_NAME: 'CRM',
@@ -105,8 +122,12 @@ function CFG_() {
 var ONLY_SYNC_CRM_THREADS = true;
 
 function SETUP() {
+  // Only this relay's own trigger is replaced — any other trigger in the
+  // project (yours or someone else's) is left exactly as it is.
   var triggers = ScriptApp.getProjectTriggers();
-  for (var i = 0; i < triggers.length; i++) ScriptApp.deleteTrigger(triggers[i]);
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'POLL_MAILBOX') ScriptApp.deleteTrigger(triggers[i]);
+  }
   ScriptApp.newTrigger('POLL_MAILBOX').timeBased().everyMinutes(10).create();
   POLL_MAILBOX();
 }
@@ -158,6 +179,10 @@ function POLL_MAILBOX() {
   // marked and remain inside the overlap window for the next poll.
   if (!stats.timedOut) props.setProperty('LAST_SYNC_MS', String(started));
   Logger.log('V19 incremental sync: ' + JSON.stringify(stats));
+
+  // Request emails (pticha/sgira) are a separate pipeline with its own
+  // cursor — deliberately unaffected by ONLY_SYNC_CRM_THREADS above.
+  try { POLL_REQUEST_LABELS(); } catch (err) { Logger.log('POLL_REQUEST_LABELS failed: ' + err); }
   return stats;
 }
 
@@ -262,12 +287,13 @@ function doPost(e) {
     if (d.action === 'reply') return json_(reply_(d));
     if (d.action === 'send_backup') return json_(backup_(d));
     if (d.action === 'mark_read') return json_(markRead_(d));
-    if (d.action === 'ping') return json_({ ok: true, version: 19 });
+    if (d.action === 'get_attachment') return json_(getAttachment_(d));
+    if (d.action === 'ping') return json_({ ok: true, version: 20 });
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
 
-function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 19 }); }
+function doGet() { return json_({ ok: true, service: 'crm-gmail-relay', version: 20 }); }
 
 function send_(d) {
   var body = body_(d.body, d.agentSignature);
@@ -628,4 +654,127 @@ function findSent_(to, subject) {
   var q = 'in:sent to:' + to + ' subject:"' + String(subject).replace(/"/g, '') + '"';
   for (var i = 0; i < 4; i++) { var f = GmailApp.search(q, 0, 1); if (f.length) return f[0]; Utilities.sleep(1200); }
   return null;
+}
+
+
+// ============ v20: pticha / sgira request emails ============
+// Scans the two request labels and forwards every new message to the CRM.
+// Runs off its own cursor and its own message markers ('rq_'), so it can never
+// interfere with the CRM-thread sync above, and ONLY_SYNC_CRM_THREADS does not
+// apply to it — these emails are machine-generated and never part of a CRM
+// conversation thread.
+function POLL_REQUEST_LABELS() {
+  var cfg = CFG_();
+  var props = store_();
+  var started = new Date().getTime();
+  var last = Number(props.getProperty('LAST_REQ_SYNC_MS') || 0);
+  var floor = last > 0 ? last - 900000 : started - (3 * 24 * 60 * 60 * 1000);
+  var afterSeconds = Math.floor(floor / 1000);
+  var stats = { sent: 0, duplicate: 0, failed: 0, skipped: 0, timedOut: false };
+
+  var labels = [cfg.PTICHA_LABEL, cfg.SGIRA_LABEL];
+  for (var i = 0; i < labels.length; i++) {
+    if (!labels[i]) continue;
+    syncRequestLabel_(labels[i], afterSeconds, stats, started);
+    if (stats.timedOut) break;
+  }
+  if (!stats.timedOut) props.setProperty('LAST_REQ_SYNC_MS', String(started));
+  Logger.log('V20 request sync: ' + JSON.stringify(stats));
+  return stats;
+}
+
+function syncRequestLabel_(labelName, afterSeconds, stats, started) {
+  var cfg = CFG_();
+  var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
+  var threads = GmailApp.search(query, 0, 100);
+  for (var t = 0; t < threads.length; t++) {
+    if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
+    var messages = threads[t].getMessages();
+    for (var m = 0; m < messages.length; m++) {
+      var msg = messages[m];
+      var id = msg.getId();
+      if (msg.isDraft()) continue;
+      if (store_().getProperty('rq_' + id) === '1') { stats.skipped++; continue; }
+
+      var att = firstAudioAttachment_(msg);
+      try {
+        var res = UrlFetchApp.fetch(cfg.REQUEST_WEBHOOK_URL, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { apikey: cfg.SECRET, Authorization: 'Bearer ' + cfg.SECRET },
+          payload: JSON.stringify({
+            gmailMessageId: id,
+            gmailThreadId: threads[t].getId(),
+            subject: msg.getSubject(),
+            body: msg.getPlainBody(),
+            receivedAt: msg.getDate().toISOString(),
+            attachmentName: att ? att.name : null,
+            attachmentIndex: att ? att.index : null
+          }),
+          muteHttpExceptions: true
+        });
+        var text = res.getContentText() || '{}';
+        var parsed = JSON.parse(text);
+        if (res.getResponseCode() >= 200 && res.getResponseCode() < 300 && parsed.ok) {
+          store_().setProperty('rq_' + id, '1');
+          if (parsed.duplicate) stats.duplicate++; else stats.sent++;
+        } else {
+          stats.failed++;
+          Logger.log('Request rejected ' + id + ': ' + res.getResponseCode() + ' ' + text);
+        }
+      } catch (err) {
+        stats.failed++;
+        Logger.log('Request failed ' + id + ': ' + err);
+      }
+    }
+  }
+}
+
+// Index is the position within getAttachments(), so the CRM can ask for the
+// exact same attachment later without storing anything.
+function firstAudioAttachment_(msg) {
+  var atts = msg.getAttachments({ includeInlineImages: false, includeAttachments: true });
+  for (var i = 0; i < atts.length; i++) {
+    var type = String(atts[i].getContentType() || '').toLowerCase();
+    var name = String(atts[i].getName() || '').toLowerCase();
+    if (type.indexOf('audio') === 0 || /\.(mp3|wav|ogg|m4a|amr|aac|wma)$/.test(name)) {
+      return { index: i, name: atts[i].getName() };
+    }
+  }
+  return atts.length ? { index: 0, name: atts[0].getName() } : null;
+}
+
+// Streams one attachment back to the CRM as base64. Nothing is stored on the
+// Gmail side and nothing is stored in the CRM — the recording stays in Gmail.
+function getAttachment_(d) {
+  if (!d.gmailMessageId) return { ok: false, error: 'missing gmailMessageId' };
+  var msg;
+  try { msg = GmailApp.getMessageById(d.gmailMessageId); }
+  catch (err) { return { ok: false, error: 'message not found' }; }
+  if (!msg) return { ok: false, error: 'message not found' };
+
+  var atts = msg.getAttachments({ includeInlineImages: false, includeAttachments: true });
+  var idx = typeof d.attachmentIndex === 'number' ? d.attachmentIndex : 0;
+  if (!atts.length || idx < 0 || idx >= atts.length) return { ok: false, error: 'attachment not found' };
+
+  var blob = atts[idx].copyBlob();
+  var bytes = blob.getBytes();
+  if (bytes.length > 15 * 1024 * 1024) return { ok: false, error: 'attachment too large' };
+
+  return {
+    ok: true,
+    name: atts[idx].getName(),
+    mimeType: blob.getContentType() || 'audio/mpeg',
+    base64: Utilities.base64Encode(bytes)
+  };
+}
+
+// Run MANUALLY once if you ever need the request pipeline to re-send
+// everything from the last 3 days (it does not touch the CRM-thread sync).
+function RESET_REQUEST_CURSOR() {
+  var props = store_().getProperties();
+  var removed = 0;
+  for (var k in props) { if (k.indexOf('rq_') === 0) { store_().deleteProperty(k); removed++; } }
+  store_().deleteProperty('LAST_REQ_SYNC_MS');
+  Logger.log('Cleared ' + removed + ' request marker(s) and the request cursor.');
 }

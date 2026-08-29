@@ -208,7 +208,7 @@ function AuthedLayout() {
           </Link>
 
           {/* CRM navigation — dark command console */}
-          <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} canMail={Boolean(me?.isSuperAdmin || (me as any)?.mailPermissions?.mailbox_view)} />
+          <CrmTabs isAdmin={Boolean(me?.isSuperAdmin)} canRequests={Boolean(me?.isSuperAdmin || (me as any)?.permissions?.requests_view)} canMail={Boolean(me?.isSuperAdmin || (me as any)?.mailPermissions?.mailbox_view)} />
 
           {/* Spacer */}
           <div className="flex-grow" />

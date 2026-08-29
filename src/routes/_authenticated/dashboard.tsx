@@ -7,6 +7,7 @@ import {
   importSystems, getStatusCounts, detectMissingSystemSeries, createMissingSystems, getSystem,
 } from "@/lib/systems.functions";
 import { getMyRole, listStatusSettings, getStaleWarningHours } from "@/lib/admin.functions";
+import { RequestsSummaryStrip } from "@/components/RequestsSummaryStrip";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStatusSettings } from "@/lib/use-status-settings";
 import { perfMark } from "@/lib/perf";
@@ -691,6 +692,8 @@ function Dashboard() {
 
   return (
     <div className="space-y-6">
+
+      <RequestsSummaryStrip canView={Boolean(me?.isSuperAdmin || (me as any)?.permissions?.requests_view)} />
 
       <div className="flex items-end justify-between gap-4 flex-wrap">
         <div>

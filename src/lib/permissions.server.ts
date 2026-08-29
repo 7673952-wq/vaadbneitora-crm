@@ -8,141 +8,35 @@
 
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { AppError } from "@/lib/errors";
+import {
+  DEFAULT_ROLE_PERMISSIONS,
+  PERMISSION_DEFINITIONS,
+  PERMISSION_LABEL,
+  PERMISSION_PREREQUISITES,
+  ROLE_HIERARCHY,
+  ROLE_LABEL,
+  defaultPermissionForRoles,
+  defaultRolePermissionRows,
+  isPermissionKey,
+  type PermissionKey,
+  type Role,
+} from "@/lib/permissions.config";
 
-export const ROLE_HIERARCHY = ["super_admin", "admin", "agent", "viewer"] as const;
-export type Role = (typeof ROLE_HIERARCHY)[number];
+// The static model lives in `permissions.config.ts` (client-safe). This file
+// only adds the I/O: role lookups, dynamic overrides and assertions.
+export {
+  DEFAULT_ROLE_PERMISSIONS,
+  PERMISSION_DEFINITIONS,
+  PERMISSION_KEYS,
+  PERMISSION_LABEL,
+  PERMISSION_PREREQUISITES,
+  ROLE_HIERARCHY,
+  defaultRolePermissionRows,
+  isPermissionKey,
+} from "@/lib/permissions.config";
+export type { PermissionKey, Role } from "@/lib/permissions.config";
 
-export const PERMISSION_DEFINITIONS = [
-  { key: "systems_read", label: "צפייה במערכות", description: "כניסה לדשבורד וצפייה בכרטיסי מערכת" },
-  { key: "systems_write", label: "עריכת מערכות", description: "יצירה ועריכה כללית של מערכות" },
-  { key: "systems_delete", label: "מחיקת מערכות", description: "מחיקת מערכת ראשית או תת־מערכת" },
-  { key: "system_name_edit", label: "עריכת שם מערכת", description: "שינוי שם של מערכת קיימת" },
-  { key: "system_code_edit", label: "עריכת מספר מערכת", description: "שינוי מזהה/מספר לחיוג של מערכת קיימת" },
-  { key: "status_change", label: "שינוי סטטוס", description: "החלפת סטטוס למערכת" },
-  { key: "agent_transfer", label: "העברת נציג", description: "שיוך מערכת לנציג אחר" },
-  { key: "notes_write", label: "הוספת הערות", description: "כתיבת הערות בכרטיס מערכת" },
-  { key: "emails_send", label: "שליחת מיילים", description: "שליחת מייל חדש או תגובה בתוך שרשור מתוך כרטיס מערכת" },
-  { key: "emails_edit", label: "עריכת מיילים", description: "עריכת תוכן או נושא של הודעת מייל שנשמרה במערכת" },
-  { key: "emails_delete", label: "מחיקת מיילים", description: "מחיקת הודעה בודדת או שרשור שלם מתיבת הדואר" },
-  { key: "files_manage", label: "ניהול קבצים", description: "העלאה ומחיקה של קבצים מצורפים" },
-  { key: "import_export", label: "ייבוא / ייצוא", description: "ייבוא מאקסל וייצוא נתונים" },
-  { key: "series_manage", label: "השלמת סדרות", description: "סריקה ויצירה מרוכזת של מספרים חסרים" },
-  { key: "backup_manage", label: "גיבויים", description: "יצירה, הורדה, שליחה ושחזור לפי רמת ההרשאה" },
-  { key: "audit_view", label: "יומן בקרה", description: "צפייה ביומן הפעילות והבקרה" },
-  { key: "settings_manage", label: "הגדרות מערכת", description: "סטטוסים, שיוכים אוטומטיים והגדרות כלליות" },
-  { key: "users_manage", label: "ניהול משתמשים", description: "יצירה, מחיקה ועדכון משתמשים" },
-  { key: "permissions_manage", label: "ניהול הרשאות", description: "שינוי הרשאות לפי תפקיד ולפי משתמש" },
-  { key: "mailbox_view", label: "צפייה בתיבת הדואר", description: "כניסה ללשונית המיילים וצפייה בשרשורי הדואר" },
-  { key: "history_edit", label: "עריכת הערות ופעילות", description: "עריכה ומחיקה של הערות ושורות ביומן הפעילות של כל המשתמשים" },
-] as const;
-
-export type PermissionKey = (typeof PERMISSION_DEFINITIONS)[number]["key"];
-
-const PERMISSION_LABEL = Object.fromEntries(
-  PERMISSION_DEFINITIONS.map((p) => [p.key, p.label]),
-) as Record<PermissionKey, string>;
-
-const DEFAULT_ROLE_PERMISSIONS: Record<Role, Record<PermissionKey, boolean>> = {
-  viewer: {
-    systems_read: true,
-    systems_write: false,
-    systems_delete: false,
-    status_change: false,
-    agent_transfer: false,
-    notes_write: false,
-    emails_send: false,
-    emails_edit: false,
-    emails_delete: false,
-    files_manage: false,
-    import_export: false,
-    series_manage: false,
-    backup_manage: false,
-    audit_view: false,
-    settings_manage: false,
-    users_manage: false,
-    permissions_manage: false,
-    system_name_edit: false,
-    system_code_edit: false,
-    history_edit: false,
-    mailbox_view: false,
-  },
-  agent: {
-    systems_read: true,
-    systems_write: true,
-    systems_delete: false,
-    status_change: true,
-    agent_transfer: true,
-    notes_write: true,
-    emails_send: true,
-    emails_edit: false,
-    emails_delete: false,
-    files_manage: true,
-    import_export: false,
-    series_manage: false,
-    backup_manage: false,
-    audit_view: false,
-    settings_manage: false,
-    users_manage: false,
-    permissions_manage: false,
-    system_name_edit: false,
-    system_code_edit: false,
-    history_edit: false,
-    mailbox_view: true,
-  },
-  admin: {
-    systems_read: true,
-    systems_write: true,
-    systems_delete: false,
-    status_change: true,
-    agent_transfer: true,
-    notes_write: true,
-    emails_send: true,
-    emails_edit: true,
-    emails_delete: true,
-    files_manage: true,
-    import_export: true,
-    series_manage: true,
-    backup_manage: true,
-    audit_view: false,
-    settings_manage: true,
-    users_manage: false,
-    permissions_manage: false,
-    system_name_edit: true,
-    system_code_edit: false,
-    history_edit: true,
-    mailbox_view: true,
-  },
-  super_admin: {
-    systems_read: true,
-    systems_write: true,
-    systems_delete: true,
-    status_change: true,
-    agent_transfer: true,
-    notes_write: true,
-    emails_send: true,
-    emails_edit: true,
-    emails_delete: true,
-    files_manage: true,
-    import_export: true,
-    series_manage: true,
-    backup_manage: true,
-    audit_view: true,
-    settings_manage: true,
-    users_manage: true,
-    permissions_manage: true,
-    system_name_edit: true,
-    system_code_edit: true,
-    history_edit: true,
-    mailbox_view: true,
-  },
-};
-
-const HEBREW_LABEL: Record<Role, string> = {
-  super_admin: "מנהל ראשי",
-  admin: "מנהל",
-  agent: "נציג",
-  viewer: "צופה",
-};
+const HEBREW_LABEL = ROLE_LABEL;
 
 const PERMISSION_SETTINGS_KEY = "permission_settings";
 
@@ -160,17 +54,6 @@ function isSchemaCacheMissing(error: unknown): boolean {
     || text.includes("relation") && text.includes("does not exist");
 }
 
-function defaultPermissionForRoles(roles: Role[], permission: PermissionKey): boolean {
-  return roles.some((role) => DEFAULT_ROLE_PERMISSIONS[role]?.[permission] === true);
-}
-
-function defaultRolePermissionRows() {
-  return ROLE_HIERARCHY.flatMap((role) => PERMISSION_DEFINITIONS.map((p) => ({
-    role,
-    permission: p.key,
-    allowed: DEFAULT_ROLE_PERMISSIONS[role][p.key],
-  })));
-}
 
 function normalizePermissionSettings(value: unknown): StoredPermissionSettings {
   const v = (value ?? {}) as Partial<StoredPermissionSettings>;
@@ -227,9 +110,6 @@ export async function assertRole(userId: string, required: Role): Promise<void> 
   }
 }
 
-export function isPermissionKey(permission: string): permission is PermissionKey {
-  return PERMISSION_DEFINITIONS.some((p) => p.key === permission);
-}
 
 export async function getCrmRoles(userId: string, crmKey: string): Promise<Role[]> {
   const globalRoles = await getUserRoles(userId);
@@ -274,7 +154,12 @@ export async function assertCrmAccess(userId: string, crmKey: string): Promise<v
   }
 }
 
-export async function hasPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<boolean> {
+/**
+ * Raw resolution of a single permission (overrides → role rows → defaults),
+ * WITHOUT prerequisite enforcement. Use `hasPermission` everywhere except
+ * inside the prerequisite check itself.
+ */
+async function resolveRawPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<boolean> {
   const roles = await getCrmRoles(userId, crmKey);
   if (!roles.length) return false;
   // A super admin must always retain full management access. Dynamic
@@ -313,6 +198,29 @@ export async function hasPermission(userId: string, permission: PermissionKey, c
   return defaultPermissionForRoles(roles, permission);
 }
 
+/**
+ * Effective permission check. A permission with prerequisites (e.g.
+ * `requests_decide` requires `requests_view`) is only granted when every
+ * prerequisite is granted too — enforced server-side, so a hand-crafted RPC
+ * call cannot act on requests without the right to see them.
+ */
+export async function hasPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<boolean> {
+  if (!(await resolveRawPermission(userId, permission, crmKey))) return false;
+  for (const prereq of PERMISSION_PREREQUISITES[permission] ?? []) {
+    if (!(await resolveRawPermission(userId, prereq, crmKey))) return false;
+  }
+  return true;
+}
+
+/** Applies the prerequisite rule to a whole resolved permission map. */
+function applyPrerequisites(map: Record<PermissionKey, boolean>): Record<PermissionKey, boolean> {
+  for (const [key, prereqs] of Object.entries(PERMISSION_PREREQUISITES) as Array<[PermissionKey, PermissionKey[]]>) {
+    if (map[key] && prereqs.some((p) => map[p] === false)) map[key] = false;
+  }
+  return map;
+}
+
+
 export async function getUserPermissionMap(userId: string, crmKey = "yemot"): Promise<Record<PermissionKey, boolean>> {
   const roles = await getCrmRoles(userId, crmKey);
   const out = Object.fromEntries(
@@ -339,7 +247,7 @@ export async function getUserPermissionMap(userId: string, crmKey = "yemot"): Pr
     const key = (row as any).permission as PermissionKey;
     if (isPermissionKey(key) && typeof (row as any).allowed === "boolean") out[key] = Boolean((row as any).allowed);
   }
-  return out;
+  return applyPrerequisites(out);
 }
 
 export async function assertPermission(userId: string, permission: PermissionKey, crmKey = "yemot"): Promise<void> {
@@ -389,7 +297,7 @@ export async function getGlobalPermissionMap(userId: string): Promise<Record<Per
   const maps = await Promise.all(keys.map((k) => getUserPermissionMap(userId, k)));
   const out = Object.fromEntries(PERMISSION_DEFINITIONS.map((p) => [p.key, false])) as Record<PermissionKey, boolean>;
   for (const m of maps) for (const p of PERMISSION_DEFINITIONS) if (m[p.key]) out[p.key] = true;
-  return out;
+  return applyPrerequisites(out);
 }
 
 export async function assertAnyPermission(userId: string, permissions: PermissionKey[]): Promise<void> {

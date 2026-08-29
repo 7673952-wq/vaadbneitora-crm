@@ -597,6 +597,11 @@ function VoiceDebouncePanel() {
           onChange={(e) => setSeconds(Math.max(0, Math.min(3600, Number(e.target.value) || 0)))}
           className="w-28 rounded-lg border border-input bg-background px-3 py-2 text-sm" />
         <span className="text-sm text-muted-foreground">שניות</span>
+        <span className="text-xs text-muted-foreground">
+          מרווח פעיל כעת: {(data?.seconds ?? 90) === 0
+            ? "שליחה מיידית"
+            : `${data?.seconds ?? 90} שניות (${Math.round(((data?.seconds ?? 90) / 60) * 10) / 10} דק')`}
+        </span>
         <button onClick={() => mut.mutate({ data: { seconds } })} disabled={mut.isPending || seconds === (data?.seconds ?? 90)}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {mut.isPending ? "שומר..." : "שמור"}

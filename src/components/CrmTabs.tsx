@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useMyCrms } from "@/lib/use-crms";
-import { Settings2, Mail } from "lucide-react";
+import { Settings2, Mail, Inbox } from "lucide-react";
 
 /**
  * Dark "command console" CRM switcher — an inverted segmented control that
@@ -51,6 +51,20 @@ export function CrmTabs({ isAdmin = false, canMail = false }: { isAdmin?: boolea
         <Mail className="h-4 w-4" />
         מיילים
       </Link>
+      )}
+
+      {isAdmin && (
+        <Link
+          to="/requests"
+          className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition ${
+            path.startsWith("/requests")
+              ? "bg-background text-foreground shadow-sm"
+              : "text-background/55 hover:text-background hover:bg-background/10"
+          }`}
+        >
+          <Inbox className="h-4 w-4" />
+          בקשות
+        </Link>
       )}
 
       {isAdmin && (

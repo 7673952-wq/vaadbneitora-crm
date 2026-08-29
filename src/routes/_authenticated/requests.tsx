@@ -31,6 +31,13 @@ const DECISION_LABELS: Record<string, string> = {
   ignored: "התעלמות",
 };
 
+const ACTION_LABELS: Record<string, string> = {
+  set_status: "שינוי סטטוס",
+  keep: "השארה ללא שינוי",
+  needs_decision: "העברה להחלטה ידנית",
+  ignore: "התעלמות",
+};
+
 const MODE_LABELS: Record<string, string> = {
   off: "כבוי",
   dry_run: "מצב בדיקה (ללא שינויים)",

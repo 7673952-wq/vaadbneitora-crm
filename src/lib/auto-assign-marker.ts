@@ -14,3 +14,12 @@ export const AUTO_ASSIGN_REASON = "__auto_status_assignment__";
  * `is.null` branch.
  */
 export const HIDE_AUTO_ASSIGN_FILTER = `reason.is.null,reason.neq.${AUTO_ASSIGN_REASON}`;
+
+/**
+ * True for a `system_activity_log` / `system_transfers` row created by the
+ * automatic status-driven assignment (including rows propagated to
+ * sub-systems, which run inside the same transaction and inherit the marker).
+ */
+export function isAutoAssignmentRow(row: { reason?: string | null } | null | undefined): boolean {
+  return Boolean(row && row.reason === AUTO_ASSIGN_REASON);
+}

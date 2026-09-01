@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { HIDE_AUTO_ASSIGN_FILTER } from "@/lib/auto-assign-marker";
 
 // systems.functions.ts is client-reachable, so the server-only logger is
 // imported lazily inside handlers instead of at module scope.
@@ -291,12 +292,14 @@ export const getSystem = createServerFn({ method: "POST" })
       context.supabase.from("system_notes").select("*").eq("system_id", data.id)
         .order("created_at", { ascending: false }).limit(RELATED_PAGE_SIZE),
       context.supabase.from("system_transfers").select("*").eq("system_id", data.id)
+        .or(HIDE_AUTO_ASSIGN_FILTER)
         .order("created_at", { ascending: false }).limit(RELATED_PAGE_SIZE),
       context.supabase.from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
         .eq("parent_system_id", data.id).order("created_at", { ascending: true }),
       // Only the newest slice is loaded up front; the card fetches older
       // entries on demand through `listSystemActivity`.
       context.supabase.from("system_activity_log").select("*").eq("system_id", data.id)
+        .or(HIDE_AUTO_ASSIGN_FILTER)
         .order("created_at", { ascending: false }).limit(ACTIVITY_PAGE_SIZE),
       sys.parent_system_id
         ? context.supabase.from("systems").select("id, system_code, name, status").eq("id", sys.parent_system_id).maybeSingle()
@@ -406,6 +409,7 @@ export const listSystemTransfers = createServerFn({ method: "POST" })
     const limit = data.limit ?? 50;
     const { data: rows, error } = await context.supabase
       .from("system_transfers").select("*").eq("system_id", data.systemId)
+      .or(HIDE_AUTO_ASSIGN_FILTER)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
     if (error) throw new Error(error.message);
@@ -433,7 +437,10 @@ export const listSystemActivity = createServerFn({ method: "POST" })
     await assertCrmAccess(context.userId, "yemot");
     const offset = data.offset ?? 0;
     const limit = data.limit ?? ACTIVITY_PAGE_SIZE;
-    let q = context.supabase.from("system_activity_log").select("*").eq("system_id", data.systemId);
+    // Automatic agent assignments caused by a status change are hidden from the
+    // visible history (the status change itself and manual transfers stay).
+    let q = context.supabase.from("system_activity_log").select("*")
+      .eq("system_id", data.systemId).or(HIDE_AUTO_ASSIGN_FILTER);
     if (data.action) q = q.eq("action", data.action);
     if (data.actorId) q = q.eq("actor_id", data.actorId);
     if (data.from) q = q.gte("created_at", new Date(data.from).toISOString());

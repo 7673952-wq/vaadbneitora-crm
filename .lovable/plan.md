@@ -1,59 +1,46 @@
-# סבב סגירה לפני DRY RUN אמיתי
+# סבב תיקונים אחרון לפני DRY RUN אמיתי
 
-בדקתי את 20 הסעיפים מול הקוד ומול מסד הנתונים. **כמעט כל הממצאים נכונים.** להלן מה אימתתי, ומה בכל זאת לא מדויק.
+בדקתי את הסעיפים מול הקוד והמסד לפני הכתיבה. להלן מה שאושר, מה שכבר תקין, ומה שאבצע.
 
-## מה אומת כנכון
+## מה שאומת בפועל
 
-- `CrmTabs` מקבל `isAdmin` ובמסך `_authenticated/route.tsx` מועבר `me.isSuperAdmin` — אין הרשאות בקשות ייעודיות (שורה 211).
-- יש כפילות: `PERMISSION_DEFINITIONS` ב-`permissions.server.ts` מול `PERMISSION_KEYS` ב-`admin.functions.ts` (שורות 48-53), וגם רשימות ברירת מחדל כפולות.
-- הרשאות שרת: `saveRequestRule` / `deleteRequestRule` / `setRequestAutomationSettings` דורשים `settings_manage`, ו-`getRequestAudio` דורש `systems_read` בלבד.
-- RLS: `system_requests` פתוחה ל-SELECT לכל חבר CRM; `system_request_rules` פתוחה ל-ALL ל-admin/super_admin ול-SELECT לכל חבר CRM.
-- `findSystemsByNormalizedCode` אכן מושך `limit(2000)` ומסנן ב-JS.
-- `in_progress` מוחזר כ-`{ ok: true, skipped: true }`.
-- ב-Apps Script קיים סוד קשיח כ-fallback, התגיות מוגדרות `pticha` / `sgira`, ה-cursor מתקדם גם כש-`stats.failed > 0`, ומנגנון `rq_<messageId>` פעיל ב-Script Properties.
-- `name_pending` נכתב ב-`system-requests.server.ts` ואינו בשימוש באף מסך.
-- אין רצועת סיכום בדשבורד ואין מקטע "בקשות אחרונות" בכרטיס מערכת.
-- `RequestAutomationPanel` יושב תחת ניהול → כללי → הגדרות כלליות.
+- **סעיף 2 נכון ומסוכן.** ה-CHECK במסד מתיר רק `set_status | keep | needs_decision | ignore`. הערך `create_system` שהקוד מנסה לשמור ב-DRY RUN נדחה — וכיוון ש-`finish()` לא בודק שגיאות, העדכון נכשל בשקט והבקשה מוחזרת כאילו הצליחה. סעיפים 2 ו-3 הם למעשה אותה תקלה.
+- **סעיף 13 כבר תקין.** שני ה-webhooks בסקריפט כבר מפנים ל-`vaadbneitora-crm.vercel.app`. האזכור של lovable קיים רק בהערה היסטורית בראש הקובץ — אשאיר.
+- **סעיף 9 נכון.** `syncRequestLabel_` קורא `GmailApp.search(query, 0, 100)` בלי עימוד.
+- **סעיף 10 חלקית.** יש `msg.markRead()` בתוך try ריק שבולע כשל — יתוקן.
+- **סעיף 15 נכון.** השיוך האוטומטי מעדכן `assigned_agent_id` ישירות, ולכן נרשם גם ב-`system_activity_log` וגם ב-`system_transfers` בלי שום סימון שמבדיל אותו משינוי ידני.
 
-## הערה אחת שאינה מדויקת
+## מסד נתונים (מיגרציה אחת)
 
-- `markRead` בסקריפט קיים כפעולת `doPost` לזרימת המיילים הרגילה, אך לא מופעל בזרימת הבקשות. כלומר לא "חסר לגמרי" — רק לא מחובר לזרימה החדשה, ואחבר אותו לפי החוזה החדש.
+- החלפת `system_requests_proposed_action_chk` בגרסה שמתירה גם `create_system` (drop + create באותה מיגרציה, בלי חלון בלי constraint).
+- הוספת סימון מקור לשיוך אוטומטי: `system_transfers.reason` יקבל את הערך הקבוע `__auto_status_assignment__`, וב-`system_activity_log` ה-trigger יסמן את שורת ה-`assigned_agent_id` באותו `reason` כשה-`app.change_reason` הוא הסימון הזה. אין מחיקת היסטוריה — רק סינון בתצוגה.
 
-## מה אבצע
+## צד שרת — זרימת הבקשות
 
-**הרשאות (1-4, 6, 7)**
-- מקור אמת אחד להרשאות: `PERMISSION_DEFINITIONS` יישאר היחיד, ו-`admin.functions.ts` ייגזר ממנו (`PERMISSION_KEYS` יהפוך לנגזרת) — כולל ברירות מחדל לפי תפקיד.
-- שלוש הרשאות חדשות: `requests_view`, `requests_decide`, `requests_manage`. ברירת מחדל: פעילות ל-super_admin בלבד.
-- אכיפה בשרת: `listSystemRequests` + `getRequestAudio` → `requests_view`; `decideSystemRequest` → `requests_decide`; כללים והגדרות → `requests_manage`. פונקציית read-only קטנה שמחזירה רק את מצב האוטומציה למי שיש `requests_view`.
-- מיגרציה: ביטול SELECT ישיר של `authenticated` על `system_requests`, וצמצום `system_request_rules` לקריאה/כתיבה דרך שרת בלבד.
-- העברת `RequestAutomationPanel` לטאב CRM "ימות המשיח" תחת "אוטומציית בקשות", מוצג רק עם `requests_manage`.
-- מסך `/requests`: חסימה ללא `requests_view`; ללא `requests_decide` — תצוגה והשמעה בלבד; קישור להגדרות רק עם `requests_manage`.
+- `finish()` יבדוק `error` ויזרוק. `completed=true` רק אחרי כתיבה מוצלחת.
+- כל RPC (`add_request_caller_phone`, `apply_request_status_change`, `find_systems_by_code_key`, `bump_rate_limit`) יבדוק `error`. הבחנה מפורשת: תקלה טכנית → `failed` + `retry`, לעומת CAS שהחזיר `false` בלי שגיאה → `needs_decision`.
+- Resume אמיתי: כאשר `last_completed_state='matched'` לא מריצים מחדש התאמה ולא את מנוע הכללים — ממשיכים מ-`rule_id`/`proposed_action`/`proposed_status` השמורים. `status_applied_at`, `phone_added_at` ו-`side_effects_completed_at` חוסמים חזרה על השלב שלהם.
+- מסלול מערכת חדשה: ב-LIVE נוצרת פעם אחת לפי `request_default_status_{pticha|sgira}`, ואינה עוברת שוב דרך מטריצת הכללים של מערכת קיימת; אחריה טלפון פונה אטומי + תופעות לוואי + סיום. ב-DRY RUN רק `proposed_action=create_system` + `proposed_status`, בלי שום כתיבה תפעולית. אין ברירת מחדל → `needs_decision`.
+- `request_automation_mode` נשאר `dry_run`.
 
-**לשונית ותג (5)**
-- `CrmTabs` יקבל `canRequests`, `canAdmin`, `canMail`, `pendingRequestsCount`. Server function שעושה count בלבד (`crm_key='yemot'`, `needs_decision`, `processing_state='done'`), רענון כל 60 שניות, `99+`, ללא badge כשאפס, ו-invalidate אחרי החלטה.
+## Google Apps Script — Merge נקודתי בלבד
 
-**אמינות הקליטה (10-16)**
-- הסקריפט ישלח `sourceRequestType` ו-`sourceLabel`; בשרת התגית היא המקור הראשי, ואי-התאמה מול התוכן → `needs_decision` עם הסבר, ללא ברירת מחדל `pticha`.
-- חוזה חדש: `in_progress` יחזיר `{ ok: false, retry: true }`; הסקריפט יסמן `markRead` רק על `completed=true` / `processing_state='done'` (כולל duplicate שכבר done), ולא על failed/in_progress.
-- Cursor לא יתקדם כאשר `stats.failed > 0` או timeout; הסרת מנגנון `rq_<messageId>` (הייחודיות במסד היא מקור האמת) + ניקוי מפתחות ישנים.
-- חיפוש מערכת יעבור ל-RPC במסד לפי מפתח ההשוואה, עם אינדקס רגיל על כל `systems` בנוסף לאינדקס הייחודי החלקי. 0/1/רבים → מסלול חדש / המשך / needs_decision.
-- State machine אמיתי: `applied` → לא לבצע match ולא להריץ כללים מחדש, להשלים רק תופעות לוואי; `matched` → שימוש ב-`proposed_action`/`proposed_status`/`rule_id` השמורים. תוספת עמודה `side_effects_completed_at`.
+עריכה על הקובץ הקיים, בלי שכתוב. כל הפונקציות הקיימות (send_, reply_, backup_, markRead_, syncQuery_, applyCrmLabel_, ensureFilterForAddress_, findReplyTarget_, markThreadKnown_/isThreadKnown_, markSynced_/isSynced_, SETUP_GMAIL_FILTERS, REMOVE_ALL_CRM_FILTERS, RESET_ALL_KNOWN_THREADS, FORGET_THREAD, BACKFILL_14_DAYS, SYNC_NOW) נשארות כפי שהן, וכך גם ONLY_SYNC_CRM_THREADS, התיוג, הארכוב וה-filters.
 
-**Secret ותגיות (8-9)**
-- הסרת ה-fallback: `CRM_SECRET` מ-Script Properties בלבד, אחרת שגיאת הגדרה ברורה בלי ביצוע ובלי הדפסת הסוד.
-- שמות התגיות מ-Script Properties: `CRM_PTICHA_LABEL` / `CRM_SGIRA_LABEL` עם ברירות מחדל "מספרים לפתיחה" / "מספרים לחסימה".
-- מכיוון שהסוד היה בקוד — אחליף אותו לסוד חדש בצד השרת ואספק לך אותו להזנה ב-Script Properties.
+- `doPost` יעצור מיד עם `CRM_SECRET is not configured` כשאין סוד, לפני השוואת `d.secret`. כל מסלול שקורא ל-CRM לא יבצע fetch בלי סוד. אין סוד קשיח, אין fallback, אין הדפסה ל-Logger.
+- תקציב זמן משותף: `POLL_MAILBOX` יקבע `started` אחד ויעביר אותו גם ל-`syncQuery_` וגם ל-`POLL_REQUEST_LABELS`/`syncRequestLabel_`, עם תקרה של ~270 שניות ואי-התחלת עבודה חדשה כשנשאר מעט זמן.
+- עימוד בסריקת התגיות: `0-99, 100-199, ...` תחת אותו תקציב זמן, בלי לקדם cursor מעבר לעמוד שלא נסרק.
+- Cursor בטוח: התקדמות רק עד `lastSafeCompletedTimestamp`; `failed`/`retry`/`timeout`/`in_progress` עוצרים את הקידום.
+- `markRead` בזרימת הבקשות רק כאשר `completed=true` ו-`processing_state=done` (או כפילות שכבר done). כשל ב-markRead יירשם ב-Logger, יעלה `stats.failedRead`, והמייל יישאר בטווח retry.
+- `SETUP` ממשיך למחוק רק את הטריגר של `POLL_MAILBOX`.
+- כיווני התקשורת נשמרים: Google → CRM ל-Vercel, CRM → Google דרך `email_relay_url`.
 
-**UI (17-19)**
-- באנר "שם זמני" בכרטיס מערכת עם כפתור השמעה למי שיש `requests_view`, ואיפוס `name_pending=false` בעדכון שם ידני.
-- מקטע "בקשות אחרונות" בכרטיס מערכת (סוג, מספר בקשה, פונה, מועד, החלטה, `proposed_action`, סטטוס קודם/מוצע, מי החליט, השמעה) — רק עם `requests_view`.
-- רצועת סיכום קומפקטית בראש הדשבורד (נקלטו היום / טופלו אוטומטית / דורשים החלטה, עם קישור ל-/requests) — merge נקודתי בלבד.
+## כרטיס מערכת — פאנל עליון ופעילות
 
-**בדיקות (20-21)**
-- בדיקות לפרסר מול המייל האמיתי, אי-התאמת תגית/תוכן, 0/1/רבים התאמות, אפס מוביל, duplicate, `in_progress` שאינו הצלחה, retry אחרי `status_applied_at`/`phone_added_at`, ובדיקות הרשאה לכל אחד מהתרחישים.
-- בסיום: tests, TypeScript, build, רשימת מיגרציות וקבצים, ואימות שהמצב נשאר `dry_run`. **לא אעבור ל-live.**
+- הסרת `#מספר` מהפאנל העליון כדי שהשם המלא לא ייחתך.
+- שכתוב תצוגת "פעילות" לקריאה נוחה: שורה אחת לכל אירוע — זמן קצר יחסי (למשל "לפני 3 שעות") + מי + מה השתנה, כשהשינוי המרכזי (סטטוס/נציג) בולט וכל השאר משני. הערות ומיילים מקבלים סגנון נפרד. הפילטרים מתקפלים לשורה אחת ולא תופסים את ראש הפאנל, ואירועים באותו רגע מאותו משתמש מקובצים לכרטיס אחד.
+- שיוך נציג אוטומטי לא יוצג כאירוע נפרד — לא ב-`listSystemActivity`, לא ב-`listSystemTransfers` ולא בעימוד; רק שינוי הסטטוס מוצג. שינוי נציג ידני ממשיך להופיע.
 
-## פרטים טכניים
+## בדיקות וסיום
 
-- מיגרציות: (א) הרשאות ומדיניות — ביטול GRANT/policy ישירים על `system_requests` ו-`system_request_rules`; (ב) `side_effects_completed_at` + אינדקס match-key על `systems` + RPC חיפוש; (ג) שורות ברירת מחדל לשלוש ההרשאות החדשות.
-- קבצים עיקריים: `src/lib/permissions.server.ts` (מקור אמת), `src/lib/admin.functions.ts`, `src/lib/system-requests.functions.ts`, `src/lib/system-requests.server.ts`, `src/components/CrmTabs.tsx`, `src/routes/_authenticated/route.tsx`, `requests.tsx`, `admin.tsx`, `systems.$id.tsx`, `dashboard.tsx`, `apps-script/email-relay.gs` (v21, merge נקודתי בלבד).
+בדיקות ל-16 התרחישים שנמסרו (create_system ב-dry run, כשל finish, כשלי RPC, CAS false, resume לפי החותמות, יצירה חד-פעמית ב-live, עימוד מעל 100, cursor אחרי timeout, in_progress, כתובות ה-webhook, ושתי בדיקות הפעילות ידני/אוטומטי). בסיום: tests, TypeScript, build, בדיקת תחביר ל-`email-relay.gs`, רשימת קבצים ומיגרציות, ואימות ש-`request_automation_mode` נשאר `dry_run`.

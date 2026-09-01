@@ -705,10 +705,17 @@ function POLL_REQUEST_LABELS() {
     syncRequestLabel_(pairs[i].name, pairs[i].type, afterSeconds, stats, started);
     if (stats.timedOut) break;
   }
+  // Safe point = where this pass was allowed to start from. When the pass was
+  // cut short by the time budget (or by pagination that did not finish), the
+  // cursor must NOT move past it: unscanned search results are not guaranteed
+  // to be newer than the scanned ones. Re-ingesting a message is harmless
+  // (idempotent by gmailMessageId); missing a request is not.
+  var safeStart = last > 0 ? last : floor;
   var nextCursor = started;
   if (stats.oldestUnfinishedMs) nextCursor = Math.min(nextCursor, stats.oldestUnfinishedMs - 1000);
-  if (stats.timedOut) nextCursor = Math.min(nextCursor, last || nextCursor);
+  if (stats.timedOut) nextCursor = Math.min(nextCursor, safeStart);
   props.setProperty('LAST_REQ_SYNC_MS', String(nextCursor));
+
   Logger.log('V21 request sync: ' + JSON.stringify(stats));
   return stats;
 }

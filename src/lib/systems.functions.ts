@@ -732,6 +732,24 @@ export const updateSystem = createServerFn({ method: "POST" })
       error = elevated.error as any;
     }
     if (error) throw new Error(error.message);
+    // Status-driven auto assignment, applied AFTER the status update so the two
+    // land in separate transactions: the status keeps its real reason in the
+    // log, the assignment is stamped `__auto_status_assignment__` atomically
+    // (and propagates to sub-systems inside the same transaction, so their rows
+    // carry the marker too).
+    if (autoAssign) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { applyAutoStatusAssignment } = await import("@/lib/auto-assign.server");
+      const changed = await applyAutoStatusAssignment(
+        supabaseAdmin, id, autoAssign.agentId,
+        data.reminder_agent_ids === undefined ? autoAssign.otherAgentIds : null,
+      );
+      if (changed) {
+        const refreshed = await supabaseAdmin.from("systems").select("*").eq("id", id).maybeSingle();
+        if (refreshed.data) row = refreshed.data as any;
+      }
+    }
+
     // Explicit sub-system status cascade (opt-in via apply_to_children).
     if (shouldCascadeStatus && cascadeChildren.length) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

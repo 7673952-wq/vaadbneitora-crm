@@ -1,0 +1,176 @@
+import { describe, it, expect, vi } from "vitest";
+import { normalizeSourceRequestType, ingestSystemRequest } from "./system-requests.server";
+
+vi.mock("@/lib/systems.functions", () => ({
+  maybeScheduleOrSendAutoVoice: vi.fn(async () => {}),
+}));
+vi.mock("@/lib/auto-assign.server", () => ({
+  resolveAutoAssign: vi.fn(async () => null),
+}));
+
+/**
+ * Minimal chainable stand-in for the Supabase admin client. It records every
+ * write so a test can assert that dry-run mode performs none of them.
+ */
+function makeClient(opts: {
+  settings?: Record<string, unknown>;
+  systems?: any[];
+  rules?: any[];
+  existingRequest?: any;
+}) {
+  const writes: Array<{ table: string; op: string; payload: any }> = [];
+  const rpcCalls: Array<{ fn: string; args: any }> = [];
+  let request: any = opts.existingRequest ?? null;
+
+  function builder(table: string) {
+    const filters: Record<string, unknown> = {};
+    const api: any = {
+      select: () => api,
+      eq: (col: string, val: unknown) => { filters[col] = val; return api; },
+      order: () => api,
+      insert: (payload: any) => {
+        writes.push({ table, op: "insert", payload });
+        // Mirrors the unique index on gmail_message_id: an existing row wins.
+        if (table === "system_requests" && !request) {
+          request = { id: "req-1", processing_state: "received", ...payload };
+        }
+        const result = { data: null, error: null };
+        return { ...api, then: (r: any) => Promise.resolve(result).then(r) };
+      },
+      update: (payload: any) => {
+        writes.push({ table, op: "update", payload });
+        if (table === "system_requests" && request) request = { ...request, ...payload };
+        return { ...api, then: (r: any) => Promise.resolve({ data: null, error: null }).then(r) };
+      },
+      maybeSingle: async () => {
+        if (table === "app_settings") {
+          const key = filters["key"] as string;
+          return { data: opts.settings?.[key] ? { value: opts.settings[key] } : null, error: null };
+        }
+        if (table === "system_requests") return { data: request, error: null };
+        if (table === "systems") {
+          return { data: (opts.systems ?? []).find((s) => s.id === filters["id"]) ?? null, error: null };
+        }
+        return { data: null, error: null };
+      },
+      then: (r: any) => {
+        if (table === "system_request_rules") return Promise.resolve({ data: opts.rules ?? [], error: null }).then(r);
+        return Promise.resolve({ data: [], error: null }).then(r);
+      },
+    };
+    return api;
+  }
+
+  const client = {
+    from: (table: string) => builder(table),
+    rpc: async (fn: string, args: any) => {
+      rpcCalls.push({ fn, args });
+      if (fn === "bump_rate_limit") return { data: 1, error: null };
+      if (fn === "find_systems_by_code_key") return { data: opts.systems ?? [], error: null };
+      return { data: null, error: null };
+    },
+  };
+  return { client, writes, rpcCalls, getRequest: () => request };
+}
+
+const BODY = "בקשה לפתיחת מערכת\nמספר מערכת: 0882309477\nטלפון פונה: 0527673952";
+
+describe("normalizeSourceRequestType", () => {
+  it("maps the Gmail label to the request type", () => {
+    expect(normalizeSourceRequestType("pticha")).toBe("pticha");
+    expect(normalizeSourceRequestType("מספרים לפתיחה")).toBe("pticha");
+    expect(normalizeSourceRequestType("sgira")).toBe("sgira");
+    expect(normalizeSourceRequestType("מספרים לחסימה")).toBe("sgira");
+  });
+
+  it("returns null for unknown or empty labels — never a silent default", () => {
+    expect(normalizeSourceRequestType("")).toBeNull();
+    expect(normalizeSourceRequestType(null)).toBeNull();
+    expect(normalizeSourceRequestType("newsletter")).toBeNull();
+  });
+});
+
+describe("ingestSystemRequest", () => {
+  it("rejects a payload with no message id", async () => {
+    const { client } = makeClient({});
+    const res = await ingestSystemRequest(client, { gmailMessageId: "" } as any);
+    expect(res.ok).toBe(false);
+    expect(res.completed).toBe(false);
+  });
+
+  it("flags a conflict between the Gmail label and the email body", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m1",
+      body: BODY, // says pticha
+      sourceRequestType: "sgira", // label says otherwise
+    });
+    expect(res.decision).toBe("needs_decision");
+    // No status change was attempted on the conflicting request.
+    expect(writes.some((w) => w.table === "systems")).toBe(false);
+  });
+
+  it("performs no operational write in dry-run mode", async () => {
+    const { client, writes, rpcCalls } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: [{ id: "r1", crm_key: "yemot", request_type: "pticha", from_status: "closed", action: "set_status", to_status: "open", is_active: true, sort_order: 1 }],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2",
+      body: BODY,
+      sourceRequestType: "pticha",
+    });
+    expect(res.ok).toBe(true);
+    expect(res.decision).toBe("needs_decision");
+    expect(res.proposed).toBe("set_status");
+    // Only the request row itself is written; the system is untouched.
+    expect(writes.every((w) => w.table === "system_requests")).toBe(true);
+    expect(rpcCalls.some((c) => c.fn === "apply_request_status_change")).toBe(false);
+    expect(rpcCalls.some((c) => c.fn === "add_request_caller_phone")).toBe(false);
+  });
+
+  it("creates nothing for an unknown system while in dry run", async () => {
+    const { client, writes } = makeClient({
+      settings: {
+        request_automation_mode: { mode: "dry_run" },
+        request_default_status_pticha: { status: "open" },
+      },
+      systems: [],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m3",
+      body: BODY,
+      sourceRequestType: "pticha",
+    });
+    expect(res.wouldCreate).toBe(true);
+    expect(writes.some((w) => w.table === "systems")).toBe(false);
+  });
+
+  it("does not act while the automation is off", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "off" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m4",
+      body: BODY,
+      sourceRequestType: "pticha",
+    });
+    expect(res.mode).toBe("off");
+    expect(res.decision).toBe("needs_decision");
+    expect(writes.some((w) => w.table === "systems")).toBe(false);
+  });
+
+  it("treats an already-processed message as a completed duplicate", async () => {
+    const { client } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      existingRequest: { id: "req-1", processing_state: "done", decision_status: "auto_applied" },
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "m5", body: BODY });
+    expect(res).toMatchObject({ ok: true, completed: true, duplicate: true });
+  });
+});

@@ -30,7 +30,8 @@ function makeClient(opts: {
       order: () => api,
       insert: (payload: any) => {
         writes.push({ table, op: "insert", payload });
-        if (table === "system_requests") {
+        // Mirrors the unique index on gmail_message_id: an existing row wins.
+        if (table === "system_requests" && !request) {
           request = { id: "req-1", processing_state: "received", ...payload };
         }
         const result = { data: null, error: null };

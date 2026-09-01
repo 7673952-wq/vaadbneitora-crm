@@ -696,16 +696,17 @@ export const updateSystem = createServerFn({ method: "POST" })
     // Auto-assign the configured agent for this status. The UI sends
     // `assigned_agent_id: null` when the user did not pick anyone, so both
     // `undefined` and `null` count as "no explicit choice".
+    // IMPORTANT: the assignment is NOT merged into the status UPDATE. The status
+    // change must be logged normally with its real reason; the follow-up
+    // assignment runs afterwards through an atomic RPC that marks itself as
+    // automatic, so it can be hidden from the history.
+    let autoAssign: { agentId: string; otherAgentIds: string[] } | null = null;
     if (data.status && data.status !== sys.status && !data.assigned_agent_id) {
       const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
       const auto = await resolveAutoAssign(context.supabase, data.status);
-      if (auto) {
-        (data as any).assigned_agent_id = auto.agentId;
-        if (auto.otherAgentIds.length && data.reminder_agent_ids === undefined) {
-          (data as any).reminder_agent_ids = auto.otherAgentIds;
-        }
-      }
+      if (auto) autoAssign = { agentId: auto.agentId, otherAgentIds: auto.otherAgentIds };
     }
+
 
     const { id, reason: _r, email, apply_to_children: _ac, ...patch } = data as any;
     if (email !== undefined) (patch as any).email = email || null;

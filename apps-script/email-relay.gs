@@ -723,7 +723,17 @@ function POLL_REQUEST_LABELS() {
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
-  var threads = GmailApp.search(query, 0, 100);
+  // Paginated: GmailApp.search caps a single call, so a busy label would
+  // silently drop results without this loop.
+  var PAGE = 50;
+  var start = 0;
+  var threads = [];
+  while (true) {
+    if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
+    var page = GmailApp.search(query, start, PAGE);
+    threads = page;
+    start += page.length;
+    if (!page.length) return;
   for (var t = 0; t < threads.length; t++) {
     if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
     var messages = threads[t].getMessages();
@@ -784,6 +794,8 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
         stats.oldestUnfinishedMs = msgMs;
       }
     }
+  }
+    if (page.length < PAGE) return;
   }
 }
 

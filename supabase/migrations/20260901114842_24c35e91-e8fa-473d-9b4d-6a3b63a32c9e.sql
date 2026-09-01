@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.apply_auto_status_assignment(uuid, uuid, uuid[]) FROM authenticated, anon, PUBLIC;
+GRANT EXECUTE ON FUNCTION public.apply_auto_status_assignment(uuid, uuid, uuid[]) TO service_role;

@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { HIDE_AUTO_ASSIGN_FILTER } from "@/lib/auto-assign-marker";
 
 // systems.functions.ts is client-reachable, so the server-only logger is
 // imported lazily inside handlers instead of at module scope.
@@ -291,12 +292,14 @@ export const getSystem = createServerFn({ method: "POST" })
       context.supabase.from("system_notes").select("*").eq("system_id", data.id)
         .order("created_at", { ascending: false }).limit(RELATED_PAGE_SIZE),
       context.supabase.from("system_transfers").select("*").eq("system_id", data.id)
+        .or(HIDE_AUTO_ASSIGN_FILTER)
         .order("created_at", { ascending: false }).limit(RELATED_PAGE_SIZE),
       context.supabase.from("systems").select("id, system_code, name, status, assigned_agent_id, created_at")
         .eq("parent_system_id", data.id).order("created_at", { ascending: true }),
       // Only the newest slice is loaded up front; the card fetches older
       // entries on demand through `listSystemActivity`.
       context.supabase.from("system_activity_log").select("*").eq("system_id", data.id)
+        .or(HIDE_AUTO_ASSIGN_FILTER)
         .order("created_at", { ascending: false }).limit(ACTIVITY_PAGE_SIZE),
       sys.parent_system_id
         ? context.supabase.from("systems").select("id, system_code, name, status").eq("id", sys.parent_system_id).maybeSingle()
@@ -406,6 +409,7 @@ export const listSystemTransfers = createServerFn({ method: "POST" })
     const limit = data.limit ?? 50;
     const { data: rows, error } = await context.supabase
       .from("system_transfers").select("*").eq("system_id", data.systemId)
+      .or(HIDE_AUTO_ASSIGN_FILTER)
       .order("created_at", { ascending: false })
       .range(offset, offset + limit - 1);
     if (error) throw new Error(error.message);
@@ -433,7 +437,10 @@ export const listSystemActivity = createServerFn({ method: "POST" })
     await assertCrmAccess(context.userId, "yemot");
     const offset = data.offset ?? 0;
     const limit = data.limit ?? ACTIVITY_PAGE_SIZE;
-    let q = context.supabase.from("system_activity_log").select("*").eq("system_id", data.systemId);
+    // Automatic agent assignments caused by a status change are hidden from the
+    // visible history (the status change itself and manual transfers stay).
+    let q = context.supabase.from("system_activity_log").select("*")
+      .eq("system_id", data.systemId).or(HIDE_AUTO_ASSIGN_FILTER);
     if (data.action) q = q.eq("action", data.action);
     if (data.actorId) q = q.eq("actor_id", data.actorId);
     if (data.from) q = q.gte("created_at", new Date(data.from).toISOString());
@@ -696,16 +703,17 @@ export const updateSystem = createServerFn({ method: "POST" })
     // Auto-assign the configured agent for this status. The UI sends
     // `assigned_agent_id: null` when the user did not pick anyone, so both
     // `undefined` and `null` count as "no explicit choice".
+    // IMPORTANT: the assignment is NOT merged into the status UPDATE. The status
+    // change must be logged normally with its real reason; the follow-up
+    // assignment runs afterwards through an atomic RPC that marks itself as
+    // automatic, so it can be hidden from the history.
+    let autoAssign: { agentId: string; otherAgentIds: string[] } | null = null;
     if (data.status && data.status !== sys.status && !data.assigned_agent_id) {
       const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
       const auto = await resolveAutoAssign(context.supabase, data.status);
-      if (auto) {
-        (data as any).assigned_agent_id = auto.agentId;
-        if (auto.otherAgentIds.length && data.reminder_agent_ids === undefined) {
-          (data as any).reminder_agent_ids = auto.otherAgentIds;
-        }
-      }
+      if (auto) autoAssign = { agentId: auto.agentId, otherAgentIds: auto.otherAgentIds };
     }
+
 
     const { id, reason: _r, email, apply_to_children: _ac, ...patch } = data as any;
     if (email !== undefined) (patch as any).email = email || null;
@@ -731,6 +739,24 @@ export const updateSystem = createServerFn({ method: "POST" })
       error = elevated.error as any;
     }
     if (error) throw new Error(error.message);
+    // Status-driven auto assignment, applied AFTER the status update so the two
+    // land in separate transactions: the status keeps its real reason in the
+    // log, the assignment is stamped `__auto_status_assignment__` atomically
+    // (and propagates to sub-systems inside the same transaction, so their rows
+    // carry the marker too).
+    if (autoAssign) {
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      const { applyAutoStatusAssignment } = await import("@/lib/auto-assign.server");
+      const changed = await applyAutoStatusAssignment(
+        supabaseAdmin, id, autoAssign.agentId,
+        data.reminder_agent_ids === undefined ? autoAssign.otherAgentIds : null,
+      );
+      if (changed) {
+        const refreshed = await supabaseAdmin.from("systems").select("*").eq("id", id).maybeSingle();
+        if (refreshed.data) row = refreshed.data as any;
+      }
+    }
+
     // Explicit sub-system status cascade (opt-in via apply_to_children).
     if (shouldCascadeStatus && cascadeChildren.length) {
       const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

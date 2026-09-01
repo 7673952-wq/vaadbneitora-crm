@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { readStatusSettings } from "@/lib/status-settings";
+import { HIDE_AUTO_ASSIGN_FILTER } from "@/lib/auto-assign-marker";
 
 export const listAuditLog = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
@@ -28,6 +29,7 @@ export const listAuditLog = createServerFn({ method: "POST" })
     let q = context.supabase
       .from("system_activity_log")
       .select("id, system_id, actor_id, actor_display_name, action, field, old_value, new_value, reason, created_at")
+      .or(HIDE_AUTO_ASSIGN_FILTER)
       .order("created_at", { ascending: false })
       .limit(data.limit ?? 1000);
 

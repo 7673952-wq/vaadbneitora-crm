@@ -1409,6 +1409,14 @@ export type Database = {
         Args: { _phone: string; _request_id: string; _system_id: string }
         Returns: boolean
       }
+      apply_auto_status_assignment: {
+        Args: {
+          _agent_id: string
+          _reminder_agent_ids?: string[]
+          _system_id: string
+        }
+        Returns: boolean
+      }
       apply_request_status_change: {
         Args: {
           _from_status: string

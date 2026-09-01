@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { isAutoAssignmentRow } from "@/lib/auto-assign-marker";
 import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1297,7 +1298,9 @@ function SystemDetail() {
 
         <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-1">
           {(() => {
-            const baseActivity = [...data.activity, ...olderActivity];
+            // Server-side already filters these out; the client-side guard keeps
+            // automatic status-driven assignments hidden even on cached payloads.
+            const baseActivity = [...data.activity, ...olderActivity].filter((a: any) => !isAutoAssignmentRow(a));
             const passesFilters = (a: any) => {
               if (activityActionFilter && a.action !== activityActionFilter) return false;
               if (activityActorFilter && a.actor_id !== activityActorFilter) return false;
@@ -1309,7 +1312,7 @@ function SystemDetail() {
             const allMerged = [
               ...(filtersActive ? [] : [...data.notes, ...olderNotes].map((n: any) => ({ kind: "note" as const, at: n.created_at, item: n }))),
               ...baseActivity.filter(passesFilters).map((a: any) => ({ kind: "activity" as const, at: a.created_at, item: a })),
-              ...(filtersActive ? [] : [...data.transfers, ...olderTransfers].map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
+              ...(filtersActive ? [] : [...data.transfers, ...olderTransfers].filter((t: any) => !isAutoAssignmentRow(t)).map((t: any) => ({ kind: "transfer" as const, at: t.created_at, item: t }))),
             ].sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
             const merged = mentionFilter
               ? allMerged.filter((row) => row.kind === "note" && typeof (row.item as any).body === "string" && (row.item as any).body.includes(`@${mentionFilter}`))

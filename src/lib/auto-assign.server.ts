@@ -51,3 +51,30 @@ export async function resolveAutoAssign(supabase: any, statusKey: string | null 
   const agentId = ids.reduce((best, id) => ((counts.get(id) ?? 0) < (counts.get(best) ?? 0) ? id : best), ids[0]);
   return { agentId, otherAgentIds: ids.filter((id) => id !== agentId) };
 }
+
+/**
+ * Applies a status-driven automatic assignment through the atomic RPC.
+ *
+ * The RPC sets `app.change_reason` and performs the UPDATE inside ONE
+ * transaction — a separate `set_change_reason` call would be lost, because the
+ * setting is transaction-local. The status change itself must already have been
+ * written (with its real reason) by a separate UPDATE, so it stays visible in
+ * the activity log while only the follow-up assignment is marked as automatic.
+ *
+ * Idempotent: the RPC only touches rows whose agent actually differs.
+ */
+export async function applyAutoStatusAssignment(
+  supabaseAdmin: any,
+  systemId: string,
+  agentId: string,
+  reminderAgentIds?: string[] | null,
+): Promise<boolean> {
+  const { data, error } = await supabaseAdmin.rpc("apply_auto_status_assignment", {
+    _system_id: systemId,
+    _agent_id: agentId,
+    _reminder_agent_ids: reminderAgentIds && reminderAgentIds.length ? reminderAgentIds : null,
+  });
+  if (error) return false;
+  return Boolean(data);
+}
+

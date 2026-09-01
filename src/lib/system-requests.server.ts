@@ -95,22 +95,18 @@ export async function applyStatusSideEffects(
   requestId?: string | null,
 ) {
   try {
-    const { resolveAutoAssign } = await import("@/lib/auto-assign.server");
+    const { resolveAutoAssign, applyAutoStatusAssignment } = await import("@/lib/auto-assign.server");
     const auto = await resolveAutoAssign(supabaseAdmin, toStatus);
     if (auto) {
-      // Idempotent by construction: assigning the same agent twice is a no-op,
-      // and we only claim an unassigned/differently-assigned system once.
-      const { data: cur } = await supabaseAdmin
-        .from("systems").select("assigned_agent_id").eq("id", systemId).maybeSingle();
-      if ((cur as any)?.assigned_agent_id !== auto.agentId) {
-        const patch: Record<string, unknown> = { assigned_agent_id: auto.agentId };
-        if (auto.otherAgentIds.length) patch.reminder_agent_ids = auto.otherAgentIds;
-        await supabaseAdmin.from("systems").update(patch).eq("id", systemId);
-      }
+      // Idempotent by construction: the RPC only updates when the agent differs,
+      // and it marks the change as automatic in the same transaction so it stays
+      // out of the visible history (the status change itself remains visible).
+      await applyAutoStatusAssignment(supabaseAdmin, systemId, auto.agentId, auto.otherAgentIds);
     }
   } catch {
     // Assignment is best-effort — never block the status change itself.
   }
+
   // The voice helper deduplicates against `voice_message_log` and the debounce
   // window, so calling it again after a crash does not resend.
   const { maybeScheduleOrSendAutoVoice } = await import("@/lib/systems.functions");

@@ -752,81 +752,91 @@ function POLL_REQUEST_LABELS(sharedStart) {
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
-  // Paginated: GmailApp.search caps a single call, so a busy label would
-  // silently drop results without this loop.
+  // Paginated: a single GmailApp.search call is capped, so a label holding
+  // more than one page of threads would silently lose the rest without this.
   var PAGE = 50;
   var start = 0;
-  var threads = [];
   while (true) {
-    if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
+    if (budgetLeft_(started) < RUN_RESERVE_MS) { stats.timedOut = true; return; }
     var page = GmailApp.search(query, start, PAGE);
-    threads = page;
-    start += page.length;
     if (!page.length) return;
-  for (var t = 0; t < threads.length; t++) {
-    if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
-    var messages = threads[t].getMessages();
-    for (var m = 0; m < messages.length; m++) {
-      var msg = messages[m];
-      var id = msg.getId();
-      if (msg.isDraft()) continue;
-      var msgMs = msg.getDate().getTime();
+    start += page.length;
 
-      var att = firstAudioAttachment_(msg);
-      var completed = false;
-      try {
-        var res = UrlFetchApp.fetch(cfg.REQUEST_WEBHOOK_URL, {
-          method: 'post',
-          contentType: 'application/json',
-          headers: { apikey: cfg.SECRET, Authorization: 'Bearer ' + cfg.SECRET },
-          payload: JSON.stringify({
-            gmailMessageId: id,
-            gmailThreadId: threads[t].getId(),
-            subject: msg.getSubject(),
-            body: msg.getPlainBody(),
-            receivedAt: msg.getDate().toISOString(),
-            attachmentName: att ? att.name : null,
-            attachmentIndex: att ? att.index : null,
-            // The label the message was found under is the authoritative
-            // request type; the CRM cross-checks it against the body.
-            sourceRequestType: requestType,
-            sourceLabel: labelName
-          }),
-          muteHttpExceptions: true
-        });
-        var code = res.getResponseCode();
-        var text = res.getContentText() || '{}';
-        var parsed = {};
-        try { parsed = JSON.parse(text); } catch (e) { parsed = {}; }
-        // completed:true is the ONLY signal that the CRM finished with this
-        // message. 409/in_progress and every failure leave it untouched.
-        completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
-        if (completed) {
-          if (parsed.duplicate) stats.duplicate++; else stats.sent++;
-        } else if (parsed.processingState === 'in_progress' || code === 409) {
-          stats.inProgress++;
-          Logger.log('Request still in progress ' + id);
-        } else {
+    for (var t = 0; t < page.length; t++) {
+      if (budgetLeft_(started) < RUN_RESERVE_MS) { stats.timedOut = true; return; }
+      var messages = page[t].getMessages();
+      for (var m = 0; m < messages.length; m++) {
+        var msg = messages[m];
+        var id = msg.getId();
+        if (msg.isDraft()) continue;
+        var msgMs = msg.getDate().getTime();
+
+        var att = firstAudioAttachment_(msg);
+        var completed = false;
+        try {
+          var res = UrlFetchApp.fetch(cfg.REQUEST_WEBHOOK_URL, {
+            method: 'post',
+            contentType: 'application/json',
+            headers: { apikey: cfg.SECRET, Authorization: 'Bearer ' + cfg.SECRET },
+            payload: JSON.stringify({
+              gmailMessageId: id,
+              gmailThreadId: page[t].getId(),
+              subject: msg.getSubject(),
+              body: msg.getPlainBody(),
+              receivedAt: msg.getDate().toISOString(),
+              attachmentName: att ? att.name : null,
+              attachmentIndex: att ? att.index : null,
+              // The label the message was found under is the authoritative
+              // request type; the CRM cross-checks it against the body.
+              sourceRequestType: requestType,
+              sourceLabel: labelName
+            }),
+            muteHttpExceptions: true
+          });
+          var code = res.getResponseCode();
+          var text = res.getContentText() || '{}';
+          var parsed = {};
+          try { parsed = JSON.parse(text); } catch (e) { parsed = {}; }
+          // completed:true is the ONLY signal that the CRM finished with this
+          // message. 409/in_progress and every failure leave it untouched.
+          completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
+          if (completed) {
+            if (parsed.duplicate) stats.duplicate++; else stats.sent++;
+          } else if (parsed.processingState === 'in_progress' || code === 409) {
+            stats.inProgress++;
+            Logger.log('Request still in progress ' + id);
+          } else {
+            stats.failed++;
+            Logger.log('Request rejected ' + id + ': ' + code + ' ' + text);
+          }
+        } catch (err) {
           stats.failed++;
-          Logger.log('Request rejected ' + id + ': ' + code + ' ' + text);
+          Logger.log('Request failed ' + id + ': ' + err);
         }
-      } catch (err) {
-        stats.failed++;
-        Logger.log('Request failed ' + id + ': ' + err);
-      }
 
-      if (completed) {
-        // Read state is the visible "handled" marker for the operator, so it
-        // is set only after the CRM is done with the message.
-        try { msg.markRead(); } catch (e) { /* read state is cosmetic */ }
-      } else if (!stats.oldestUnfinishedMs || msgMs < stats.oldestUnfinishedMs) {
-        stats.oldestUnfinishedMs = msgMs;
+        var readOk = false;
+        if (completed) {
+          // Read state is the visible "handled" marker for the operator, so it
+          // is set only after the CRM is done with the message.
+          try { msg.markRead(); readOk = true; }
+          catch (e) {
+            stats.failedRead++;
+            Logger.log('markRead failed for ' + id + ': ' + e);
+          }
+        }
+        // Anything that did not both complete AND get marked read stays inside
+        // the next scan window. Re-posting it is harmless (idempotent by
+        // gmailMessageId) and lets the read marking be retried.
+        if (!completed || !readOk) {
+          if (!stats.oldestUnfinishedMs || msgMs < stats.oldestUnfinishedMs) stats.oldestUnfinishedMs = msgMs;
+        }
       }
     }
-  }
+
     if (page.length < PAGE) return;
   }
 }
+
 
 // Index is the position within getAttachments(), so the CRM can ask for the
 // exact same attachment later without storing anything.

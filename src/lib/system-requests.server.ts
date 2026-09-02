@@ -152,7 +152,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   // The Gmail label is the primary signal; the body is used only to confirm it
   // or, when there is no label, on its own. No silent "pticha" default.
   const typeConflict = Boolean(labelType && parsed.requestType && labelType !== parsed.requestType);
-  const requestType: RequestType | null = labelType ?? parsed.requestType;
+  let requestType: RequestType | null = labelType ?? parsed.requestType;
 
   const insertRow = {
     crm_key: crmKey,

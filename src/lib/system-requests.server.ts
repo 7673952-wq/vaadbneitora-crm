@@ -104,18 +104,18 @@ export async function applyStatusSideEffects(
   toStatus: string,
   requestId?: string | null,
 ) {
-  try {
-    const { resolveAutoAssign, applyAutoStatusAssignment } = await import("@/lib/auto-assign.server");
-    const auto = await resolveAutoAssign(supabaseAdmin, toStatus);
-    if (auto) {
-      // Idempotent by construction: the RPC only updates when the agent differs,
-      // and it marks the change as automatic in the same transaction so it stays
-      // out of the visible history (the status change itself remains visible).
-      await applyAutoStatusAssignment(supabaseAdmin, systemId, auto.agentId, auto.otherAgentIds);
-    }
-  } catch {
-    // Assignment is best-effort — never block the status change itself.
+  // The assignment is part of the work this request must finish. A failure here
+  // propagates, so `side_effects_completed_at` below is never stamped on a
+  // half-done request and the next retry picks the assignment up again.
+  const { resolveAutoAssign, applyAutoStatusAssignment } = await import("@/lib/auto-assign.server");
+  const auto = await resolveAutoAssign(supabaseAdmin, toStatus);
+  if (auto) {
+    // Idempotent by construction: the RPC only updates when the agent differs,
+    // and it marks the change as automatic in the same transaction so it stays
+    // out of the visible history (the status change itself remains visible).
+    await applyAutoStatusAssignment(supabaseAdmin, systemId, auto.agentId, auto.otherAgentIds);
   }
+
 
   // The voice helper deduplicates against `voice_message_log` and the debounce
   // window, so calling it again after a crash does not resend.

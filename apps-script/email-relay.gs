@@ -298,7 +298,11 @@ function doPost(e) {
   var d;
   try { d = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
   catch (err) { return json_({ ok: false, error: 'bad json' }); }
-  if (!d || d.secret !== CFG_().SECRET) return json_({ ok: false, error: 'unauthorized' });
+  var cfg = CFG_();
+  // Refuse to serve at all while the shared secret is missing: without it the
+  // comparison below would accept an empty/absent secret from any caller.
+  if (!cfg.SECRET) return json_({ ok: false, error: 'CRM_SECRET is not configured' });
+  if (!d || d.secret !== cfg.SECRET) return json_({ ok: false, error: 'unauthorized' });
   try {
     if (d.action === 'send') return json_(send_(d));
     if (d.action === 'reply') return json_(reply_(d));

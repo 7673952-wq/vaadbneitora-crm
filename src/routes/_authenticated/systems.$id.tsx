@@ -1273,9 +1273,10 @@ function SystemDetail() {
               </div>
             )}
           </div>
-          <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
-            <Send className="h-4 w-4" />
+          <button type="submit" aria-label="שלח הערה" className="px-2.5 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
+            <Send className="h-3.5 w-3.5" />
           </button>
+
         </form>
 
         {/* סינון יומן הפעילות */}

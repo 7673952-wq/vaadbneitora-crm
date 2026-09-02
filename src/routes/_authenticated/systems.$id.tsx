@@ -870,9 +870,10 @@ function SystemDetail() {
                       className="min-w-[160px] max-w-[360px] bg-transparent text-xl md:text-2xl font-bold tracking-tight border-b border-transparent hover:border-white/60 focus:border-primary focus:outline-none"
                     />
                   ) : (
-                    <h1 className="min-w-0 max-w-[380px] truncate text-xl md:text-2xl font-bold tracking-tight">{s.name}</h1>
+                    <h1 className="min-w-0 truncate text-xl md:text-2xl font-bold tracking-tight">{s.name}</h1>
                   )}
-                  <span className="text-[11px] opacity-60 font-mono" dir="ltr">#{s.system_code}</span>
+                  {/* The system code is not repeated here — it has its own field
+                      below, and the duplicate was cutting long names short. */}
                   {(s as any).name_pending && (
                     <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-900"
                       title="השם נוצר אוטומטית מבקשת מייל — עדכן אותו לשם האמיתי">

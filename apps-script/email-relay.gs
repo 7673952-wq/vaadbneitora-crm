@@ -173,9 +173,22 @@ function TEST_WEBHOOK() {
   Logger.log('Response body: ' + res.getContentText());
 }
 
+// One run = one time budget. POLL_MAILBOX and the request-label scan share
+// RUN_BUDGET_MS so the second pass cannot start a fresh budget of its own and
+// push the execution past the Apps Script limit.
+var RUN_BUDGET_MS = 270000;
+// Work is only started when at least this much of the budget is left, so a
+// pass is not cut in half right after it began.
+var RUN_RESERVE_MS = 30000;
+
 function POLL_MAILBOX() {
   prepareSyncVersion_();
   var started = new Date().getTime();
+  var cfg = CFG_();
+  if (!cfg.SECRET) {
+    Logger.log('CRM_SECRET is not set in Script Properties — sync skipped.');
+    return { skippedNoSecret: true, timedOut: false };
+  }
   var props = store_();
   var lastSync = Number(props.getProperty('LAST_SYNC_MS') || 0);
   // On the first run inspect three days. Afterwards keep a 15-minute
@@ -198,10 +211,19 @@ function POLL_MAILBOX() {
   Logger.log('V19 incremental sync: ' + JSON.stringify(stats));
 
   // Request emails (pticha/sgira) are a separate pipeline with its own
-  // cursor — deliberately unaffected by ONLY_SYNC_CRM_THREADS above.
-  try { POLL_REQUEST_LABELS(); } catch (err) { Logger.log('POLL_REQUEST_LABELS failed: ' + err); }
+  // cursor — deliberately unaffected by ONLY_SYNC_CRM_THREADS above. It runs
+  // on the SAME started timestamp, i.e. on what is left of the shared budget.
+  try {
+    if (budgetLeft_(started) > RUN_RESERVE_MS) POLL_REQUEST_LABELS(started);
+    else Logger.log('Skipping request sync: not enough of the run budget left.');
+  } catch (err) { Logger.log('POLL_REQUEST_LABELS failed: ' + err); }
   return stats;
 }
+
+function budgetLeft_(started) {
+  return RUN_BUDGET_MS - (new Date().getTime() - started);
+}
+
 
 // Optional manual recovery only. It is deliberately not called by the timer.
 function BACKFILL_14_DAYS() {

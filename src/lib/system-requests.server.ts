@@ -394,12 +394,17 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
 
   } catch (e: any) {
-    await finish(supabaseAdmin, req.id, {
-      processing_state: "failed",
-      attempts: Number(req.attempts ?? 0) + 1,
-      last_error: String(e?.message ?? e).slice(0, 500),
-      error_at: new Date().toISOString(),
-    });
+    // Recording the failure may itself fail (that is often the original cause).
+    // Either way the caller must be told to retry and NOT to mark the mail read.
+    try {
+      await finish(supabaseAdmin, req.id, {
+        processing_state: "failed",
+        attempts: Number(req.attempts ?? 0) + 1,
+        last_error: String(e?.message ?? e).slice(0, 500),
+        error_at: new Date().toISOString(),
+      });
+    } catch { /* the state write is unavailable; the retry path still holds */ }
     return { ok: false, completed: false, retry: true, requestId: req.id, error: String(e?.message ?? e) };
   }
+
 }

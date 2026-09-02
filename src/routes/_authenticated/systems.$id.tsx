@@ -1252,8 +1252,9 @@ function SystemDetail() {
                 }
               }}
               data-placeholder="הוסף הערה... הקלד @ לתיוג"
-              className="min-h-[36px] w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="min-h-[32px] w-full rounded-md border border-input/70 bg-muted/30 px-2.5 py-1 text-[13px] empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
+
             {mentionQuery !== null && mentionOptions.length > 0 && (
               <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
                 {mentionOptions.map((opt, idx) => {

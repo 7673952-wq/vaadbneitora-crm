@@ -706,21 +706,24 @@ function findSent_(to, subject) {
 // interfere with the CRM-thread sync above, and ONLY_SYNC_CRM_THREADS does not
 // apply to it — these emails are machine-generated and never part of a CRM
 // conversation thread.
-function POLL_REQUEST_LABELS() {
+function POLL_REQUEST_LABELS(sharedStart) {
   var cfg = CFG_();
   if (!cfg.SECRET) {
     Logger.log('CRM_SECRET is not set in Script Properties — request sync skipped.');
     return { skippedNoSecret: true };
   }
   var props = store_();
-  var started = new Date().getTime();
+  // When called from POLL_MAILBOX the run budget is shared, so the timestamp
+  // of the whole execution is passed in. Standalone runs start their own.
+  var started = sharedStart || new Date().getTime();
   var last = Number(props.getProperty('LAST_REQ_SYNC_MS') || 0);
   var floor = last > 0 ? last - 900000 : started - (3 * 24 * 60 * 60 * 1000);
   var afterSeconds = Math.floor(floor / 1000);
   // oldestUnfinishedMs: the earliest message this pass did NOT complete.
-  // The cursor is pinned just before it, so a failed or still-processing
-  // message is guaranteed to be picked up again on the next pass.
-  var stats = { sent: 0, duplicate: 0, failed: 0, inProgress: 0, skipped: 0, timedOut: false, oldestUnfinishedMs: 0 };
+  // The cursor is pinned just before it, so a failed, unread-marked or
+  // still-processing message is guaranteed to be picked up again next pass.
+  var stats = { sent: 0, duplicate: 0, failed: 0, failedRead: 0, inProgress: 0, skipped: 0, timedOut: false, oldestUnfinishedMs: 0 };
+
 
   var pairs = [
     { name: cfg.PTICHA_LABEL, type: 'pticha' },

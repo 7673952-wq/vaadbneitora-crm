@@ -17,6 +17,12 @@ function makeClient(opts: {
   systems?: any[];
   rules?: any[];
   existingRequest?: any;
+  /** Force a technical failure from a specific RPC. */
+  rpcErrors?: Record<string, string>;
+  /** Force a business "false" answer from a specific RPC. */
+  rpcResults?: Record<string, unknown>;
+  /** Force a failed UPDATE on system_requests. */
+  updateError?: string;
 }) {
   const writes: Array<{ table: string; op: string; payload: any }> = [];
   const rpcCalls: Array<{ fn: string; args: any }> = [];
@@ -34,13 +40,20 @@ function makeClient(opts: {
         if (table === "system_requests" && !request) {
           request = { id: "req-1", processing_state: "received", ...payload };
         }
+        if (table === "systems") {
+          const created = { id: "sys-new", status: payload.status };
+          (opts.systems ??= []).push(created);
+          const result = { data: created, error: null };
+          return { ...api, maybeSingle: async () => result, then: (r: any) => Promise.resolve(result).then(r) };
+        }
         const result = { data: null, error: null };
         return { ...api, then: (r: any) => Promise.resolve(result).then(r) };
       },
       update: (payload: any) => {
         writes.push({ table, op: "update", payload });
-        if (table === "system_requests" && request) request = { ...request, ...payload };
-        return { ...api, then: (r: any) => Promise.resolve({ data: null, error: null }).then(r) };
+        const error = table === "system_requests" && opts.updateError ? { message: opts.updateError } : null;
+        if (!error && table === "system_requests" && request) request = { ...request, ...payload };
+        return { ...api, then: (r: any) => Promise.resolve({ data: null, error }).then(r) };
       },
       maybeSingle: async () => {
         if (table === "app_settings") {
@@ -65,13 +78,17 @@ function makeClient(opts: {
     from: (table: string) => builder(table),
     rpc: async (fn: string, args: any) => {
       rpcCalls.push({ fn, args });
+      if (opts.rpcErrors?.[fn]) return { data: null, error: { message: opts.rpcErrors[fn] } };
+      if (fn in (opts.rpcResults ?? {})) return { data: opts.rpcResults![fn], error: null };
       if (fn === "bump_rate_limit") return { data: 1, error: null };
       if (fn === "find_systems_by_code_key") return { data: opts.systems ?? [], error: null };
+      if (fn === "apply_request_status_change") return { data: true, error: null };
       return { data: null, error: null };
     },
   };
   return { client, writes, rpcCalls, getRequest: () => request };
 }
+
 
 const BODY = "בקשה לפתיחת מערכת\nמספר מערכת: 0882309477\nטלפון פונה: 0527673952";
 

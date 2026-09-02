@@ -153,6 +153,7 @@ function SETUP() {
 // exact HTTP status + response body the CRM sent back.
 function TEST_WEBHOOK() {
   var cfg = CFG_();
+  if (!cfg.SECRET) { Logger.log('CRM_SECRET is not configured — no request sent.'); return; }
   var res = UrlFetchApp.fetch(cfg.WEBHOOK_URL, {
     method: 'post',
     contentType: 'application/json',

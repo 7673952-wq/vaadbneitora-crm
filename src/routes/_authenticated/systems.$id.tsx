@@ -1202,10 +1202,14 @@ function SystemDetail() {
       <div className="bg-card border border-border rounded-xl p-4 xl:col-start-2 xl:row-span-6 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
         {/* ===== פעילות: הערות + היסטוריה ===== */}
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="font-semibold flex items-center gap-2 text-sm">
-            <Activity className="h-4 w-4" />
-            פעילות ({data.notes.length + data.activity.length + data.transfers.length})
+          <h2 className="font-bold flex items-center gap-2 text-base">
+            <Activity className="h-4.5 w-4.5 text-primary" />
+            פעילות
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {data.notes.length + data.activity.length + data.transfers.length}
+            </span>
           </h2>
+
           {mentionFilter && (
             <button type="button" onClick={() => setMentionFilter(null)}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90">

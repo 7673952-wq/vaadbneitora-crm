@@ -246,9 +246,10 @@ function SYNC_NOW() {
 
 function syncQuery_(query, maxThreads, seen, stats, started) {
   var cfg = CFG_();
+  if (!cfg.SECRET) { stats.failed++; Logger.log('CRM_SECRET missing — no fetch performed.'); return; }
   var threads = GmailApp.search(query, 0, maxThreads);
   for (var i = 0; i < threads.length; i++) {
-    if (new Date().getTime() - started > 270000) { stats.timedOut = true; return; }
+    if (budgetLeft_(started) < RUN_RESERVE_MS) { stats.timedOut = true; return; }
     var threadId = threads[i].getId();
     var messages = threads[i].getMessages();
 

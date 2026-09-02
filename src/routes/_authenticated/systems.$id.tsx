@@ -870,9 +870,10 @@ function SystemDetail() {
                       className="min-w-[160px] max-w-[360px] bg-transparent text-xl md:text-2xl font-bold tracking-tight border-b border-transparent hover:border-white/60 focus:border-primary focus:outline-none"
                     />
                   ) : (
-                    <h1 className="min-w-0 max-w-[380px] truncate text-xl md:text-2xl font-bold tracking-tight">{s.name}</h1>
+                    <h1 className="min-w-0 truncate text-xl md:text-2xl font-bold tracking-tight">{s.name}</h1>
                   )}
-                  <span className="text-[11px] opacity-60 font-mono" dir="ltr">#{s.system_code}</span>
+                  {/* The system code is not repeated here — it has its own field
+                      below, and the duplicate was cutting long names short. */}
                   {(s as any).name_pending && (
                     <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-900"
                       title="השם נוצר אוטומטית מבקשת מייל — עדכן אותו לשם האמיתי">
@@ -1201,10 +1202,14 @@ function SystemDetail() {
       <div className="bg-card border border-border rounded-xl p-4 xl:col-start-2 xl:row-span-6 xl:sticky xl:top-[8.5rem] xl:max-h-[calc(100vh-9.5rem)] xl:overflow-y-auto">
         {/* ===== פעילות: הערות + היסטוריה ===== */}
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h2 className="font-semibold flex items-center gap-2 text-sm">
-            <Activity className="h-4 w-4" />
-            פעילות ({data.notes.length + data.activity.length + data.transfers.length})
+          <h2 className="font-bold flex items-center gap-2 text-base">
+            <Activity className="h-4.5 w-4.5 text-primary" />
+            פעילות
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {data.notes.length + data.activity.length + data.transfers.length}
+            </span>
           </h2>
+
           {mentionFilter && (
             <button type="button" onClick={() => setMentionFilter(null)}
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary text-primary-foreground text-[11px] font-medium hover:bg-primary/90">
@@ -1215,8 +1220,11 @@ function SystemDetail() {
         </div>
 
 
+        {/* The composer is secondary to the log itself, so it stays compact
+            and visually quiet until it is focused. */}
         <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
-          className="flex gap-2 mb-3 relative items-start">
+          className="flex gap-1.5 mb-3 relative items-start opacity-80 focus-within:opacity-100 transition-opacity">
+
           <div className="relative flex-1">
             <div
               ref={noteEditorRef}
@@ -1244,8 +1252,9 @@ function SystemDetail() {
                 }
               }}
               data-placeholder="הוסף הערה... הקלד @ לתיוג"
-              className="min-h-[36px] w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              className="min-h-[32px] w-full rounded-md border border-input/70 bg-muted/30 px-2.5 py-1 text-[13px] empty:before:content-[attr(data-placeholder)] empty:before:text-muted-foreground focus:bg-background focus:outline-none focus:ring-2 focus:ring-primary/30"
             />
+
             {mentionQuery !== null && mentionOptions.length > 0 && (
               <div className="absolute right-0 left-0 top-full mt-1 z-20 max-h-56 overflow-auto rounded-lg border border-border bg-popover shadow-lg">
                 {mentionOptions.map((opt, idx) => {
@@ -1264,9 +1273,10 @@ function SystemDetail() {
               </div>
             )}
           </div>
-          <button type="submit" className="px-3 py-1.5 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
-            <Send className="h-4 w-4" />
+          <button type="submit" aria-label="שלח הערה" className="px-2.5 py-1 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
+            <Send className="h-3.5 w-3.5" />
           </button>
+
         </form>
 
         {/* סינון יומן הפעילות */}

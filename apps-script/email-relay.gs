@@ -153,6 +153,7 @@ function SETUP() {
 // exact HTTP status + response body the CRM sent back.
 function TEST_WEBHOOK() {
   var cfg = CFG_();
+  if (!cfg.SECRET) { Logger.log('CRM_SECRET is not configured — no request sent.'); return; }
   var res = UrlFetchApp.fetch(cfg.WEBHOOK_URL, {
     method: 'post',
     contentType: 'application/json',
@@ -173,9 +174,22 @@ function TEST_WEBHOOK() {
   Logger.log('Response body: ' + res.getContentText());
 }
 
+// One run = one time budget. POLL_MAILBOX and the request-label scan share
+// RUN_BUDGET_MS so the second pass cannot start a fresh budget of its own and
+// push the execution past the Apps Script limit.
+var RUN_BUDGET_MS = 270000;
+// Work is only started when at least this much of the budget is left, so a
+// pass is not cut in half right after it began.
+var RUN_RESERVE_MS = 30000;
+
 function POLL_MAILBOX() {
   prepareSyncVersion_();
   var started = new Date().getTime();
+  var cfg = CFG_();
+  if (!cfg.SECRET) {
+    Logger.log('CRM_SECRET is not set in Script Properties — sync skipped.');
+    return { skippedNoSecret: true, timedOut: false };
+  }
   var props = store_();
   var lastSync = Number(props.getProperty('LAST_SYNC_MS') || 0);
   // On the first run inspect three days. Afterwards keep a 15-minute
@@ -198,10 +212,19 @@ function POLL_MAILBOX() {
   Logger.log('V19 incremental sync: ' + JSON.stringify(stats));
 
   // Request emails (pticha/sgira) are a separate pipeline with its own
-  // cursor — deliberately unaffected by ONLY_SYNC_CRM_THREADS above.
-  try { POLL_REQUEST_LABELS(); } catch (err) { Logger.log('POLL_REQUEST_LABELS failed: ' + err); }
+  // cursor — deliberately unaffected by ONLY_SYNC_CRM_THREADS above. It runs
+  // on the SAME started timestamp, i.e. on what is left of the shared budget.
+  try {
+    if (budgetLeft_(started) > RUN_RESERVE_MS) POLL_REQUEST_LABELS(started);
+    else Logger.log('Skipping request sync: not enough of the run budget left.');
+  } catch (err) { Logger.log('POLL_REQUEST_LABELS failed: ' + err); }
   return stats;
 }
+
+function budgetLeft_(started) {
+  return RUN_BUDGET_MS - (new Date().getTime() - started);
+}
+
 
 // Optional manual recovery only. It is deliberately not called by the timer.
 function BACKFILL_14_DAYS() {
@@ -224,9 +247,10 @@ function SYNC_NOW() {
 
 function syncQuery_(query, maxThreads, seen, stats, started) {
   var cfg = CFG_();
+  if (!cfg.SECRET) { stats.failed++; Logger.log('CRM_SECRET missing — no fetch performed.'); return; }
   var threads = GmailApp.search(query, 0, maxThreads);
   for (var i = 0; i < threads.length; i++) {
-    if (new Date().getTime() - started > 270000) { stats.timedOut = true; return; }
+    if (budgetLeft_(started) < RUN_RESERVE_MS) { stats.timedOut = true; return; }
     var threadId = threads[i].getId();
     var messages = threads[i].getMessages();
 
@@ -298,7 +322,11 @@ function doPost(e) {
   var d;
   try { d = JSON.parse((e && e.postData && e.postData.contents) || '{}'); }
   catch (err) { return json_({ ok: false, error: 'bad json' }); }
-  if (!d || d.secret !== CFG_().SECRET) return json_({ ok: false, error: 'unauthorized' });
+  var cfg = CFG_();
+  // Refuse to serve at all while the shared secret is missing: without it the
+  // comparison below would accept an empty/absent secret from any caller.
+  if (!cfg.SECRET) return json_({ ok: false, error: 'CRM_SECRET is not configured' });
+  if (!d || d.secret !== cfg.SECRET) return json_({ ok: false, error: 'unauthorized' });
   try {
     if (d.action === 'send') return json_(send_(d));
     if (d.action === 'reply') return json_(reply_(d));
@@ -680,21 +708,24 @@ function findSent_(to, subject) {
 // interfere with the CRM-thread sync above, and ONLY_SYNC_CRM_THREADS does not
 // apply to it — these emails are machine-generated and never part of a CRM
 // conversation thread.
-function POLL_REQUEST_LABELS() {
+function POLL_REQUEST_LABELS(sharedStart) {
   var cfg = CFG_();
   if (!cfg.SECRET) {
     Logger.log('CRM_SECRET is not set in Script Properties — request sync skipped.');
     return { skippedNoSecret: true };
   }
   var props = store_();
-  var started = new Date().getTime();
+  // When called from POLL_MAILBOX the run budget is shared, so the timestamp
+  // of the whole execution is passed in. Standalone runs start their own.
+  var started = sharedStart || new Date().getTime();
   var last = Number(props.getProperty('LAST_REQ_SYNC_MS') || 0);
   var floor = last > 0 ? last - 900000 : started - (3 * 24 * 60 * 60 * 1000);
   var afterSeconds = Math.floor(floor / 1000);
   // oldestUnfinishedMs: the earliest message this pass did NOT complete.
-  // The cursor is pinned just before it, so a failed or still-processing
-  // message is guaranteed to be picked up again on the next pass.
-  var stats = { sent: 0, duplicate: 0, failed: 0, inProgress: 0, skipped: 0, timedOut: false, oldestUnfinishedMs: 0 };
+  // The cursor is pinned just before it, so a failed, unread-marked or
+  // still-processing message is guaranteed to be picked up again next pass.
+  var stats = { sent: 0, duplicate: 0, failed: 0, failedRead: 0, inProgress: 0, skipped: 0, timedOut: false, oldestUnfinishedMs: 0 };
+
 
   var pairs = [
     { name: cfg.PTICHA_LABEL, type: 'pticha' },
@@ -723,81 +754,91 @@ function POLL_REQUEST_LABELS() {
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
-  // Paginated: GmailApp.search caps a single call, so a busy label would
-  // silently drop results without this loop.
+  // Paginated: a single GmailApp.search call is capped, so a label holding
+  // more than one page of threads would silently lose the rest without this.
   var PAGE = 50;
   var start = 0;
-  var threads = [];
   while (true) {
-    if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
+    if (budgetLeft_(started) < RUN_RESERVE_MS) { stats.timedOut = true; return; }
     var page = GmailApp.search(query, start, PAGE);
-    threads = page;
-    start += page.length;
     if (!page.length) return;
-  for (var t = 0; t < threads.length; t++) {
-    if (new Date().getTime() - started > 240000) { stats.timedOut = true; return; }
-    var messages = threads[t].getMessages();
-    for (var m = 0; m < messages.length; m++) {
-      var msg = messages[m];
-      var id = msg.getId();
-      if (msg.isDraft()) continue;
-      var msgMs = msg.getDate().getTime();
+    start += page.length;
 
-      var att = firstAudioAttachment_(msg);
-      var completed = false;
-      try {
-        var res = UrlFetchApp.fetch(cfg.REQUEST_WEBHOOK_URL, {
-          method: 'post',
-          contentType: 'application/json',
-          headers: { apikey: cfg.SECRET, Authorization: 'Bearer ' + cfg.SECRET },
-          payload: JSON.stringify({
-            gmailMessageId: id,
-            gmailThreadId: threads[t].getId(),
-            subject: msg.getSubject(),
-            body: msg.getPlainBody(),
-            receivedAt: msg.getDate().toISOString(),
-            attachmentName: att ? att.name : null,
-            attachmentIndex: att ? att.index : null,
-            // The label the message was found under is the authoritative
-            // request type; the CRM cross-checks it against the body.
-            sourceRequestType: requestType,
-            sourceLabel: labelName
-          }),
-          muteHttpExceptions: true
-        });
-        var code = res.getResponseCode();
-        var text = res.getContentText() || '{}';
-        var parsed = {};
-        try { parsed = JSON.parse(text); } catch (e) { parsed = {}; }
-        // completed:true is the ONLY signal that the CRM finished with this
-        // message. 409/in_progress and every failure leave it untouched.
-        completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
-        if (completed) {
-          if (parsed.duplicate) stats.duplicate++; else stats.sent++;
-        } else if (parsed.processingState === 'in_progress' || code === 409) {
-          stats.inProgress++;
-          Logger.log('Request still in progress ' + id);
-        } else {
+    for (var t = 0; t < page.length; t++) {
+      if (budgetLeft_(started) < RUN_RESERVE_MS) { stats.timedOut = true; return; }
+      var messages = page[t].getMessages();
+      for (var m = 0; m < messages.length; m++) {
+        var msg = messages[m];
+        var id = msg.getId();
+        if (msg.isDraft()) continue;
+        var msgMs = msg.getDate().getTime();
+
+        var att = firstAudioAttachment_(msg);
+        var completed = false;
+        try {
+          var res = UrlFetchApp.fetch(cfg.REQUEST_WEBHOOK_URL, {
+            method: 'post',
+            contentType: 'application/json',
+            headers: { apikey: cfg.SECRET, Authorization: 'Bearer ' + cfg.SECRET },
+            payload: JSON.stringify({
+              gmailMessageId: id,
+              gmailThreadId: page[t].getId(),
+              subject: msg.getSubject(),
+              body: msg.getPlainBody(),
+              receivedAt: msg.getDate().toISOString(),
+              attachmentName: att ? att.name : null,
+              attachmentIndex: att ? att.index : null,
+              // The label the message was found under is the authoritative
+              // request type; the CRM cross-checks it against the body.
+              sourceRequestType: requestType,
+              sourceLabel: labelName
+            }),
+            muteHttpExceptions: true
+          });
+          var code = res.getResponseCode();
+          var text = res.getContentText() || '{}';
+          var parsed = {};
+          try { parsed = JSON.parse(text); } catch (e) { parsed = {}; }
+          // completed:true is the ONLY signal that the CRM finished with this
+          // message. 409/in_progress and every failure leave it untouched.
+          completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
+          if (completed) {
+            if (parsed.duplicate) stats.duplicate++; else stats.sent++;
+          } else if (parsed.processingState === 'in_progress' || code === 409) {
+            stats.inProgress++;
+            Logger.log('Request still in progress ' + id);
+          } else {
+            stats.failed++;
+            Logger.log('Request rejected ' + id + ': ' + code + ' ' + text);
+          }
+        } catch (err) {
           stats.failed++;
-          Logger.log('Request rejected ' + id + ': ' + code + ' ' + text);
+          Logger.log('Request failed ' + id + ': ' + err);
         }
-      } catch (err) {
-        stats.failed++;
-        Logger.log('Request failed ' + id + ': ' + err);
-      }
 
-      if (completed) {
-        // Read state is the visible "handled" marker for the operator, so it
-        // is set only after the CRM is done with the message.
-        try { msg.markRead(); } catch (e) { /* read state is cosmetic */ }
-      } else if (!stats.oldestUnfinishedMs || msgMs < stats.oldestUnfinishedMs) {
-        stats.oldestUnfinishedMs = msgMs;
+        var readOk = false;
+        if (completed) {
+          // Read state is the visible "handled" marker for the operator, so it
+          // is set only after the CRM is done with the message.
+          try { msg.markRead(); readOk = true; }
+          catch (e) {
+            stats.failedRead++;
+            Logger.log('markRead failed for ' + id + ': ' + e);
+          }
+        }
+        // Anything that did not both complete AND get marked read stays inside
+        // the next scan window. Re-posting it is harmless (idempotent by
+        // gmailMessageId) and lets the read marking be retried.
+        if (!completed || !readOk) {
+          if (!stats.oldestUnfinishedMs || msgMs < stats.oldestUnfinishedMs) stats.oldestUnfinishedMs = msgMs;
+        }
       }
     }
-  }
+
     if (page.length < PAGE) return;
   }
 }
+
 
 // Index is the position within getAttachments(), so the CRM can ask for the
 // exact same attachment later without storing anything.

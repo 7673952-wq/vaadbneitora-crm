@@ -1216,8 +1216,11 @@ function SystemDetail() {
         </div>
 
 
+        {/* The composer is secondary to the log itself, so it stays compact
+            and visually quiet until it is focused. */}
         <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
-          className="flex gap-2 mb-3 relative items-start">
+          className="flex gap-1.5 mb-3 relative items-start opacity-80 focus-within:opacity-100 transition-opacity">
+
           <div className="relative flex-1">
             <div
               ref={noteEditorRef}

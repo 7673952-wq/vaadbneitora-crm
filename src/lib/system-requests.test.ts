@@ -6,6 +6,7 @@ vi.mock("@/lib/systems.functions", () => ({
 }));
 vi.mock("@/lib/auto-assign.server", () => ({
   resolveAutoAssign: vi.fn(async () => null),
+  applyAutoStatusAssignment: vi.fn(async () => true),
 }));
 
 /**

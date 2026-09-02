@@ -61,13 +61,23 @@ export async function findSystemsByNormalizedCode(supabaseAdmin: any, codeNorm: 
   return (data ?? []) as any[];
 }
 
+/**
+ * Every state write goes through here. A failed UPDATE must never be silently
+ * swallowed: if the row did not move, the relay may not treat the message as
+ * completed, so the error is thrown and the caller marks the request failed.
+ */
 async function finish(supabaseAdmin: any, id: string, patch: Record<string, unknown>) {
-  await supabaseAdmin.from("system_requests").update(patch).eq("id", id);
+  const { error } = await supabaseAdmin.from("system_requests").update(patch).eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
 function done(supabaseAdmin: any, id: string, patch: Record<string, unknown>) {
   return finish(supabaseAdmin, id, { processing_state: "done", ...patch });
 }
+
+/** A technical RPC failure — distinct from a business "false" answer. */
+class RequestPipelineError extends Error {}
+
 
 /** Normalizes the request type sent by the relay label into our enum. */
 export function normalizeSourceRequestType(value: unknown): RequestType | null {

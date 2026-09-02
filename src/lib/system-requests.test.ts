@@ -54,8 +54,16 @@ function makeClient(opts: {
         writes.push({ table, op: "update", payload });
         const error = table === "system_requests" && opts.updateError ? { message: opts.updateError } : null;
         if (!error && table === "system_requests" && request) request = { ...request, ...payload };
-        return { ...api, then: (r: any) => Promise.resolve({ data: null, error }).then(r) };
+        // The result must survive the trailing .eq() of update().eq("id", …).
+        const chain: any = {
+          eq: () => chain,
+          select: () => chain,
+          maybeSingle: async () => ({ data: null, error }),
+          then: (r: any) => Promise.resolve({ data: null, error }).then(r),
+        };
+        return chain;
       },
+
       maybeSingle: async () => {
         if (table === "app_settings") {
           const key = filters["key"] as string;

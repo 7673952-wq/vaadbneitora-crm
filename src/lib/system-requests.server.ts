@@ -140,23 +140,25 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   // Concurrency guard: a second simultaneous delivery of the same message
   // backs off instead of racing the first one. It is explicitly NOT a success:
   // the relay must not mark the mail as read on this answer.
-  try {
-    const { data: hits } = await supabaseAdmin.rpc("bump_rate_limit", {
-      _key: `req:${messageId}`,
-      _window_seconds: 60,
-    });
-    if (Number(hits ?? 0) > 1) {
-      return { ok: false, completed: false, retry: true, processingState: "in_progress", reason: "in_progress" };
-    }
-  } catch {
-    // Lock is best-effort; the unique key below still prevents duplicates.
+  // A failure of the guard itself is a technical failure: ingesting without the
+  // lock is not allowed, so the relay is asked to retry.
+  const { data: hits, error: lockError } = await supabaseAdmin.rpc("bump_rate_limit", {
+    _key: `req:${messageId}`,
+    _window_seconds: 60,
+  });
+  if (lockError) {
+    return { ok: false, completed: false, retry: true, error: `נעילת הקליטה נכשלה: ${lockError.message}` };
+  }
+  if (Number(hits ?? 0) > 1) {
+    return { ok: false, completed: false, retry: true, processingState: "in_progress", reason: "in_progress" };
   }
 
   const receivedIso = payload.receivedAt ?? new Date().toISOString();
   const parsed = parseRequestEmail({ subject: payload.subject, body: payload.body });
   const labelType = normalizeSourceRequestType(payload.sourceRequestType ?? payload.sourceLabel);
   // The Gmail label is the primary signal; the body is used only to confirm it
-  // or, when there is no label, on its own. No silent "pticha" default.
+  // or, when there is no label, on its own. No silent "pticha" default: an
+  // unidentified type is stored as NULL and always needs a human decision.
   const typeConflict = Boolean(labelType && parsed.requestType && labelType !== parsed.requestType);
   let requestType: RequestType | null = labelType ?? parsed.requestType;
 
@@ -164,7 +166,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     crm_key: crmKey,
     gmail_message_id: messageId,
     gmail_thread_id: payload.gmailThreadId ?? null,
-    request_type: requestType ?? "pticha",
+    request_type: requestType,
     source_request_type: labelType,
     request_number: parsed.requestNumber,
     system_code_raw: parsed.systemCodeRaw,
@@ -179,15 +181,23 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   };
 
   await supabaseAdmin.from("system_requests").insert(insertRow).then(() => {}, () => {});
-  const { data: row } = await supabaseAdmin
+  const { data: row, error: readError } = await supabaseAdmin
     .from("system_requests").select("*").eq("gmail_message_id", messageId).maybeSingle();
+  if (readError) {
+    return { ok: false, completed: false, retry: true, error: `קריאת הבקשה נכשלה: ${readError.message}` };
+  }
   if (!row) return { ok: false, completed: false, retry: true, error: "could not persist request" };
   const req = row as any;
   if (req.processing_state === "done") {
     return { ok: true, completed: true, duplicate: true, requestId: req.id, decision: req.decision_status };
   }
 
-  const mode = await readAutomationMode(supabaseAdmin);
+  let mode: AutomationMode;
+  try {
+    mode = await readAutomationMode(supabaseAdmin);
+  } catch (e: any) {
+    return { ok: false, completed: false, retry: true, requestId: req.id, error: String(e?.message ?? e) };
+  }
   if (mode === "off") {
     await done(supabaseAdmin, req.id, {
       last_completed_state: "parsed",

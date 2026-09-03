@@ -23,27 +23,33 @@ export type IngestPayload = {
   sourceLabel?: string | null;
 };
 
+// Settings/rule reads throw on a DB error on purpose: a technical failure must
+// surface as failed+retry, never be mistaken for "no setting" / "no rule",
+// which would silently turn into a wrong decision.
 export async function readAutomationMode(supabaseAdmin: any): Promise<AutomationMode> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", "request_automation_mode").maybeSingle();
+  if (error) throw new Error(`קריאת מצב האוטומציה נכשלה: ${error.message}`);
   const mode = (data?.value as { mode?: string } | null)?.mode;
   return mode === "live" || mode === "off" ? mode : "dry_run";
 }
 
 async function readDefaultStatus(supabaseAdmin: any, type: RequestType): Promise<string | null> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("app_settings").select("value").eq("key", `request_default_status_${type}`).maybeSingle();
+  if (error) throw new Error(`קריאת סטטוס ברירת המחדל נכשלה: ${error.message}`);
   const status = (data?.value as { status?: string | null } | null)?.status;
   return status && String(status).trim() ? String(status).trim() : null;
 }
 
 async function readRules(supabaseAdmin: any, crmKey: string): Promise<RequestRule[]> {
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("system_request_rules")
     .select("id, crm_key, request_type, from_status, action, to_status, is_active, sort_order")
     .eq("crm_key", crmKey)
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
+  if (error) throw new Error(`קריאת כללי האוטומציה נכשלה: ${error.message}`);
   return (data ?? []) as RequestRule[];
 }
 

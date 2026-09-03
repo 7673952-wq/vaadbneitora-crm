@@ -283,15 +283,16 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
           return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
         }
         if (dryRun) {
-          // DRY RUN: nothing is created. Only the proposal is recorded.
+          // DRY RUN: nothing is created. The automation knew exactly what it
+          // would have done, so this is a simulation — not a pending decision.
           await done(supabaseAdmin, req.id, {
             last_completed_state: "parsed",
-            decision_status: "needs_decision", dry_run: true,
+            decision_status: "simulated", dry_run: true,
             proposed_action: "create_system",
             proposed_status: defaultStatus,
             last_error: "הרצת בדיקה — מערכת חדשה לא נוצרה",
           });
-          return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", wouldCreate: true };
+          return { ok: true, completed: true, requestId: req.id, mode, decision: "simulated", wouldCreate: true };
         }
 
         // LIVE: create once, in the configured default status. A brand-new

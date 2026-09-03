@@ -1040,7 +1040,7 @@ export type Database = {
           proposed_status: string | null
           received_at: string
           request_number: string | null
-          request_type: string
+          request_type: string | null
           rule_id: string | null
           side_effects_completed_at: string | null
           source_request_type: string | null
@@ -1077,7 +1077,7 @@ export type Database = {
           proposed_status?: string | null
           received_at?: string
           request_number?: string | null
-          request_type: string
+          request_type?: string | null
           rule_id?: string | null
           side_effects_completed_at?: string | null
           source_request_type?: string | null
@@ -1114,7 +1114,7 @@ export type Database = {
           proposed_status?: string | null
           received_at?: string
           request_number?: string | null
-          request_type?: string
+          request_type?: string | null
           rule_id?: string | null
           side_effects_completed_at?: string | null
           source_request_type?: string | null

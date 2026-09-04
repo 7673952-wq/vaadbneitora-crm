@@ -69,6 +69,7 @@ function makeClient(opts: {
       maybeSingle: async () => {
         if (table === "app_settings") {
           const key = filters["key"] as string;
+          if (opts.readErrors?.[key]) return { data: null, error: { message: opts.readErrors[key] } };
           return { data: opts.settings?.[key] ? { value: opts.settings[key] } : null, error: null };
         }
         if (table === "system_requests") return { data: request, error: null };
@@ -78,6 +79,8 @@ function makeClient(opts: {
         return { data: null, error: null };
       },
       then: (r: any) => {
+        const err = opts.readErrors?.[table] ? { message: opts.readErrors[table] } : null;
+        if (err) return Promise.resolve({ data: null, error: err }).then(r);
         if (table === "system_request_rules") return Promise.resolve({ data: opts.rules ?? [], error: null }).then(r);
         return Promise.resolve({ data: [], error: null }).then(r);
       },

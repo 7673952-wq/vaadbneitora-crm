@@ -24,6 +24,8 @@ function makeClient(opts: {
   rpcResults?: Record<string, unknown>;
   /** Force a failed UPDATE on system_requests. */
   updateError?: string;
+  /** Force a failed READ, keyed by app_settings key or by table name. */
+  readErrors?: Record<string, string>;
 }) {
   const writes: Array<{ table: string; op: string; payload: any }> = [];
   const rpcCalls: Array<{ fn: string; args: any }> = [];

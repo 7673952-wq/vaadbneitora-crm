@@ -184,8 +184,13 @@ function RequestsPage() {
               <li key={r.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm font-semibold">
-                    <span className={`rounded-md px-2 py-0.5 text-xs ${r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"}`}>
-                      {r.request_type === "pticha" ? "בקשת פתיחה" : "בקשת סגירה"}
+                    <span className={`rounded-md px-2 py-0.5 text-xs ${
+                      r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700"
+                        : r.request_type === "sgira" ? "bg-rose-500/15 text-rose-700"
+                        : "bg-amber-500/15 text-amber-700"}`}>
+                      {r.request_type === "pticha" ? "בקשת פתיחה"
+                        : r.request_type === "sgira" ? "בקשת סגירה"
+                        : "סוג בקשה לא זוהה"}
                     </span>
                     {r.system ? (
                       <Link to="/systems/$id" params={{ id: r.system_id }} className="underline">

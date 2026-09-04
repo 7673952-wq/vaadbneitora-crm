@@ -149,7 +149,9 @@ function RequestsPage() {
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
           <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600" />
           <span>
-            האוטומציה אינה במצב פעיל, ולכן אף סטטוס לא משתנה מעצמו. הבקשות נרשמות בלבד וממתינות להחלטה ידנית.
+            {settings.data?.mode === "dry_run"
+              ? "במצב בדיקה המערכת מחשבת ושומרת מה הייתה מבצעת, אך אינה מבצעת את השינוי אוטומטית. רק מקרים שלא ניתן היה להכריע בהם מופיעים בתור 'דורש החלטה'. "
+              : "האוטומציה כבויה, ולכן אף סטטוס לא משתנה מעצמו. הבקשות נרשמות בלבד. "}
             {canManage
               ? <>ניתן לשנות את המצב במסך <Link to="/admin" className="underline font-medium">ניהול</Link>.</>
               : "שינוי המצב מחייב הרשאת ניהול אוטומציה."}

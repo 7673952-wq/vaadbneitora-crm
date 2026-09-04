@@ -149,7 +149,9 @@ function RequestsPage() {
         <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
           <AlertTriangle className="size-4 mt-0.5 shrink-0 text-amber-600" />
           <span>
-            האוטומציה אינה במצב פעיל, ולכן אף סטטוס לא משתנה מעצמו. הבקשות נרשמות בלבד וממתינות להחלטה ידנית.
+            {settings.data?.mode === "dry_run"
+              ? "במצב בדיקה המערכת מחשבת ושומרת מה הייתה מבצעת, אך אינה מבצעת את השינוי אוטומטית. רק מקרים שלא ניתן היה להכריע בהם מופיעים בתור 'דורש החלטה'. "
+              : "האוטומציה כבויה, ולכן אף סטטוס לא משתנה מעצמו. הבקשות נרשמות בלבד. "}
             {canManage
               ? <>ניתן לשנות את המצב במסך <Link to="/admin" className="underline font-medium">ניהול</Link>.</>
               : "שינוי המצב מחייב הרשאת ניהול אוטומציה."}
@@ -182,8 +184,13 @@ function RequestsPage() {
               <li key={r.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-2 text-sm font-semibold">
-                    <span className={`rounded-md px-2 py-0.5 text-xs ${r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"}`}>
-                      {r.request_type === "pticha" ? "בקשת פתיחה" : "בקשת סגירה"}
+                    <span className={`rounded-md px-2 py-0.5 text-xs ${
+                      r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700"
+                        : r.request_type === "sgira" ? "bg-rose-500/15 text-rose-700"
+                        : "bg-amber-500/15 text-amber-700"}`}>
+                      {r.request_type === "pticha" ? "בקשת פתיחה"
+                        : r.request_type === "sgira" ? "בקשת סגירה"
+                        : "סוג בקשה לא זוהה"}
                     </span>
                     {r.system ? (
                       <Link to="/systems/$id" params={{ id: r.system_id }} className="underline">

@@ -50,11 +50,16 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     if (!(await hasPermission(context.userId, "status_change"))) throw new Error("אין הרשאה");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { data: req } = await supabaseAdmin
+    const { data: req, error: reqError } = await supabaseAdmin
       .from("system_requests").select("*").eq("id", data.id).maybeSingle();
+    if (reqError) throw new Error(reqError.message);
     if (!req) throw new Error("הבקשה לא נמצאה");
     await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
-    if ((req as any).decision_status && (req as any).decision_status !== "needs_decision") {
+    // `simulated` is a dry-run conclusion that was never applied, so it is still
+    // open for a manual decision; anything else is already decided.
+    const OPEN = ["needs_decision", "simulated"];
+    const current = (req as any).decision_status as string | null;
+    if (current && !OPEN.includes(current)) {
       return { ok: true, alreadyDecided: true };
     }
 
@@ -68,15 +73,19 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       const toStatus = (data.toStatus ?? (req as any).proposed_status ?? "").trim();
       const systemId = (req as any).system_id;
       if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
-      const { data: sys } = await supabaseAdmin.from("systems").select("status").eq("id", systemId).maybeSingle();
+      const { data: sys, error: sysError } = await supabaseAdmin
+        .from("systems").select("status").eq("id", systemId).maybeSingle();
+      if (sysError) throw new Error(sysError.message);
       const from = String((sys as any)?.status ?? "");
-      const { data: applied } = await supabaseAdmin.rpc("apply_request_status_change", {
+      const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
         _request_id: data.id,
         _system_id: systemId,
         _from_status: from,
         _to_status: toStatus,
         _reason: "החלטה ידנית על בקשה מהמייל",
       });
+      // Technical failure vs. a legitimate `false` (the status moved meanwhile).
+      if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
       if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
       const { applyStatusSideEffects } = await import("@/lib/system-requests.server");
       await applyStatusSideEffects(supabaseAdmin, systemId, toStatus);
@@ -87,7 +96,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     patch.processing_state = "done";
 
     const { error } = await supabaseAdmin
-      .from("system_requests").update(patch).eq("id", data.id).eq("decision_status", "needs_decision");
+      .from("system_requests").update(patch).eq("id", data.id).in("decision_status", OPEN);
     if (error) throw new Error(error.message);
     return { ok: true };
   });

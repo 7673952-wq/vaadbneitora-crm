@@ -30,6 +30,7 @@ const DECISION_LABELS: Record<string, string> = {
   manual_applied: "עודכן ידנית",
   kept: "הושאר ללא שינוי",
   ignored: "התעלמות",
+  simulated: "הרצת בדיקה — הוכרע ולא בוצע",
 };
 
 const ACTION_LABELS: Record<string, string> = {

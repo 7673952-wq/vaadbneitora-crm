@@ -46,9 +46,9 @@ describe("applyAutoStatusAssignment", () => {
     expect(writes).toEqual([]);
   });
 
-  it("reports failure without throwing", async () => {
+  it("throws on a technical RPC error instead of reporting 'no change'", async () => {
     const { client } = makeClient({ data: null, error: { message: "boom" } });
-    expect(await applyAutoStatusAssignment(client, "sys-1", "agent-1", [])).toBe(false);
+    await expect(applyAutoStatusAssignment(client, "sys-1", "agent-1", [])).rejects.toThrow(/boom/);
   });
 });
 

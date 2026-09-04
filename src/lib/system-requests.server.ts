@@ -355,8 +355,13 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
 
     if (dryRun) {
       // DRY RUN stops here: no phone added, no status changed, no side effects.
-      await done(supabaseAdmin, req.id, { decision_status: "needs_decision" });
-      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", proposed: outcome.action };
+      // When the engine reached a clear conclusion the request is a simulation,
+      // not a pending decision — only a genuinely unresolved case joins the
+      // "needs decision" queue.
+      const unresolved = outcome.action === "needs_decision" || (outcome.action === "set_status" && !outcome.toStatus);
+      const decision = unresolved ? "needs_decision" : "simulated";
+      await done(supabaseAdmin, req.id, { decision_status: decision });
+      return { ok: true, completed: true, requestId: req.id, mode, decision, proposed: outcome.action };
     }
 
     // ---- caller phone (atomic: lock, dedupe and stamp in one transaction) ----

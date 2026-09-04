@@ -24,6 +24,8 @@ function makeClient(opts: {
   rpcResults?: Record<string, unknown>;
   /** Force a failed UPDATE on system_requests. */
   updateError?: string;
+  /** Force a failed READ, keyed by app_settings key or by table name. */
+  readErrors?: Record<string, string>;
 }) {
   const writes: Array<{ table: string; op: string; payload: any }> = [];
   const rpcCalls: Array<{ fn: string; args: any }> = [];
@@ -67,6 +69,7 @@ function makeClient(opts: {
       maybeSingle: async () => {
         if (table === "app_settings") {
           const key = filters["key"] as string;
+          if (opts.readErrors?.[key]) return { data: null, error: { message: opts.readErrors[key] } };
           return { data: opts.settings?.[key] ? { value: opts.settings[key] } : null, error: null };
         }
         if (table === "system_requests") return { data: request, error: null };
@@ -76,6 +79,8 @@ function makeClient(opts: {
         return { data: null, error: null };
       },
       then: (r: any) => {
+        const err = opts.readErrors?.[table] ? { message: opts.readErrors[table] } : null;
+        if (err) return Promise.resolve({ data: null, error: err }).then(r);
         if (table === "system_request_rules") return Promise.resolve({ data: opts.rules ?? [], error: null }).then(r);
         return Promise.resolve({ data: [], error: null }).then(r);
       },
@@ -151,12 +156,92 @@ describe("ingestSystemRequest", () => {
       sourceRequestType: "pticha",
     });
     expect(res.ok).toBe(true);
-    expect(res.decision).toBe("needs_decision");
+    // The engine knew exactly what to do, so this is a simulation — it must NOT
+    // land in the "needs decision" queue.
+    expect(res.decision).toBe("simulated");
     expect(res.proposed).toBe("set_status");
     // Only the request row itself is written; the system is untouched.
     expect(writes.every((w) => w.table === "system_requests")).toBe(true);
     expect(rpcCalls.some((c) => c.fn === "apply_request_status_change")).toBe(false);
     expect(rpcCalls.some((c) => c.fn === "add_request_caller_phone")).toBe(false);
+  });
+
+  it("still asks for a decision in dry run when no rule matched", async () => {
+    const { client } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: [],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2b", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.decision).toBe("needs_decision");
+  });
+
+  it("never defaults an unidentified request type to pticha", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2c",
+      subject: "עדכון כללי",
+      body: "מספר מערכת: 0882309477",
+    });
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.request_type).toBeNull();
+    expect(res.decision).toBe("needs_decision");
+  });
+
+  it("retries instead of deciding when the automation mode cannot be read", async () => {
+    const { client } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      readErrors: { request_automation_mode: "db down" },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2d", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.retry).toBe(true);
+    expect(res.completed).toBe(false);
+  });
+
+  it("retries instead of deciding when the rules cannot be read", async () => {
+    const { client } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      readErrors: { system_request_rules: "db down" },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2e", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.retry).toBe(true);
+  });
+
+  it("retries instead of deciding when the default status cannot be read", async () => {
+    const { client } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      systems: [],
+      readErrors: { request_default_status_pticha: "db down" },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2f", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.retry).toBe(true);
+  });
+
+  it("refuses to ingest when the concurrency lock RPC itself fails", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      rpcErrors: { bump_rate_limit: "lock unavailable" },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m2g", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.retry).toBe(true);
+    expect(writes).toEqual([]);
   });
 
   it("creates nothing for an unknown system while in dry run", async () => {

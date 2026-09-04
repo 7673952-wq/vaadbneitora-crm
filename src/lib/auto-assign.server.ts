@@ -74,7 +74,9 @@ export async function applyAutoStatusAssignment(
     _agent_id: agentId,
     _reminder_agent_ids: reminderAgentIds && reminderAgentIds.length ? reminderAgentIds : null,
   });
-  if (error) return false;
+  // A technical RPC failure is NOT the same as "nothing changed": it must
+  // propagate so the caller can retry instead of stamping the work as done.
+  if (error) throw new Error(`שיוך אוטומטי לנציג נכשל: ${error.message}`);
   return Boolean(data);
 }
 

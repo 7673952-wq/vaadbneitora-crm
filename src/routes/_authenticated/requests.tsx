@@ -30,6 +30,7 @@ const DECISION_LABELS: Record<string, string> = {
   manual_applied: "עודכן ידנית",
   kept: "הושאר ללא שינוי",
   ignored: "התעלמות",
+  simulated: "הרצת בדיקה — הוכרע ולא בוצע",
 };
 
 const ACTION_LABELS: Record<string, string> = {
@@ -175,7 +176,8 @@ function RequestsPage() {
       ) : (
         <ul className="space-y-3">
           {rows.map((r) => {
-            const pending = r.decision_status === "needs_decision";
+            // A dry-run simulation was never applied, so it can still be acted on.
+            const pending = r.decision_status === "needs_decision" || r.decision_status === "simulated";
             return (
               <li key={r.id} className="rounded-xl border border-border bg-card p-4 shadow-sm">
                 <div className="flex flex-wrap items-center justify-between gap-2">

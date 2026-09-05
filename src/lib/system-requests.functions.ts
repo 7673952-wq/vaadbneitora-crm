@@ -35,12 +35,18 @@ export const listSystemRequests = createServerFn({ method: "GET" })
     return (rows ?? []).map((r: any) => ({ ...r, system: byId.get(r.system_id) ?? null }));
   });
 
+/**
+ * A manual decision by an authorized user. This is deliberately NOT blocked by
+ * `dry_run`: dry-run only stops the *automatic* pipeline. An explicit click
+ * here is a human action and is carried out for real, with the same permission
+ * checks, compare-and-swap protection and side effects as a live automatic run.
+ */
 export const decideSystemRequest = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { id: string; action: "apply" | "keep" | "ignore"; toStatus?: string | null }) =>
+  .inputValidator((d: { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null }) =>
     z.object({
       id: z.string().uuid(),
-      action: z.enum(["apply", "keep", "ignore"]),
+      action: z.enum(["apply", "keep", "ignore", "create_system"]),
       toStatus: z.string().max(60).nullable().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
@@ -68,8 +74,53 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       decided_at: new Date().toISOString(),
       dry_run: false,
     };
+    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode } =
+      await import("@/lib/system-requests.server");
 
-    if (data.action === "apply") {
+    if (data.action === "create_system") {
+      const codeNorm = String((req as any).system_code_norm ?? "").trim();
+      const toStatus = String(data.toStatus ?? (req as any).proposed_status ?? "").trim();
+      if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");
+      if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
+      if ((req as any).system_id) throw new Error("הבקשה כבר משויכת למערכת");
+
+      // Re-check right before creating: the system may have been created in the
+      // meantime, by another user or by another request.
+      const existing = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
+      if (existing.length > 0) {
+        throw new Error("המערכת כבר קיימת — רענן את המסך ובחר סטטוס עבורה");
+      }
+      const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
+        system_code: (req as any).system_code_raw ?? codeNorm,
+        name: `מערכת ${codeNorm}`,
+        name_pending: true,
+        status: toStatus,
+        caller_phone: (req as any).caller_phone ?? null,
+        source: "בקשה מהמייל",
+      }).select("id").maybeSingle();
+      let systemId = (created as any)?.id as string | undefined;
+      if (!systemId) {
+        // A concurrent creation won the unique code index — adopt that system
+        // instead of failing, so a retry never creates a second card.
+        const again = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
+        systemId = again.length === 1 ? (again[0] as any).id : undefined;
+      }
+      if (!systemId) throw new Error(`יצירת המערכת נכשלה${createError?.message ? `: ${createError.message}` : ""}`);
+
+      // Link the request to the new system BEFORE the side effects, so a crash
+      // in the middle can never leave a created system with no link back.
+      const { error: linkError } = await supabaseAdmin.from("system_requests").update({
+        system_id: systemId,
+        new_status: toStatus,
+        status_applied_at: new Date().toISOString(),
+        last_completed_state: "matched",
+      }).eq("id", data.id);
+      if (linkError) throw new Error(`קישור הבקשה למערכת נכשל: ${linkError.message}`);
+
+      await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
+      patch.decision_status = "manual_applied";
+      patch.created_system = undefined;
+    } else if (data.action === "apply") {
       const toStatus = (data.toStatus ?? (req as any).proposed_status ?? "").trim();
       const systemId = (req as any).system_id;
       if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
@@ -77,29 +128,83 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         .from("systems").select("status").eq("id", systemId).maybeSingle();
       if (sysError) throw new Error(sysError.message);
       const from = String((sys as any)?.status ?? "");
-      const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
-        _request_id: data.id,
-        _system_id: systemId,
-        _from_status: from,
-        _to_status: toStatus,
-        _reason: "החלטה ידנית על בקשה מהמייל",
-      });
-      // Technical failure vs. a legitimate `false` (the status moved meanwhile).
-      if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
-      if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
-      const { applyStatusSideEffects } = await import("@/lib/system-requests.server");
-      await applyStatusSideEffects(supabaseAdmin, systemId, toStatus);
-      patch.decision_status = "manual_applied";
+      if (from === toStatus) {
+        // Nothing to change — treat it as "handled without a status change",
+        // which still records the caller phone.
+        await addCallerPhone(supabaseAdmin, req as any, systemId, (req as any).caller_phone);
+        patch.decision_status = "kept";
+      } else {
+        const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
+          _request_id: data.id,
+          _system_id: systemId,
+          _from_status: from,
+          _to_status: toStatus,
+          _reason: "החלטה ידנית על בקשה מהמייל",
+        });
+        // Technical failure vs. a legitimate `false` (the status moved meanwhile).
+        if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
+        if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
+        await addCallerPhone(supabaseAdmin, req as any, systemId, (req as any).caller_phone);
+        await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
+        patch.decision_status = "manual_applied";
+      }
+    } else if (data.action === "keep") {
+      // Handled, status untouched — but the caller phone is still recorded.
+      const systemId = (req as any).system_id;
+      if (!systemId) throw new Error("אין מערכת משויכת — לא ניתן להשאיר סטטוס ללא שינוי");
+      await addCallerPhone(supabaseAdmin, req as any, systemId, (req as any).caller_phone);
+      patch.decision_status = "kept";
     } else {
-      patch.decision_status = data.action === "keep" ? "kept" : "ignored";
+      // ignore: nothing at all is written to the system card.
+      patch.decision_status = "ignored";
     }
     patch.processing_state = "done";
+    delete patch.created_system;
 
     const { error } = await supabaseAdmin
       .from("system_requests").update(patch).eq("id", data.id).in("decision_status", OPEN);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+/**
+ * Fixes the system code on an OLDER request row that was ingested before the
+ * "a request must carry a system code" rule existed. New requests without a
+ * code are rejected at intake and never reach this screen.
+ */
+export const setRequestSystemCode = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string; systemCode: string }) =>
+    z.object({ id: z.string().uuid(), systemCode: z.string().min(3).max(40) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_decide");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: req, error: reqError } = await supabaseAdmin
+      .from("system_requests").select("id, crm_key, decision_status, system_id").eq("id", data.id).maybeSingle();
+    if (reqError) throw new Error(reqError.message);
+    if (!req) throw new Error("הבקשה לא נמצאה");
+    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
+    if (!["needs_decision", "simulated", null].includes((req as any).decision_status)) {
+      throw new Error("הבקשה כבר טופלה");
+    }
+
+    const { normalizeSystemCode } = await import("@/lib/system-code");
+    const codeNorm = normalizeSystemCode(data.systemCode);
+    if (!codeNorm) throw new Error("מספר מערכת לא תקין");
+    const { findSystemsByNormalizedCode } = await import("@/lib/system-requests.server");
+    const matches = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
+    if (matches.length > 1) throw new Error("נמצאה יותר ממערכת אחת עם מספר זה");
+    const { error } = await supabaseAdmin.from("system_requests").update({
+      system_code_raw: data.systemCode.trim(),
+      system_code_norm: codeNorm,
+      system_id: matches.length === 1 ? (matches[0] as any).id : null,
+      prev_status: matches.length === 1 ? ((matches[0] as any).status ?? null) : null,
+    }).eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true, matched: matches.length === 1 };
+  });
+
 
 // ============= Rules =============
 

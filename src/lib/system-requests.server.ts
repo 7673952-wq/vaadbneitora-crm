@@ -162,6 +162,30 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   const typeConflict = Boolean(labelType && parsed.requestType && labelType !== parsed.requestType);
   let requestType: RequestType | null = labelType ?? parsed.requestType;
 
+  // ---- gate: a valid request MUST carry a system code ----------------------
+  // A labelled Gmail thread is scanned message by message, so replies and
+  // follow-ups inside the same thread arrive here as separate messages with
+  // their own gmail_message_id. Without this gate each of them created an
+  // empty, unassigned request row. A system code is never borrowed from
+  // another message in the thread — the message is simply not a request.
+  // `completed: true` so the relay marks it read and stops re-posting it.
+  if (!parsed.systemCodeNorm) {
+    return {
+      ok: true, completed: true, skipped: true,
+      reason: "no_system_code",
+      message: "ההודעה אינה בקשת מערכת — לא נמצא בה מספר מערכת",
+    };
+  }
+
+  // The mode is read before the row is written so the request permanently
+  // records the automation mode that was in effect when it arrived.
+  let mode: AutomationMode;
+  try {
+    mode = await readAutomationMode(supabaseAdmin);
+  } catch (e: any) {
+    return { ok: false, completed: false, retry: true, error: String(e?.message ?? e) };
+  }
+
   const insertRow = {
     crm_key: crmKey,
     gmail_message_id: messageId,
@@ -178,9 +202,39 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     attachment_index: typeof payload.attachmentIndex === "number" ? payload.attachmentIndex : null,
     received_at: receivedIso,
     processing_state: "received",
+    automation_mode: mode,
   };
 
-  await supabaseAdmin.from("system_requests").insert(insertRow).then(() => {}, () => {});
+  const { error: insertError } = await supabaseAdmin.from("system_requests").insert(insertRow);
+  if (insertError) {
+    const text = `${(insertError as any).code ?? ""} ${insertError.message ?? ""}`;
+    // Same request number, type and system code as a live request → this is the
+    // same request arriving twice (a resend inside the thread), not a new one.
+    // The DB unique index is the arbiter, so two concurrent deliveries cannot
+    // both win. The row is still recorded, flagged and linked to the original.
+    if (text.includes("system_requests_dedupe_uniq")) {
+      const { data: original } = await supabaseAdmin
+        .from("system_requests").select("id")
+        .eq("crm_key", crmKey)
+        .eq("request_type", requestType)
+        .eq("system_code_norm", parsed.systemCodeNorm)
+        .eq("request_number", parsed.requestNumber)
+        .is("duplicate_of", null)
+        .maybeSingle();
+      await supabaseAdmin.from("system_requests").insert({
+        ...insertRow,
+        duplicate_of: (original as any)?.id ?? null,
+        processing_state: "done",
+        last_completed_state: "parsed",
+        decision_status: "duplicate",
+        dry_run: false,
+        last_error: "כפילות — אותה בקשה כבר נקלטה",
+      }).then(() => {}, () => {});
+    } else if (!text.includes("system_requests_gmail_message_id_key") && !text.includes("23505")) {
+      return { ok: false, completed: false, retry: true, error: `שמירת הבקשה נכשלה: ${insertError.message}` };
+    }
+  }
+
   const { data: row, error: readError } = await supabaseAdmin
     .from("system_requests").select("*").eq("gmail_message_id", messageId).maybeSingle();
   if (readError) {
@@ -192,20 +246,18 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     return { ok: true, completed: true, duplicate: true, requestId: req.id, decision: req.decision_status };
   }
 
-  let mode: AutomationMode;
-  try {
-    mode = await readAutomationMode(supabaseAdmin);
-  } catch (e: any) {
-    return { ok: false, completed: false, retry: true, requestId: req.id, error: String(e?.message ?? e) };
-  }
   if (mode === "off") {
+    // The automation was OFF: the request is recorded for a human, nothing is
+    // computed and nothing is simulated. `dry_run` stays false — this was not
+    // a test run, and the stored `automation_mode` says so.
     await done(supabaseAdmin, req.id, {
       last_completed_state: "parsed",
-      decision_status: "needs_decision", dry_run: true,
+      decision_status: "needs_decision", dry_run: false,
     });
     return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
   }
   const dryRun = mode !== "live";
+
 
   try {
     // ---- resume: the status was already applied on an earlier attempt ----

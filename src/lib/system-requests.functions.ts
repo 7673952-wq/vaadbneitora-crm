@@ -119,7 +119,6 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
 
       await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
       patch.decision_status = "manual_applied";
-      patch.created_system = undefined;
     } else if (data.action === "apply") {
       const toStatus = (data.toStatus ?? (req as any).proposed_status ?? "").trim();
       const systemId = (req as any).system_id;
@@ -159,7 +158,6 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       patch.decision_status = "ignored";
     }
     patch.processing_state = "done";
-    delete patch.created_system;
 
     const { error } = await supabaseAdmin
       .from("system_requests").update(patch).eq("id", data.id).in("decision_status", OPEN);

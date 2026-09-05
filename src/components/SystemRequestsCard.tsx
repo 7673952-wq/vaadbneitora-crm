@@ -40,8 +40,13 @@ export function SystemRequestsCard({ systemId, canView }: { systemId: string; ca
       <ul className="space-y-1.5">
         {(data as any[]).map((r) => (
           <li key={r.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 rounded-lg bg-muted/50 px-2 py-1.5 text-[11px]">
-            <span className={`rounded px-1.5 py-0.5 font-semibold ${r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700" : "bg-rose-500/15 text-rose-700"}`}>
-              {r.request_type === "pticha" ? "פתיחה" : "סגירה"}
+            <span className={`rounded px-1.5 py-0.5 font-semibold ${
+              r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700"
+                : r.request_type === "sgira" ? "bg-rose-500/15 text-rose-700"
+                : "bg-amber-500/15 text-amber-700"}`}>
+              {r.request_type === "pticha" ? "פתיחה"
+                : r.request_type === "sgira" ? "סגירה"
+                : "סוג בקשה לא זוהה"}
             </span>
             <span className="text-muted-foreground">{fmt(r.received_at)}</span>
             <span>{DECISION_LABELS[r.decision_status] ?? r.decision_status ?? "בעיבוד"}</span>

@@ -133,6 +133,35 @@ export async function applyStatusSideEffects(
   }
 }
 
+/**
+ * Adds the caller phone that came with the request to the system card.
+ *
+ * Shared by the automatic pipeline and by a manual decision so both behave
+ * identically. Everything happens inside one DB transaction: the row is locked,
+ * the number is compared against the primary and the additional numbers, it is
+ * written either as the primary (when there is none) or appended to the
+ * additional list, and only then the request is stamped. A retry therefore
+ * cannot create a duplicate number, and no number is ever invented.
+ */
+export async function addCallerPhone(
+  supabaseAdmin: any,
+  req: { id: string; phone_added_at?: string | null },
+  systemId: string,
+  phone: string | null | undefined,
+) {
+  if (!phone || !String(phone).trim() || req.phone_added_at) return false;
+  const { data, error } = await supabaseAdmin.rpc("add_request_caller_phone", {
+    _request_id: req.id,
+    _system_id: systemId,
+    _phone: phone,
+  });
+  // A technical failure must retry; it must not silently drop the phone.
+  if (error) throw new Error(`הוספת טלפון הפונה נכשלה: ${error.message}`);
+  return data === true;
+}
+
+
+
 export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPayload, crmKey = "yemot") {
   const messageId = String(payload.gmailMessageId || "").trim();
   if (!messageId) return { ok: false, completed: false, retry: false, error: "gmailMessageId required" };
@@ -162,6 +191,30 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   const typeConflict = Boolean(labelType && parsed.requestType && labelType !== parsed.requestType);
   let requestType: RequestType | null = labelType ?? parsed.requestType;
 
+  // ---- gate: a valid request MUST carry a system code ----------------------
+  // A labelled Gmail thread is scanned message by message, so replies and
+  // follow-ups inside the same thread arrive here as separate messages with
+  // their own gmail_message_id. Without this gate each of them created an
+  // empty, unassigned request row. A system code is never borrowed from
+  // another message in the thread — the message is simply not a request.
+  // `completed: true` so the relay marks it read and stops re-posting it.
+  if (!parsed.systemCodeNorm) {
+    return {
+      ok: true, completed: true, skipped: true,
+      reason: "no_system_code",
+      message: "ההודעה אינה בקשת מערכת — לא נמצא בה מספר מערכת",
+    };
+  }
+
+  // The mode is read before the row is written so the request permanently
+  // records the automation mode that was in effect when it arrived.
+  let mode: AutomationMode;
+  try {
+    mode = await readAutomationMode(supabaseAdmin);
+  } catch (e: any) {
+    return { ok: false, completed: false, retry: true, error: String(e?.message ?? e) };
+  }
+
   const insertRow = {
     crm_key: crmKey,
     gmail_message_id: messageId,
@@ -178,9 +231,39 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     attachment_index: typeof payload.attachmentIndex === "number" ? payload.attachmentIndex : null,
     received_at: receivedIso,
     processing_state: "received",
+    automation_mode: mode,
   };
 
-  await supabaseAdmin.from("system_requests").insert(insertRow).then(() => {}, () => {});
+  const { error: insertError } = await supabaseAdmin.from("system_requests").insert(insertRow);
+  if (insertError) {
+    const text = `${(insertError as any).code ?? ""} ${insertError.message ?? ""}`;
+    // Same request number, type and system code as a live request → this is the
+    // same request arriving twice (a resend inside the thread), not a new one.
+    // The DB unique index is the arbiter, so two concurrent deliveries cannot
+    // both win. The row is still recorded, flagged and linked to the original.
+    if (text.includes("system_requests_dedupe_uniq")) {
+      const { data: original } = await supabaseAdmin
+        .from("system_requests").select("id")
+        .eq("crm_key", crmKey)
+        .eq("request_type", requestType)
+        .eq("system_code_norm", parsed.systemCodeNorm)
+        .eq("request_number", parsed.requestNumber)
+        .is("duplicate_of", null)
+        .maybeSingle();
+      await supabaseAdmin.from("system_requests").insert({
+        ...insertRow,
+        duplicate_of: (original as any)?.id ?? null,
+        processing_state: "done",
+        last_completed_state: "parsed",
+        decision_status: "duplicate",
+        dry_run: false,
+        last_error: "כפילות — אותה בקשה כבר נקלטה",
+      }).then(() => {}, () => {});
+    } else if (!text.includes("system_requests_gmail_message_id_key") && !text.includes("23505")) {
+      return { ok: false, completed: false, retry: true, error: `שמירת הבקשה נכשלה: ${insertError.message}` };
+    }
+  }
+
   const { data: row, error: readError } = await supabaseAdmin
     .from("system_requests").select("*").eq("gmail_message_id", messageId).maybeSingle();
   if (readError) {
@@ -192,20 +275,18 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     return { ok: true, completed: true, duplicate: true, requestId: req.id, decision: req.decision_status };
   }
 
-  let mode: AutomationMode;
-  try {
-    mode = await readAutomationMode(supabaseAdmin);
-  } catch (e: any) {
-    return { ok: false, completed: false, retry: true, requestId: req.id, error: String(e?.message ?? e) };
-  }
   if (mode === "off") {
+    // The automation was OFF: the request is recorded for a human, nothing is
+    // computed and nothing is simulated. `dry_run` stays false — this was not
+    // a test run, and the stored `automation_mode` says so.
     await done(supabaseAdmin, req.id, {
       last_completed_state: "parsed",
-      decision_status: "needs_decision", dry_run: true,
+      decision_status: "needs_decision", dry_run: false,
     });
     return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
   }
   const dryRun = mode !== "live";
+
 
   try {
     // ---- resume: the status was already applied on an earlier attempt ----
@@ -364,35 +445,34 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       return { ok: true, completed: true, requestId: req.id, mode, decision, proposed: outcome.action };
     }
 
-    // ---- caller phone (atomic: lock, dedupe and stamp in one transaction) ----
-    if (callerPhone && !req.phone_added_at) {
-      const { error: phoneError } = await supabaseAdmin.rpc("add_request_caller_phone", {
-        _request_id: req.id,
-        _system_id: system.id,
-        _phone: callerPhone,
-      });
-      // A technical failure must retry; it must not silently drop the phone.
-      if (phoneError) throw new RequestPipelineError(`הוספת טלפון הפונה נכשלה: ${phoneError.message}`);
-    }
-
-    // ---- decision ----
+    // ---- decision first, actions after -------------------------------------
+    // The decision determines which operational writes are allowed at all:
+    //   ignore         → nothing at all (no status, no phone, no assignment)
+    //   needs_decision → nothing until a human decides
+    //   keep           → status untouched, but the caller phone is added
+    //   set_status     → status changed + phone + the status side effects
     if (outcome.action === "ignore") {
       await done(supabaseAdmin, req.id, { decision_status: "ignored" });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "ignored" };
     }
-    if (outcome.action === "keep") {
-      await done(supabaseAdmin, req.id, { decision_status: "kept" });
-      return { ok: true, completed: true, requestId: req.id, mode, decision: "kept" };
-    }
-    if (outcome.action === "needs_decision" || !outcome.toStatus) {
+    if (outcome.action === "needs_decision" || (outcome.action === "set_status" && !outcome.toStatus)) {
       await done(supabaseAdmin, req.id, { decision_status: "needs_decision" });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
     }
 
-    if (outcome.toStatus === currentStatus) {
-      await done(supabaseAdmin, req.id, { decision_status: "kept" });
+    // From here on the request is "handled", so the caller phone may be stored.
+    // Atomic: the RPC locks, dedupes and stamps in one transaction, so a retry
+    // can never add the same number twice.
+    await addCallerPhone(supabaseAdmin, req, system.id, callerPhone);
+
+    if (outcome.action === "keep" || outcome.toStatus === currentStatus) {
+      await done(supabaseAdmin, req.id, {
+        decision_status: "kept",
+        last_error: null,
+      });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "kept" };
     }
+
 
     const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
       _request_id: req.id,
@@ -405,7 +485,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     // and-swap lost because the status moved meanwhile, which is a human call.
     if (applyError) throw new RequestPipelineError(`עדכון הסטטוס נכשל: ${applyError.message}`);
     if (applied === true) {
-      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus, req.id);
+      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus as string, req.id);
       await done(supabaseAdmin, req.id, { decision_status: "auto_applied" });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "auto_applied", newStatus: outcome.toStatus };
     }

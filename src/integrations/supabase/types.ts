@@ -1018,6 +1018,7 @@ export type Database = {
           attachment_index: number | null
           attachment_name: string | null
           attempts: number
+          automation_mode: string | null
           caller_phone: string | null
           caller_phone_norm: string | null
           created_at: string
@@ -1026,6 +1027,7 @@ export type Database = {
           decided_by: string | null
           decision_status: string | null
           dry_run: boolean
+          duplicate_of: string | null
           error_at: string | null
           gmail_message_id: string
           gmail_thread_id: string | null
@@ -1055,6 +1057,7 @@ export type Database = {
           attachment_index?: number | null
           attachment_name?: string | null
           attempts?: number
+          automation_mode?: string | null
           caller_phone?: string | null
           caller_phone_norm?: string | null
           created_at?: string
@@ -1063,6 +1066,7 @@ export type Database = {
           decided_by?: string | null
           decision_status?: string | null
           dry_run?: boolean
+          duplicate_of?: string | null
           error_at?: string | null
           gmail_message_id: string
           gmail_thread_id?: string | null
@@ -1092,6 +1096,7 @@ export type Database = {
           attachment_index?: number | null
           attachment_name?: string | null
           attempts?: number
+          automation_mode?: string | null
           caller_phone?: string | null
           caller_phone_norm?: string | null
           created_at?: string
@@ -1100,6 +1105,7 @@ export type Database = {
           decided_by?: string | null
           decision_status?: string | null
           dry_run?: boolean
+          duplicate_of?: string | null
           error_at?: string | null
           gmail_message_id?: string
           gmail_thread_id?: string | null
@@ -1126,6 +1132,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "system_requests_duplicate_of_fkey"
+            columns: ["duplicate_of"]
+            isOneToOne: false
+            referencedRelation: "system_requests"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "system_requests_rule_id_fkey"
             columns: ["rule_id"]

@@ -171,9 +171,13 @@ export const getRequestAutomationSettings = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { assertRequestPermission } = await import("@/lib/requests-access.server");
     await assertRequestPermission(context.userId, "requests_view");
-    const { data } = await context.supabase
+    // Read through the service-role client: a requests_view user without admin
+    // rights would otherwise be filtered by RLS and silently see "dry_run".
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
       .from("app_settings").select("key, value")
       .in("key", ["request_automation_mode", "request_default_status_pticha", "request_default_status_sgira"]);
+    if (error) throw new Error(`טעינת הגדרות האוטומציה נכשלה: ${error.message}`);
     const map = new Map((data ?? []).map((r: any) => [r.key, r.value]));
     return {
       mode: (map.get("request_automation_mode") as any)?.mode ?? "dry_run",

@@ -45,6 +45,8 @@ import {
 } from "lucide-react";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
+import { useStatusSettings } from "@/lib/use-status-settings";
+
 
 export const Route = createFileRoute("/_authenticated/admin")({
   head: () => ({ meta: [{ title: "ניהול | CRM" }] }),

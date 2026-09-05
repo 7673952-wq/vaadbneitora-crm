@@ -419,3 +419,95 @@ describe("ingestSystemRequest — failure handling and resume", () => {
     expect(stamped).toBe(false);
   });
 });
+
+describe("ingestSystemRequest — a message without a system code is not a request", () => {
+  it("creates no request row for a reply in the thread that carries no system code", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m-reply",
+      gmailThreadId: "t-1",
+      subject: "תודה",
+      body: "קיבלנו, תודה רבה",
+      sourceRequestType: "pticha",
+    });
+    // Skipped, but completed — so the script marks the mail read and stops.
+    expect(res.ok).toBe(true);
+    expect(res.completed).toBe(true);
+    expect(res.skipped).toBe(true);
+    expect(writes.length).toBe(0);
+  });
+
+  it("still ingests the valid message of that same thread — one request in total", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: [],
+    });
+    const valid: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m-valid", gmailThreadId: "t-1", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(valid.skipped).toBeUndefined();
+    const inserts = writes.filter((w) => w.table === "system_requests" && w.op === "insert");
+    expect(inserts.length).toBe(1);
+    expect(inserts[0]!.payload.system_code_norm).toBeTruthy();
+  });
+
+  it("handles a valid request that has no recording attached", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: [],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m-norec", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.ok).toBe(true);
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.attachment_name ?? null).toBeNull();
+  });
+
+  it("handles a valid request that has a recording attached", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: [],
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m-rec", body: BODY, sourceRequestType: "pticha",
+      attachmentName: "call.wav", attachmentIndex: 0,
+    });
+    expect(res.ok).toBe(true);
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.attachment_name).toBe("call.wav");
+  });
+
+  it("does nothing new when the very same message is scanned again", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      existingRequest: {
+        id: "req-1", gmail_message_id: "m-dup", processing_state: "done",
+        decision_status: "auto_applied", last_completed_state: "done",
+        side_effects_completed_at: new Date().toISOString(),
+      },
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "m-dup", body: BODY, sourceRequestType: "pticha",
+    });
+    expect(res.completed).toBe(true);
+    expect(writes.some((w) => w.table === "systems")).toBe(false);
+  });
+});
+
+describe("ingestSystemRequest — the ingested automation mode is recorded", () => {
+  it("stamps the mode that was in effect when the request arrived", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "off" } },
+    });
+    await ingestSystemRequest(client, { gmailMessageId: "m-off", body: BODY, sourceRequestType: "pticha" });
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.automation_mode).toBe("off");
+  });
+});

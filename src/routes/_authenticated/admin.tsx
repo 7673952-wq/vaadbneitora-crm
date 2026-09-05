@@ -666,6 +666,22 @@ function RequestAutomationPanel() {
     set_status: "שנה סטטוס", keep: "השאר כמו שהוא", needs_decision: "העבר להחלטה ידנית", ignore: "התעלם",
   };
 
+  // Every status field below picks from the statuses defined in this same
+  // admin screen, so a typo can never create a rule that silently never fires.
+  const { rows: statusRows } = useStatusSettings();
+  const statuses = (statusRows ?? []) as Array<{ status_key: string; label: string }>;
+  const statusLabel = (key?: string | null) =>
+    (key && statuses.find((s) => s.status_key === key)?.label) || key || "";
+  const StatusSelect = ({ value, onChange, emptyLabel, disabled, width = "w-52" }: {
+    value: string; onChange: (v: string) => void; emptyLabel: string; disabled?: boolean; width?: string;
+  }) => (
+    <select value={value} disabled={disabled} onChange={(e) => onChange(e.target.value)}
+      className={`${width} rounded-md border border-input bg-background px-2 py-1.5 text-sm disabled:opacity-50`}>
+      <option value="">{emptyLabel}</option>
+      {statuses.map((s) => <option key={s.status_key} value={s.status_key}>{s.label}</option>)}
+    </select>
+  );
+
   return (
     <div className="bg-card border border-border rounded-xl p-5">
       <h2 className="text-lg font-semibold mb-1 flex items-center gap-2"><Clock className="h-4 w-4" />אוטומציית בקשות פתיחה וסגירה</h2>
@@ -683,14 +699,22 @@ function RequestAutomationPanel() {
             <option value="live">פעיל</option>
           </select>
         </Field>
-        <Field label="סטטוס ברירת מחדל למערכת חדשה (פתיחה)">
-          <input value={defPticha} onChange={(e) => setDefPticha(e.target.value)} placeholder="ריק = לא ליצור מערכת"
-            className="w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
-        </Field>
-        <Field label="סטטוס ברירת מחדל למערכת חדשה (סגירה)">
-          <input value={defSgira} onChange={(e) => setDefSgira(e.target.value)} placeholder="ריק = לא ליצור מערכת"
-            className="w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
-        </Field>
+        <div>
+          <Field label="סטטוס למערכת חדשה — בקשת פתיחה">
+            <StatusSelect value={defPticha} onChange={setDefPticha} emptyLabel="ריק = לא ליצור מערכת" />
+          </Field>
+          <p className="mt-1 max-w-52 text-[11px] text-muted-foreground">
+            כשמגיעה בקשת פתיחה למספר מערכת שאינו קיים — זה הסטטוס שבו תיפתח המערכת החדשה.
+          </p>
+        </div>
+        <div>
+          <Field label="סטטוס למערכת חדשה — בקשת סגירה">
+            <StatusSelect value={defSgira} onChange={setDefSgira} emptyLabel="ריק = לא ליצור מערכת" />
+          </Field>
+          <p className="mt-1 max-w-52 text-[11px] text-muted-foreground">
+            כשמגיעה בקשת סגירה למספר מערכת שאינו קיים — זה הסטטוס שבו תיפתח המערכת החדשה.
+          </p>
+        </div>
         <button onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending}
           className="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:opacity-90 disabled:opacity-50">
           {saveSettings.isPending ? "שומר..." : "שמור"}
@@ -699,6 +723,10 @@ function RequestAutomationPanel() {
 
       <div className="mt-5 border-t border-border pt-4">
         <h3 className="text-sm font-semibold mb-2">כללים</h3>
+        <p className="text-xs text-muted-foreground mb-2">
+          כלל שמתאים בדיוק לסטטוס הנוכחי גובר על כלל של "כל סטטוס". אם לא נמצא אף כלל מתאים — הבקשה עוברת להחלטה ידנית.
+          מערכת חדשה אינה עוברת דרך הכללים אלא נפתחת לפי ברירת המחדל שלמעלה.
+        </p>
         <div className="space-y-2">
           {(rules ?? []).length === 0 && (
             <p className="text-xs text-muted-foreground">אין כללים — כל בקשה תעבור להחלטה ידנית.</p>
@@ -706,8 +734,8 @@ function RequestAutomationPanel() {
           {((rules ?? []) as any[]).map((r) => (
             <div key={r.id} className="flex flex-wrap items-center gap-2 text-sm rounded-lg border border-border px-3 py-2">
               <span className="font-medium">{r.request_type === "pticha" ? "פתיחה" : "סגירה"}</span>
-              <span className="text-muted-foreground">מסטטוס: {r.from_status || "כל סטטוס"}</span>
-              <span className="text-muted-foreground">→ {ACTION_LABELS[r.action] ?? r.action}{r.to_status ? `: ${r.to_status}` : ""}</span>
+              <span className="text-muted-foreground">מסטטוס: {statusLabel(r.from_status) || "כל סטטוס"}</span>
+              <span className="text-muted-foreground">→ {ACTION_LABELS[r.action] ?? r.action}{r.to_status ? `: ${statusLabel(r.to_status)}` : ""}</span>
               <button onClick={() => removeRule.mutate(r.id)} className="ms-auto text-xs text-destructive hover:underline">מחק</button>
             </div>
           ))}
@@ -721,9 +749,9 @@ function RequestAutomationPanel() {
               <option value="sgira">סגירה</option>
             </select>
           </Field>
-          <Field label="מסטטוס (ריק = כל סטטוס)">
-            <input value={draft.from_status} onChange={(e) => setDraft({ ...draft, from_status: e.target.value })}
-              className="w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm" />
+          <Field label="הסטטוס הנוכחי של המערכת">
+            <StatusSelect value={draft.from_status} width="w-44"
+              onChange={(v) => setDraft({ ...draft, from_status: v })} emptyLabel="כל סטטוס" />
           </Field>
           <Field label="פעולה">
             <select value={draft.action} onChange={(e) => setDraft({ ...draft, action: e.target.value as any })}
@@ -734,16 +762,24 @@ function RequestAutomationPanel() {
               <option value="ignore">התעלם</option>
             </select>
           </Field>
-          <Field label="לסטטוס">
-            <input value={draft.to_status} disabled={draft.action !== "set_status"}
-              onChange={(e) => setDraft({ ...draft, to_status: e.target.value })}
-              className="w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm disabled:opacity-50" />
+          <Field label="הסטטוס החדש">
+            <StatusSelect value={draft.to_status} width="w-44" disabled={draft.action !== "set_status"}
+              onChange={(v) => setDraft({ ...draft, to_status: v })} emptyLabel="— בחר סטטוס —" />
           </Field>
           <button onClick={() => addRule.mutate()} disabled={addRule.isPending}
             className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm hover:bg-primary/90 disabled:opacity-50">
             הוסף כלל
           </button>
         </div>
+        <p className="mt-2 text-[11px] text-muted-foreground">
+          "השאר כמו שהוא" = הבקשה מסומנת כטופלה, הסטטוס נשאר, ומספר הפונה נוסף אם הוא חסר.
+          "התעלם" = שום שינוי בכרטיס המערכת.
+        </p>
+      </div>
+    </div>
+  );
+}
+
       </div>
     </div>
   );

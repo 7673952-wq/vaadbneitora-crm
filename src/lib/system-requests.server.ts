@@ -133,6 +133,35 @@ export async function applyStatusSideEffects(
   }
 }
 
+/**
+ * Adds the caller phone that came with the request to the system card.
+ *
+ * Shared by the automatic pipeline and by a manual decision so both behave
+ * identically. Everything happens inside one DB transaction: the row is locked,
+ * the number is compared against the primary and the additional numbers, it is
+ * written either as the primary (when there is none) or appended to the
+ * additional list, and only then the request is stamped. A retry therefore
+ * cannot create a duplicate number, and no number is ever invented.
+ */
+export async function addCallerPhone(
+  supabaseAdmin: any,
+  req: { id: string; phone_added_at?: string | null },
+  systemId: string,
+  phone: string | null | undefined,
+) {
+  if (!phone || !String(phone).trim() || req.phone_added_at) return false;
+  const { data, error } = await supabaseAdmin.rpc("add_request_caller_phone", {
+    _request_id: req.id,
+    _system_id: systemId,
+    _phone: phone,
+  });
+  // A technical failure must retry; it must not silently drop the phone.
+  if (error) throw new Error(`הוספת טלפון הפונה נכשלה: ${error.message}`);
+  return data === true;
+}
+
+
+
 export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPayload, crmKey = "yemot") {
   const messageId = String(payload.gmailMessageId || "").trim();
   if (!messageId) return { ok: false, completed: false, retry: false, error: "gmailMessageId required" };

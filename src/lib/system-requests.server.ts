@@ -416,35 +416,34 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       return { ok: true, completed: true, requestId: req.id, mode, decision, proposed: outcome.action };
     }
 
-    // ---- caller phone (atomic: lock, dedupe and stamp in one transaction) ----
-    if (callerPhone && !req.phone_added_at) {
-      const { error: phoneError } = await supabaseAdmin.rpc("add_request_caller_phone", {
-        _request_id: req.id,
-        _system_id: system.id,
-        _phone: callerPhone,
-      });
-      // A technical failure must retry; it must not silently drop the phone.
-      if (phoneError) throw new RequestPipelineError(`הוספת טלפון הפונה נכשלה: ${phoneError.message}`);
-    }
-
-    // ---- decision ----
+    // ---- decision first, actions after -------------------------------------
+    // The decision determines which operational writes are allowed at all:
+    //   ignore         → nothing at all (no status, no phone, no assignment)
+    //   needs_decision → nothing until a human decides
+    //   keep           → status untouched, but the caller phone is added
+    //   set_status     → status changed + phone + the status side effects
     if (outcome.action === "ignore") {
       await done(supabaseAdmin, req.id, { decision_status: "ignored" });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "ignored" };
     }
-    if (outcome.action === "keep") {
-      await done(supabaseAdmin, req.id, { decision_status: "kept" });
-      return { ok: true, completed: true, requestId: req.id, mode, decision: "kept" };
-    }
-    if (outcome.action === "needs_decision" || !outcome.toStatus) {
+    if (outcome.action === "needs_decision" || (outcome.action === "set_status" && !outcome.toStatus)) {
       await done(supabaseAdmin, req.id, { decision_status: "needs_decision" });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision" };
     }
 
-    if (outcome.toStatus === currentStatus) {
-      await done(supabaseAdmin, req.id, { decision_status: "kept" });
+    // From here on the request is "handled", so the caller phone may be stored.
+    // Atomic: the RPC locks, dedupes and stamps in one transaction, so a retry
+    // can never add the same number twice.
+    await addCallerPhone(supabaseAdmin, req, system.id, callerPhone);
+
+    if (outcome.action === "keep" || outcome.toStatus === currentStatus) {
+      await done(supabaseAdmin, req.id, {
+        decision_status: "kept",
+        last_error: null,
+      });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "kept" };
     }
+
 
     const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
       _request_id: req.id,

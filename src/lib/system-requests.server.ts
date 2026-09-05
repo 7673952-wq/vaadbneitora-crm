@@ -485,7 +485,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     // and-swap lost because the status moved meanwhile, which is a human call.
     if (applyError) throw new RequestPipelineError(`עדכון הסטטוס נכשל: ${applyError.message}`);
     if (applied === true) {
-      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus, req.id);
+      await applyStatusSideEffects(supabaseAdmin, system.id, outcome.toStatus as string, req.id);
       await done(supabaseAdmin, req.id, { decision_status: "auto_applied" });
       return { ok: true, completed: true, requestId: req.id, mode, decision: "auto_applied", newStatus: outcome.toStatus };
     }

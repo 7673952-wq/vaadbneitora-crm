@@ -94,7 +94,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         system_code: (req as any).system_code_raw ?? codeNorm,
         name: `מערכת ${codeNorm}`,
         name_pending: true,
-        status: toStatus,
+        status: toStatus as any,
         caller_phone: (req as any).caller_phone ?? null,
         source: "בקשה מהמייל",
       }).select("id").maybeSingle();

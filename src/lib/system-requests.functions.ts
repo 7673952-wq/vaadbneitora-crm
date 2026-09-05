@@ -87,8 +87,28 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       // Re-check right before creating: the system may have been created in the
       // meantime, by another user or by another request.
       const existing = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
-      if (existing.length > 0) {
-        throw new Error("המערכת כבר קיימת — רענן את המסך ובחר סטטוס עבורה");
+      if (existing.length > 1) {
+        // Ambiguous — never guess which card the request belongs to.
+        const { error: ambErr } = await supabaseAdmin.from("system_requests").update({
+          decision_status: "needs_decision",
+          last_error: "נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית",
+        }).eq("id", data.id).in("decision_status", OPEN);
+        if (ambErr) throw new Error(ambErr.message);
+        return { ok: true, multipleMatches: true };
+      }
+      if (existing.length === 1) {
+        // The system already exists: link the request to it and leave the
+        // request open. No status change, no caller phone — that is the
+        // user's next decision.
+        const match = existing[0] as any;
+        const { error: relinkError } = await supabaseAdmin.from("system_requests").update({
+          system_id: match.id,
+          prev_status: match.status ?? null,
+          last_completed_state: "matched",
+          last_error: null,
+        }).eq("id", data.id).is("system_id", null).in("decision_status", OPEN);
+        if (relinkError) throw new Error(relinkError.message);
+        return { ok: true, linkedExisting: true, systemId: match.id };
       }
       const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
         system_code: (req as any).system_code_raw ?? codeNorm,

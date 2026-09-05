@@ -780,10 +780,7 @@ function RequestAutomationPanel() {
   );
 }
 
-      </div>
-    </div>
-  );
-}
+
 
 // ============= Auto Snooze =============
 function AutoSnoozePanel() {

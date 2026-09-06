@@ -67,6 +67,74 @@ export async function findSystemsByNormalizedCode(supabaseAdmin: any, codeNorm: 
   return (data ?? []) as any[];
 }
 
+/** Decision rows that may still be acted upon. */
+export const OPEN_DECISIONS = ["needs_decision", "simulated"];
+
+export type LinkExistingResult =
+  | { kind: "none" }
+  | { kind: "ambiguous" }
+  | { kind: "linked"; systemId: string; status: string | null };
+
+/**
+ * Attaches an unlinked request to the system that already carries its code.
+ * The link itself is never a decision: no status change, no caller phone —
+ * the request stays open so the user chooses what to do with it.
+ * Exactly one match links; several matches stay unlinked and ask for a human.
+ */
+export async function linkRequestToExistingSystem(
+  supabaseAdmin: any, requestId: string, codeNorm: string,
+): Promise<LinkExistingResult> {
+  const matches = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
+  if (matches.length === 0) return { kind: "none" };
+
+  if (matches.length > 1) {
+    const { error } = await supabaseAdmin.from("system_requests").update({
+      decision_status: "needs_decision",
+      last_error: "נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית",
+    }).eq("id", requestId).in("decision_status", OPEN_DECISIONS);
+    if (error) throw new Error(error.message);
+    return { kind: "ambiguous" };
+  }
+
+  const match = matches[0] as any;
+  // CAS: only an open, still-unlinked request may be attached, so two parallel
+  // actions cannot link the same request twice.
+  const { error } = await supabaseAdmin.from("system_requests").update({
+    system_id: match.id,
+    prev_status: match.status ?? null,
+    last_completed_state: "matched",
+    last_error: null,
+  }).eq("id", requestId).is("system_id", null).in("decision_status", OPEN_DECISIONS);
+  if (error) throw new Error(error.message);
+  return { kind: "linked", systemId: match.id, status: match.status ?? null };
+}
+
+/**
+ * One-off repair for rows ingested before the link step existed: an open
+ * request with no system, whose code does exist in `systems` today.
+ */
+export async function relinkOpenRequests(supabaseAdmin: any, crmKey = "yemot") {
+  const { data, error } = await supabaseAdmin
+    .from("system_requests")
+    .select("id, system_code_norm")
+    .eq("crm_key", crmKey)
+    .is("system_id", null)
+    .in("decision_status", OPEN_DECISIONS)
+    .limit(500);
+  if (error) throw new Error(error.message);
+
+  let linked = 0, ambiguous = 0, missing = 0;
+  for (const row of (data ?? []) as any[]) {
+    const codeNorm = String(row.system_code_norm ?? "").trim();
+    if (!codeNorm) { missing += 1; continue; }
+    const res = await linkRequestToExistingSystem(supabaseAdmin, row.id, codeNorm);
+    if (res.kind === "linked") linked += 1;
+    else if (res.kind === "ambiguous") ambiguous += 1;
+    else missing += 1;
+  }
+  return { scanned: (data ?? []).length, linked, ambiguous, missing };
+}
+
 /**
  * Every state write goes through here. A failed UPDATE must never be silently
  * swallowed: if the row did not move, the relay may not treat the message as

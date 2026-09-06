@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { normalizeSourceRequestType, ingestSystemRequest } from "./system-requests.server";
+import { normalizeSourceRequestType, ingestSystemRequest, linkRequestToExistingSystem } from "./system-requests.server";
 
 vi.mock("@/lib/systems.functions", () => ({
   maybeScheduleOrSendAutoVoice: vi.fn(async () => {}),
@@ -59,6 +59,8 @@ function makeClient(opts: {
         // The result must survive the trailing .eq() of update().eq("id", …).
         const chain: any = {
           eq: () => chain,
+          is: () => chain,
+          in: () => chain,
           select: () => chain,
           maybeSingle: async () => ({ data: null, error }),
           then: (r: any) => Promise.resolve({ data: null, error }).then(r),
@@ -509,5 +511,50 @@ describe("ingestSystemRequest — the ingested automation mode is recorded", () 
     await ingestSystemRequest(client, { gmailMessageId: "m-off", body: BODY, sourceRequestType: "pticha" });
     const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
     expect(inserted.payload.automation_mode).toBe("off");
+  });
+});
+
+
+describe("linkRequestToExistingSystem — a request whose system already exists", () => {
+  it("links the unlinked request to the single matching system", async () => {
+    const { client, writes } = makeClient({
+      systems: [{ id: "sys-1", status: "closed", system_code: "0882309477" }],
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res).toMatchObject({ kind: "linked", systemId: "sys-1", status: "closed" });
+    const upd = writes.filter((w) => w.table === "system_requests" && w.op === "update");
+    expect(upd).toHaveLength(1);
+    expect(upd[0]!.payload).toMatchObject({ system_id: "sys-1", prev_status: "closed" });
+  });
+
+  it("changes no status and adds no caller phone while linking", async () => {
+    const { client, writes, rpcCalls } = makeClient({
+      systems: [{ id: "sys-1", status: "closed", system_code: "0882309477" }],
+    });
+    await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(writes.some((w) => w.table === "systems")).toBe(false);
+    expect(rpcCalls.some((c) => c.fn === "add_request_caller_phone")).toBe(false);
+    expect(rpcCalls.some((c) => c.fn === "apply_request_status_change")).toBe(false);
+  });
+
+  it("never links automatically when two systems carry the same code", async () => {
+    const { client, writes } = makeClient({
+      systems: [
+        { id: "sys-1", status: "open", system_code: "0882309477" },
+        { id: "sys-2", status: "closed", system_code: "882309477" },
+      ],
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res.kind).toBe("ambiguous");
+    const upd = writes.filter((w) => w.table === "system_requests" && w.op === "update");
+    expect(upd[0]!.payload.system_id).toBeUndefined();
+    expect(upd[0]!.payload.decision_status).toBe("needs_decision");
+  });
+
+  it("reports no match when the system genuinely does not exist", async () => {
+    const { client, writes } = makeClient({ systems: [] });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res.kind).toBe("none");
+    expect(writes).toEqual([]);
   });
 });

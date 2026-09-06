@@ -3,11 +3,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Headphones, Inbox, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
-  setRequestSystemCode,
+  setRequestSystemCode, repairUnlinkedRequests,
 } from "@/lib/system-requests.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";
@@ -73,6 +73,7 @@ function RequestsPage() {
   const decide = useServerFn(decideSystemRequest);
   const fetchAudio = useServerFn(getRequestAudio);
   const fixCode = useServerFn(setRequestSystemCode);
+  const repair = useServerFn(repairUnlinkedRequests);
   const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
   const { rows: statusRows } = useStatusSettings();
 
@@ -116,7 +117,18 @@ function RequestsPage() {
   const decideMutation = useMutation({
     mutationFn: (vars: DecideVars) => decide({ data: vars }),
     onSuccess: (res: any) => {
-      toast.success(res?.alreadyDecided ? "הבקשה כבר טופלה" : "הבקשה טופלה");
+      if (res?.linkedExisting) toast.success("המערכת כבר קיימת — הבקשה שויכה אליה. בחר סטטוס להמשך");
+      else if (res?.multipleMatches) toast.warning("נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית");
+      else toast.success(res?.alreadyDecided ? "הבקשה כבר טופלה" : "הבקשה טופלה");
+      invalidate();
+    },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+
+  const repairMutation = useMutation({
+    mutationFn: () => repair({}),
+    onSuccess: (res: any) => {
+      toast.success(`שויכו ${res?.linked ?? 0} בקשות מתוך ${res?.scanned ?? 0} שנבדקו`);
       invalidate();
     },
     onError: (e: any) => toast.error(String(e?.message ?? e)),
@@ -166,6 +178,13 @@ function RequestsPage() {
           <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium">
             מצב אוטומציה: {MODE_LABELS[settings.data?.mode ?? "dry_run"] ?? "—"}
           </span>
+          {canDecide && (
+            <Button variant="outline" size="sm" disabled={repairMutation.isPending}
+              onClick={() => repairMutation.mutate()}>
+              <Link2 className="size-4" />
+              שייך בקשות למערכות קיימות
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => list.refetch()} disabled={list.isFetching}>
             <RefreshCw className={`size-4 ${list.isFetching ? "animate-spin" : ""}`} />
             רענון

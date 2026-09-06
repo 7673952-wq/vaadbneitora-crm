@@ -73,6 +73,7 @@ function RequestsPage() {
   const decide = useServerFn(decideSystemRequest);
   const fetchAudio = useServerFn(getRequestAudio);
   const fixCode = useServerFn(setRequestSystemCode);
+  const repair = useServerFn(repairUnlinkedRequests);
   const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
   const { rows: statusRows } = useStatusSettings();
 

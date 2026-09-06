@@ -395,6 +395,20 @@ export const countPendingRequests = createServerFn({ method: "GET" })
     return { count: count ?? 0 };
   });
 
+/**
+ * Repairs open requests whose system code exists in `systems` today but which
+ * were never linked. Links only unambiguous matches; changes no status.
+ */
+export const repairUnlinkedRequests = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .handler(async ({ context }) => {
+    const { assertRequestPermission } = await import("@/lib/requests-access.server");
+    await assertRequestPermission(context.userId, "requests_decide");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { relinkOpenRequests } = await import("@/lib/system-requests.server");
+    return relinkOpenRequests(supabaseAdmin);
+  });
+
 /** Compact daily summary for the dashboard strip. */
 export const getRequestsSummary = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])

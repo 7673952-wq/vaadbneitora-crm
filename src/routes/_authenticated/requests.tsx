@@ -178,6 +178,13 @@ function RequestsPage() {
           <span className="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium">
             מצב אוטומציה: {MODE_LABELS[settings.data?.mode ?? "dry_run"] ?? "—"}
           </span>
+          {canDecide && (
+            <Button variant="outline" size="sm" disabled={repairMutation.isPending}
+              onClick={() => repairMutation.mutate()}>
+              <Link2 className="size-4" />
+              שייך בקשות למערכות קיימות
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={() => list.refetch()} disabled={list.isFetching}>
             <RefreshCw className={`size-4 ${list.isFetching ? "animate-spin" : ""}`} />
             רענון

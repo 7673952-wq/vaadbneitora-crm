@@ -7,7 +7,7 @@ import { AlertTriangle, CheckCircle2, Headphones, Inbox, Play, Plus, RefreshCw, 
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
-  setRequestSystemCode,
+  setRequestSystemCode, repairUnlinkedRequests,
 } from "@/lib/system-requests.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";

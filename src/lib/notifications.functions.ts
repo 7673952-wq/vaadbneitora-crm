@@ -89,7 +89,8 @@ export const listRoleNotificationDefaults = createServerFn({ method: "GET" })
     await assertNotificationsAdmin(context);
     const crmKey = data?.crmKey && data.crmKey !== "yemot" ? data.crmKey : null;
     const prefix = crmKey ? `crm:${crmKey}:` : "";
-    const { data: rows } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows } = await supabaseAdmin
       .from("notification_role_defaults")
       .select("event_key, role, enabled");
     const map = new Map<string, boolean>();

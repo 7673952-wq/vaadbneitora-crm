@@ -100,6 +100,8 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       if (link.kind === "linked") return { ok: true, linkedExisting: true, systemId: link.systemId };
 
       const toStatus = String(data.toStatus ?? (req as any).proposed_status ?? "").trim();
+      const { assertKnownStatus } = await import("@/lib/requests-access.server");
+      await assertKnownStatus(supabaseAdmin, toStatus);
       if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
       const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
         system_code: (req as any).system_code_raw ?? codeNorm,
@@ -132,6 +134,8 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       patch.decision_status = "manual_applied";
     } else if (data.action === "apply") {
       const toStatus = (data.toStatus ?? (req as any).proposed_status ?? "").trim();
+      const { assertKnownStatus } = await import("@/lib/requests-access.server");
+      await assertKnownStatus(supabaseAdmin, toStatus);
       const systemId = (req as any).system_id;
       if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
       const { data: sys, error: sysError } = await supabaseAdmin
@@ -246,6 +250,14 @@ export const saveRequestRule = createServerFn({ method: "POST" })
     const { assertRequestPermission } = await import("@/lib/requests-access.server");
     await assertRequestPermission(context.userId, "requests_manage");
     if (data.action === "set_status" && !data.to_status) throw new Error("יש לבחור סטטוס יעד");
+    {
+      // A rule may only point at statuses that actually exist, so an outdated
+      // or hand-crafted value can never be stored and silently misfire later.
+      const { assertKnownStatus } = await import("@/lib/requests-access.server");
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await assertKnownStatus(supabaseAdmin, data.from_status);
+      await assertKnownStatus(supabaseAdmin, data.to_status);
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const row = {
       crm_key: "yemot",

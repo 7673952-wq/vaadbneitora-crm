@@ -23,20 +23,27 @@ export type IngestPayload = {
   sourceLabel?: string | null;
 };
 
+/** Settings are stored per CRM; the original CRM keeps the historical keys. */
+export function requestSettingKey(base: string, crmKey: string) {
+  return crmKey === "yemot" ? base : `${base}__${crmKey}`;
+}
+
 // Settings/rule reads throw on a DB error on purpose: a technical failure must
 // surface as failed+retry, never be mistaken for "no setting" / "no rule",
 // which would silently turn into a wrong decision.
-export async function readAutomationMode(supabaseAdmin: any): Promise<AutomationMode> {
+export async function readAutomationMode(supabaseAdmin: any, crmKey = "yemot"): Promise<AutomationMode> {
   const { data, error } = await supabaseAdmin
-    .from("app_settings").select("value").eq("key", "request_automation_mode").maybeSingle();
+    .from("app_settings").select("value")
+    .eq("key", requestSettingKey("request_automation_mode", crmKey)).maybeSingle();
   if (error) throw new Error(`קריאת מצב האוטומציה נכשלה: ${error.message}`);
   const mode = (data?.value as { mode?: string } | null)?.mode;
   return mode === "live" || mode === "off" ? mode : "dry_run";
 }
 
-async function readDefaultStatus(supabaseAdmin: any, type: RequestType): Promise<string | null> {
+async function readDefaultStatus(supabaseAdmin: any, type: RequestType, crmKey = "yemot"): Promise<string | null> {
   const { data, error } = await supabaseAdmin
-    .from("app_settings").select("value").eq("key", `request_default_status_${type}`).maybeSingle();
+    .from("app_settings").select("value")
+    .eq("key", requestSettingKey(`request_default_status_${type}`, crmKey)).maybeSingle();
   if (error) throw new Error(`קריאת סטטוס ברירת המחדל נכשלה: ${error.message}`);
   const status = (data?.value as { status?: string | null } | null)?.status;
   return status && String(status).trim() ? String(status).trim() : null;

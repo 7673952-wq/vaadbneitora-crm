@@ -219,7 +219,8 @@ function AuditPage() {
             {list.map((r: any) => {
               const hasOld = r.old_display !== null && r.old_display !== undefined && r.old_display !== "";
               const hasNew = r.new_display !== null && r.new_display !== undefined && r.new_display !== "";
-              const canRevert = isRevertibleEntry(r) && latestIds.has(r.id);
+              // Undo stays super-admin only (server enforces it too).
+              const canRevert = Boolean(me?.isSuperAdmin) && isRevertibleEntry(r) && latestIds.has(r.id);
               return (
                 <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
                   <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>

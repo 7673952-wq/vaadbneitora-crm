@@ -870,8 +870,10 @@ export const deleteSystem = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const { assertRole } = await import("@/lib/permissions.server");
-    await assertRole(context.userId, "super_admin");
+    // Deletion is governed by the "מחיקת מערכות" permission (super-admins
+    // always resolve true), not by a hard-coded role check.
+    await ensurePermission(context.userId, "systems_delete");
+
 
     const mode = data.mode ?? "cascade";
     // "promote" — keep children alive: pick one as the new parent and
@@ -950,6 +952,7 @@ export const addNote = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
+    await ensurePermission(context.userId, "notes_write");
     const { error } = await context.supabase.from("system_notes").insert({
       system_id: data.system_id, body: sanitizeText(data.body), author_id: context.userId,
     });

@@ -285,7 +285,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   // records the automation mode that was in effect when it arrived.
   let mode: AutomationMode;
   try {
-    mode = await readAutomationMode(supabaseAdmin);
+    mode = await readAutomationMode(supabaseAdmin, crmKey);
   } catch (e: any) {
     return { ok: false, completed: false, retry: true, error: String(e?.message ?? e) };
   }

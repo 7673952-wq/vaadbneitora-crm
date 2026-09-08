@@ -4,8 +4,5 @@
   "installCommand": "bun install",
   "outputDirectory": ".vercel/output",
   "framework": null,
-  "regions": ["fra1"],
-  "crons": [
-    { "path": "/api/public/hooks/process-voice-queue", "schedule": "0 8 * * *" }
-  ]
+  "regions": ["fra1"]
 }

@@ -241,6 +241,7 @@ function SystemDetail() {
   const filesFn = useServerFn(listSystemFiles);
   // "ניהול קבצים" permission (super-admins always pass).
   const canManageFiles = Boolean(me?.isSuperAdmin || (me as any)?.permissions?.files_manage);
+  const canWriteNotes = Boolean(me?.isSuperAdmin || (me as any)?.permissions?.notes_write);
   const uploadFn = useServerFn(uploadSystemFile);
   const fileUrlFn = useServerFn(getSystemFileUrl);
   const deleteFileFn = useServerFn(deleteSystemFile);
@@ -1223,7 +1224,9 @@ function SystemDetail() {
 
 
         {/* The composer is secondary to the log itself, so it stays compact
-            and visually quiet until it is focused. */}
+            and visually quiet until it is focused. Hidden without the
+            "כתיבת הערות" permission. */}
+        {canWriteNotes && (
         <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
           className="flex gap-1.5 mb-3 relative items-start opacity-80 focus-within:opacity-100 transition-opacity">
 

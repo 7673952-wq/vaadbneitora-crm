@@ -780,6 +780,16 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
         if (msg.isDraft()) continue;
         var msgMs = msg.getDate().getTime();
 
+        // A message is a request ONLY if IT carries a system number. A reply or
+        // an acknowledgement inside the same thread is never sent to the CRM,
+        // and a number is never inherited from another message in the thread.
+        // A recording is optional. The CRM enforces the same rule again.
+        if (!messageSystemCode_(msg)) {
+          stats.skipped++;
+          try { msg.markRead(); } catch (e) { /* nothing to retry: not a request */ }
+          continue;
+        }
+
         var att = firstAudioAttachment_(msg);
         var completed = false;
         try {

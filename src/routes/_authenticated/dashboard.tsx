@@ -616,8 +616,32 @@ function Dashboard() {
   //             status=BLOCKED.
   // xlsx is ~400KB — loaded only when an export actually runs, never in the
   // dashboard's first paint.
+  async function downloadSheet(
+    sheetName: string,
+    headers: string[],
+    matrix: any[][],
+    fileName: string,
+  ) {
+    const { Workbook } = await import("exceljs");
+    const wb = new Workbook();
+    const ws = wb.addWorksheet(sheetName);
+    ws.addRow(headers);
+    for (const row of matrix) ws.addRow(row);
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
   async function exportCrmXlsx(rows: any[], label: string, mode: "open" | "block" | "both") {
-    const XLSX = await import("xlsx");
     const HEADERS = ["number", "note", "active", "call_type", "status"];
     const buildRow = (r: any, statusText: "OPEN" | "BLOCKED") => [
       buildDialNumber(r.system_code),
@@ -626,29 +650,26 @@ function Dashboard() {
       "ALL",
       statusText,
     ];
-    const write = (rowsToWrite: any[][], fileLabel: string) => {
+    const write = async (rowsToWrite: any[][], fileLabel: string) => {
       if (!rowsToWrite.length) return false;
-      const ws = XLSX.utils.aoa_to_sheet([HEADERS, ...sanitizeMatrix(rowsToWrite)]);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "לביצוע");
-      XLSX.writeFile(wb, `${fileLabel}_${label}.xlsx`);
+      await downloadSheet("לביצוע", HEADERS, sanitizeMatrix(rowsToWrite), `${fileLabel}_${label}.xlsx`);
       return true;
     };
     let filesWritten = 0;
     if (mode === "open") {
       const openRows = rows.filter((r: any) => r.status === "to_open");
-      if (write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח")) filesWritten++;
+      if (await write(openRows.map((r) => buildRow(r, "OPEN")), "לפתוח")) filesWritten++;
     } else if (mode === "block") {
       const blockRows = rows.filter((r: any) => r.status === "to_block");
-      if (write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום")) filesWritten++;
+      if (await write(blockRows.map((r) => buildRow(r, "BLOCKED")), "לחסום")) filesWritten++;
     } else {
       // Category "לפתוח בימות / לחסום בסימהדרין": same rows exported twice —
       // once as OPEN (for ימות) and once as BLOCKED (for סנהדרין).
       const categoryRows = rows.filter(
         (r: any) => r.status === "open_only_bimot" || r.status === "close_in_simahedrin",
       );
-      if (write(categoryRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
-      if (write(categoryRows.map((r) => buildRow(r, "BLOCKED")), "לחסום_בסימהדרין")) filesWritten++;
+      if (await write(categoryRows.map((r) => buildRow(r, "OPEN")), "לפתוח_בימות")) filesWritten++;
+      if (await write(categoryRows.map((r) => buildRow(r, "BLOCKED")), "לחסום_בסימהדרין")) filesWritten++;
     }
     if (filesWritten === 0) toast.info("אין מערכות בקטגוריה זו בטווח שנבחר");
     else toast.success(`נוצרו ${filesWritten} קבצים`);
@@ -656,7 +677,6 @@ function Dashboard() {
 
   async function exportFullXlsx(rows: any[], label: string) {
     if (!rows.length) { toast.info("אין נתונים לייצוא"); return; }
-    const XLSX = await import("xlsx");
     const data = rows.map((r: any) => ({
       "מזהה מערכת": r.system_code,
       "שם": r.name,
@@ -669,11 +689,16 @@ function Dashboard() {
       "הערות": r.notes || "",
       "עדכון אחרון": new Date(r.updated_at).toLocaleString("he-IL"),
     }));
-    const ws = XLSX.utils.json_to_sheet(sanitizeRows(data));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Systems");
-    XLSX.writeFile(wb, `systems_${label}.xlsx`);
+    const clean = sanitizeRows(data);
+    const headers = Object.keys(data[0]);
+    await downloadSheet(
+      "Systems",
+      headers,
+      clean.map((r: any) => headers.map((h) => r[h])),
+      `systems_${label}.xlsx`,
+    );
   }
+
 
   // Cold load with no cached settings: show a skeleton rather than the
   // compiled-in default statuses, which would flash and then flip.
@@ -2073,11 +2098,60 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
     setResult(null);
     setDecisions({});
     try {
-      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: Array<Record<string, any>> = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      let rows: Array<Record<string, any>> = [];
+      if (/\.csv$/i.test(file.name)) {
+        const text = new TextDecoder("utf-8").decode(buf).replace(/^\uFEFF/, "");
+        const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+        const split = (line: string) => {
+          const out: string[] = [];
+          let cur = "", q = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (q) {
+              if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+              else if (ch === '"') q = false;
+              else cur += ch;
+            } else if (ch === '"') q = true;
+            else if (ch === ",") { out.push(cur); cur = ""; }
+            else cur += ch;
+          }
+          out.push(cur);
+          return out.map((c) => c.trim());
+        };
+        const header = lines.length ? split(lines[0]) : [];
+        rows = lines.slice(1).map((line) => {
+          const cells = split(line);
+          const obj: Record<string, any> = {};
+          header.forEach((h, i) => { obj[h] = cells[i] ?? ""; });
+          return obj;
+        });
+      } else {
+        const { Workbook } = await import("exceljs");
+        const wb = new Workbook();
+        await wb.xlsx.load(buf);
+        const ws = wb.worksheets[0];
+        if (ws) {
+          const header: string[] = [];
+          ws.getRow(1).eachCell((cell, col) => { header[col - 1] = String(cell.value ?? "").trim(); });
+          for (let r = 2; r <= ws.rowCount; r++) {
+            const row = ws.getRow(r);
+            const obj: Record<string, any> = {};
+            let hasValue = false;
+            header.forEach((h, i) => {
+              if (!h) return;
+              const v = row.getCell(i + 1).value;
+              const val = v && typeof v === "object" && "text" in (v as any) ? (v as any).text
+                : v && typeof v === "object" && "result" in (v as any) ? (v as any).result
+                : v;
+              obj[h] = val === null || val === undefined ? "" : val;
+              if (obj[h] !== "") hasValue = true;
+            });
+            if (hasValue) rows.push(obj);
+          }
+        }
+      }
+
       if (!rows.length) { toast.error("הקובץ ריק"); setBusy(false); return; }
       setPendingRows(rows);
       const res = await onImport(rows);

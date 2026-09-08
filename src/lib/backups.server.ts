@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import * as XLSX from "xlsx";
 import { STATUS_LABEL } from "@/lib/status";
 
 // ---------- Scheduled-backup time matching ----------
@@ -200,13 +199,27 @@ export async function runBackup(): Promise<BackupResult> {
       "מספר פונה": r.caller_phone ?? "",
       "הערות": r.notes ?? "",
     }));
-    const worksheet = XLSX.utils.json_to_sheet(
-      sheetRows.length ? sanitizeRows(sheetRows) : [{ "מספר": "", "שם": "", "סטטוס": "", "מספר פונה": "", "הערות": "" }],
-    );
-    worksheet["!cols"] = [{ wch: 14 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 40 }];
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, "מערכות");
-    const xlsxBuf = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const { Workbook } = await import("exceljs");
+    const workbook = new Workbook();
+    const worksheet = workbook.addWorksheet("מערכות", { views: [{ rightToLeft: true }] });
+    worksheet.columns = [
+      { header: "מספר", key: "code", width: 14 },
+      { header: "שם", key: "name", width: 24 },
+      { header: "סטטוס", key: "status", width: 16 },
+      { header: "מספר פונה", key: "phone", width: 16 },
+      { header: "הערות", key: "notes", width: 40 },
+    ];
+    for (const row of sanitizeRows(sheetRows)) {
+      worksheet.addRow({
+        code: row["מספר"],
+        name: row["שם"],
+        status: row["סטטוס"],
+        phone: row["מספר פונה"],
+        notes: row["הערות"],
+      });
+    }
+    const xlsxBuf = Buffer.from(await workbook.xlsx.writeBuffer());
+
     const xlsxPath = `${folder}/systems.xlsx`;
     const { error: xlsxErr } = await supabaseAdmin.storage.from("backups").upload(
       xlsxPath,

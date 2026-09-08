@@ -425,7 +425,8 @@ export const getMailboxSettings = createServerFn({ method: "GET" })
       .select("key, value")
       .in("key", ["email_relay_url", "email_relay_address", "email_general_name", "mailbox_prefs"]);
     const get = (k: string) => (data ?? []).find((r: any) => r.key === k)?.value as Record<string, string> | undefined;
-    const { data: profile } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabaseAdmin
       .from("profiles")
       .select("display_name, email_signature, email_display_name" as any)
       .eq("id", context.userId)

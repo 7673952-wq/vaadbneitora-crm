@@ -136,8 +136,15 @@ export const setCrmUserRole = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    // The check MUST be scoped to the CRM being modified — otherwise anyone
+    // with permission-management rights in one CRM could grant themselves a
+    // role (up to super_admin) in a CRM they have no access to at all.
     const { assertPermission } = await import("@/lib/permissions.server");
-    await assertPermission(context.userId, "permissions_manage");
+    await assertPermission(context.userId, "permissions_manage", data.crmKey);
+    // Granting the top-level role stays reserved for a global super admin.
+    if (data.role === "super_admin" && !(await isGlobalSuperAdmin(context))) {
+      throw new AppError("רק מנהל ראשי יכול להעניק תפקיד מנהל ראשי", { code: "forbidden" });
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.role === null) {
       const { error } = await supabaseAdmin

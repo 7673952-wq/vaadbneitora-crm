@@ -2088,7 +2088,9 @@ export async function readVoiceDebounceSeconds(supabaseAdmin: any): Promise<numb
 // Sends to every caller (primary + additional) who hasn't yet received a
 // message for the system's CURRENT status. Used by the automatic
 // status-triggered send and by the queued/cron sender. Never throws.
-async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: "auto" | "queue" | "manual" = "auto", userId?: string | null) {
+export type VoiceSendMode = "auto" | "queue" | "manual";
+
+async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: VoiceSendMode = "auto", userId?: string | null) {
   const { data: sysRow, error: sysErr } = await supabaseAdmin
     .from("systems")
     .select("caller_phone, phone, status, additional_caller_phones")

@@ -325,7 +325,7 @@ function VoiceQueuePanel() {
           </thead>
           <tbody className="divide-y divide-border">
             {pending.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-12 text-center text-muted-foreground italic">אין הודעות ממתינות בתור כרגע.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-12 text-center text-muted-foreground italic">אין הודעות ממתינות בתור כרגע.</td></tr>
             ) : (
               pending.map((msg: any) => (
                 <tr key={msg.id} className="hover:bg-accent/30 transition-colors">
@@ -334,6 +334,14 @@ function VoiceQueuePanel() {
                   </td>
                   <td className="px-4 py-3 font-mono" dir="ltr">{msg.caller_phone}</td>
                   <td className="px-4 py-3"><span className="text-xs font-medium">{msg.status_label}</span></td>
+                  <td className="px-4 py-3">
+                    <span className="text-xs">{msg.pending_reason_label ?? "ממתין"}</span>
+                    {msg.attempts > 0 && (
+                      <div className="text-[10px] text-red-700 mt-0.5 max-w-[14rem] truncate" title={msg.last_error ?? ""}>
+                        ניסיון {msg.attempts}{msg.last_error ? ` — ${msg.last_error}` : ""}
+                      </div>
+                    )}
+                  </td>
                   <td className="px-4 py-3">
                     <input
                       type="datetime-local"

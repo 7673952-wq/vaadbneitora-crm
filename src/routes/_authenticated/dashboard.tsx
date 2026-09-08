@@ -2098,11 +2098,60 @@ function ImportModal({ onClose, onImport, agentNames = [] }: {
     setResult(null);
     setDecisions({});
     try {
-      const XLSX = await import("xlsx");
       const buf = await file.arrayBuffer();
-      const wb = XLSX.read(buf, { type: "array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows: Array<Record<string, any>> = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      let rows: Array<Record<string, any>> = [];
+      if (/\.csv$/i.test(file.name)) {
+        const text = new TextDecoder("utf-8").decode(buf).replace(/^\uFEFF/, "");
+        const lines = text.split(/\r?\n/).filter((l) => l.trim() !== "");
+        const split = (line: string) => {
+          const out: string[] = [];
+          let cur = "", q = false;
+          for (let i = 0; i < line.length; i++) {
+            const ch = line[i];
+            if (q) {
+              if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+              else if (ch === '"') q = false;
+              else cur += ch;
+            } else if (ch === '"') q = true;
+            else if (ch === ",") { out.push(cur); cur = ""; }
+            else cur += ch;
+          }
+          out.push(cur);
+          return out.map((c) => c.trim());
+        };
+        const header = lines.length ? split(lines[0]) : [];
+        rows = lines.slice(1).map((line) => {
+          const cells = split(line);
+          const obj: Record<string, any> = {};
+          header.forEach((h, i) => { obj[h] = cells[i] ?? ""; });
+          return obj;
+        });
+      } else {
+        const { Workbook } = await import("exceljs");
+        const wb = new Workbook();
+        await wb.xlsx.load(buf);
+        const ws = wb.worksheets[0];
+        if (ws) {
+          const header: string[] = [];
+          ws.getRow(1).eachCell((cell, col) => { header[col - 1] = String(cell.value ?? "").trim(); });
+          for (let r = 2; r <= ws.rowCount; r++) {
+            const row = ws.getRow(r);
+            const obj: Record<string, any> = {};
+            let hasValue = false;
+            header.forEach((h, i) => {
+              if (!h) return;
+              const v = row.getCell(i + 1).value;
+              const val = v && typeof v === "object" && "text" in (v as any) ? (v as any).text
+                : v && typeof v === "object" && "result" in (v as any) ? (v as any).result
+                : v;
+              obj[h] = val === null || val === undefined ? "" : val;
+              if (obj[h] !== "") hasValue = true;
+            });
+            if (hasValue) rows.push(obj);
+          }
+        }
+      }
+
       if (!rows.length) { toast.error("הקובץ ריק"); setBusy(false); return; }
       setPendingRows(rows);
       const res = await onImport(rows);

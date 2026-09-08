@@ -2299,12 +2299,11 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
   };
 }
 
-// Lightweight, authenticated, client-callable trigger for the same queue
-// processor above. Used as a free alternative to a frequent Vercel cron
-// (which requires the Pro plan): the dashboard calls this every few minutes
-// while someone has it open, piggy-backing on normal staff activity during
-// business hours. Throttled so many simultaneously-open dashboards don't
-// hammer Yemot with duplicate work.
+// Extra, opportunistic trigger for the same queue processor. The queue no
+// longer depends on it: a self-arming database job runs every few minutes for
+// as long as something is waiting, and switches itself off when the queue is
+// empty. This stays as a harmless "someone is looking at the dashboard, check
+// now" shortcut, throttled so many open tabs cannot pile up duplicate work.
 export const pokeVoiceQueue = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .handler(async () => {
@@ -2336,8 +2335,12 @@ export const rescheduleVoicePending = createServerFn({ method: "POST" })
       throw new Error("אין הרשאה");
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("systems").update({ pending_voice_send_at: data.sendAt }).eq("id", data.systemId);
-    if (error) throw new Error(error.message);
+    if (data.sendAt) {
+      await schedulePendingVoice(supabaseAdmin, data.systemId, data.sendAt, "window");
+    } else {
+      await clearPendingVoice(supabaseAdmin, data.systemId);
+      await disarmVoiceQueueJobIfEmpty(supabaseAdmin);
+    }
     return { ok: true };
   });
 

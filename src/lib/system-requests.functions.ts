@@ -4,6 +4,16 @@ import { requireAuthMfa } from "@/lib/mfa.middleware";
 
 // Queue, decisions, rules and automation-mode settings for the pticha/sgira
 // email automation. Thin wrappers only — logic lives in *.server.ts.
+//
+// Two rules hold everywhere in this file:
+//  1. Lists and counters filter the QUERY by the CRMs the caller is allowed in.
+//  2. Row actions read the row first and authorize against the CRM stored on
+//     it — never against a value coming from the browser.
+
+/** Settings keys are per CRM; the original CRM keeps the historical key names. */
+function settingKey(base: string, crmKey: string) {
+  return crmKey === "yemot" ? base : `${base}__${crmKey}`;
+}
 
 export const listSystemRequests = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
@@ -13,14 +23,15 @@ export const listSystemRequests = createServerFn({ method: "GET" })
       limit: z.number().int().min(1).max(200).optional(),
     }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+    const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const crmKeys = await requireCrmKeysWithPermission(context.userId, "requests_view");
     // Direct browser access to system_requests is revoked in the DB — reads go
-    // through the service-role client behind this permission check.
+    // through the service-role client, filtered to the caller's CRMs.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin
       .from("system_requests")
       .select("*")
+      .in("crm_key", crmKeys)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 100);
     if (data.decision === "open") {
@@ -46,7 +57,11 @@ export const listSystemRequests = createServerFn({ method: "GET" })
  * A manual decision by an authorized user. This is deliberately NOT blocked by
  * `dry_run`: dry-run only stops the *automatic* pipeline. An explicit click
  * here is a human action and is carried out for real, with the same permission
- * checks, compare-and-swap protection and side effects as a live automatic run.
+ * checks and side effects as a live automatic run.
+ *
+ * The request is CLAIMED atomically in the database before the first write, so
+ * two people clicking different actions at the same moment can never both act:
+ * the loser gets no side effects and no success answer.
  */
 export const decideSystemRequest = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
@@ -57,127 +72,135 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       toStatus: z.string().max(60).nullable().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
+    const { loadAuthorizedRequest, assertKnownStatus } = await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    // The row is read first so every permission below is checked against the
-    // CRM stored on the request itself, not against a default or a value the
-    // browser could influence.
-    const { data: req, error: reqError } = await supabaseAdmin
-      .from("system_requests").select("*").eq("id", data.id).maybeSingle();
-    if (reqError) throw new Error(reqError.message);
-    if (!req) throw new Error("הבקשה לא נמצאה");
-    const crmKey = String((req as any).crm_key ?? "yemot");
-    await assertCrmAccess(context.supabase, context.userId, crmKey);
-    await assertRequestPermission(context.userId, "requests_decide", crmKey);
+    const { crmKey } = await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_decide",
+      "id, crm_key, decision_status",
+    );
     const { hasPermission } = await import("@/lib/permissions.server");
     if (!(await hasPermission(context.userId, "status_change", crmKey))) throw new Error("אין הרשאה");
-    // `simulated` is a dry-run conclusion that was never applied, so it is still
-    // open for a manual decision; anything else is already decided.
-    const { OPEN_DECISIONS: OPEN } = await import("@/lib/system-requests.server");
-    const current = (req as any).decision_status as string | null;
-    if (current && !OPEN.includes(current)) {
-      return { ok: true, alreadyDecided: true };
-    }
+
+    // Atomic claim: only the winner may run any side effect below.
+    const { data: claimed, error: claimError } = await supabaseAdmin.rpc("claim_system_request", {
+      _id: data.id, _actor: context.userId,
+    });
+    if (claimError) throw new Error(`נעילת הבקשה נכשלה: ${claimError.message}`);
+    if (!claimed) return { ok: true, alreadyDecided: true };
+    const req = claimed as any;
+
+    const release = async () => {
+      await supabaseAdmin.rpc("release_system_request_claim", { _id: data.id, _actor: context.userId });
+    };
 
     const patch: any = {
       decided_by: context.userId,
       decided_at: new Date().toISOString(),
       dry_run: false,
+      decision_claim_at: null,
+      decision_claim_by: null,
     };
-    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem } =
+    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, OPEN_DECISIONS: OPEN } =
       await import("@/lib/system-requests.server");
 
-    if (data.action === "create_system") {
-      const codeNorm = String((req as any).system_code_norm ?? "").trim();
-      if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");
-      if ((req as any).system_id) throw new Error("הבקשה כבר משויכת למערכת");
+    try {
+      if (data.action === "create_system") {
+        const codeNorm = String(req.system_code_norm ?? "").trim();
+        if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");
+        if (req.system_id) throw new Error("הבקשה כבר משויכת למערכת");
 
-      // Re-check right before creating: the system may exist already, created
-      // meanwhile or simply never linked to this request.
-      const link = await linkRequestToExistingSystem(supabaseAdmin, data.id, codeNorm);
-      if (link.kind === "ambiguous") return { ok: true, multipleMatches: true };
-      if (link.kind === "linked") return { ok: true, linkedExisting: true, systemId: link.systemId };
+        // Re-check inside the claim: the system may exist already, created
+        // meanwhile or simply never linked to this request.
+        const link = await linkRequestToExistingSystem(supabaseAdmin, data.id, codeNorm);
+        if (link.kind === "ambiguous") { await release(); return { ok: true, multipleMatches: true }; }
+        if (link.kind === "linked") { await release(); return { ok: true, linkedExisting: true, systemId: link.systemId }; }
 
-      const toStatus = String(data.toStatus ?? (req as any).proposed_status ?? "").trim();
-      const { assertKnownStatus } = await import("@/lib/requests-access.server");
-      await assertKnownStatus(supabaseAdmin, toStatus);
-      if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
-      const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
-        system_code: (req as any).system_code_raw ?? codeNorm,
-        name: `מערכת ${codeNorm}`,
-        name_pending: true,
-        status: toStatus as any,
-        caller_phone: (req as any).caller_phone ?? null,
-        source: "בקשה מהמייל",
-      }).select("id").maybeSingle();
-      let systemId = (created as any)?.id as string | undefined;
-      if (!systemId) {
-        // A concurrent creation won the unique code index — adopt that system
-        // instead of failing, so a retry never creates a second card.
-        const again = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
-        systemId = again.length === 1 ? (again[0] as any).id : undefined;
-      }
-      if (!systemId) throw new Error(`יצירת המערכת נכשלה${createError?.message ? `: ${createError.message}` : ""}`);
+        const toStatus = String(data.toStatus ?? req.proposed_status ?? "").trim();
+        if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
+        await assertKnownStatus(supabaseAdmin, toStatus);
+        const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
+          system_code: req.system_code_raw ?? codeNorm,
+          name: `מערכת ${codeNorm}`,
+          name_pending: true,
+          status: toStatus as any,
+          caller_phone: req.caller_phone ?? null,
+          source: "בקשה מהמייל",
+        }).select("id").maybeSingle();
+        let systemId = (created as any)?.id as string | undefined;
+        if (!systemId) {
+          // A concurrent creation won the unique code index — adopt that system
+          // instead of failing, so a retry never creates a second card.
+          const again = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
+          systemId = again.length === 1 ? (again[0] as any).id : undefined;
+        }
+        if (!systemId) throw new Error(`יצירת המערכת נכשלה${createError?.message ? `: ${createError.message}` : ""}`);
 
-      // Link the request to the new system BEFORE the side effects, so a crash
-      // in the middle can never leave a created system with no link back.
-      const { error: linkError } = await supabaseAdmin.from("system_requests").update({
-        system_id: systemId,
-        new_status: toStatus,
-        status_applied_at: new Date().toISOString(),
-        last_completed_state: "matched",
-      }).eq("id", data.id);
-      if (linkError) throw new Error(`קישור הבקשה למערכת נכשל: ${linkError.message}`);
+        // Link BEFORE the side effects, so a crash in the middle can never
+        // leave a created system with no link back to its request.
+        const { data: linkRows, error: linkError } = await supabaseAdmin.from("system_requests").update({
+          system_id: systemId,
+          new_status: toStatus,
+          status_applied_at: new Date().toISOString(),
+          last_completed_state: "matched",
+        }).eq("id", data.id).select("id");
+        if (linkError) throw new Error(`קישור הבקשה למערכת נכשל: ${linkError.message}`);
+        if (!linkRows?.length) throw new Error("קישור הבקשה למערכת לא בוצע — רענן ונסה שוב");
 
-      await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
-      patch.decision_status = "manual_applied";
-    } else if (data.action === "apply") {
-      const toStatus = (data.toStatus ?? (req as any).proposed_status ?? "").trim();
-      const { assertKnownStatus } = await import("@/lib/requests-access.server");
-      await assertKnownStatus(supabaseAdmin, toStatus);
-      const systemId = (req as any).system_id;
-      if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
-      const { data: sys, error: sysError } = await supabaseAdmin
-        .from("systems").select("status").eq("id", systemId).maybeSingle();
-      if (sysError) throw new Error(sysError.message);
-      const from = String((sys as any)?.status ?? "");
-      if (from === toStatus) {
-        // Nothing to change — treat it as "handled without a status change",
-        // which still records the caller phone.
-        await addCallerPhone(supabaseAdmin, req as any, systemId, (req as any).caller_phone);
-        patch.decision_status = "kept";
-      } else {
-        const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
-          _request_id: data.id,
-          _system_id: systemId,
-          _from_status: from,
-          _to_status: toStatus,
-          _reason: "החלטה ידנית על בקשה מהמייל",
-        });
-        // Technical failure vs. a legitimate `false` (the status moved meanwhile).
-        if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
-        if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
-        await addCallerPhone(supabaseAdmin, req as any, systemId, (req as any).caller_phone);
         await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
         patch.decision_status = "manual_applied";
+      } else if (data.action === "apply") {
+        const toStatus = String(data.toStatus ?? req.proposed_status ?? "").trim();
+        const systemId = req.system_id;
+        if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
+        await assertKnownStatus(supabaseAdmin, toStatus);
+        const { data: sys, error: sysError } = await supabaseAdmin
+          .from("systems").select("status").eq("id", systemId).maybeSingle();
+        if (sysError) throw new Error(sysError.message);
+        const from = String((sys as any)?.status ?? "");
+        if (from === toStatus) {
+          // Nothing to change — treat it as "handled without a status change",
+          // which still records the caller phone.
+          await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
+          patch.decision_status = "kept";
+        } else {
+          const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
+            _request_id: data.id,
+            _system_id: systemId,
+            _from_status: from,
+            _to_status: toStatus,
+            _reason: "החלטה ידנית על בקשה מהמייל",
+          });
+          // Technical failure vs. a legitimate `false` (the status moved meanwhile).
+          if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
+          if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
+          await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
+          await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
+          patch.decision_status = "manual_applied";
+        }
+      } else if (data.action === "keep") {
+        // Handled, status untouched — but the caller phone is still recorded.
+        const systemId = req.system_id;
+        if (!systemId) throw new Error("אין מערכת משויכת — לא ניתן להשאיר סטטוס ללא שינוי");
+        await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
+        patch.decision_status = "kept";
+      } else {
+        // ignore: nothing at all is written to the system card.
+        patch.decision_status = "ignored";
       }
-    } else if (data.action === "keep") {
-      // Handled, status untouched — but the caller phone is still recorded.
-      const systemId = (req as any).system_id;
-      if (!systemId) throw new Error("אין מערכת משויכת — לא ניתן להשאיר סטטוס ללא שינוי");
-      await addCallerPhone(supabaseAdmin, req as any, systemId, (req as any).caller_phone);
-      patch.decision_status = "kept";
-    } else {
-      // ignore: nothing at all is written to the system card.
-      patch.decision_status = "ignored";
-    }
-    patch.processing_state = "done";
+      patch.processing_state = "done";
 
-    const { error } = await supabaseAdmin
-      .from("system_requests").update(patch).eq("id", data.id).in("decision_status", OPEN);
-    if (error) throw new Error(error.message);
-    return { ok: true };
+      const { data: updated, error } = await supabaseAdmin
+        .from("system_requests").update(patch).eq("id", data.id)
+        .in("decision_status", OPEN).select("id");
+      if (error) throw new Error(error.message);
+      if (!updated?.length) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
+      return { ok: true };
+    } catch (e) {
+      // A failed attempt must never leave the request locked for the next try.
+      await release().catch(() => {});
+      throw e;
+    }
   });
 
 /**
@@ -190,33 +213,59 @@ export const setRequestSystemCode = createServerFn({ method: "POST" })
   .inputValidator((d: { id: string; systemCode: string }) =>
     z.object({ id: z.string().uuid(), systemCode: z.string().min(3).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: req, error: reqError } = await supabaseAdmin
-      .from("system_requests").select("id, crm_key, decision_status, system_id").eq("id", data.id).maybeSingle();
-    if (reqError) throw new Error(reqError.message);
-    if (!req) throw new Error("הבקשה לא נמצאה");
-    const crmKey = String((req as any).crm_key ?? "yemot");
-    await assertCrmAccess(context.supabase, context.userId, crmKey);
-    await assertRequestPermission(context.userId, "requests_decide", crmKey);
-    if (!["needs_decision", "simulated", null].includes((req as any).decision_status)) {
-      throw new Error("הבקשה כבר טופלה");
-    }
+    await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_decide",
+      "id, crm_key, decision_status, system_id",
+    );
 
     const { normalizeSystemCode } = await import("@/lib/system-code");
     const codeNorm = normalizeSystemCode(data.systemCode);
     if (!codeNorm) throw new Error("מספר מערכת לא תקין");
-    const { findSystemsByNormalizedCode } = await import("@/lib/system-requests.server");
+    const { findSystemsByNormalizedCode, OPEN_DECISIONS } = await import("@/lib/system-requests.server");
     const matches = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
     if (matches.length > 1) throw new Error("נמצאה יותר ממערכת אחת עם מספר זה");
-    const { error } = await supabaseAdmin.from("system_requests").update({
+    // CAS: the request must still be open at the moment of the write, and the
+    // update must prove it actually changed a row.
+    const { data: rows, error } = await supabaseAdmin.from("system_requests").update({
       system_code_raw: data.systemCode.trim(),
       system_code_norm: codeNorm,
       system_id: matches.length === 1 ? (matches[0] as any).id : null,
       prev_status: matches.length === 1 ? ((matches[0] as any).status ?? null) : null,
-    }).eq("id", data.id);
+    }).eq("id", data.id).in("decision_status", OPEN_DECISIONS).select("id");
     if (error) throw new Error(error.message);
+    if (!rows?.length) throw new Error("הבקשה כבר טופלה");
     return { ok: true, matched: matches.length === 1 };
+  });
+
+/**
+ * Renames the system linked to a request, straight from the requests screen.
+ * Used mostly to replace the placeholder name a newly created card gets.
+ */
+export const renameRequestSystem = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string; name: string }) =>
+    z.object({ id: z.string().uuid(), name: z.string().min(2).max(120) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { req, crmKey } = await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_decide",
+      "id, crm_key, system_id",
+    );
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if (!(await hasPermission(context.userId, "systems_write", crmKey))) throw new Error("אין הרשאה");
+    if (!req.system_id) throw new Error("אין מערכת משויכת לבקשה זו");
+
+    const name = data.name.trim();
+    await supabaseAdmin.rpc("set_change_reason", { p_reason: "שינוי שם מתוך בקשה מהמייל" });
+    const { data: rows, error } = await supabaseAdmin
+      .from("systems").update({ name, name_pending: false })
+      .eq("id", req.system_id).select("id, name");
+    if (error) throw new Error(`שינוי השם נכשל: ${error.message}`);
+    if (!rows?.length) throw new Error("המערכת לא נמצאה");
+    return { ok: true, name };
   });
 
 
@@ -224,23 +273,29 @@ export const setRequestSystemCode = createServerFn({ method: "POST" })
 
 export const listRequestRules = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
-  .handler(async ({ context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+  .inputValidator((d: { crmKey?: string | null } | undefined) =>
+    z.object({ crmKey: z.string().max(60).nullable().optional() }).parse(d ?? {}))
+  .handler(async ({ data, context }) => {
+    const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const allowed = await requireCrmKeysWithPermission(context.userId, "requests_view");
+    const keys = data.crmKey ? allowed.filter((k) => k === data.crmKey) : allowed;
+    if (!keys.length) throw new Error("אין הרשאה");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from("system_request_rules").select("*").eq("crm_key", "yemot").order("sort_order", { ascending: true });
+    const { data: rows, error } = await supabaseAdmin
+      .from("system_request_rules").select("*").in("crm_key", keys)
+      .order("sort_order", { ascending: true });
     if (error) throw new Error(error.message);
-    return data ?? [];
+    return rows ?? [];
   });
 
 export const saveRequestRule = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: {
-    id?: string | null; request_type: "pticha" | "sgira"; from_status?: string | null;
+    id?: string | null; crmKey?: string | null; request_type: "pticha" | "sgira"; from_status?: string | null;
     action: "set_status" | "keep" | "needs_decision" | "ignore"; to_status?: string | null; is_active?: boolean;
   }) => z.object({
     id: z.string().uuid().nullable().optional(),
+    crmKey: z.string().max(60).nullable().optional(),
     request_type: z.enum(["pticha", "sgira"]),
     from_status: z.string().max(60).nullable().optional(),
     action: z.enum(["set_status", "keep", "needs_decision", "ignore"]),
@@ -248,20 +303,29 @@ export const saveRequestRule = createServerFn({ method: "POST" })
     is_active: z.boolean().optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_manage");
-    if (data.action === "set_status" && !data.to_status) throw new Error("יש לבחור סטטוס יעד");
-    {
-      // A rule may only point at statuses that actually exist, so an outdated
-      // or hand-crafted value can never be stored and silently misfire later.
-      const { assertKnownStatus } = await import("@/lib/requests-access.server");
-      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-      await assertKnownStatus(supabaseAdmin, data.from_status);
-      await assertKnownStatus(supabaseAdmin, data.to_status);
-    }
+    const { loadAuthorizedRule, assertRequestPermission, assertCrmAccess, assertKnownStatus } =
+      await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    // The CRM of an EXISTING rule always comes from the stored row, so a rule
+    // can never be moved to another CRM or edited from one.
+    let crmKey: string;
+    if (data.id) {
+      ({ crmKey } = await loadAuthorizedRule(supabaseAdmin, context.supabase, context.userId, data.id));
+    } else {
+      crmKey = (data.crmKey ?? "yemot").trim() || "yemot";
+      await assertCrmAccess(context.supabase, context.userId, crmKey);
+      await assertRequestPermission(context.userId, "requests_manage", crmKey);
+    }
+
+    if (data.action === "set_status" && !data.to_status) throw new Error("יש לבחור סטטוס יעד");
+    // A rule may only point at statuses that actually exist, so an outdated
+    // or hand-crafted value can never be stored and silently misfire later.
+    await assertKnownStatus(supabaseAdmin, data.from_status);
+    await assertKnownStatus(supabaseAdmin, data.to_status);
+
     const row = {
-      crm_key: "yemot",
+      crm_key: crmKey,
       request_type: data.request_type,
       from_status: data.from_status?.trim() ? data.from_status.trim() : null,
       action: data.action,
@@ -270,8 +334,10 @@ export const saveRequestRule = createServerFn({ method: "POST" })
       created_by: context.userId,
     };
     if (data.id) {
-      const { error } = await supabaseAdmin.from("system_request_rules").update(row).eq("id", data.id);
+      const { data: rows, error } = await supabaseAdmin
+        .from("system_request_rules").update(row).eq("id", data.id).eq("crm_key", crmKey).select("id");
       if (error) throw new Error(error.message);
+      if (!rows?.length) throw new Error("הכלל לא עודכן");
     } else {
       const { error } = await supabaseAdmin.from("system_request_rules").insert(row);
       if (error) throw new Error(error.message);
@@ -283,11 +349,13 @@ export const deleteRequestRule = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_manage");
+    const { loadAuthorizedRule } = await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("system_request_rules").delete().eq("id", data.id);
+    const { crmKey } = await loadAuthorizedRule(supabaseAdmin, context.supabase, context.userId, data.id);
+    const { data: rows, error } = await supabaseAdmin
+      .from("system_request_rules").delete().eq("id", data.id).eq("crm_key", crmKey).select("id");
     if (error) throw new Error(error.message);
+    if (!rows?.length) throw new Error("הכלל לא נמחק");
     return { ok: true };
   });
 
@@ -295,44 +363,54 @@ export const deleteRequestRule = createServerFn({ method: "POST" })
 
 export const getRequestAutomationSettings = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
-  .handler(async ({ context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+  .inputValidator((d: { crmKey?: string | null } | undefined) =>
+    z.object({ crmKey: z.string().max(60).nullable().optional() }).parse(d ?? {}))
+  .handler(async ({ data, context }) => {
+    const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const allowed = await requireCrmKeysWithPermission(context.userId, "requests_view");
+    const crmKey = data.crmKey && allowed.includes(data.crmKey) ? data.crmKey : (allowed.includes("yemot") ? "yemot" : allowed[0]!);
     // Read through the service-role client: a requests_view user without admin
     // rights would otherwise be filtered by RLS and silently see "dry_run".
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data, error } = await supabaseAdmin
-      .from("app_settings").select("key, value")
-      .in("key", ["request_automation_mode", "request_default_status_pticha", "request_default_status_sgira"]);
+    const keys = [
+      settingKey("request_automation_mode", crmKey),
+      settingKey("request_default_status_pticha", crmKey),
+      settingKey("request_default_status_sgira", crmKey),
+    ];
+    const { data: rows, error } = await supabaseAdmin
+      .from("app_settings").select("key, value").in("key", keys);
     if (error) throw new Error(`טעינת הגדרות האוטומציה נכשלה: ${error.message}`);
-    const map = new Map((data ?? []).map((r: any) => [r.key, r.value]));
+    const map = new Map((rows ?? []).map((r: any) => [r.key, r.value]));
     return {
-      mode: (map.get("request_automation_mode") as any)?.mode ?? "dry_run",
-      defaultPticha: (map.get("request_default_status_pticha") as any)?.status ?? null,
-      defaultSgira: (map.get("request_default_status_sgira") as any)?.status ?? null,
+      crmKey,
+      mode: (map.get(keys[0]!) as any)?.mode ?? "dry_run",
+      defaultPticha: (map.get(keys[1]!) as any)?.status ?? null,
+      defaultSgira: (map.get(keys[2]!) as any)?.status ?? null,
     };
   });
 
 export const setRequestAutomationSettings = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { mode: "off" | "dry_run" | "live"; defaultPticha?: string | null; defaultSgira?: string | null }) =>
+  .inputValidator((d: { mode: "off" | "dry_run" | "live"; crmKey?: string | null; defaultPticha?: string | null; defaultSgira?: string | null }) =>
     z.object({
       mode: z.enum(["off", "dry_run", "live"]),
+      crmKey: z.string().max(60).nullable().optional(),
       defaultPticha: z.string().max(60).nullable().optional(),
       defaultSgira: z.string().max(60).nullable().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_manage");
+    const { assertRequestPermission, assertCrmAccess, assertKnownStatus } = await import("@/lib/requests-access.server");
+    const crmKey = (data.crmKey ?? "yemot").trim() || "yemot";
+    await assertCrmAccess(context.supabase, context.userId, crmKey);
+    await assertRequestPermission(context.userId, "requests_manage", crmKey);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { assertKnownStatus } = await import("@/lib/requests-access.server");
     await assertKnownStatus(supabaseAdmin, data.defaultPticha);
     await assertKnownStatus(supabaseAdmin, data.defaultSgira);
     const now = new Date().toISOString();
     const rows = [
-      { key: "request_automation_mode", value: { mode: data.mode }, updated_at: now, updated_by: context.userId },
-      { key: "request_default_status_pticha", value: { status: data.defaultPticha ?? null }, updated_at: now, updated_by: context.userId },
-      { key: "request_default_status_sgira", value: { status: data.defaultSgira ?? null }, updated_at: now, updated_by: context.userId },
+      { key: settingKey("request_automation_mode", crmKey), value: { mode: data.mode }, updated_at: now, updated_by: context.userId },
+      { key: settingKey("request_default_status_pticha", crmKey), value: { status: data.defaultPticha ?? null }, updated_at: now, updated_by: context.userId },
+      { key: settingKey("request_default_status_sgira", crmKey), value: { status: data.defaultSgira ?? null }, updated_at: now, updated_by: context.userId },
     ];
     const { error } = await supabaseAdmin.from("app_settings").upsert(rows);
     if (error) throw new Error(error.message);
@@ -350,16 +428,16 @@ export const getRequestAudio = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-    const { data: req } = await supabaseAdmin
-      .from("system_requests")
-      .select("gmail_message_id, attachment_index, attachment_name, crm_key")
-      .eq("id", data.id).maybeSingle();
-    if (!req?.gmail_message_id) throw new Error("לא נמצאה הקלטה לבקשה זו");
-    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
+    // `requests_view` is checked against the CRM stored on the request itself,
+    // so viewing rights in one CRM never unlock another CRM's recording.
+    const { req } = await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_view",
+      "gmail_message_id, attachment_index, attachment_name, crm_key",
+    );
+    if (!req.gmail_message_id) throw new Error("לא נמצאה הקלטה לבקשה זו");
 
     const [urlRow, secretRow] = await Promise.all([
       supabaseAdmin.from("app_settings").select("value").eq("key", "email_relay_url").maybeSingle(),
@@ -373,8 +451,8 @@ export const getRequestAudio = createServerFn({ method: "POST" })
     const relayRes = await postToRelay(relayUrl, {
       secret: relaySecret,
       action: "get_attachment",
-      gmailMessageId: (req as any).gmail_message_id,
-      attachmentIndex: (req as any).attachment_index ?? 0,
+      gmailMessageId: req.gmail_message_id,
+      attachmentIndex: req.attachment_index ?? 0,
     });
     // postToRelay returns a Response — the JSON body has to be read out of it.
     let res: any = null;
@@ -398,25 +476,26 @@ export const getRequestAudio = createServerFn({ method: "POST" })
     }
     return {
       dataUrl: `data:${mime.startsWith("audio/") ? mime : "audio/mpeg"};base64,${base64}`,
-      name: (req as any).attachment_name ?? "recording",
+      name: req.attachment_name ?? "recording",
     };
   });
 
 
 /**
- * Badge count for the "requests" tab. Gated by `requests_view` so a user
- * without the permission never even triggers a background count query.
+ * Badge count for the "requests" tab. Counts only requests in CRMs where the
+ * caller actually holds `requests_view`.
  */
 export const countPendingRequests = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+    const { crmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const crmKeys = await crmKeysWithPermission(context.userId, "requests_view");
+    if (!crmKeys.length) return { count: 0 };
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { count } = await supabaseAdmin
       .from("system_requests")
       .select("id", { count: "exact", head: true })
-      .eq("crm_key", "yemot")
+      .in("crm_key", crmKeys)
       .eq("processing_state", "done")
       .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return { count: count ?? 0 };
@@ -429,32 +508,41 @@ export const countPendingRequests = createServerFn({ method: "GET" })
 export const repairUnlinkedRequests = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_decide");
+    const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const crmKeys = await requireCrmKeysWithPermission(context.userId, "requests_decide");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { relinkOpenRequests } = await import("@/lib/system-requests.server");
-    return relinkOpenRequests(supabaseAdmin);
+    const totals = { scanned: 0, linked: 0, ambiguous: 0, missing: 0 };
+    for (const key of crmKeys) {
+      const res = await relinkOpenRequests(supabaseAdmin, key);
+      totals.scanned += res.scanned;
+      totals.linked += res.linked;
+      totals.ambiguous += res.ambiguous;
+      totals.missing += res.missing;
+    }
+    return totals;
   });
 
 /** Compact daily summary for the dashboard strip. */
 export const getRequestsSummary = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+    const { crmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const crmKeys = await crmKeysWithPermission(context.userId, "requests_view");
+    if (!crmKeys.length) return { today: 0, pticha: 0, sgira: 0, applied: 0, dryRun: 0, pending: 0 };
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data } = await supabaseAdmin
       .from("system_requests")
       .select("decision_status, request_type, dry_run, received_at")
-      .eq("crm_key", "yemot")
+      .in("crm_key", crmKeys)
       .gte("received_at", since)
       .limit(1000);
     const rows = (data ?? []) as any[];
     const { count: pending } = await supabaseAdmin
       .from("system_requests")
       .select("id", { count: "exact", head: true })
-      .eq("crm_key", "yemot")
+      .in("crm_key", crmKeys)
       .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return {
       today: rows.length,
@@ -472,13 +560,15 @@ export const listRequestsForSystem = createServerFn({ method: "POST" })
   .inputValidator((d: { systemId: string; limit?: number }) =>
     z.object({ systemId: z.string().uuid(), limit: z.number().int().min(1).max(50).optional() }).parse(d))
   .handler(async ({ data, context }) => {
-    const { assertRequestPermission } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_view");
+    const { crmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const crmKeys = await crmKeysWithPermission(context.userId, "requests_view");
+    if (!crmKeys.length) return [];
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows } = await supabaseAdmin
       .from("system_requests")
       .select("id, request_type, decision_status, proposed_action, proposed_status, new_status, prev_status, dry_run, received_at, request_number, last_error")
       .eq("system_id", data.systemId)
+      .in("crm_key", crmKeys)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 10);
     return rows ?? [];

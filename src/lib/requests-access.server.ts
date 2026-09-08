@@ -31,6 +31,71 @@ export async function assertRequestPermission(
 }
 
 /**
+ * Every CRM in which the user actually holds `permission`. Lists and counters
+ * filter the QUERY by this, instead of reading everything with the service role
+ * and trusting the screen to hide the rest.
+ */
+export async function crmKeysWithPermission(
+  userId: string,
+  permission: "requests_view" | "requests_decide" | "requests_manage",
+): Promise<string[]> {
+  const { listUserCrmKeys, hasPermission } = await import("@/lib/permissions.server");
+  const keys = await listUserCrmKeys(userId);
+  const allowed = await Promise.all(keys.map(async (k) => ((await hasPermission(userId, permission, k)) ? k : null)));
+  return allowed.filter((k): k is string => Boolean(k));
+}
+
+/** Same, but throws when the user holds the permission in no CRM at all. */
+export async function requireCrmKeysWithPermission(
+  userId: string,
+  permission: "requests_view" | "requests_decide" | "requests_manage",
+): Promise<string[]> {
+  const keys = await crmKeysWithPermission(userId, permission);
+  if (!keys.length) throw new Error("אין הרשאה");
+  return keys;
+}
+
+/**
+ * Loads a request BY ID and authorizes against the CRM stored on the row.
+ * The CRM never comes from the browser, so a permission held in one CRM can
+ * never be used to touch another CRM's request.
+ */
+export async function loadAuthorizedRequest(
+  supabaseAdmin: any,
+  userSupabase: any,
+  userId: string,
+  id: string,
+  permission: "requests_view" | "requests_decide" | "requests_manage",
+  columns = "*",
+) {
+  const { data: req, error } = await supabaseAdmin
+    .from("system_requests").select(columns).eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!req) throw new Error("הבקשה לא נמצאה");
+  const crmKey = String((req as any).crm_key ?? "yemot");
+  await assertCrmAccess(userSupabase, userId, crmKey);
+  await assertRequestPermission(userId, permission, crmKey);
+  return { req: req as any, crmKey };
+}
+
+/** Same contract for a rule row: the CRM comes from the stored rule. */
+export async function loadAuthorizedRule(
+  supabaseAdmin: any,
+  userSupabase: any,
+  userId: string,
+  id: string,
+) {
+  const { data: rule, error } = await supabaseAdmin
+    .from("system_request_rules").select("*").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!rule) throw new Error("הכלל לא נמצא");
+  const crmKey = String((rule as any).crm_key ?? "yemot");
+  await assertCrmAccess(userSupabase, userId, crmKey);
+  await assertRequestPermission(userId, "requests_manage", crmKey);
+  return { rule: rule as any, crmKey };
+}
+
+/**
  * Status values a rule or default may point at, for one CRM. Used to reject a
  * status that does not exist instead of storing an unusable rule.
  */

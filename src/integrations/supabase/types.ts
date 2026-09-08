@@ -1025,6 +1025,8 @@ export type Database = {
           crm_key: string
           decided_at: string | null
           decided_by: string | null
+          decision_claim_at: string | null
+          decision_claim_by: string | null
           decision_status: string | null
           dry_run: boolean
           duplicate_of: string | null
@@ -1064,6 +1066,8 @@ export type Database = {
           crm_key?: string
           decided_at?: string | null
           decided_by?: string | null
+          decision_claim_at?: string | null
+          decision_claim_by?: string | null
           decision_status?: string | null
           dry_run?: boolean
           duplicate_of?: string | null
@@ -1103,6 +1107,8 @@ export type Database = {
           crm_key?: string
           decided_at?: string | null
           decided_by?: string | null
+          decision_claim_at?: string | null
+          decision_claim_by?: string | null
           decision_status?: string | null
           dry_run?: boolean
           duplicate_of?: string | null
@@ -1456,6 +1462,10 @@ export type Database = {
         Args: { _key: string; _window_seconds: number }
         Returns: number
       }
+      claim_system_request: {
+        Args: { _actor: string; _id: string; _stale_seconds?: number }
+        Returns: Json
+      }
       claim_voice_queue: {
         Args: { _limit?: number; _stale_seconds?: number }
         Returns: {
@@ -1480,6 +1490,7 @@ export type Database = {
           system_code: string
         }[]
       }
+      get_voice_queue_endpoint: { Args: never; Returns: string }
       has_crm_access: {
         Args: { _crm_key: string; _user_id: string }
         Returns: boolean
@@ -1525,6 +1536,10 @@ export type Database = {
         Returns: Json
       }
       purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
+      release_system_request_claim: {
+        Args: { _actor: string; _id: string }
+        Returns: boolean
+      }
       reports_summary: {
         Args: {
           _agent?: string
@@ -1535,6 +1550,7 @@ export type Database = {
         Returns: Json
       }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
+      set_voice_queue_endpoint: { Args: { _url: string }; Returns: boolean }
       systems_status_counts: {
         Args: { _agent?: string; _from?: string; _to?: string }
         Returns: {

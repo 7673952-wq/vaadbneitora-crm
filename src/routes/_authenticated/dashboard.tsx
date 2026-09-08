@@ -747,9 +747,9 @@ function Dashboard() {
             <BarChart3 className="h-4 w-4 text-indigo-600" />
             {showCharts ? "סגור תרשימים" : "תרשימים"}
           </button>
-          {me?.isAgent && (
+          {(me?.isSuperAdmin || (me as any)?.permissions?.import_export) && (
             <ImportExportMenu
-              canExport={!!me?.isAdmin}
+              canExport={Boolean(me?.isSuperAdmin || (me as any)?.permissions?.import_export)}
               onExport={() => setShowExport(true)}
               onImport={() => setShowImport(true)}
             />

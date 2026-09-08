@@ -947,7 +947,7 @@ function SystemDetail() {
                     </button>
                   )}
 
-                  {me?.isSuperAdmin && (
+                  {(me?.isSuperAdmin || (me as any)?.permissions?.systems_delete) && (
                     <button type="button" onClick={deleteCurrentSystem} title="מחק מערכת"
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/70 bg-white/75 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                       <Trash2 className="h-3.5 w-3.5" />

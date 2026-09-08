@@ -65,12 +65,17 @@ function downloadCSV(rows: any[]) {
   URL.revokeObjectURL(url);
 }
 
+// Audit access follows the "צפייה ביומן הבקרה" permission; super-admins always pass.
+function canViewAudit(me: any) {
+  return Boolean(me?.isSuperAdmin || me?.permissions?.audit_view);
+}
+
 function AuditPage() {
   const navigate = useNavigate();
   const meFn = useServerFn(getMyRole);
   const { data: me, isLoading: meLoading } = useQuery({ queryKey: ["my-role"], queryFn: async () => meFn({}) });
   useEffect(() => {
-    if (!meLoading && me && !me.isSuperAdmin) navigate({ to: "/dashboard", replace: true });
+    if (!meLoading && me && !canViewAudit(me)) navigate({ to: "/dashboard", replace: true });
   }, [me, meLoading, navigate]);
 
   const listFn = useServerFn(listAuditLog);
@@ -92,11 +97,11 @@ function AuditPage() {
     limit: 1000,
   }), [actorId, action, from, to, appliedSearch]);
 
-  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: async () => actorsFn({}), enabled: !!me?.isSuperAdmin });
+  const { data: actors } = useQuery({ queryKey: ["audit-actors"], queryFn: async () => actorsFn({}), enabled: canViewAudit(me) });
   const { data: rows, isLoading } = useQuery({
     queryKey: ["audit-log", filters],
     queryFn: async () => listFn({ data: filters }),
-    enabled: !!me?.isSuperAdmin,
+    enabled: canViewAudit(me),
   });
 
   const list = rows ?? [];
@@ -214,7 +219,8 @@ function AuditPage() {
             {list.map((r: any) => {
               const hasOld = r.old_display !== null && r.old_display !== undefined && r.old_display !== "";
               const hasNew = r.new_display !== null && r.new_display !== undefined && r.new_display !== "";
-              const canRevert = isRevertibleEntry(r) && latestIds.has(r.id);
+              // Undo stays super-admin only (server enforces it too).
+              const canRevert = Boolean(me?.isSuperAdmin) && isRevertibleEntry(r) && latestIds.has(r.id);
               return (
                 <tr key={r.id} className="border-t border-border align-top hover:bg-accent/30">
                   <td className="p-2 whitespace-nowrap text-xs">{fmtDate(r.created_at)}</td>

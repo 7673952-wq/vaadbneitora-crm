@@ -39,8 +39,11 @@ export const uploadSystemFile = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertCanWrite } = await import("@/lib/permissions.server");
+    const { assertCanWrite, assertPermission } = await import("@/lib/permissions.server");
     await assertCanWrite(context.userId);
+    // "ניהול קבצים" is its own switch in ניהול → הרשאות; a general write
+    // permission is not enough to attach files.
+    await assertPermission(context.userId, "files_manage", "yemot");
     // Verify caller can upload to this system
     const { data: sys, error: sysErr } = await context.supabase
       .from("systems").select("id, assigned_agent_id").eq("id", data.system_id).maybeSingle();
@@ -116,8 +119,9 @@ export const deleteSystemFile = createServerFn({ method: "POST" })
     z.object({ file_id: z.string().uuid() }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertCanWrite } = await import("@/lib/permissions.server");
+    const { assertCanWrite, assertPermission } = await import("@/lib/permissions.server");
     await assertCanWrite(context.userId);
+    await assertPermission(context.userId, "files_manage", "yemot");
     const { data: row, error } = await context.supabase
       .from("system_files").select("storage_path, uploaded_by").eq("id", data.file_id).maybeSingle();
     if (error || !row) throw new Error("הקובץ לא נמצא");

@@ -101,6 +101,14 @@ async function ensureCanWrite(userId: string) {
   const { assertCanWrite } = await import("@/lib/permissions.server");
   await assertCanWrite(userId, "yemot");
 }
+// Single named permission from ניהול → הרשאות (super-admins always pass).
+async function ensurePermission(
+  userId: string,
+  permission: import("@/lib/permissions.server").PermissionKey,
+) {
+  const { assertPermission } = await import("@/lib/permissions.server");
+  await assertPermission(userId, permission, "yemot");
+}
 
 
 const ACTIVITY_PAGE_SIZE = 100;
@@ -127,6 +135,7 @@ export const listSystems = createServerFn({ method: "POST" })
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const { assertCrmAccess } = await import("@/lib/permissions.server");
     await assertCrmAccess(context.userId, "yemot");
+    await ensurePermission(context.userId, "systems_read");
     const db = context.supabase;
     const statusValues = await resolveStatusFilterValues(db, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(db, data.secondaryStatus);
@@ -272,6 +281,7 @@ export const getSystem = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await ensurePermission(context.userId, "systems_read");
     const { data: sys, error } = await context.supabase
       .from("systems").select("*").eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
@@ -673,6 +683,12 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
     const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
+    if (
+      (data.status !== undefined && data.status !== sys.status)
+      || data.secondary_status !== undefined
+    ) {
+      await ensurePermission(context.userId, "status_change");
+    }
     const isRootStatusChange =
       data.status !== undefined
       && data.status !== sys.status
@@ -854,8 +870,10 @@ export const deleteSystem = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const { assertRole } = await import("@/lib/permissions.server");
-    await assertRole(context.userId, "super_admin");
+    // Deletion is governed by the "מחיקת מערכות" permission (super-admins
+    // always resolve true), not by a hard-coded role check.
+    await ensurePermission(context.userId, "systems_delete");
+
 
     const mode = data.mode ?? "cascade";
     // "promote" — keep children alive: pick one as the new parent and
@@ -934,6 +952,7 @@ export const addNote = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
+    await ensurePermission(context.userId, "notes_write");
     const { error } = await context.supabase.from("system_notes").insert({
       system_id: data.system_id, body: sanitizeText(data.body), author_id: context.userId,
     });
@@ -2472,8 +2491,8 @@ export const importSystems = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const isAdmin = await userHasRole(context.userId, "admin");
-    if (!isAdmin) throw new Error("רק מנהל יכול לייבא מערכות");
+    await ensurePermission(context.userId, "import_export");
+
 
     const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);
     // Load label -> key map from the stable status settings config.

@@ -24,8 +24,8 @@ export const listAuditLog = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    const { assertRole } = await import("@/lib/permissions.server");
-    await assertRole(context.userId, "super_admin");
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "audit_view", "yemot");
     let q = context.supabase
       .from("system_activity_log")
       .select("id, system_id, actor_id, actor_display_name, action, field, old_value, new_value, reason, created_at")
@@ -145,8 +145,8 @@ export const listAuditLog = createServerFn({ method: "POST" })
 export const listAuditActors = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
-    const { assertRole } = await import("@/lib/permissions.server");
-    await assertRole(context.userId, "super_admin");
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "audit_view", "yemot");
     const { data, error } = await context.supabase
       .from("profiles").select("id, display_name").order("display_name", { ascending: true });
     if (error) throw new Error(error.message);

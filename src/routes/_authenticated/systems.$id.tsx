@@ -239,6 +239,9 @@ function SystemDetail() {
   const [uploading, setUploading] = useState(false);
 
   const filesFn = useServerFn(listSystemFiles);
+  // "ניהול קבצים" permission (super-admins always pass).
+  const canManageFiles = Boolean(me?.isSuperAdmin || (me as any)?.permissions?.files_manage);
+  const canWriteNotes = Boolean(me?.isSuperAdmin || (me as any)?.permissions?.notes_write);
   const uploadFn = useServerFn(uploadSystemFile);
   const fileUrlFn = useServerFn(getSystemFileUrl);
   const deleteFileFn = useServerFn(deleteSystemFile);
@@ -947,7 +950,7 @@ function SystemDetail() {
                     </button>
                   )}
 
-                  {me?.isSuperAdmin && (
+                  {(me?.isSuperAdmin || (me as any)?.permissions?.systems_delete) && (
                     <button type="button" onClick={deleteCurrentSystem} title="מחק מערכת"
                       className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/70 bg-white/75 text-muted-foreground hover:bg-destructive/10 hover:text-destructive">
                       <Trash2 className="h-3.5 w-3.5" />
@@ -1221,7 +1224,9 @@ function SystemDetail() {
 
 
         {/* The composer is secondary to the log itself, so it stays compact
-            and visually quiet until it is focused. */}
+            and visually quiet until it is focused. Hidden without the
+            "כתיבת הערות" permission. */}
+        {canWriteNotes && (
         <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
           className="flex gap-1.5 mb-3 relative items-start opacity-80 focus-within:opacity-100 transition-opacity">
 
@@ -1278,6 +1283,7 @@ function SystemDetail() {
           </button>
 
         </form>
+        )}
 
         {/* סינון יומן הפעילות */}
         <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">
@@ -1770,7 +1776,7 @@ function SystemDetail() {
           <p className="text-xs text-muted-foreground mb-4">
             בשינוי סטטוס של מערכת ראשית תישאל האם להחיל את השינוי גם על תתי-המערכות. שינוי נציג עדיין עובר אליהן אוטומטית.
           </p>
-          {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
+          {canManageFiles && (me?.isAdmin || s.assigned_agent_id === me?.userId) && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1846,7 +1852,7 @@ function SystemDetail() {
                   <button onClick={() => downloadFile(f.id)} className="p-2 rounded-lg hover:bg-accent" title="הורד">
                     <Download className="h-4 w-4" />
                   </button>
-                  {(me?.isAdmin || f.uploaded_by === me?.userId) && (
+                  {canManageFiles && (me?.isAdmin || f.uploaded_by === me?.userId) && (
                     <button onClick={() => { if (confirm("למחוק את הקובץ?")) deleteFileMut.mutate(f.id); }}
                       className="p-2 rounded-lg text-destructive hover:bg-destructive/10" title="מחק">
                       <Trash2 className="h-4 w-4" />

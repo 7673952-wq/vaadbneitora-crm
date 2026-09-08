@@ -758,6 +758,20 @@ function POLL_REQUEST_LABELS(sharedStart) {
   return stats;
 }
 
+/**
+ * The system number written in THIS message (subject or body), or '' when the
+ * message does not carry one. Mirrors the CRM's own extraction rule.
+ */
+function messageSystemCode_(msg) {
+  var text = '';
+  try { text = (msg.getSubject() || '') + '\n' + (msg.getPlainBody() || ''); }
+  catch (e) { return ''; }
+  var m = text.match(/(?:מספר\s*ה?מערכת|מזהה\s*ה?מערכת|מס[.'׳]?\s*ה?מערכת|system\s*(?:number|code|id))\s*[:\-]?\s*([0-9][0-9\- ]{3,23})/i);
+  if (!m || !m[1]) return '';
+  var digits = String(m[1]).replace(/\D/g, '');
+  return digits.length >= 4 ? digits : '';
+}
+
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;

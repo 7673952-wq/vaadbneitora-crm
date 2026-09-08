@@ -23,7 +23,14 @@ export const listSystemRequests = createServerFn({ method: "GET" })
       .select("*")
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 100);
-    if (data.decision) q = q.eq("decision_status", data.decision);
+    if (data.decision === "open") {
+      // Everything still waiting for a human: never decided, or decided only
+      // as a test run while the automation is in check mode.
+      const { OPEN_DECISIONS } = await import("@/lib/system-requests.server");
+      q = q.in("decision_status", OPEN_DECISIONS);
+    } else if (data.decision) {
+      q = q.eq("decision_status", data.decision);
+    }
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
 
@@ -391,7 +398,7 @@ export const countPendingRequests = createServerFn({ method: "GET" })
       .select("id", { count: "exact", head: true })
       .eq("crm_key", "yemot")
       .eq("processing_state", "done")
-      .eq("decision_status", "needs_decision");
+      .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return { count: count ?? 0 };
   });
 
@@ -428,7 +435,7 @@ export const getRequestsSummary = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("id", { count: "exact", head: true })
       .eq("crm_key", "yemot")
-      .eq("decision_status", "needs_decision");
+      .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return {
       today: rows.length,
       pticha: rows.filter((r) => r.request_type === "pticha").length,

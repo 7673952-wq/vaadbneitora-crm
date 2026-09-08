@@ -2255,8 +2255,23 @@ export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId:
       void logInfo(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);
     }
   } catch (e: any) {
-    void logInfo(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${e?.message}`);
-    // Never let auto-voice-send scheduling break the status update itself.
+    const message = String(e?.message ?? e);
+    void logInfo(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${message}`);
+    // Never let auto-voice-send scheduling break the status update itself —
+    // but never lose the message either: park it for a retry in a few minutes
+    // so it is processed again and shows up in ניהול → תור ההודעות.
+    try {
+      const retryAt = new Date(Date.now() + VOICE_RETRY_MINUTES[0]! * 60_000).toISOString();
+      await supabaseAdmin.from("systems").update({
+        pending_voice_send_at: retryAt,
+        voice_pending_reason: "retry",
+        voice_last_error: `תזמון ההודעה נכשל: ${message}`,
+        voice_claim_at: null,
+      }).eq("id", systemId);
+      await armVoiceQueueJob(supabaseAdmin, systemId);
+    } catch (inner: any) {
+      void logInfo(`[auto-voice] system=${systemId} recovery marker failed: ${inner?.message ?? inner}`);
+    }
   }
 }
 

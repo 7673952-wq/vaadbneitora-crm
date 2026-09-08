@@ -122,7 +122,10 @@ export const getEmailGeneralName = createServerFn({ method: "GET" })
 export const getMyEmailProfile = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
-    const { data, error } = await context.supabase
+    // Signatures are no longer readable by the browser client (column grant
+    // removed); read the caller's own row server-side with the verified id.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data, error } = await supabaseAdmin
       .from("profiles").select("display_name, email_signature" as any).eq("id", context.userId).maybeSingle();
     if (error) throw new Error(error.message);
     return { displayName: (data as any)?.display_name ?? "", signature: (data as any)?.email_signature ?? "" };

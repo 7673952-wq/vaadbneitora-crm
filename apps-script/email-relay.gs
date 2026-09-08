@@ -693,7 +693,14 @@ function SETUP_GMAIL_FILTERS() {
 function json_(x) { return ContentService.createTextOutput(JSON.stringify(x)).setMimeType(ContentService.MimeType.JSON); }
 function body_(b, s) { return String(b || '') + (s ? '\n\n' + s : ''); }
 function plain_(s) { return String(s || '').replace(/<[^>]*>/g, ''); }
-function html_(s) { return String(s || '').replace(/\n/g, '<br>'); }
+// The CRM composer sends PLAIN TEXT. Escaping before the newline->br step
+// keeps stray '<', '&' or a pasted tag from becoming live markup in the mail.
+function escapeHtml_(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function html_(s) { return escapeHtml_(s).replace(/\r\n|\r|\n/g, '<br>'); }
 function lastId_(t) { if (!t) return null; var m = t.getMessages(); return m.length ? m[m.length - 1].getId() : null; }
 function findSent_(to, subject) {
   var q = 'in:sent to:' + to + ' subject:"' + String(subject).replace(/"/g, '') + '"';

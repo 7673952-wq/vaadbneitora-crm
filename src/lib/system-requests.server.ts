@@ -429,7 +429,7 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
 
       // ---- no such system: this is the "create" path, not the rules path ----
       if (!system) {
-        const defaultStatus = await readDefaultStatus(supabaseAdmin, requestType);
+        const defaultStatus = await readDefaultStatus(supabaseAdmin, requestType, crmKey);
         if (!defaultStatus) {
           await done(supabaseAdmin, req.id, {
             last_completed_state: "parsed",

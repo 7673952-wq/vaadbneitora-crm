@@ -599,3 +599,31 @@ describe("OPEN_DECISIONS — what still waits for a human", () => {
     expect([...OPEN_DECISIONS].sort()).toEqual(["needs_decision", "simulated"]);
   });
 });
+
+describe("settings are separate per CRM", () => {
+  it("keeps the original CRM's historical key and namespaces every other CRM", async () => {
+    const { requestSettingKey } = await import("./system-requests.server");
+    expect(requestSettingKey("request_automation_mode", "yemot")).toBe("request_automation_mode");
+    expect(requestSettingKey("request_automation_mode", "simahedrin"))
+      .toBe("request_automation_mode__simahedrin");
+    expect(requestSettingKey("request_default_status_pticha", "derech"))
+      .toBe("request_default_status_pticha__derech");
+  });
+});
+
+describe("the mail relay only forwards a message that carries its own system number", () => {
+  const script = () => import("node:fs").then((fs) => fs.readFileSync("apps-script/email-relay.gs", "utf8"));
+
+  it("skips a message with no system number instead of creating an empty request", async () => {
+    const src = await script();
+    expect(src).toContain("function messageSystemCode_(msg)");
+    expect(src).toContain("if (!messageSystemCode_(msg)) {");
+  });
+
+  it("counts a skipped and a duplicate message apart from a sent one", async () => {
+    const src = await script();
+    expect(src).toContain("if (parsed.duplicate) stats.duplicate++;");
+    expect(src).toContain("else if (parsed.skipped) stats.skipped++;");
+    expect(src).toContain("else stats.sent++;");
+  });
+});

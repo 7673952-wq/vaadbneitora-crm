@@ -2088,7 +2088,9 @@ export async function readVoiceDebounceSeconds(supabaseAdmin: any): Promise<numb
 // Sends to every caller (primary + additional) who hasn't yet received a
 // message for the system's CURRENT status. Used by the automatic
 // status-triggered send and by the queued/cron sender. Never throws.
-async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: "auto" | "queue" | "manual" = "auto", userId?: string | null) {
+export type VoiceSendMode = "auto" | "queue" | "manual";
+
+async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: VoiceSendMode = "auto", userId?: string | null) {
   const { data: sysRow, error: sysErr } = await supabaseAdmin
     .from("systems")
     .select("caller_phone, phone, status, additional_caller_phones")
@@ -2121,6 +2123,66 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
 }
 
 
+/**
+ * Turns the self-arming queue checker on. The DB job only exists while at
+ * least one message is waiting; it unschedules itself once the queue drains,
+ * so nothing is polled during idle periods. Never throws: a scheduling
+ * problem must not break the status change that triggered it.
+ */
+async function armVoiceQueueJob(supabaseAdmin: any) {
+  try {
+    const { error } = await supabaseAdmin.rpc("ensure_voice_queue_job");
+    if (error) void logInfo(`[auto-voice] arming queue job failed: ${error.message}`);
+  } catch (e: any) {
+    void logInfo(`[auto-voice] arming queue job failed: ${e?.message ?? e}`);
+  }
+}
+
+/** Turns the checker off again once nothing is waiting. Never throws. */
+async function disarmVoiceQueueJobIfEmpty(supabaseAdmin: any) {
+  try {
+    await supabaseAdmin.rpc("drain_voice_queue_job");
+  } catch {
+    /* best effort */
+  }
+}
+
+/**
+ * Writes the pending marker AND its reason in one update, so the queue
+ * processor knows whether this message is merely inside the short debounce
+ * ("still an ordinary automatic send") or genuinely parked until the next
+ * allowed hour window ("from the queue").
+ */
+async function schedulePendingVoice(
+  supabaseAdmin: any,
+  systemId: string,
+  sendAt: string,
+  reason: "debounce" | "window" | "retry",
+  attempts = 0,
+  lastError: string | null = null,
+) {
+  const { error } = await supabaseAdmin.from("systems").update({
+    pending_voice_send_at: sendAt,
+    voice_pending_reason: reason,
+    voice_attempts: attempts,
+    voice_last_error: lastError,
+    voice_claim_at: null,
+  }).eq("id", systemId);
+  if (error) throw new Error(error.message);
+  await armVoiceQueueJob(supabaseAdmin);
+}
+
+/** Clears the pending marker; used after a successful send or a skip. */
+async function clearPendingVoice(supabaseAdmin: any, systemId: string, lastError: string | null = null) {
+  const { error } = await supabaseAdmin.from("systems").update({
+    pending_voice_send_at: null,
+    voice_pending_reason: null,
+    voice_claim_at: null,
+    voice_last_error: lastError,
+  }).eq("id", systemId);
+  if (error) throw new Error(error.message);
+}
+
 // Called right after a status change in updateSystem. If the new status is
 // configured for automatic voice sending, either sends immediately (if
 // within the configured hour window) or schedules it for the next window.
@@ -2140,19 +2202,19 @@ export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId:
       const debounce = await readVoiceDebounceSeconds(supabaseAdmin);
       if (debounce > 0) {
         // Wait out the debounce window; the queue processor re-reads the
-        // system's status before sending, so a corrected status wins.
+        // system's status before sending, so a corrected status wins. This is
+        // still an ORDINARY automatic send — marked `debounce`, not `window`.
         const sendAt = new Date(now.getTime() + debounce * 1000).toISOString();
-        await supabaseAdmin.from("systems").update({ pending_voice_send_at: sendAt }).eq("id", systemId);
+        await schedulePendingVoice(supabaseAdmin, systemId, sendAt, "debounce");
         void logInfo(`[auto-voice] system=${systemId} debounced for ${debounce}s -> ${sendAt}`);
         return;
       }
-      await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", systemId);
+      await clearPendingVoice(supabaseAdmin, systemId);
       const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId, "auto");
       void logInfo(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
     } else {
-
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
-      await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", systemId);
+      await schedulePendingVoice(supabaseAdmin, systemId, nextStart.toISOString(), "window");
       void logInfo(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);
     }
   } catch (e: any) {
@@ -2161,51 +2223,87 @@ export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId:
   }
 }
 
-// Cron entry point: processes every system whose scheduled auto-send time
-// has arrived. Re-validates the status is still auto+enabled and we're still
-// within its window before actually sending (status may have changed since
-// it was queued).
+/** How long to wait before retrying a failed send, in minutes. */
+const VOICE_RETRY_MINUTES = [5, 10, 20, 40];
+
+/**
+ * Queue entry point. Every due row is CLAIMED first (atomically, in the DB),
+ * so two overlapping runs can never send the same message twice. The pending
+ * marker is cleared only AFTER a successful send; a failure keeps the row in
+ * the queue with a growing back-off, and the counters report what actually
+ * happened rather than how many rows were looked at.
+ */
 export async function processPendingVoiceSends(supabaseAdmin: any) {
-  const nowIso = new Date().toISOString();
-  const { data: due, error } = await supabaseAdmin
-    .from("systems")
-    .select("id, status, pending_voice_send_at")
-    .not("pending_voice_send_at", "is", null)
-    .lte("pending_voice_send_at", nowIso)
-    .limit(200);
+  const { data: claimed, error } = await supabaseAdmin.rpc("claim_voice_queue", {
+    _limit: 50,
+    _stale_seconds: 600,
+  });
   if (error) throw new Error(error.message);
 
   const settings = await readStatusSettings(supabaseAdmin);
   const settingsByKey = new Map(settings.map((s) => [s.status_key, s]));
   const now = new Date();
-  let sent = 0, skipped = 0, requeued = 0;
+  let sent = 0, failed = 0, skipped = 0, requeued = 0, retrying = 0, noTargets = 0;
 
-  for (const row of (due ?? []) as any[]) {
+  for (const row of (claimed ?? []) as any[]) {
     const cur = settingsByKey.get(row.status);
     if (!cur?.enables_voice_message || cur.voice_send_mode !== "auto") {
-      await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", row.id);
+      await clearPendingVoice(supabaseAdmin, row.id, "הסטטוס אינו מוגדר לשליחה אוטומטית");
       skipped++;
       continue;
     }
     if (!isWithinIsraelWindow(now, cur.auto_send_start_hour, cur.auto_send_end_hour)) {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
-      await supabaseAdmin.from("systems").update({ pending_voice_send_at: nextStart.toISOString() }).eq("id", row.id);
+      await schedulePendingVoice(supabaseAdmin, row.id, nextStart.toISOString(), "window", row.voice_attempts ?? 0);
       requeued++;
       continue;
     }
-    await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", row.id);
-    await autoSendUnsentVoiceMessages(supabaseAdmin, row.id, "queue");
-    sent++;
+
+    // A debounced message is a normal automatic send that simply waited out
+    // the safety delay. Only a message parked for the hour window is "queued".
+    const mode: VoiceSendMode = row.voice_pending_reason === "window" ? "queue" : "auto";
+    let result = { ok: 0, fail: 0, targets: 0 };
+    let crashed: string | null = null;
+    try {
+      result = await autoSendUnsentVoiceMessages(supabaseAdmin, row.id, mode);
+    } catch (e: any) {
+      crashed = String(e?.message ?? e);
+    }
+
+    if (!crashed && result.fail === 0) {
+      await clearPendingVoice(supabaseAdmin, row.id);
+      if (result.targets === 0) noTargets++;
+      else sent += result.ok;
+      continue;
+    }
+
+    const attempts = Number(row.voice_attempts ?? 0) + 1;
+    const wait = VOICE_RETRY_MINUTES[Math.min(attempts - 1, VOICE_RETRY_MINUTES.length - 1)]!;
+    const message = crashed ?? `${result.fail} שליחות נכשלו`;
+    if (attempts > VOICE_RETRY_MINUTES.length) {
+      // Give up rather than retry forever; the failure stays visible on the card.
+      await clearPendingVoice(supabaseAdmin, row.id, `השליחה נכשלה ${attempts} פעמים: ${message}`);
+      failed++;
+    } else {
+      const next = new Date(now.getTime() + wait * 60_000).toISOString();
+      await schedulePendingVoice(supabaseAdmin, row.id, next, "retry", attempts, message);
+      retrying++;
+    }
   }
-  return { ok: true, processed: (due ?? []).length, sent, skipped, requeued };
+
+  await disarmVoiceQueueJobIfEmpty(supabaseAdmin);
+  return {
+    ok: true,
+    processed: (claimed ?? []).length,
+    sent, failed, skipped, requeued, retrying, noTargets,
+  };
 }
 
-// Lightweight, authenticated, client-callable trigger for the same queue
-// processor above. Used as a free alternative to a frequent Vercel cron
-// (which requires the Pro plan): the dashboard calls this every few minutes
-// while someone has it open, piggy-backing on normal staff activity during
-// business hours. Throttled so many simultaneously-open dashboards don't
-// hammer Yemot with duplicate work.
+// Extra, opportunistic trigger for the same queue processor. The queue no
+// longer depends on it: a self-arming database job runs every few minutes for
+// as long as something is waiting, and switches itself off when the queue is
+// empty. This stays as a harmless "someone is looking at the dashboard, check
+// now" shortcut, throttled so many open tabs cannot pile up duplicate work.
 export const pokeVoiceQueue = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .handler(async () => {
@@ -2237,8 +2335,12 @@ export const rescheduleVoicePending = createServerFn({ method: "POST" })
       throw new Error("אין הרשאה");
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.from("systems").update({ pending_voice_send_at: data.sendAt }).eq("id", data.systemId);
-    if (error) throw new Error(error.message);
+    if (data.sendAt) {
+      await schedulePendingVoice(supabaseAdmin, data.systemId, data.sendAt, "window");
+    } else {
+      await clearPendingVoice(supabaseAdmin, data.systemId);
+      await disarmVoiceQueueJobIfEmpty(supabaseAdmin);
+    }
     return { ok: true };
   });
 
@@ -2251,8 +2353,14 @@ export const manualSendPendingVoice = createServerFn({ method: "POST" })
       throw new Error("אין הרשאה");
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", data.systemId);
-    return autoSendUnsentVoiceMessages(supabaseAdmin, data.systemId, "manual", context.userId);
+    // The pending marker is removed only after the send actually succeeded,
+    // so a failed manual attempt leaves the message in the queue.
+    const result = await autoSendUnsentVoiceMessages(supabaseAdmin, data.systemId, "manual", context.userId);
+    if (result.fail === 0) {
+      await clearPendingVoice(supabaseAdmin, data.systemId);
+      await disarmVoiceQueueJobIfEmpty(supabaseAdmin);
+    }
+    return result;
   });
 
 export const sendVoiceMessage = createServerFn({ method: "POST" })

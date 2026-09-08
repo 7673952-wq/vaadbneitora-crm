@@ -7,7 +7,10 @@ import { sendVoiceMessage } from "@/lib/systems.functions";
 import { STATUS_LABEL } from "@/lib/status";
 import { Volume2, RefreshCw, Check, X, Send } from "lucide-react";
 
-const MODE_LABEL: Record<string, string> = { manual: "ידני", auto: "אוטומטי", queue: "מהתור" };
+// "אוטומטי" covers an immediate send and a send that waited out the short
+// safety delay; "מהתור" is reserved for a message that was parked until the
+// status's allowed hour window.
+const MODE_LABEL: Record<string, string> = { manual: "ידני", auto: "אוטומטי", queue: "מהתור (מחוץ לשעות)" };
 
 // Shared "יומן הודעות קוליות" table — every send attempt (manual, auto, or
 // queue), including whether it succeeded and what the system's status was

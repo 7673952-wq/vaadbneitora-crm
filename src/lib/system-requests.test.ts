@@ -558,3 +558,44 @@ describe("linkRequestToExistingSystem — a request whose system already exists"
     expect(writes).toEqual([]);
   });
 });
+
+describe("assertKnownStatus — a rule may only point at a status that exists", () => {
+  function statusClient(known: string[]) {
+    return {
+      from() {
+        let wanted = "";
+        const chain: any = {
+          select: () => chain,
+          eq: (_c: string, v: string) => { wanted = v; return chain; },
+          maybeSingle: async () => ({
+            data: known.includes(wanted) ? { status_key: wanted } : null,
+            error: null,
+          }),
+        };
+        return chain;
+      },
+    };
+  }
+
+  it("accepts a status that exists", async () => {
+    const { assertKnownStatus } = await import("./requests-access.server");
+    await expect(assertKnownStatus(statusClient(["open", "closed"]), "closed")).resolves.toBeUndefined();
+  });
+
+  it("rejects a status that does not exist", async () => {
+    const { assertKnownStatus } = await import("./requests-access.server");
+    await expect(assertKnownStatus(statusClient(["open"]), "ghost")).rejects.toThrow(/אינו קיים/);
+  });
+
+  it("treats an empty value as 'no status chosen' rather than an error", async () => {
+    const { assertKnownStatus } = await import("./requests-access.server");
+    await expect(assertKnownStatus(statusClient([]), null)).resolves.toBeUndefined();
+  });
+});
+
+describe("OPEN_DECISIONS — what still waits for a human", () => {
+  it("covers both an undecided request and one concluded only as a test run", async () => {
+    const { OPEN_DECISIONS } = await import("./system-requests.server");
+    expect([...OPEN_DECISIONS].sort()).toEqual(["needs_decision", "simulated"]);
+  });
+});

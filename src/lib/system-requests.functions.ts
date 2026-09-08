@@ -23,7 +23,14 @@ export const listSystemRequests = createServerFn({ method: "GET" })
       .select("*")
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 100);
-    if (data.decision) q = q.eq("decision_status", data.decision);
+    if (data.decision === "open") {
+      // Everything still waiting for a human: never decided, or decided only
+      // as a test run while the automation is in check mode.
+      const { OPEN_DECISIONS } = await import("@/lib/system-requests.server");
+      q = q.in("decision_status", OPEN_DECISIONS);
+    } else if (data.decision) {
+      q = q.eq("decision_status", data.decision);
+    }
     const { data: rows, error } = await q;
     if (error) throw new Error(error.message);
 
@@ -51,19 +58,23 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_decide");
-    const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "status_change"))) throw new Error("אין הרשאה");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // The row is read first so every permission below is checked against the
+    // CRM stored on the request itself, not against a default or a value the
+    // browser could influence.
     const { data: req, error: reqError } = await supabaseAdmin
       .from("system_requests").select("*").eq("id", data.id).maybeSingle();
     if (reqError) throw new Error(reqError.message);
     if (!req) throw new Error("הבקשה לא נמצאה");
-    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
+    const crmKey = String((req as any).crm_key ?? "yemot");
+    await assertCrmAccess(context.supabase, context.userId, crmKey);
+    await assertRequestPermission(context.userId, "requests_decide", crmKey);
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if (!(await hasPermission(context.userId, "status_change", crmKey))) throw new Error("אין הרשאה");
     // `simulated` is a dry-run conclusion that was never applied, so it is still
     // open for a manual decision; anything else is already decided.
-    const OPEN = ["needs_decision", "simulated"];
+    const { OPEN_DECISIONS: OPEN } = await import("@/lib/system-requests.server");
     const current = (req as any).decision_status as string | null;
     if (current && !OPEN.includes(current)) {
       return { ok: true, alreadyDecided: true };
@@ -89,6 +100,8 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       if (link.kind === "linked") return { ok: true, linkedExisting: true, systemId: link.systemId };
 
       const toStatus = String(data.toStatus ?? (req as any).proposed_status ?? "").trim();
+      const { assertKnownStatus } = await import("@/lib/requests-access.server");
+      await assertKnownStatus(supabaseAdmin, toStatus);
       if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
       const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
         system_code: (req as any).system_code_raw ?? codeNorm,
@@ -121,6 +134,8 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       patch.decision_status = "manual_applied";
     } else if (data.action === "apply") {
       const toStatus = (data.toStatus ?? (req as any).proposed_status ?? "").trim();
+      const { assertKnownStatus } = await import("@/lib/requests-access.server");
+      await assertKnownStatus(supabaseAdmin, toStatus);
       const systemId = (req as any).system_id;
       if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
       const { data: sys, error: sysError } = await supabaseAdmin
@@ -176,13 +191,14 @@ export const setRequestSystemCode = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), systemCode: z.string().min(3).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_decide");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: req, error: reqError } = await supabaseAdmin
       .from("system_requests").select("id, crm_key, decision_status, system_id").eq("id", data.id).maybeSingle();
     if (reqError) throw new Error(reqError.message);
     if (!req) throw new Error("הבקשה לא נמצאה");
-    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
+    const crmKey = String((req as any).crm_key ?? "yemot");
+    await assertCrmAccess(context.supabase, context.userId, crmKey);
+    await assertRequestPermission(context.userId, "requests_decide", crmKey);
     if (!["needs_decision", "simulated", null].includes((req as any).decision_status)) {
       throw new Error("הבקשה כבר טופלה");
     }
@@ -235,6 +251,14 @@ export const saveRequestRule = createServerFn({ method: "POST" })
     const { assertRequestPermission } = await import("@/lib/requests-access.server");
     await assertRequestPermission(context.userId, "requests_manage");
     if (data.action === "set_status" && !data.to_status) throw new Error("יש לבחור סטטוס יעד");
+    {
+      // A rule may only point at statuses that actually exist, so an outdated
+      // or hand-crafted value can never be stored and silently misfire later.
+      const { assertKnownStatus } = await import("@/lib/requests-access.server");
+      const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+      await assertKnownStatus(supabaseAdmin, data.from_status);
+      await assertKnownStatus(supabaseAdmin, data.to_status);
+    }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const row = {
       crm_key: "yemot",
@@ -301,6 +325,9 @@ export const setRequestAutomationSettings = createServerFn({ method: "POST" })
     const { assertRequestPermission } = await import("@/lib/requests-access.server");
     await assertRequestPermission(context.userId, "requests_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { assertKnownStatus } = await import("@/lib/requests-access.server");
+    await assertKnownStatus(supabaseAdmin, data.defaultPticha);
+    await assertKnownStatus(supabaseAdmin, data.defaultSgira);
     const now = new Date().toISOString();
     const rows = [
       { key: "request_automation_mode", value: { mode: data.mode }, updated_at: now, updated_by: context.userId },
@@ -391,7 +418,7 @@ export const countPendingRequests = createServerFn({ method: "GET" })
       .select("id", { count: "exact", head: true })
       .eq("crm_key", "yemot")
       .eq("processing_state", "done")
-      .eq("decision_status", "needs_decision");
+      .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return { count: count ?? 0 };
   });
 
@@ -428,7 +455,7 @@ export const getRequestsSummary = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("id", { count: "exact", head: true })
       .eq("crm_key", "yemot")
-      .eq("decision_status", "needs_decision");
+      .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return {
       today: rows.length,
       pticha: rows.filter((r) => r.request_type === "pticha").length,

@@ -341,25 +341,35 @@ export const listPendingVoiceSends = createServerFn({ method: "GET" })
     // Get all systems with pending voice sends or already sent
     const { data: systems, error } = await supabaseAdmin
       .from("systems")
-      .select("id, system_code, status, pending_voice_send_at, voice_message_sent_at, caller_phone, phone, additional_caller_phones, created_at");
-    
+      .select("id, system_code, status, pending_voice_send_at, voice_pending_reason, voice_attempts, voice_last_error, voice_message_sent_at, caller_phone, phone, additional_caller_phones, created_at");
+
     if (error) throw new Error(error.message);
-    
+
     // Enrich with status settings
     const settings = await readStatusSettings(supabaseAdmin);
     const settingsByKey = new Map(settings.map((s) => [s.status_key, s]));
-    
+
+    const REASON_LABEL: Record<string, string> = {
+      debounce: "ממתין להשהיה קצרה",
+      window: "ממתין לשעות הפעילות",
+      retry: "ניסיון חוזר אחרי כשל",
+    };
+
     const pending = (systems ?? []).map((sys: any) => {
       const setting = settingsByKey.get(sys.status);
       const isPending = !!sys.pending_voice_send_at && !sys.voice_message_sent_at;
       const isSent = !!sys.voice_message_sent_at;
-      
+
       return {
         id: sys.id,
         system_code: sys.system_code,
         status: sys.status,
         status_label: setting?.label || sys.status,
         pending_voice_send_at: sys.pending_voice_send_at,
+        pending_reason: sys.voice_pending_reason ?? null,
+        pending_reason_label: REASON_LABEL[sys.voice_pending_reason as string] ?? "ממתין",
+        attempts: sys.voice_attempts ?? 0,
+        last_error: sys.voice_last_error ?? null,
         voice_message_sent_at: sys.voice_message_sent_at,
         caller_phone: sys.caller_phone || sys.phone,
         additional_phones: sys.additional_caller_phones || [],

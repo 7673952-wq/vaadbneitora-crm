@@ -2491,8 +2491,8 @@ export const importSystems = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
-    const isAdmin = await userHasRole(context.userId, "admin");
-    if (!isAdmin) throw new Error("רק מנהל יכול לייבא מערכות");
+    await ensurePermission(context.userId, "import_export");
+
 
     const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);
     // Load label -> key map from the stable status settings config.

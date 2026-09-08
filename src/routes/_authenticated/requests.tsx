@@ -103,7 +103,8 @@ function RequestsPage() {
 
   const list = useQuery({
     queryKey: ["system-requests", onlyPending],
-    queryFn: () => fetchList({ data: { decision: onlyPending ? "needs_decision" : null, limit: 100 } }),
+    // "open" = never decided AND decided-in-test-mode; both still need a human.
+    queryFn: () => fetchList({ data: { decision: onlyPending ? "open" : null, limit: 100 } }),
     refetchInterval: 60_000,
     enabled: canView,
   });
@@ -145,7 +146,7 @@ function RequestsPage() {
 
   const rows = (list.data ?? []) as any[];
   const pendingCount = useMemo(
-    () => rows.filter((r) => r.decision_status === "needs_decision").length,
+    () => rows.filter((r) => r.decision_status === "needs_decision" || r.decision_status === "simulated" || !r.decision_status).length,
     [rows],
   );
 

@@ -13,14 +13,14 @@
 - [x] בדיקות + TypeScript + build
 
 ## שלב ב׳ — הקשחה
-- [ ] auto-assign: שגיאת RPC עוצרת; reminder_agent_ids מתעדכן גם כשהנציג זהה
-- [ ] הורה/תתי-מערכות: שינוי נציג לא משנה סטטוס
-- [ ] יצירת מערכת מבקשה — אטומית/retry בטוח
-- [ ] escaping HTML בפלט Apps Script/ייצוא
-- [ ] rate limit מבוסס DB + בדיקת error
-- [ ] ביקורת RLS מול הרשאות שרת (profiles, role_permissions, user_permissions, notification_role_defaults)
-- [ ] סקירת SECURITY DEFINER
-- [ ] בדיקות RLS אמיתיות
-- [ ] npm audit (+ --omit=dev), בדיקת xlsx
-- [ ] עדכון מסמכי מוכנות/פיצ'רים
-- [ ] דוח סיום. נשאר dry_run.
+- [x] auto-assign: שגיאת RPC עוצרת; reminder_agent_ids מתעדכן גם כשהנציג זהה
+- [x] הורה/תתי-מערכות: שינוי נציג מקבל מהאב, הסטטוס לא מופץ אוטומטית (אומת בטריגר)
+- [x] יצירת מערכת מבקשה — אטומית, קריאה חוזרת בעת התנגשות
+- [x] escaping HTML בפלט Apps Script
+- [x] rate limit מבוסס DB בכל נתיב ציבורי + בדיקת error
+- [x] ביקורת RLS: ביטול כל הרשאות anon, סגירת טבלאות האימות
+- [x] סקירת SECURITY DEFINER (רק mfa_session_ok נגישה למחובר)
+- [x] בדיקות RLS אמיתיות מול המסד (anon → 401)
+- [x] סריקת תלויות (npm audit חסום בסביבה) + בדיקת xlsx
+- [x] עדכון מסמכי מוכנות/פיצ׳רים
+- [x] דוח סיום. נשאר dry_run.

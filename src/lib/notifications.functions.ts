@@ -124,7 +124,8 @@ export const updateRoleNotificationDefault = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertNotificationsAdmin(context);
-    const { error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
       .from("notification_role_defaults")
       .upsert(
         { role: data.role, event_key: data.event_key, enabled: data.enabled, updated_by: context.userId },

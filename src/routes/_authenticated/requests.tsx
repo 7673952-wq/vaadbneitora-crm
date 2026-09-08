@@ -3,11 +3,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Pencil, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
-  setRequestSystemCode, repairUnlinkedRequests,
+  setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem,
 } from "@/lib/system-requests.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";
@@ -74,6 +74,7 @@ function RequestsPage() {
   const fetchAudio = useServerFn(getRequestAudio);
   const fixCode = useServerFn(setRequestSystemCode);
   const repair = useServerFn(repairUnlinkedRequests);
+  const rename = useServerFn(renameRequestSystem);
   const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
   const { rows: statusRows } = useStatusSettings();
 
@@ -141,6 +142,12 @@ function RequestsPage() {
       toast.success(res?.matched ? "מספר המערכת עודכן והבקשה שויכה" : "מספר המערכת עודכן (לא נמצאה מערכת קיימת)");
       invalidate();
     },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: (vars: { id: string; name: string }) => rename({ data: vars }),
+    onSuccess: () => { toast.success("שם המערכת עודכן"); invalidate(); },
     onError: (e: any) => toast.error(String(e?.message ?? e)),
   });
 
@@ -232,12 +239,13 @@ function RequestsPage() {
               row={r}
               statuses={statusRows ?? []}
               canDecide={canDecide}
-              busy={decideMutation.isPending || codeMutation.isPending}
+              busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending}
               audio={audio}
               audioPending={audioMutation.isPending}
               onPlay={() => audioMutation.mutate(r.id)}
               onDecide={(vars) => decideMutation.mutate(vars)}
               onFixCode={(systemCode) => codeMutation.mutate({ id: r.id, systemCode })}
+              onRename={(name) => renameMutation.mutate({ id: r.id, name })}
             />
           ))}
         </ul>
@@ -247,7 +255,7 @@ function RequestsPage() {
 }
 
 function RequestCard({
-  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onFixCode,
+  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onFixCode, onRename,
 }: {
   row: any;
   statuses: Array<{ status_key: string; label: string }>;
@@ -258,6 +266,7 @@ function RequestCard({
   onPlay: () => void;
   onDecide: (vars: DecideVars) => void;
   onFixCode: (systemCode: string) => void;
+  onRename: (name: string) => void;
 }) {
   // A dry-run simulation was never applied, so it can still be acted on.
   const pending = r.decision_status === "needs_decision" || r.decision_status === "simulated";
@@ -268,6 +277,7 @@ function RequestCard({
 
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
+  const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
 
   return (

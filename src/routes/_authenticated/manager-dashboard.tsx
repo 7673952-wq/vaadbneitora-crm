@@ -318,6 +318,7 @@ function VoiceQueuePanel() {
               <th className="px-4 py-3 font-medium text-muted-foreground">קוד מערכת</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">טלפון נמען</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">סטטוס נוכחי</th>
+              <th className="px-4 py-3 font-medium text-muted-foreground">סיבת ההמתנה</th>
               <th className="px-4 py-3 font-medium text-muted-foreground">מתוזמן לשעה</th>
               <th className="px-4 py-3 font-medium text-muted-foreground"></th>
             </tr>

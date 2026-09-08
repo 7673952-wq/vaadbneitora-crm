@@ -191,13 +191,14 @@ export const setRequestSystemCode = createServerFn({ method: "POST" })
     z.object({ id: z.string().uuid(), systemCode: z.string().min(3).max(40) }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_decide");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: req, error: reqError } = await supabaseAdmin
       .from("system_requests").select("id, crm_key, decision_status, system_id").eq("id", data.id).maybeSingle();
     if (reqError) throw new Error(reqError.message);
     if (!req) throw new Error("הבקשה לא נמצאה");
-    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
+    const crmKey = String((req as any).crm_key ?? "yemot");
+    await assertCrmAccess(context.supabase, context.userId, crmKey);
+    await assertRequestPermission(context.userId, "requests_decide", crmKey);
     if (!["needs_decision", "simulated", null].includes((req as any).decision_status)) {
       throw new Error("הבקשה כבר טופלה");
     }
@@ -324,6 +325,9 @@ export const setRequestAutomationSettings = createServerFn({ method: "POST" })
     const { assertRequestPermission } = await import("@/lib/requests-access.server");
     await assertRequestPermission(context.userId, "requests_manage");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { assertKnownStatus } = await import("@/lib/requests-access.server");
+    await assertKnownStatus(supabaseAdmin, data.defaultPticha);
+    await assertKnownStatus(supabaseAdmin, data.defaultSgira);
     const now = new Date().toISOString();
     const rows = [
       { key: "request_automation_mode", value: { mode: data.mode }, updated_at: now, updated_by: context.userId },

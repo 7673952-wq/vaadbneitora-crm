@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/integrations/supabase/client.server";
-import * as XLSX from "xlsx";
 import { STATUS_LABEL } from "@/lib/status";
 
 // ---------- Scheduled-backup time matching ----------

@@ -1222,7 +1222,11 @@ export type Database = {
           status: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at: string
+          voice_attempts: number
+          voice_claim_at: string | null
+          voice_last_error: string | null
           voice_message_sent_at: string | null
+          voice_pending_reason: string | null
         }
         Insert: {
           additional_caller_phones?: Json
@@ -1252,7 +1256,11 @@ export type Database = {
           status?: Database["public"]["Enums"]["system_status"]
           system_code: string
           updated_at?: string
+          voice_attempts?: number
+          voice_claim_at?: string | null
+          voice_last_error?: string | null
           voice_message_sent_at?: string | null
+          voice_pending_reason?: string | null
         }
         Update: {
           additional_caller_phones?: Json
@@ -1282,7 +1290,11 @@ export type Database = {
           status?: Database["public"]["Enums"]["system_status"]
           system_code?: string
           updated_at?: string
+          voice_attempts?: number
+          voice_claim_at?: string | null
+          voice_last_error?: string | null
           voice_message_sent_at?: string | null
+          voice_pending_reason?: string | null
         }
         Relationships: [
           {
@@ -1444,6 +1456,17 @@ export type Database = {
         Args: { _key: string; _window_seconds: number }
         Returns: number
       }
+      claim_voice_queue: {
+        Args: { _limit?: number; _stale_seconds?: number }
+        Returns: {
+          id: string
+          status: string
+          voice_attempts: number
+          voice_pending_reason: string
+        }[]
+      }
+      drain_voice_queue_job: { Args: never; Returns: boolean }
+      ensure_voice_queue_job: { Args: never; Returns: boolean }
       find_systems_by_code_key: {
         Args: { _key: string }
         Returns: {
@@ -1520,6 +1543,7 @@ export type Database = {
           status: string
         }[]
       }
+      voice_cron_token_valid: { Args: { _token: string }; Returns: boolean }
     }
     Enums: {
       app_role: "admin" | "agent" | "super_admin" | "viewer"

@@ -47,7 +47,7 @@ export const listSystemRequests = createServerFn({ method: "GET" })
 
     const systemIds = Array.from(new Set((rows ?? []).map((r: any) => r.system_id).filter(Boolean)));
     const systems = systemIds.length
-      ? (await context.supabase.from("systems").select("id, system_code, name, status").in("id", systemIds)).data ?? []
+      ? (await context.supabase.from("systems").select("id, system_code, name, status, name_pending").in("id", systemIds)).data ?? []
       : [];
     const byId = new Map((systems as any[]).map((s) => [s.id, s]));
     return (rows ?? []).map((r: any) => ({ ...r, system: byId.get(r.system_id) ?? null }));

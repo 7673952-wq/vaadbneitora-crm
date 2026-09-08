@@ -2353,8 +2353,14 @@ export const manualSendPendingVoice = createServerFn({ method: "POST" })
       throw new Error("אין הרשאה");
     }
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("systems").update({ pending_voice_send_at: null }).eq("id", data.systemId);
-    return autoSendUnsentVoiceMessages(supabaseAdmin, data.systemId, "manual", context.userId);
+    // The pending marker is removed only after the send actually succeeded,
+    // so a failed manual attempt leaves the message in the queue.
+    const result = await autoSendUnsentVoiceMessages(supabaseAdmin, data.systemId, "manual", context.userId);
+    if (result.fail === 0) {
+      await clearPendingVoice(supabaseAdmin, data.systemId);
+      await disarmVoiceQueueJobIfEmpty(supabaseAdmin);
+    }
+    return result;
   });
 
 export const sendVoiceMessage = createServerFn({ method: "POST" })

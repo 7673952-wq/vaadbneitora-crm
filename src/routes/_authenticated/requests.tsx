@@ -332,6 +332,31 @@ function RequestCard({
         <p className="mt-3 text-xs text-muted-foreground">אין לך הרשאת טיפול בבקשות.</p>
       )}
 
+      {/* Renaming the system straight from the request: the mail often carries
+          the real name while the card still holds a temporary one. */}
+      {canDecide && hasSystem && (
+        <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            שם המערכת
+            <input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              placeholder="שם המערכת"
+              className="w-60 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+            />
+          </label>
+          <Button size="sm" variant="outline"
+            disabled={busy || nameDraft.trim().length < 2 || nameDraft.trim() === (r.system?.name ?? "")}
+            onClick={() => onRename(nameDraft.trim())}>
+            <Pencil className="size-4" />
+            שמור שם
+          </Button>
+          {r.system?.name_pending && (
+            <span className="text-[11px] font-medium text-amber-700">שם זמני — מומלץ לעדכן</span>
+          )}
+        </div>
+      )}
+
       {pending && canDecide && (
         <div className="mt-3 space-y-2 border-t border-border pt-3">
           {hasCode ? (

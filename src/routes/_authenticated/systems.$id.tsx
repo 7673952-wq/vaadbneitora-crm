@@ -1283,6 +1283,7 @@ function SystemDetail() {
           </button>
 
         </form>
+        )}
 
         {/* סינון יומן הפעילות */}
         <div className="flex flex-wrap items-center gap-2 mb-2 text-xs">

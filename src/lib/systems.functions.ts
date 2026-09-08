@@ -101,6 +101,14 @@ async function ensureCanWrite(userId: string) {
   const { assertCanWrite } = await import("@/lib/permissions.server");
   await assertCanWrite(userId, "yemot");
 }
+// Single named permission from ניהול → הרשאות (super-admins always pass).
+async function ensurePermission(
+  userId: string,
+  permission: import("@/lib/permissions.server").PermissionKey,
+) {
+  const { assertPermission } = await import("@/lib/permissions.server");
+  await assertPermission(userId, permission, "yemot");
+}
 
 
 const ACTIVITY_PAGE_SIZE = 100;

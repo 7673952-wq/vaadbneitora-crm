@@ -239,6 +239,8 @@ function SystemDetail() {
   const [uploading, setUploading] = useState(false);
 
   const filesFn = useServerFn(listSystemFiles);
+  // "ניהול קבצים" permission (super-admins always pass).
+  const canManageFiles = Boolean(me?.isSuperAdmin || (me as any)?.permissions?.files_manage);
   const uploadFn = useServerFn(uploadSystemFile);
   const fileUrlFn = useServerFn(getSystemFileUrl);
   const deleteFileFn = useServerFn(deleteSystemFile);
@@ -1770,7 +1772,7 @@ function SystemDetail() {
           <p className="text-xs text-muted-foreground mb-4">
             בשינוי סטטוס של מערכת ראשית תישאל האם להחיל את השינוי גם על תתי-המערכות. שינוי נציג עדיין עובר אליהן אוטומטית.
           </p>
-          {(me?.isAdmin || s.assigned_agent_id === me?.userId) && (
+          {canManageFiles && (me?.isAdmin || s.assigned_agent_id === me?.userId) && (
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1846,7 +1848,7 @@ function SystemDetail() {
                   <button onClick={() => downloadFile(f.id)} className="p-2 rounded-lg hover:bg-accent" title="הורד">
                     <Download className="h-4 w-4" />
                   </button>
-                  {(me?.isAdmin || f.uploaded_by === me?.userId) && (
+                  {canManageFiles && (me?.isAdmin || f.uploaded_by === me?.userId) && (
                     <button onClick={() => { if (confirm("למחוק את הקובץ?")) deleteFileMut.mutate(f.id); }}
                       className="p-2 rounded-lg text-destructive hover:bg-destructive/10" title="מחק">
                       <Trash2 className="h-4 w-4" />

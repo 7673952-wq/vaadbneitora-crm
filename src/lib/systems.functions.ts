@@ -2145,24 +2145,42 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
 /**
  * Turns the self-arming queue checker on. The DB job only exists while at
  * least one message is waiting; it unschedules itself once the queue drains,
- * so nothing is polled during idle periods. Never throws: a scheduling
- * problem must not break the status change that triggered it.
+ * so nothing is polled during idle periods. Arming and draining share one
+ * database lock, so a task can never be left behind without a running job.
+ *
+ * Never throws (a scheduling problem must not break the status change that
+ * triggered it) — but a failure is retried once and then recorded ON THE
+ * SYSTEM ROW, so a waiting message can never be silently stranded.
  */
-async function armVoiceQueueJob(supabaseAdmin: any) {
-  try {
-    const { error } = await supabaseAdmin.rpc("ensure_voice_queue_job");
-    if (error) void logInfo(`[auto-voice] arming queue job failed: ${error.message}`);
-  } catch (e: any) {
-    void logInfo(`[auto-voice] arming queue job failed: ${e?.message ?? e}`);
+async function armVoiceQueueJob(supabaseAdmin: any, systemId?: string): Promise<boolean> {
+  let lastMessage = "";
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const { error } = await supabaseAdmin.rpc("ensure_voice_queue_job");
+      if (!error) return true;
+      lastMessage = error.message;
+    } catch (e: any) {
+      lastMessage = String(e?.message ?? e);
+    }
   }
+  void logInfo(`[auto-voice] arming queue job failed: ${lastMessage}`);
+  if (systemId) {
+    // Surfaced in ניהול → תור ההודעות as the row's last error.
+    await supabaseAdmin.from("systems")
+      .update({ voice_last_error: `הפעלת מתזמן התור נכשלה: ${lastMessage}` })
+      .eq("id", systemId)
+      .then(() => undefined, () => undefined);
+  }
+  return false;
 }
 
 /** Turns the checker off again once nothing is waiting. Never throws. */
 async function disarmVoiceQueueJobIfEmpty(supabaseAdmin: any) {
   try {
-    await supabaseAdmin.rpc("drain_voice_queue_job");
-  } catch {
-    /* best effort */
+    const { error } = await supabaseAdmin.rpc("drain_voice_queue_job");
+    if (error) void logInfo(`[auto-voice] draining queue job failed: ${error.message}`);
+  } catch (e: any) {
+    void logInfo(`[auto-voice] draining queue job failed: ${e?.message ?? e}`);
   }
 }
 
@@ -2188,7 +2206,7 @@ async function schedulePendingVoice(
     voice_claim_at: null,
   }).eq("id", systemId);
   if (error) throw new Error(error.message);
-  await armVoiceQueueJob(supabaseAdmin);
+  await armVoiceQueueJob(supabaseAdmin, systemId);
 }
 
 /** Clears the pending marker; used after a successful send or a skip. */
@@ -2237,8 +2255,23 @@ export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId:
       void logInfo(`[auto-voice] system=${systemId} queued for ${nextStart.toISOString()}`);
     }
   } catch (e: any) {
-    void logInfo(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${e?.message}`);
-    // Never let auto-voice-send scheduling break the status update itself.
+    const message = String(e?.message ?? e);
+    void logInfo(`[auto-voice] system=${systemId} status=${statusKey} ERROR: ${message}`);
+    // Never let auto-voice-send scheduling break the status update itself —
+    // but never lose the message either: park it for a retry in a few minutes
+    // so it is processed again and shows up in ניהול → תור ההודעות.
+    try {
+      const retryAt = new Date(Date.now() + VOICE_RETRY_MINUTES[0]! * 60_000).toISOString();
+      await supabaseAdmin.from("systems").update({
+        pending_voice_send_at: retryAt,
+        voice_pending_reason: "retry",
+        voice_last_error: `תזמון ההודעה נכשל: ${message}`,
+        voice_claim_at: null,
+      }).eq("id", systemId);
+      await armVoiceQueueJob(supabaseAdmin, systemId);
+    } catch (inner: any) {
+      void logInfo(`[auto-voice] system=${systemId} recovery marker failed: ${inner?.message ?? inner}`);
+    }
   }
 }
 

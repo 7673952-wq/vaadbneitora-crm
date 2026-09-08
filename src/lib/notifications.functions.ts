@@ -34,9 +34,12 @@ export const getMyNotificationPrefs = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .handler(async ({ context }) => {
     const roles = await fetchMyRoles(context.supabase, context.userId);
+    // Role defaults are an internal table: direct browser access is revoked,
+    // so they are read server-side for the signed-in user's own roles only.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const [{ data: defaults }, { data: overrides }] = await Promise.all([
       roles.length
-        ? context.supabase.from("notification_role_defaults").select("event_key, role, enabled").in("role", roles as any)
+        ? supabaseAdmin.from("notification_role_defaults").select("event_key, role, enabled").in("role", roles as any)
         : Promise.resolve({ data: [] as any[] }),
       context.supabase.from("notification_user_overrides").select("event_key, enabled").eq("user_id", context.userId),
     ]);
@@ -86,7 +89,8 @@ export const listRoleNotificationDefaults = createServerFn({ method: "GET" })
     await assertNotificationsAdmin(context);
     const crmKey = data?.crmKey && data.crmKey !== "yemot" ? data.crmKey : null;
     const prefix = crmKey ? `crm:${crmKey}:` : "";
-    const { data: rows } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: rows } = await supabaseAdmin
       .from("notification_role_defaults")
       .select("event_key, role, enabled");
     const map = new Map<string, boolean>();
@@ -120,7 +124,8 @@ export const updateRoleNotificationDefault = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertNotificationsAdmin(context);
-    const { error } = await context.supabase
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
       .from("notification_role_defaults")
       .upsert(
         { role: data.role, event_key: data.event_key, enabled: data.enabled, updated_by: context.userId },

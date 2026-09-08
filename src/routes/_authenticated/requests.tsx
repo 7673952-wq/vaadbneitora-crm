@@ -3,11 +3,11 @@ import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Pencil, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
-  setRequestSystemCode, repairUnlinkedRequests,
+  setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem,
 } from "@/lib/system-requests.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";
@@ -74,6 +74,7 @@ function RequestsPage() {
   const fetchAudio = useServerFn(getRequestAudio);
   const fixCode = useServerFn(setRequestSystemCode);
   const repair = useServerFn(repairUnlinkedRequests);
+  const rename = useServerFn(renameRequestSystem);
   const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
   const { rows: statusRows } = useStatusSettings();
 
@@ -141,6 +142,12 @@ function RequestsPage() {
       toast.success(res?.matched ? "מספר המערכת עודכן והבקשה שויכה" : "מספר המערכת עודכן (לא נמצאה מערכת קיימת)");
       invalidate();
     },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: (vars: { id: string; name: string }) => rename({ data: vars }),
+    onSuccess: () => { toast.success("שם המערכת עודכן"); invalidate(); },
     onError: (e: any) => toast.error(String(e?.message ?? e)),
   });
 
@@ -232,12 +239,13 @@ function RequestsPage() {
               row={r}
               statuses={statusRows ?? []}
               canDecide={canDecide}
-              busy={decideMutation.isPending || codeMutation.isPending}
+              busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending}
               audio={audio}
               audioPending={audioMutation.isPending}
               onPlay={() => audioMutation.mutate(r.id)}
               onDecide={(vars) => decideMutation.mutate(vars)}
               onFixCode={(systemCode) => codeMutation.mutate({ id: r.id, systemCode })}
+              onRename={(name) => renameMutation.mutate({ id: r.id, name })}
             />
           ))}
         </ul>
@@ -247,7 +255,7 @@ function RequestsPage() {
 }
 
 function RequestCard({
-  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onFixCode,
+  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onFixCode, onRename,
 }: {
   row: any;
   statuses: Array<{ status_key: string; label: string }>;
@@ -258,6 +266,7 @@ function RequestCard({
   onPlay: () => void;
   onDecide: (vars: DecideVars) => void;
   onFixCode: (systemCode: string) => void;
+  onRename: (name: string) => void;
 }) {
   // A dry-run simulation was never applied, so it can still be acted on.
   const pending = r.decision_status === "needs_decision" || r.decision_status === "simulated";
@@ -268,6 +277,7 @@ function RequestCard({
 
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
+  const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
 
   return (
@@ -330,6 +340,31 @@ function RequestCard({
 
       {pending && !canDecide && (
         <p className="mt-3 text-xs text-muted-foreground">אין לך הרשאת טיפול בבקשות.</p>
+      )}
+
+      {/* Renaming the system straight from the request: the mail often carries
+          the real name while the card still holds a temporary one. */}
+      {canDecide && hasSystem && (
+        <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
+          <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+            שם המערכת
+            <input
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              placeholder="שם המערכת"
+              className="w-60 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+            />
+          </label>
+          <Button size="sm" variant="outline"
+            disabled={busy || nameDraft.trim().length < 2 || nameDraft.trim() === (r.system?.name ?? "")}
+            onClick={() => onRename(nameDraft.trim())}>
+            <Pencil className="size-4" />
+            שמור שם
+          </Button>
+          {r.system?.name_pending && (
+            <span className="text-[11px] font-medium text-amber-700">שם זמני — מומלץ לעדכן</span>
+          )}
+        </div>
       )}
 
       {pending && canDecide && (

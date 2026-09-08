@@ -758,6 +758,20 @@ function POLL_REQUEST_LABELS(sharedStart) {
   return stats;
 }
 
+/**
+ * The system number written in THIS message (subject or body), or '' when the
+ * message does not carry one. Mirrors the CRM's own extraction rule.
+ */
+function messageSystemCode_(msg) {
+  var text = '';
+  try { text = (msg.getSubject() || '') + '\n' + (msg.getPlainBody() || ''); }
+  catch (e) { return ''; }
+  var m = text.match(/(?:מספר\s*ה?מערכת|מזהה\s*ה?מערכת|מס[.'׳]?\s*ה?מערכת|system\s*(?:number|code|id))\s*[:\-]?\s*([0-9][0-9\- ]{3,23})/i);
+  if (!m || !m[1]) return '';
+  var digits = String(m[1]).replace(/\D/g, '');
+  return digits.length >= 4 ? digits : '';
+}
+
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
@@ -779,6 +793,16 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
         var id = msg.getId();
         if (msg.isDraft()) continue;
         var msgMs = msg.getDate().getTime();
+
+        // A message is a request ONLY if IT carries a system number. A reply or
+        // an acknowledgement inside the same thread is never sent to the CRM,
+        // and a number is never inherited from another message in the thread.
+        // A recording is optional. The CRM enforces the same rule again.
+        if (!messageSystemCode_(msg)) {
+          stats.skipped++;
+          try { msg.markRead(); } catch (e) { /* nothing to retry: not a request */ }
+          continue;
+        }
 
         var att = firstAudioAttachment_(msg);
         var completed = false;
@@ -810,7 +834,11 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
           // message. 409/in_progress and every failure leave it untouched.
           completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
           if (completed) {
-            if (parsed.duplicate) stats.duplicate++; else stats.sent++;
+            // Each outcome is counted as itself: a message the CRM skipped is
+            // never reported as a message that was sent.
+            if (parsed.duplicate) stats.duplicate++;
+            else if (parsed.skipped) stats.skipped++;
+            else stats.sent++;
           } else if (parsed.processingState === 'in_progress' || code === 409) {
             stats.inProgress++;
             Logger.log('Request still in progress ' + id);

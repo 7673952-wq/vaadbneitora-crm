@@ -820,7 +820,11 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
           // message. 409/in_progress and every failure leave it untouched.
           completed = code >= 200 && code < 300 && parsed.ok === true && parsed.completed === true;
           if (completed) {
-            if (parsed.duplicate) stats.duplicate++; else stats.sent++;
+            // Each outcome is counted as itself: a message the CRM skipped is
+            // never reported as a message that was sent.
+            if (parsed.duplicate) stats.duplicate++;
+            else if (parsed.skipped) stats.skipped++;
+            else stats.sent++;
           } else if (parsed.processingState === 'in_progress' || code === 409) {
             stats.inProgress++;
             Logger.log('Request still in progress ' + id);

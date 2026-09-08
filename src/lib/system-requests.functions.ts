@@ -58,19 +58,23 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertRequestPermission, assertCrmAccess } = await import("@/lib/requests-access.server");
-    await assertRequestPermission(context.userId, "requests_decide");
-    const { hasPermission } = await import("@/lib/permissions.server");
-    if (!(await hasPermission(context.userId, "status_change"))) throw new Error("אין הרשאה");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    // The row is read first so every permission below is checked against the
+    // CRM stored on the request itself, not against a default or a value the
+    // browser could influence.
     const { data: req, error: reqError } = await supabaseAdmin
       .from("system_requests").select("*").eq("id", data.id).maybeSingle();
     if (reqError) throw new Error(reqError.message);
     if (!req) throw new Error("הבקשה לא נמצאה");
-    await assertCrmAccess(context.supabase, context.userId, (req as any).crm_key);
+    const crmKey = String((req as any).crm_key ?? "yemot");
+    await assertCrmAccess(context.supabase, context.userId, crmKey);
+    await assertRequestPermission(context.userId, "requests_decide", crmKey);
+    const { hasPermission } = await import("@/lib/permissions.server");
+    if (!(await hasPermission(context.userId, "status_change", crmKey))) throw new Error("אין הרשאה");
     // `simulated` is a dry-run conclusion that was never applied, so it is still
     // open for a manual decision; anything else is already decided.
-    const OPEN = ["needs_decision", "simulated"];
+    const { OPEN_DECISIONS: OPEN } = await import("@/lib/system-requests.server");
     const current = (req as any).decision_status as string | null;
     if (current && !OPEN.includes(current)) {
       return { ok: true, alreadyDecided: true };

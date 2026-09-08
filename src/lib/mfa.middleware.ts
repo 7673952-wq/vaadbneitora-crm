@@ -73,6 +73,10 @@ export const requireAuthMfa = createMiddleware({ type: "function" })
     const cacheKey = `${context.userId}:${sessionId}`;
     const cachedAt = sessionId ? okCache.get(cacheKey) : undefined;
     if (cachedAt !== undefined && Date.now() - cachedAt < OK_TTL_MS) return next();
-    await assertMfaSessionOnce(context.supabase as unknown as RpcClient, context.userId, sessionId, cacheKey);
+    // The RPC is service-role only: browsers must not be able to probe the
+    // MFA state of arbitrary sessions. The user id here comes from the
+    // already-verified JWT, not from request data.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await assertMfaSessionOnce(supabaseAdmin as unknown as RpcClient, context.userId, sessionId, cacheKey);
     return next();
   });

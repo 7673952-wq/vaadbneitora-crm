@@ -135,6 +135,7 @@ export const listSystems = createServerFn({ method: "POST" })
     checkRateLimit(`${context.userId}:listSystems`, 30, 60_000);
     const { assertCrmAccess } = await import("@/lib/permissions.server");
     await assertCrmAccess(context.userId, "yemot");
+    await ensurePermission(context.userId, "systems_read");
     const db = context.supabase;
     const statusValues = await resolveStatusFilterValues(db, data.status);
     const secondaryStatusValues = await resolveStatusFilterValues(db, data.secondaryStatus);
@@ -280,6 +281,7 @@ export const getSystem = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
+    await ensurePermission(context.userId, "systems_read");
     const { data: sys, error } = await context.supabase
       .from("systems").select("*").eq("id", data.id).maybeSingle();
     if (error) throw new Error(error.message);
@@ -681,6 +683,12 @@ export const updateSystem = createServerFn({ method: "POST" })
       }
     }
     const statusLogTargets: Array<{ id: string; oldStatus: string; newStatus: string }> = [];
+    if (
+      (data.status !== undefined && data.status !== sys.status)
+      || data.secondary_status !== undefined
+    ) {
+      await ensurePermission(context.userId, "status_change");
+    }
     const isRootStatusChange =
       data.status !== undefined
       && data.status !== sys.status

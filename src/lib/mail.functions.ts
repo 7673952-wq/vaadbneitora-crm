@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
-import { parseMailboxPrefs, type MailboxPrefs } from "@/lib/mailbox-prefs";
+import { parseMailboxPrefs, MAIL_FOLDERS, type MailboxPrefs, type MailFolder } from "@/lib/mailbox-prefs";
 import { parseEmailAddress } from "@/lib/email-address";
 
 export type MailThread = {
@@ -53,12 +53,6 @@ export type MailContact = {
   recordId: string | null;
 };
 
-/**
- * Gmail-style folders. "inbox" hides anything the user filed away (archive,
- * spam, trash), exactly like Gmail: a conversation lives in one place.
- */
-export const MAIL_FOLDERS = ["inbox", "unread", "starred", "sent", "archive", "spam", "trash", "all"] as const;
-export type MailFolder = (typeof MAIL_FOLDERS)[number];
 
 export const listMailThreads = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])

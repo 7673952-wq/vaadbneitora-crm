@@ -5,8 +5,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { BACKUP_TABLES } from "@/lib/backup-tables";
 import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, sendBackupByEmail } from "@/lib/backups.functions";
-import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig } from "@/lib/admin.functions";
+import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig, getBackupSchedule } from "@/lib/admin.functions";
+import { describeBackupSchedule } from "@/lib/backup-schedule-text";
 import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail, Settings } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/backups")({
   component: BackupsPage,
@@ -114,6 +116,16 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
     enabled: me?.isSuperAdmin === true,
   });
 
+  const scheduleFn = useServerFn(getBackupSchedule);
+  const { data: schedule } = useQuery({
+    queryKey: ["backup-schedule"],
+    queryFn: async () => scheduleFn({}),
+    enabled: me?.isSuperAdmin === true,
+    retry: false,
+  });
+
+
+
   const runMut = useMutation({
     mutationFn: async () => nowFn({}),
     onSuccess: (r: any) => {
@@ -204,8 +216,9 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
             </h1>
           )}
           <p className="text-sm text-muted-foreground mt-1">
-            גיבוי יומי אוטומטי ב-00:00 UTC + גיבוי שבועי בימי חמישי ב-05:00 UTC — שניהם נשלחים גם למייל (אם הוגדר תחת "מייל לגיבויים"), מתוזמנים ישירות מבסיס הנתונים כך שזה פועל בכל שרת. אפשר גם להפעיל גיבוי ידני בכל רגע.
+            {describeBackupSchedule(schedule)}
           </p>
+
         </div>
         <div className="flex items-center gap-2">
           {me?.isSuperAdmin && (

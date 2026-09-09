@@ -2,8 +2,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { STATUS_LABEL } from "@/lib/status";
 
 // ---------- Scheduled-backup time matching ----------
-// The DB-side pg_cron job fires a lightweight "heartbeat" every 15 minutes
-// (see supabase/migrations/*_scheduled_backup_schedule.sql). Each heartbeat
+// The DB-side pg_cron job fires a lightweight "heartbeat" once an hour
+// (at :05). Each heartbeat
+
 // calls shouldRunScheduledBackup() to decide, based on the admin-configured
 // backup_schedule setting (ניהול → גיבויים), whether *this* is the moment to
 // actually run+email a backup. Comparing in Asia/Jerusalem local time means
@@ -40,10 +41,10 @@ export function shouldRunScheduledBackup(
   const kind: "daily" | "weekly" = schedule.frequency === "weekly" ? "weekly" : "daily";
   if (hour !== schedule.hour) return { run: false, kind };
   if (kind === "weekly" && dayOfWeek !== schedule.dayOfWeek) return { run: false, kind };
-  // Guard against running twice within the same target hour (the heartbeat
-  // fires every 15 min, so the hour condition above matches 4 times in a
-  // row) — only run if we haven't already run today (or, for weekly, we
-  // haven't already run on this exact calendar day).
+  // Guard against running twice for the same target day (retries or an extra
+  // heartbeat within the matched hour) — only run if we haven't already run
+  // on this exact calendar day.
+
   const lastRunDateKey = lastRunAt ? jerusalemParts(new Date(lastRunAt)).dateKey : null;
   if (lastRunDateKey === dateKey) return { run: false, kind };
   return { run: true, kind };

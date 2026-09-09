@@ -23,6 +23,8 @@ export const backupNow = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     checkRateLimit(`${context.userId}:backupNow`, 3, 60_000);
     await assertAdmin(context);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("backup_manage", context.userId);
     try {
       const { runBackup } = await import("@/lib/backups.server");
       return await runBackup();
@@ -83,6 +85,8 @@ export const deleteBackup = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("backup_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: files } = await supabaseAdmin.storage.from("backups").list(data.folder, { limit: 100 });
     const paths = (files ?? []).map((f) => `${data.folder}/${f.name}`);
@@ -236,6 +240,8 @@ export const sendBackupByEmail = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertAdmin(context);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("backup_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: files, error: listErr } = await supabaseAdmin.storage
       .from("backups").list(data.folder, { limit: 100 });

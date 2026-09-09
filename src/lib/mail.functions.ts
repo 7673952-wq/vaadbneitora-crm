@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
-import { parseMailboxPrefs, type MailboxPrefs } from "@/lib/mailbox-prefs";
+import { parseMailboxPrefs, applyThreadFiling, threadInFolder, MAIL_FOLDERS, type MailboxPrefs, type MailFolder } from "@/lib/mailbox-prefs";
 import { parseEmailAddress } from "@/lib/email-address";
 
 export type MailThread = {
@@ -21,6 +21,10 @@ export type MailThread = {
   hasOutbound: boolean;
   systemId: string | null;
   recordId: string | null;
+  starred: boolean;
+  archived: boolean;
+  spam: boolean;
+  trashed: boolean;
 };
 
 export type MailMessage = {
@@ -50,14 +54,13 @@ export type MailContact = {
 };
 
 
-/** Mailbox: conversations grouped by Gmail thread, across the whole CRM. */
 export const listMailThreads = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
   .inputValidator((input: unknown) =>
     z
       .object({
         search: z.string().max(120).optional(),
-        filter: z.enum(["all", "unread", "inbox", "sent"]).optional(),
+        filter: z.enum(MAIL_FOLDERS).optional(),
       })
       .parse(input ?? {}),
   )
@@ -65,12 +68,17 @@ export const listMailThreads = createServerFn({ method: "GET" })
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "mailbox_view");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: rows, error } = await supabaseAdmin
-      .from("email_messages")
-      .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, gmail_thread_id, read_at, created_at")
-      .order("created_at", { ascending: false })
-      .limit(2000);
+    const [{ data: rows, error }, { data: stateRows }] = await Promise.all([
+      supabaseAdmin
+        .from("email_messages")
+        .select("id, system_id, crm_record_id, direction, subject, body, from_address, to_address, gmail_thread_id, read_at, created_at")
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabaseAdmin.from("mail_thread_state" as any).select("thread_id, starred, archived, spam, trashed"),
+    ]);
     if (error) throw fromSupabase(error);
+    const states = new Map<string, any>();
+    for (const s of (stateRows ?? []) as any[]) states.set(s.thread_id, s);
 
     const isInbound = (d: string) => d === "in" || d === "inbound";
     const map = new Map<string, MailThread>();
@@ -89,6 +97,7 @@ export const listMailThreads = createServerFn({ method: "GET" })
         if (!existing.systemId && m.system_id) existing.systemId = m.system_id;
         if (!existing.recordId && m.crm_record_id) existing.recordId = m.crm_record_id;
       } else {
+        const st = states.get(key);
         map.set(key, {
           threadId: key,
           address: addr,
@@ -103,15 +112,17 @@ export const listMailThreads = createServerFn({ method: "GET" })
           hasOutbound: !isInbound(m.direction),
           systemId: m.system_id ?? null,
           recordId: m.crm_record_id ?? null,
+          starred: !!st?.starred,
+          archived: !!st?.archived,
+          spam: !!st?.spam,
+          trashed: !!st?.trashed,
         });
       }
     }
 
     let list = [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
-    const filter = data.filter ?? "all";
-    if (filter === "unread") list = list.filter((t) => t.unread > 0);
-    if (filter === "inbox") list = list.filter((t) => t.hasInbound);
-    if (filter === "sent") list = list.filter((t) => t.hasOutbound);
+    const filter: MailFolder = data.filter ?? "inbox";
+    list = list.filter((t) => threadInFolder(t, filter));
     const q = data.search?.trim().toLowerCase();
     if (q) {
       list = list.filter((t) =>
@@ -119,6 +130,91 @@ export const listMailThreads = createServerFn({ method: "GET" })
       );
     }
     return list.slice(0, 300);
+  });
+
+/** Unread / starred / archive / spam / trash counters for the folder rail. */
+export const getMailFolderCounts = createServerFn({ method: "GET" })
+  .middleware([requireAuthMfa])
+  .handler(async ({ context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const [{ data: rows }, { data: stateRows }] = await Promise.all([
+      supabaseAdmin
+        .from("email_messages")
+        .select("gmail_thread_id, id, direction, read_at")
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabaseAdmin.from("mail_thread_state" as any).select("thread_id, starred, archived, spam, trashed"),
+    ]);
+    const states = new Map<string, any>();
+    for (const s of (stateRows ?? []) as any[]) states.set(s.thread_id, s);
+    const unreadThreads = new Set<string>();
+    for (const m of (rows ?? []) as any[]) {
+      const key = m.gmail_thread_id || `msg:${m.id}`;
+      const st = states.get(key);
+      const isInbound = m.direction === "in" || m.direction === "inbound";
+      if (isInbound && !m.read_at && !st?.archived && !st?.spam && !st?.trashed) unreadThreads.add(key);
+    }
+    let starred = 0, archive = 0, spam = 0, trash = 0;
+    for (const s of states.values()) {
+      if (s.trashed) { trash += 1; continue; }
+      if (s.spam) { spam += 1; continue; }
+      if (s.archived) archive += 1;
+      if (s.starred) starred += 1;
+    }
+    return { unread: unreadThreads.size, starred, archive, spam, trash };
+  });
+
+/** Star / archive / spam / trash a conversation (Gmail-style filing). */
+export const setMailThreadState = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((input: unknown) =>
+    z
+      .object({
+        threadId: z.string().min(1).max(200),
+        starred: z.boolean().optional(),
+        archived: z.boolean().optional(),
+        spam: z.boolean().optional(),
+        trashed: z.boolean().optional(),
+      })
+      .parse(input),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: existing } = await supabaseAdmin
+      .from("mail_thread_state" as any).select("starred, archived, spam, trashed").eq("thread_id", data.threadId).maybeSingle();
+    const before = {
+      starred: !!(existing as any)?.starred, archived: !!(existing as any)?.archived,
+      spam: !!(existing as any)?.spam, trashed: !!(existing as any)?.trashed,
+    };
+    const patch = {
+      thread_id: data.threadId,
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+      ...applyThreadFiling(before, data),
+    };
+    const { error } = await supabaseAdmin.from("mail_thread_state" as any).upsert(patch, { onConflict: "thread_id" });
+    if (error) throw fromSupabase(error);
+    return { ok: true };
+  });
+
+/** Marks a conversation back to unread, like Gmail's "סמן כלא נקרא". */
+export const markMailThreadUnread = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((input: unknown) => z.object({ threadId: z.string().min(1).max(200) }).parse(input))
+  .handler(async ({ data, context }) => {
+    const { assertMailPermission } = await import("@/lib/permissions.server");
+    await assertMailPermission(context.userId, "mailbox_view");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const query = supabaseAdmin.from("email_messages").update({ read_at: null }).in("direction", ["in", "inbound"]);
+    const { error } = data.threadId.startsWith("msg:")
+      ? await query.eq("id", data.threadId.slice(4))
+      : await query.eq("gmail_thread_id", data.threadId);
+    if (error) throw fromSupabase(error);
+    return { ok: true };
   });
 
 /** Contact book built from every address the CRM has corresponded with. */
@@ -268,6 +364,8 @@ export const deleteMailMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_delete");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("mailbox_delete", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("email_messages").delete().eq("id", data.id);
     if (error) throw fromSupabase(error);
@@ -281,6 +379,8 @@ export const deleteMailThread = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_delete");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("mailbox_delete", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.threadId.startsWith("msg:")) {
       const { error } = await supabaseAdmin.from("email_messages").delete().eq("id", data.threadId.slice(4));
@@ -302,7 +402,16 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
       .object({
-        to: z.string().email(),
+        // Gmail-style multi-recipient: a comma separated list, each address
+        // validated on its own so one bad entry can't slip through.
+        to: z
+          .string()
+          .min(3)
+          .max(1000)
+          .transform((v) => v.split(",").map((a) => a.trim()).filter(Boolean))
+          .refine((list) => list.length > 0 && list.length <= 10, "יש להזין בין כתובת אחת ל-10 כתובות")
+          .refine((list) => list.every((a) => z.string().email().safeParse(a).success), "כתובת מייל לא תקינה")
+          .transform((list) => list.join(", ")),
         subject: z.string().max(300).optional(),
         body: z.string().min(1).max(20000),
         threadId: z.string().max(200).nullable().optional(),
@@ -314,6 +423,8 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_send");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("email_send", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [{ data: urlRow }, { data: secretRow }, { data: profile }, { data: generalRow }] = await Promise.all([
@@ -395,7 +506,7 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
         defaultCleanupLevel: z.enum(["none", "light", "standard", "strict"]),
         defaultUseGeneralName: z.boolean(),
         refreshSeconds: z.number().int().min(0).max(3600),
-        defaultFilter: z.enum(["all", "unread", "inbox", "sent"]),
+        defaultFilter: z.enum(MAIL_FOLDERS),
         allowPersonalSignature: z.boolean(),
         gmailLabel: z.string().max(100),
         gmailArchive: z.boolean(),

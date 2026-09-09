@@ -207,3 +207,23 @@ Zod מלא בכל ה-server functions, וחיזוק חיפוש Audit Log מפנ�
   והגנת CSV.
 - **UX**: סינוני הדשבורד נשמרים ב-localStorage, נוסף כפתור "המערכות שלי",
   ומצב "אין תוצאות" מציע ניקוי סינון.
+
+## סטטוס נכון ל-2026-09-09
+
+**NOT READY FOR LIVE** — אוטומציית הבקשות נשארת `dry_run`.
+
+פתוח ודורש אימות בסביבה אמיתית לפני מעבר ל-live:
+- בדיקות RLS מול מסד אמיתי עם שני משתמשים משני CRM-ים (NOT RUN).
+- אימות כתובת ה-endpoint של תור ההודעות הקוליות בפרודקשן (NOT RUN).
+- הצלחת ספק קולי שלאחריה כתיבת ה-DB נכשלת: כרגע יש retry עם claim ו-backoff;
+  מצב `uncertain` ייעודי טרם מומש.
+
+הושלם בסבב זה:
+- הגבלת קצב fail-closed מחוברת לכל הפעולות הרגישות
+  (`admin_user_manage`, `admin_permissions`, `email_send`, `mailbox_delete`,
+  `system_delete`, `import_export`, `backup_manage`, `backup_restore`,
+  `request_manage`, `request_decide`, `voice_send`) + בדיקת כיסוי
+  ב-`src/lib/rate-limit-coverage.test.ts`.
+- תיבת דואר בסגנון Gmail: תיקיות (נכנס/לא נקראו/מסומנים/נשלחו/ארכיון/ספאם/אשפה/הכל),
+  כוכב, ארכוב, ספאם, אשפה, סימון כלא נקרא, תשובה/תשובה לכולם/העברה ושליחה לכמה נמענים.
+- נוהל בטיחות למיגרציות הרשאות והחרגת סודות מארכיונים — ב-DEPLOY.md.

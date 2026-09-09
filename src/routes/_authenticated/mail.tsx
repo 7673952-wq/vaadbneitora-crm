@@ -5,14 +5,17 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Users,
-  MailOpen, SendHorizontal, Trash2, Pencil, IdCard, X, Check,
+  MailOpen, SendHorizontal, Trash2, Pencil, IdCard, X, Check, Star, Archive,
+  ShieldAlert, Reply, ReplyAll, Forward, ArchiveRestore, Layers,
 } from "lucide-react";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import {
-  listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead,
+  listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead, markMailThreadUnread,
   getMailboxSettings, listMailContacts, updateMailMessage, deleteMailMessage, deleteMailThread,
+  setMailThreadState, getMailFolderCounts,
 } from "@/lib/mail.functions";
+import type { MailFolder } from "@/lib/mailbox-prefs";
 import { setMyEmailSignature } from "@/lib/email.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
@@ -31,21 +34,29 @@ export const Route = createFileRoute("/_authenticated/mail")({
   }),
 });
 
-type Filter = "all" | "unread" | "inbox" | "sent";
+type Filter = MailFolder;
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "הכל" },
-  { key: "unread", label: "לא נקראו" },
-  { key: "inbox", label: "נכנס" },
-  { key: "sent", label: "יוצא" },
+const FILTERS: { key: Filter; label: string; icon: typeof Mail }[] = [
+  { key: "inbox", label: "דואר נכנס", icon: Inbox },
+  { key: "unread", label: "לא נקראו", icon: MailOpen },
+  { key: "starred", label: "מסומנים", icon: Star },
+  { key: "sent", label: "נשלחו", icon: SendHorizontal },
+  { key: "archive", label: "ארכיון", icon: Archive },
+  { key: "spam", label: "ספאם", icon: ShieldAlert },
+  { key: "trash", label: "אשפה", icon: Trash2 },
+  { key: "all", label: "כל הדואר", icon: Layers },
 ];
 
-const FILTER_ICONS = {
-  all: Mail,
-  unread: MailOpen,
-  inbox: Inbox,
-  sent: SendHorizontal,
-} satisfies Record<Filter, typeof Mail>;
+/** Quoted original, the way Gmail prefixes a reply/forward. */
+function quote(subject: string | null, messages: { fromName: string | null; fromAddress: string | null; agentName: string | null; direction: string; createdAt: string; body: string }[]) {
+  const last = messages[messages.length - 1];
+  if (!last) return "";
+  const inbound = last.direction === "in" || last.direction === "inbound";
+  const who = inbound ? (last.fromName || last.fromAddress || "לא ידוע") : (last.agentName || "נציג");
+  const when = new Date(last.createdAt).toLocaleString("he-IL");
+  const quoted = String(last.body || "").split("\n").map((l) => `> ${l}`).join("\n");
+  return `\n\n---------- הודעה מקורית ----------\nנושא: ${subject || "(ללא נושא)"}\nמאת: ${who} · ${when}\n\n${quoted}\n`;
+}
 
 function fmt(iso: string) {
   const d = new Date(iso);
@@ -83,6 +94,9 @@ function MailboxPage() {
   const editFn = useServerFn(updateMailMessage);
   const deleteMsgFn = useServerFn(deleteMailMessage);
   const deleteThreadFn = useServerFn(deleteMailThread);
+  const unreadFn = useServerFn(markMailThreadUnread);
+  const stateFn = useServerFn(setMailThreadState);
+  const countsFn = useServerFn(getMailFolderCounts);
 
   const { data: me } = useQuery({
     queryKey: ["me"],
@@ -95,7 +109,7 @@ function MailboxPage() {
   const canEditMail = Boolean(me?.isSuperAdmin || mailPerms.emails_edit);
   const canDeleteMail = Boolean(me?.isSuperAdmin || mailPerms.emails_delete);
 
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("inbox");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
@@ -109,6 +123,7 @@ function MailboxPage() {
   const [useGeneral, setUseGeneral] = useState(false);
   const [reply, setReply] = useState("");
   const [signature, setSignature] = useState("");
+  const [composeMode, setComposeMode] = useState<"new" | "reply" | "reply_all" | "forward">("new");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
 
@@ -130,6 +145,13 @@ function MailboxPage() {
   const { data: threads = [], isFetching, refetch } = useQuery({
     queryKey: ["mail_threads", filter, search],
     queryFn: async () => listFn({ data: { filter, search: search || undefined } }),
+    enabled: canViewMail,
+    refetchInterval: refreshMs > 0 ? refreshMs : false,
+  });
+
+  const { data: counts } = useQuery({
+    queryKey: ["mail_counts"],
+    queryFn: async () => countsFn({}),
     enabled: canViewMail,
     refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
@@ -168,6 +190,36 @@ function MailboxPage() {
   const refreshMail = () => {
     qc.invalidateQueries({ queryKey: ["mail_threads"] });
     qc.invalidateQueries({ queryKey: ["mail_thread"] });
+    qc.invalidateQueries({ queryKey: ["mail_counts"] });
+  };
+
+  /** Star / archive / spam / trash — Gmail's filing actions. */
+  const fileThread = useMutation({
+    mutationFn: async (vars: { threadId: string; starred?: boolean; archived?: boolean; spam?: boolean; trashed?: boolean }) =>
+      stateFn({ data: vars }),
+    onSuccess: () => refreshMail(),
+    onError: (e: any) => toast.error(e?.message ?? "הפעולה נכשלה"),
+  });
+
+  const markUnread = useMutation({
+    mutationFn: async (threadId: string) => unreadFn({ data: { threadId } }),
+    onSuccess: () => { toast.success("סומן כלא נקרא"); setSelected(null); refreshMail(); },
+    onError: (e: any) => toast.error(e?.message ?? "הפעולה נכשלה"),
+  });
+
+  /** Opens the composer prefilled the way Gmail does for each action. */
+  const startCompose = (mode: "new" | "reply" | "reply_all" | "forward") => {
+    setComposeMode(mode);
+    if (mode === "new") { setTo(""); setSubject(""); setBody(""); }
+    else {
+      const others = [...new Set(messages.flatMap((m) => [m.fromAddress, m.toAddress]).filter(Boolean) as string[])]
+        .filter((a) => a.toLowerCase() !== (settings?.address ?? "").toLowerCase());
+      const base = current?.subject ?? "";
+      if (mode === "reply") { setTo(current?.address ?? ""); setSubject(base); setBody(""); }
+      if (mode === "reply_all") { setTo(others.join(", ") || (current?.address ?? "")); setSubject(base); setBody(""); }
+      if (mode === "forward") { setTo(""); setSubject(base.startsWith("Fwd:") ? base : `Fwd: ${base}`); setBody(quote(base, messages)); }
+    }
+    setComposing(true);
   };
 
   const send = useMutation({
@@ -243,7 +295,7 @@ function MailboxPage() {
         <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isFetching} title="רענון" aria-label="רענון תיבת הדואר">
           <RefreshCw className={isFetching ? "animate-spin" : ""} />
         </Button>
-        <Button size="sm" className="rounded-full" onClick={() => { setComposing(true); setSelected(null); }}>
+        <Button size="sm" className="rounded-full" onClick={() => { startCompose("new"); setSelected(null); }}>
           <PenSquare /> מייל חדש
         </Button>
       </header>
@@ -300,7 +352,7 @@ function MailboxPage() {
                     <span>{c.messages} הודעות</span><span>·</span><span>{fmt(c.lastAt)}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={() => { setTo(c.email); setComposing(true); setSelected(null); }}>
+                    <Button size="sm" variant="outline" onClick={() => { startCompose("new"); setTo(c.email); setSelected(null); }}>
                       <PenSquare /> מייל
                     </Button>
                     {c.systemId && (
@@ -320,18 +372,24 @@ function MailboxPage() {
         <aside className="border-b border-border bg-muted/40 p-3 md:border-b-0 md:border-l">
           <nav className="grid grid-cols-2 gap-1 md:grid-cols-1" aria-label="תיקיות דואר">
             {FILTERS.map((f) => {
-              const Icon = FILTER_ICONS[f.key];
+              const Icon = f.icon;
               const active = filter === f.key;
+              const badge =
+                f.key === "unread" ? (counts?.unread ?? unreadTotal) :
+                f.key === "starred" ? counts?.starred :
+                f.key === "archive" ? counts?.archive :
+                f.key === "spam" ? counts?.spam :
+                f.key === "trash" ? counts?.trash : 0;
               return (
                 <button
                   key={f.key}
-                  onClick={() => setFilter(f.key)}
+                  onClick={() => { setFilter(f.key); setSelected(null); }}
                   className={`flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm transition ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-foreground hover:bg-background"}`}
                 >
                   <Icon className="h-4 w-4" />
                   {f.label}
-                  {f.key === "unread" && unreadTotal > 0 && (
-                    <span className={`mr-auto rounded-full px-1.5 text-[10px] ${active ? "bg-primary-foreground/20" : "bg-primary/15 text-primary"}`}>{unreadTotal}</span>
+                  {!!badge && badge > 0 && (
+                    <span className={`mr-auto rounded-full px-1.5 text-[10px] ${active ? "bg-primary-foreground/20" : "bg-primary/15 text-primary"}`}>{badge}</span>
                   )}
                 </button>
               );
@@ -363,10 +421,19 @@ function MailboxPage() {
                 const active = selected === t.threadId;
                 const fromCard = Boolean(t.systemId || t.recordId);
                 return (
+                  <div key={t.threadId} className={`relative rounded-xl border transition ${active ? "border-primary/50 bg-primary/5 shadow-sm" : "border-transparent hover:border-border hover:bg-muted/50"}`}>
                   <button
-                    key={t.threadId}
+                    type="button"
+                    title={t.starred ? "ביטול סימון" : "סימון בכוכב"}
+                    aria-label={t.starred ? "ביטול סימון בכוכב" : "סימון בכוכב"}
+                    onClick={() => fileThread.mutate({ threadId: t.threadId, starred: !t.starred })}
+                    className="absolute left-2 top-2 z-10 rounded p-1 hover:bg-muted"
+                  >
+                    <Star className={`h-3.5 w-3.5 ${t.starred ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+                  </button>
+                  <button
                     onClick={() => openThread(t.threadId)}
-                    className={`w-full rounded-xl border p-2.5 text-right transition ${active ? "border-primary/50 bg-primary/5 shadow-sm" : "border-transparent hover:border-border hover:bg-muted/50"}`}
+                    className="w-full rounded-xl p-2.5 text-right"
                   >
                     <div className="flex items-start gap-2.5">
                       <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${t.unread > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
@@ -391,6 +458,7 @@ function MailboxPage() {
                       </div>
                     </div>
                   </button>
+                  </div>
                 );
               })}
             </div>
@@ -409,14 +477,16 @@ function MailboxPage() {
 
           {composing && (
             <div className="mx-auto max-w-3xl space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-              <h2 className="text-sm font-semibold">מייל חדש</h2>
-              <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="אל (כתובת מייל)"
+              <h2 className="text-sm font-semibold">
+                {composeMode === "reply" ? "תשובה" : composeMode === "reply_all" ? "תשובה לכולם" : composeMode === "forward" ? "העברה" : "מייל חדש"}
+              </h2>
+              <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="אל (אפשר כמה כתובות, מופרדות בפסיק)"
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm" />
               <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="נושא"
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm" />
               <EmailContentEditor value={body} onChange={setBody} cleanupLevel={cleanup} onCleanupLevelChange={setCleanup} rows={8} />
               <div className="flex flex-wrap items-center gap-3">
-                <Button onClick={() => send.mutate({ to, subject, body })} disabled={send.isPending || !to || !body.trim()}>
+                <Button onClick={() => send.mutate({ to, subject, body, threadId: composeMode === "reply" || composeMode === "reply_all" ? selected : null })} disabled={send.isPending || !to || !body.trim()}>
                   <Send /> שליחה
                 </Button>
                 <Button variant="outline" onClick={() => setComposing(false)}>ביטול</Button>
@@ -446,14 +516,53 @@ function MailboxPage() {
                     <ArrowUpRight className="h-3 w-3" /> כרטיס המערכת
                   </a>
                 )}
-                {canDeleteMail && (
-                  <Button
-                    variant="ghost" size="icon" title="מחיקת השרשור" aria-label="מחיקת השרשור"
-                    onClick={() => { if (confirm("למחוק את כל השיחה מהמערכת?")) removeThread.mutate(selected); }}
-                  >
-                    <Trash2 className="text-destructive" />
+                <div className="flex items-center gap-0.5">
+                  <Button variant="ghost" size="icon" title="תשובה" aria-label="תשובה" onClick={() => startCompose("reply")}>
+                    <Reply />
                   </Button>
-                )}
+                  <Button variant="ghost" size="icon" title="תשובה לכולם" aria-label="תשובה לכולם" onClick={() => startCompose("reply_all")}>
+                    <ReplyAll />
+                  </Button>
+                  <Button variant="ghost" size="icon" title="העברה" aria-label="העברה" onClick={() => startCompose("forward")}>
+                    <Forward />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.starred ? "ביטול סימון" : "סימון בכוכב"} aria-label="סימון בכוכב"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, starred: !current?.starred })}
+                  >
+                    <Star className={current?.starred ? "fill-amber-400 text-amber-400" : ""} />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.archived ? "החזרה לדואר נכנס" : "העברה לארכיון"} aria-label="ארכיון"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, archived: !current?.archived })}
+                  >
+                    {current?.archived ? <ArchiveRestore /> : <Archive />}
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.spam ? "זה לא ספאם" : "דיווח כספאם"} aria-label="ספאם"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, spam: !current?.spam })}
+                  >
+                    <ShieldAlert className={current?.spam ? "text-destructive" : ""} />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.trashed ? "שחזור מהאשפה" : "העברה לאשפה"} aria-label="אשפה"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, trashed: !current?.trashed })}
+                  >
+                    <Trash2 />
+                  </Button>
+                  <Button variant="ghost" size="icon" title="סימון כלא נקרא" aria-label="סימון כלא נקרא"
+                    onClick={() => selected && markUnread.mutate(selected)}>
+                    <MailOpen />
+                  </Button>
+                  {canDeleteMail && (
+                    <Button
+                      variant="ghost" size="icon" title="מחיקה לצמיתות" aria-label="מחיקה לצמיתות"
+                      onClick={() => { if (confirm("למחוק את כל השיחה מהמערכת לצמיתות?")) removeThread.mutate(selected); }}
+                    >
+                      <X className="text-destructive" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="max-h-[45vh] space-y-2.5 overflow-y-auto pl-1">

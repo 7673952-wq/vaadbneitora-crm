@@ -11,6 +11,7 @@ export type SensitiveScope =
   | "admin_user_manage"
   | "admin_permissions"
   | "email_send"
+  | "mailbox_delete"
   | "request_decide"
   | "request_manage"
   | "system_delete"
@@ -30,6 +31,8 @@ export const SENSITIVE_LIMITS: Record<SensitiveScope, { limit: number; windowSec
   admin_permissions: { limit: 40, windowSeconds: 60 },
   // A person answering mail sends a handful per minute; bulk goes through jobs.
   email_send: { limit: 30, windowSeconds: 60 },
+  // Deleting stored mail is irreversible in the CRM.
+  mailbox_delete: { limit: 30, windowSeconds: 60 },
   // Working through the requests queue is fast clicking, so this is generous.
   request_decide: { limit: 60, windowSeconds: 60 },
   request_manage: { limit: 30, windowSeconds: 60 },
@@ -63,4 +66,13 @@ export async function enforceDbRateLimit(
   if (hits > limit) {
     throw new AppError("בוצעו יותר מדי פעולות בזמן קצר — נסה שוב בעוד רגע", { code: "rate_limited" });
   }
+}
+
+/**
+ * Convenience wrapper for server functions that have not created the admin
+ * client yet. Same fail-closed behaviour as enforceDbRateLimit.
+ */
+export async function limitSensitiveAction(scope: SensitiveScope, identity: string): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await enforceDbRateLimit(supabaseAdmin, { scope, identity });
 }

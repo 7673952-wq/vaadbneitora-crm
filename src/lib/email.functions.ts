@@ -260,6 +260,8 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
     await ensureCanWrite(context.userId);
     const { assertPermission } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "emails_send");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("email_send", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [{ data: relayUrlRow }, { data: relaySecretRow }, { data: profileRow }, { data: generalNameRow }] = await Promise.all([
@@ -334,6 +336,8 @@ export const sendRecordEmail = createServerFn({ method: "POST" })
     if (!record) throw new Error("הפניה לא נמצאה");
     const { assertPermission } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "emails_send", (record as any).crm_key);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("email_send", context.userId);
     const [{ data: urlRow }, { data: secretRow }, { data: profile }] = await Promise.all([
       supabaseAdmin.from("app_settings").select("value").eq("key", RELAY_URL_KEY).maybeSingle(),
       supabaseAdmin.from("app_settings").select("value").eq("key", RELAY_SECRET_KEY).maybeSingle(),

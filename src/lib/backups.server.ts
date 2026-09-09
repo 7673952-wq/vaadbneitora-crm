@@ -2,8 +2,9 @@ import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { STATUS_LABEL } from "@/lib/status";
 
 // ---------- Scheduled-backup time matching ----------
-// The DB-side pg_cron job fires a lightweight "heartbeat" every 15 minutes
-// (see supabase/migrations/*_scheduled_backup_schedule.sql). Each heartbeat
+// The DB-side pg_cron job fires a lightweight "heartbeat" once an hour
+// (at :05). Each heartbeat
+
 // calls shouldRunScheduledBackup() to decide, based on the admin-configured
 // backup_schedule setting (ניהול → גיבויים), whether *this* is the moment to
 // actually run+email a backup. Comparing in Asia/Jerusalem local time means

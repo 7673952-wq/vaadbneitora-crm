@@ -56,14 +56,17 @@ function makeClient(opts: {
         writes.push({ table, op: "update", payload });
         const error = table === "system_requests" && opts.updateError ? { message: opts.updateError } : null;
         if (!error && table === "system_requests" && request) request = { ...request, ...payload };
+        // A conditional UPDATE returns the rows it touched. `casLoses` mimics a
+        // condition that no longer matches: no error, but zero rows.
+        const rows = error || (table === "system_requests" && opts.casLoses) ? [] : [{ id: request?.id ?? "req-1" }];
         // The result must survive the trailing .eq() of update().eq("id", …).
         const chain: any = {
           eq: () => chain,
           is: () => chain,
           in: () => chain,
           select: () => chain,
-          maybeSingle: async () => ({ data: null, error }),
-          then: (r: any) => Promise.resolve({ data: null, error }).then(r),
+          maybeSingle: async () => ({ data: rows[0] ?? null, error }),
+          then: (r: any) => Promise.resolve({ data: rows, error }).then(r),
         };
         return chain;
       },

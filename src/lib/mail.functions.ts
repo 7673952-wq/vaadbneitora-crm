@@ -21,6 +21,10 @@ export type MailThread = {
   hasOutbound: boolean;
   systemId: string | null;
   recordId: string | null;
+  starred: boolean;
+  archived: boolean;
+  spam: boolean;
+  trashed: boolean;
 };
 
 export type MailMessage = {
@@ -502,7 +506,7 @@ export const setMailboxPrefs = createServerFn({ method: "POST" })
         defaultCleanupLevel: z.enum(["none", "light", "standard", "strict"]),
         defaultUseGeneralName: z.boolean(),
         refreshSeconds: z.number().int().min(0).max(3600),
-        defaultFilter: z.enum(["all", "unread", "inbox", "sent"]),
+        defaultFilter: z.enum(MAIL_FOLDERS),
         allowPersonalSignature: z.boolean(),
         gmailLabel: z.string().max(100),
         gmailArchive: z.boolean(),

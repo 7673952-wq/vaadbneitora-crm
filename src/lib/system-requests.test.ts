@@ -632,3 +632,63 @@ describe("the mail relay only forwards a message that carries its own system num
     expect(src).toContain("else stats.sent++;");
   });
 });
+
+describe("a conditional update that matches no row is never a success", () => {
+  it("reports a conflict instead of 'linked' when the CAS loses", async () => {
+    const { client } = makeClient({
+      systems: [{ id: "sys-1", status: "closed", system_code: "0882309477" }],
+      casLoses: true,
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res.kind).toBe("conflict");
+  });
+
+  it("reports a conflict instead of 'ambiguous' when the CAS loses", async () => {
+    const { client } = makeClient({
+      systems: [
+        { id: "sys-1", status: "closed", system_code: "0882309477" },
+        { id: "sys-2", status: "open", system_code: "0882309477" },
+      ],
+      casLoses: true,
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res.kind).toBe("conflict");
+  });
+
+  it("does not count a lost race as a linked request", async () => {
+    const { client } = makeClient({
+      systems: [{ id: "sys-1", status: "closed", system_code: "0882309477" }],
+      casLoses: true,
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect((res as any).systemId).toBeUndefined();
+  });
+});
+
+describe("תאור הדיווח is stored per message", () => {
+  const withDesc = `${BODY}\nתאור הדיווח: שורה ראשונה\nשורה שנייה`;
+
+  it("stores the description that came with this message", async () => {
+    const { client, writes } = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(client, { gmailMessageId: "m-d1", body: withDesc, sourceRequestType: "pticha" });
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.report_description).toContain("שורה ראשונה");
+    expect(inserted.payload.report_description).toContain("שורה שנייה");
+  });
+
+  it("stores null when the message carries no description", async () => {
+    const { client, writes } = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(client, { gmailMessageId: "m-d2", body: BODY, sourceRequestType: "pticha" });
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.report_description ?? null).toBeNull();
+  });
+
+  it("never copies a description from another message of the same thread", async () => {
+    const a = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(a.client, { gmailMessageId: "m-a", gmailThreadId: "t-9", body: withDesc, sourceRequestType: "pticha" });
+    const b = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(b.client, { gmailMessageId: "m-b", gmailThreadId: "t-9", body: BODY, sourceRequestType: "pticha" });
+    const second = b.writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(second.payload.report_description ?? null).toBeNull();
+  });
+});

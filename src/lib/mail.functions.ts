@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
-import { parseMailboxPrefs, MAIL_FOLDERS, type MailboxPrefs, type MailFolder } from "@/lib/mailbox-prefs";
+import { parseMailboxPrefs, applyThreadFiling, threadInFolder, MAIL_FOLDERS, type MailboxPrefs, type MailFolder } from "@/lib/mailbox-prefs";
 import { parseEmailAddress } from "@/lib/email-address";
 
 export type MailThread = {
@@ -122,15 +122,7 @@ export const listMailThreads = createServerFn({ method: "GET" })
 
     let list = [...map.values()].sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
     const filter: MailFolder = data.filter ?? "inbox";
-    const filed = (t: MailThread) => t.archived || t.spam || t.trashed;
-    if (filter === "inbox") list = list.filter((t) => t.hasInbound && !filed(t));
-    else if (filter === "unread") list = list.filter((t) => t.unread > 0 && !filed(t));
-    else if (filter === "starred") list = list.filter((t) => t.starred && !t.trashed);
-    else if (filter === "sent") list = list.filter((t) => t.hasOutbound && !filed(t));
-    else if (filter === "archive") list = list.filter((t) => t.archived && !t.trashed && !t.spam);
-    else if (filter === "spam") list = list.filter((t) => t.spam && !t.trashed);
-    else if (filter === "trash") list = list.filter((t) => t.trashed);
-    else list = list.filter((t) => !t.trashed);
+    list = list.filter((t) => threadInFolder(t, filter));
     const q = data.search?.trim().toLowerCase();
     if (q) {
       list = list.filter((t) =>
@@ -192,13 +184,18 @@ export const setMailThreadState = createServerFn({ method: "POST" })
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "mailbox_view");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: Record<string, unknown> = { thread_id: data.threadId, updated_at: new Date().toISOString(), updated_by: context.userId };
-    // A conversation lives in exactly one place, so moving it to spam or trash
-    // clears the other destinations instead of stacking them.
-    if (data.starred !== undefined) patch.starred = data.starred;
-    if (data.archived !== undefined) { patch.archived = data.archived; if (data.archived) { patch.spam = false; patch.trashed = false; } }
-    if (data.spam !== undefined) { patch.spam = data.spam; if (data.spam) { patch.archived = false; patch.trashed = false; } }
-    if (data.trashed !== undefined) { patch.trashed = data.trashed; if (data.trashed) { patch.archived = false; patch.spam = false; } }
+    const { data: existing } = await supabaseAdmin
+      .from("mail_thread_state" as any).select("starred, archived, spam, trashed").eq("thread_id", data.threadId).maybeSingle();
+    const before = {
+      starred: !!(existing as any)?.starred, archived: !!(existing as any)?.archived,
+      spam: !!(existing as any)?.spam, trashed: !!(existing as any)?.trashed,
+    };
+    const patch = {
+      thread_id: data.threadId,
+      updated_at: new Date().toISOString(),
+      updated_by: context.userId,
+      ...applyThreadFiling(before, data),
+    };
     const { error } = await supabaseAdmin.from("mail_thread_state" as any).upsert(patch, { onConflict: "thread_id" });
     if (error) throw fromSupabase(error);
     return { ok: true };

@@ -24,6 +24,8 @@ function makeClient(opts: {
   rpcResults?: Record<string, unknown>;
   /** Force a failed UPDATE on system_requests. */
   updateError?: string;
+  /** Conditional UPDATEs match no row (someone else changed the request). */
+  casLoses?: boolean;
   /** Force a failed READ, keyed by app_settings key or by table name. */
   readErrors?: Record<string, string>;
 }) {

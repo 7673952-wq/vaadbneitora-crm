@@ -295,7 +295,7 @@ function MailboxPage() {
         <Button variant="ghost" size="icon" onClick={() => refetch()} disabled={isFetching} title="רענון" aria-label="רענון תיבת הדואר">
           <RefreshCw className={isFetching ? "animate-spin" : ""} />
         </Button>
-        <Button size="sm" className="rounded-full" onClick={() => { setComposing(true); setSelected(null); }}>
+        <Button size="sm" className="rounded-full" onClick={() => { startCompose("new"); setSelected(null); }}>
           <PenSquare /> מייל חדש
         </Button>
       </header>
@@ -352,7 +352,7 @@ function MailboxPage() {
                     <span>{c.messages} הודעות</span><span>·</span><span>{fmt(c.lastAt)}</span>
                   </div>
                   <div className="mt-2 flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={() => { setTo(c.email); setComposing(true); setSelected(null); }}>
+                    <Button size="sm" variant="outline" onClick={() => { startCompose("new"); setTo(c.email); setSelected(null); }}>
                       <PenSquare /> מייל
                     </Button>
                     {c.systemId && (
@@ -372,18 +372,24 @@ function MailboxPage() {
         <aside className="border-b border-border bg-muted/40 p-3 md:border-b-0 md:border-l">
           <nav className="grid grid-cols-2 gap-1 md:grid-cols-1" aria-label="תיקיות דואר">
             {FILTERS.map((f) => {
-              const Icon = FILTER_ICONS[f.key];
+              const Icon = f.icon;
               const active = filter === f.key;
+              const badge =
+                f.key === "unread" ? (counts?.unread ?? unreadTotal) :
+                f.key === "starred" ? counts?.starred :
+                f.key === "archive" ? counts?.archive :
+                f.key === "spam" ? counts?.spam :
+                f.key === "trash" ? counts?.trash : 0;
               return (
                 <button
                   key={f.key}
-                  onClick={() => setFilter(f.key)}
+                  onClick={() => { setFilter(f.key); setSelected(null); }}
                   className={`flex h-9 items-center gap-2 rounded-lg px-2.5 text-sm transition ${active ? "bg-primary text-primary-foreground shadow-sm" : "text-foreground hover:bg-background"}`}
                 >
                   <Icon className="h-4 w-4" />
                   {f.label}
-                  {f.key === "unread" && unreadTotal > 0 && (
-                    <span className={`mr-auto rounded-full px-1.5 text-[10px] ${active ? "bg-primary-foreground/20" : "bg-primary/15 text-primary"}`}>{unreadTotal}</span>
+                  {!!badge && badge > 0 && (
+                    <span className={`mr-auto rounded-full px-1.5 text-[10px] ${active ? "bg-primary-foreground/20" : "bg-primary/15 text-primary"}`}>{badge}</span>
                   )}
                 </button>
               );
@@ -461,14 +467,16 @@ function MailboxPage() {
 
           {composing && (
             <div className="mx-auto max-w-3xl space-y-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
-              <h2 className="text-sm font-semibold">מייל חדש</h2>
-              <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="אל (כתובת מייל)"
+              <h2 className="text-sm font-semibold">
+                {composeMode === "reply" ? "תשובה" : composeMode === "reply_all" ? "תשובה לכולם" : composeMode === "forward" ? "העברה" : "מייל חדש"}
+              </h2>
+              <input value={to} onChange={(e) => setTo(e.target.value)} placeholder="אל (אפשר כמה כתובות, מופרדות בפסיק)"
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm" />
               <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="נושא"
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm" />
               <EmailContentEditor value={body} onChange={setBody} cleanupLevel={cleanup} onCleanupLevelChange={setCleanup} rows={8} />
               <div className="flex flex-wrap items-center gap-3">
-                <Button onClick={() => send.mutate({ to, subject, body })} disabled={send.isPending || !to || !body.trim()}>
+                <Button onClick={() => send.mutate({ to, subject, body, threadId: composeMode === "reply" || composeMode === "reply_all" ? selected : null })} disabled={send.isPending || !to || !body.trim()}>
                   <Send /> שליחה
                 </Button>
                 <Button variant="outline" onClick={() => setComposing(false)}>ביטול</Button>

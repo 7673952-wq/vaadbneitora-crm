@@ -2126,7 +2126,10 @@ export async function readVoiceDebounceSeconds(supabaseAdmin: any): Promise<numb
 
 // Sends to every caller (primary + additional) who hasn't yet received a
 // message for the system's CURRENT status. Used by the automatic
-// status-triggered send and by the queued/cron sender. Never throws.
+// status-triggered send and by the queued/cron sender.
+//
+// THROWS when the system row or the send log cannot be read, so the caller
+// keeps the message in the queue instead of recording a silent "nothing to do".
 export type VoiceSendMode = "auto" | "queue" | "manual";
 
 async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: VoiceSendMode = "auto", userId?: string | null) {
@@ -2135,10 +2138,12 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
     .select("caller_phone, phone, status, additional_caller_phones")
     .eq("id", systemId)
     .maybeSingle();
-  if (sysErr || !sysRow) return { ok: 0, fail: 0, targets: 0 };
+  if (sysErr) throw new Error(`קריאת המערכת נכשלה: ${sysErr.message}`);
+  if (!sysRow) return { ok: 0, fail: 0, targets: 0 };
   const sys = sysRow as any;
   const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
   const alreadySent = await sentPhoneDigitsForStatus(supabaseAdmin, systemId, sys.status ?? null);
+
   const digitsOf = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 
   const targets: number[] = [];

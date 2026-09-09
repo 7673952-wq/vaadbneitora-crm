@@ -268,8 +268,8 @@ export const deleteMailMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_delete");
-        const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
-        await limitSensitiveAction("email_send", context.userId);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("mailbox_delete", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("email_messages").delete().eq("id", data.id);
     if (error) throw fromSupabase(error);
@@ -283,8 +283,8 @@ export const deleteMailThread = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_delete");
-        const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
-        await limitSensitiveAction("email_send", context.userId);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("mailbox_delete", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     if (data.threadId.startsWith("msg:")) {
       const { error } = await supabaseAdmin.from("email_messages").delete().eq("id", data.threadId.slice(4));
@@ -318,8 +318,8 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertMailPermission } = await import("@/lib/permissions.server");
     await assertMailPermission(context.userId, "emails_send");
-        const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
-        await limitSensitiveAction("email_send", context.userId);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("email_send", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
     const [{ data: urlRow }, { data: secretRow }, { data: profile }, { data: generalRow }] = await Promise.all([

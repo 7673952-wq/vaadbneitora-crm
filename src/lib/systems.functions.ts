@@ -873,8 +873,8 @@ export const deleteSystem = createServerFn({ method: "POST" })
     // Deletion is governed by the "מחיקת מערכות" permission (super-admins
     // always resolve true), not by a hard-coded role check.
     await ensurePermission(context.userId, "systems_delete");
-        const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
-        await limitSensitiveAction("system_delete", context.userId);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("system_delete", context.userId);
 
 
     const mode = data.mode ?? "cascade";
@@ -2564,8 +2564,8 @@ export const importSystems = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     await ensurePermission(context.userId, "import_export");
-        const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
-        await limitSensitiveAction("import_export", context.userId);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("import_export", context.userId);
 
 
     const statusSet = new Set<string>(STATUS_VALUES as readonly string[]);

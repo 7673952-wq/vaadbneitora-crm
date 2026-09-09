@@ -183,20 +183,31 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           // Re-check inside the claim: the system may exist already, created
           // meanwhile or simply never linked to this request.
           const link = await linkRequestToExistingSystem(supabaseAdmin, data.id, codeNorm);
+          if (link.kind === "conflict") {
+            // The conditional update matched no row: someone else moved this
+            // request meanwhile. Nothing was linked, so nothing is reported.
+            await supabaseAdmin.from("system_requests")
+              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await release();
+            return { ok: false as const, status: "conflict" as const, message: "הבקשה השתנתה בינתיים — רענן ונסה שוב" };
+          }
           if (link.kind === "ambiguous") {
-            await supabaseAdmin.from("system_requests").update({ manual_action: null, manual_target_status: null }).eq("id", data.id);
+            await supabaseAdmin.from("system_requests")
+              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
             await release(); return { ok: true, multipleMatches: true };
           }
           if (link.kind === "linked") {
-            await supabaseAdmin.from("system_requests").update({ manual_action: null, manual_target_status: null }).eq("id", data.id);
+            await supabaseAdmin.from("system_requests")
+              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
             await release(); return { ok: true, linkedExisting: true, systemId: link.systemId };
           }
 
           if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
           await assertKnownStatus(supabaseAdmin, toStatus);
           // The name may be chosen right here, at creation time; without one the
-          // card gets a placeholder marked as "temporary name".
-          const chosenName = String(data.name ?? "").trim();
+          // card gets a placeholder marked as "temporary name". A retry reuses
+          // the name stored with the intent, not the one sent again now.
+          const chosenName = String(intentName ?? data.name ?? "").trim();
           const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
             system_code: req.system_code_raw ?? codeNorm,
             name: chosenName || `מערכת ${codeNorm}`,

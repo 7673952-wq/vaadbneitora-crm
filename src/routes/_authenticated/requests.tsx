@@ -119,9 +119,16 @@ function RequestsPage() {
   const decideMutation = useMutation({
     mutationFn: (vars: DecideVars) => decide({ data: vars }),
     onSuccess: (res: any) => {
+      // A request that lost the race did NOT carry out the action — never
+      // report it as done.
+      if (res?.ok === false) {
+        toast.warning(String(res?.message ?? "הבקשה לא בוצעה — רענן ונסה שוב"));
+        invalidate();
+        return;
+      }
       if (res?.linkedExisting) toast.success("המערכת כבר קיימת — הבקשה שויכה אליה. בחר סטטוס להמשך");
       else if (res?.multipleMatches) toast.warning("נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית");
-      else toast.success(res?.alreadyDecided ? "הבקשה כבר טופלה" : "הבקשה טופלה");
+      else toast.success("הבקשה טופלה");
       invalidate();
     },
     onError: (e: any) => toast.error(String(e?.message ?? e)),

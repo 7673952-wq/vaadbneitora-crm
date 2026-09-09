@@ -426,6 +426,8 @@ export const saveRequestRule = createServerFn({ method: "POST" })
       crmKey = (data.crmKey ?? "yemot").trim() || "yemot";
       await assertCrmAccess(context.supabase, context.userId, crmKey);
       await assertRequestPermission(context.userId, "requests_manage", crmKey);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("request_manage", context.userId);
     }
 
     if (data.action === "set_status" && !data.to_status) throw new Error("יש לבחור סטטוס יעד");
@@ -513,6 +515,8 @@ export const setRequestAutomationSettings = createServerFn({ method: "POST" })
     const crmKey = (data.crmKey ?? "yemot").trim() || "yemot";
     await assertCrmAccess(context.supabase, context.userId, crmKey);
     await assertRequestPermission(context.userId, "requests_manage", crmKey);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("request_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await assertKnownStatus(supabaseAdmin, data.defaultPticha);
     await assertKnownStatus(supabaseAdmin, data.defaultSgira);

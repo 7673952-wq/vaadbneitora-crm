@@ -104,13 +104,15 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     // A decision that has already started owns the request. A retry resumes
     // exactly that decision; a DIFFERENT action is refused instead of turning
     // a half-finished `apply` into a `keep`/`ignore`.
-    const started = String(req.manual_action ?? "").trim();
-    if (started && started !== data.action) {
+    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, planManualDecision, OPEN_DECISIONS: OPEN } =
+      await import("@/lib/system-requests.server");
+    const plan = planManualDecision(req, data.action, data.toStatus ?? null);
+    if (plan.mode === "conflict") {
       await release();
       throw new Error("פעולה אחרת על בקשה זו כבר החלה ולא הושלמה — יש להשלים אותה תחילה");
     }
-    const resuming = Boolean(started);
-    const intentStatus = resuming && req.manual_target_status ? String(req.manual_target_status) : null;
+    const resuming = plan.mode === "resume";
+    const intentStatus = plan.targetStatus;
 
     const patch: any = {
       decided_by: context.userId,
@@ -120,8 +122,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       decision_claim_by: null,
       manual_last_error: null,
     };
-    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, OPEN_DECISIONS: OPEN } =
-      await import("@/lib/system-requests.server");
+
 
     /** Side effects run once per request; a resume skips what already ran. */
     const runSideEffectsOnce = async (systemId: string, toStatus: string) => {

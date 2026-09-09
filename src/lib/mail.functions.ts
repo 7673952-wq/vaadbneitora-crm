@@ -405,7 +405,16 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z
       .object({
-        to: z.string().email(),
+        // Gmail-style multi-recipient: a comma separated list, each address
+        // validated on its own so one bad entry can't slip through.
+        to: z
+          .string()
+          .min(3)
+          .max(1000)
+          .transform((v) => v.split(",").map((a) => a.trim()).filter(Boolean))
+          .refine((list) => list.length > 0 && list.length <= 10, "יש להזין בין כתובת אחת ל-10 כתובות")
+          .refine((list) => list.every((a) => z.string().email().safeParse(a).success), "כתובת מייל לא תקינה")
+          .transform((list) => list.join(", ")),
         subject: z.string().max(300).optional(),
         body: z.string().min(1).max(20000),
         threadId: z.string().max(200).nullable().optional(),

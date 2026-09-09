@@ -30,7 +30,16 @@ export const listSystemRequests = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin
       .from("system_requests")
-      .select("*")
+      .select([
+        "id", "crm_key", "gmail_message_id", "gmail_thread_id", "request_type", "request_number",
+        "system_code_raw", "system_code_norm", "caller_phone", "system_id", "processing_state",
+        "decision_status", "dry_run", "prev_status", "proposed_status", "proposed_action",
+        "new_status", "status_applied_at", "phone_added_at", "attempts", "last_error",
+        "attachment_name", "attachment_index", "subject", "report_description",
+        "decided_by", "decided_at", "received_at", "created_at", "updated_at",
+        "automation_mode", "duplicate_of", "manual_action", "manual_target_status",
+        "manual_target_name", "manual_last_error",
+      ].join(", "))
       .in("crm_key", crmKeys)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 100);
@@ -91,28 +100,45 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       _id: data.id, _actor: context.userId,
     });
     if (claimError) throw new Error(`נעילת הבקשה נכשלה: ${claimError.message}`);
-    if (!claimed) return { ok: true, alreadyDecided: true };
+    if (!claimed) {
+      // Losing the claim means this request was NOT carried out. It must never
+      // be answered as a success.
+      const { data: current } = await supabaseAdmin
+        .from("system_requests").select("decision_status, decision_claim_at").eq("id", data.id).maybeSingle();
+      const { OPEN_DECISIONS: OPENNOW } = await import("@/lib/system-requests.server");
+      const stillOpen = OPENNOW.includes(String((current as any)?.decision_status ?? ""));
+      return {
+        ok: false as const,
+        status: stillOpen ? ("already_processing" as const) : ("already_decided" as const),
+        message: stillOpen
+          ? "משתמש אחר מטפל כרגע בבקשה זו — נסה שוב בעוד רגע"
+          : "הבקשה כבר הוכרעה על ידי משתמש אחר — רענן את הרשימה",
+      };
+    }
     const req = claimed as any;
 
+    // The release is guarded by the actor in the DB: a stale attempt coming
+    // back to life can never clear the claim someone else now holds.
     const release = async (lastError?: string) => {
-      await supabaseAdmin.from("system_requests")
-        .update({ decision_claim_at: null, decision_claim_by: null, manual_last_error: lastError ?? null })
-        .eq("id", data.id);
+      await supabaseAdmin.rpc("release_system_request_claim", {
+        _id: data.id, _actor: context.userId, _error: lastError ?? null,
+      });
     };
 
     // ---- Durable intent -----------------------------------------------
     // A decision that has already started owns the request. A retry resumes
     // exactly that decision; a DIFFERENT action is refused instead of turning
     // a half-finished `apply` into a `keep`/`ignore`.
-    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, planManualDecision, OPEN_DECISIONS: OPEN } =
+    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, planManualDecision, normalizeIntentValue, OPEN_DECISIONS: OPEN } =
       await import("@/lib/system-requests.server");
-    const plan = planManualDecision(req, data.action, data.toStatus ?? null);
+    const plan = planManualDecision(req, data.action, data.toStatus ?? null, data.name ?? null);
     if (plan.mode === "conflict") {
       await release();
       throw new Error("פעולה אחרת על בקשה זו כבר החלה ולא הושלמה — יש להשלים אותה תחילה");
     }
     const resuming = plan.mode === "resume";
     const intentStatus = plan.targetStatus;
+    const intentName = plan.targetName;
 
     const patch: any = {
       decided_by: context.userId,
@@ -136,10 +162,12 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     try {
       if (!resuming) {
         // Persist the intent BEFORE the first side effect, so any crash from
-        // here on is resumable and can never be re-interpreted.
+        // here on is resumable and can never be re-interpreted. The chosen name
+        // is part of the intent, so a retry recreates the SAME card.
         const { data: intentRows, error: intentError } = await supabaseAdmin.from("system_requests").update({
           manual_action: data.action,
-          manual_target_status: data.toStatus ?? req.proposed_status ?? null,
+          manual_target_status: normalizeIntentValue(data.toStatus ?? req.proposed_status),
+          manual_target_name: normalizeIntentValue(data.name),
           manual_started_by: context.userId,
           manual_started_at: new Date().toISOString(),
         }).eq("id", data.id).is("manual_action", null).select("id");
@@ -164,20 +192,31 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           // Re-check inside the claim: the system may exist already, created
           // meanwhile or simply never linked to this request.
           const link = await linkRequestToExistingSystem(supabaseAdmin, data.id, codeNorm);
+          if (link.kind === "conflict") {
+            // The conditional update matched no row: someone else moved this
+            // request meanwhile. Nothing was linked, so nothing is reported.
+            await supabaseAdmin.from("system_requests")
+              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await release();
+            return { ok: false as const, status: "conflict" as const, message: "הבקשה השתנתה בינתיים — רענן ונסה שוב" };
+          }
           if (link.kind === "ambiguous") {
-            await supabaseAdmin.from("system_requests").update({ manual_action: null, manual_target_status: null }).eq("id", data.id);
+            await supabaseAdmin.from("system_requests")
+              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
             await release(); return { ok: true, multipleMatches: true };
           }
           if (link.kind === "linked") {
-            await supabaseAdmin.from("system_requests").update({ manual_action: null, manual_target_status: null }).eq("id", data.id);
+            await supabaseAdmin.from("system_requests")
+              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
             await release(); return { ok: true, linkedExisting: true, systemId: link.systemId };
           }
 
           if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
           await assertKnownStatus(supabaseAdmin, toStatus);
           // The name may be chosen right here, at creation time; without one the
-          // card gets a placeholder marked as "temporary name".
-          const chosenName = String(data.name ?? "").trim();
+          // card gets a placeholder marked as "temporary name". A retry reuses
+          // the name stored with the intent, not the one sent again now.
+          const chosenName = String(intentName ?? data.name ?? "").trim();
           const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
             system_code: req.system_code_raw ?? codeNorm,
             name: chosenName || `מערכת ${codeNorm}`,

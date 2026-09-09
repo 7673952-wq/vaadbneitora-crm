@@ -119,9 +119,16 @@ function RequestsPage() {
   const decideMutation = useMutation({
     mutationFn: (vars: DecideVars) => decide({ data: vars }),
     onSuccess: (res: any) => {
+      // A request that lost the race did NOT carry out the action — never
+      // report it as done.
+      if (res?.ok === false) {
+        toast.warning(String(res?.message ?? "הבקשה לא בוצעה — רענן ונסה שוב"));
+        invalidate();
+        return;
+      }
       if (res?.linkedExisting) toast.success("המערכת כבר קיימת — הבקשה שויכה אליה. בחר סטטוס להמשך");
       else if (res?.multipleMatches) toast.warning("נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית");
-      else toast.success(res?.alreadyDecided ? "הבקשה כבר טופלה" : "הבקשה טופלה");
+      else toast.success("הבקשה טופלה");
       invalidate();
     },
     onError: (e: any) => toast.error(String(e?.message ?? e)),
@@ -323,6 +330,19 @@ function RequestCard({
         <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
           <ShieldQuestion className="size-3.5" /> {r.last_error}
         </p>
+      )}
+
+      {/* The transcript that came with this specific mail. Independent of the
+          recording: either one may exist without the other. */}
+      {String(r.report_description ?? "").trim() ? (
+        <details className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs" open>
+          <summary className="cursor-pointer font-medium text-foreground">תאור הדיווח</summary>
+          <p className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">
+            {r.report_description}
+          </p>
+        </details>
+      ) : (
+        <p className="mt-2 text-[11px] text-muted-foreground">אין תאור דיווח</p>
       )}
 
       {r.attachment_name && (

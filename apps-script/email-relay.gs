@@ -101,8 +101,12 @@ function CFG_() {
     // Overridable via Script Properties PTICHA_LABEL / SGIRA_LABEL.
     PTICHA_LABEL: PropertiesService.getScriptProperties().getProperty('PTICHA_LABEL') || 'מספרים לפתיחה',
     SGIRA_LABEL: PropertiesService.getScriptProperties().getProperty('SGIRA_LABEL') || 'מספרים לחסימה',
-    REQUEST_WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/system-request',
-    WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/inbound-email',
+    // Target host lives in Script Properties, so staging and production can be
+    // pointed apart without editing (and re-deploying) the script.
+    REQUEST_WEBHOOK_URL: PropertiesService.getScriptProperties().getProperty('REQUEST_WEBHOOK_URL')
+      || 'https://vaadbneitora-crm.vercel.app/api/public/hooks/system-request',
+    WEBHOOK_URL: PropertiesService.getScriptProperties().getProperty('WEBHOOK_URL')
+      || 'https://vaadbneitora-crm.vercel.app/api/public/hooks/inbound-email',
     MAILBOX_EMAIL: 'a033135556@gmail.com',
     SENDER_NAME: 'CRM',
     // The Gmail label configured in ניהול → מיילים. Applied automatically
@@ -183,6 +187,21 @@ var RUN_BUDGET_MS = 270000;
 var RUN_RESERVE_MS = 30000;
 
 function POLL_MAILBOX() {
+  // A single scan at a time: two overlapping timed runs would work the same
+  // mailbox and fight over the sync cursor.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    Logger.log('Another POLL_MAILBOX run is still going — skipping this pass.');
+    return { skippedLocked: true, timedOut: false };
+  }
+  try {
+    return pollMailboxLocked_();
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* the run already ended */ }
+  }
+}
+
+function pollMailboxLocked_() {
   prepareSyncVersion_();
   var started = new Date().getTime();
   var cfg = CFG_();
@@ -772,6 +791,30 @@ function messageSystemCode_(msg) {
   return digits.length >= 4 ? digits : '';
 }
 
+/**
+ * The "תאור הדיווח" text of THIS message, or '' when it has none. Multi-line
+ * text is kept whole; the value is never taken from another message.
+ */
+function messageReportDescription_(msg) {
+  var body = '';
+  try { body = msg.getPlainBody() || ''; } catch (e) { return ''; }
+  var lines = String(body).replace(/\r\n/g, '\n').split('\n');
+  var out = [];
+  var collecting = false;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (!collecting) {
+      var m = line.match(/^\s*ת[יא]?אור\s*ה?דיווח\s*[:\-]?\s*(.*)$/);
+      if (m) { collecting = true; if (m[1] && m[1].trim()) out.push(m[1].trim()); }
+      continue;
+    }
+    // Another known field starts here → the description ended.
+    if (/^\s*[^\s:]{1,30}(\s+[^\s:]{1,30}){0,3}\s*:/.test(line)) break;
+    out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;
@@ -819,6 +862,9 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
               receivedAt: msg.getDate().toISOString(),
               attachmentName: att ? att.name : null,
               attachmentIndex: att ? att.index : null,
+              // Read from THIS message only — a recording is not required for a
+              // description to exist, and vice versa.
+              reportDescription: messageReportDescription_(msg) || null,
               // The label the message was found under is the authoritative
               // request type; the CRM cross-checks it against the body.
               sourceRequestType: requestType,

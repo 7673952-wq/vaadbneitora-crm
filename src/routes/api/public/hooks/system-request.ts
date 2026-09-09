@@ -38,6 +38,7 @@ async function handleSystemRequest(request: Request) {
       receivedAt: body.receivedAt ?? null,
       attachmentName: body.attachmentName ?? null,
       attachmentIndex: typeof body.attachmentIndex === "number" ? body.attachmentIndex : null,
+      reportDescription: typeof body.reportDescription === "string" ? body.reportDescription.slice(0, 20000) : null,
       // Request type derived from the Gmail label the relay found the mail in.
       sourceRequestType: body.sourceRequestType ?? null,
       sourceLabel: body.sourceLabel ?? null,

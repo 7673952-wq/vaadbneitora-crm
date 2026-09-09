@@ -24,6 +24,8 @@ function makeClient(opts: {
   rpcResults?: Record<string, unknown>;
   /** Force a failed UPDATE on system_requests. */
   updateError?: string;
+  /** Conditional UPDATEs match no row (someone else changed the request). */
+  casLoses?: boolean;
   /** Force a failed READ, keyed by app_settings key or by table name. */
   readErrors?: Record<string, string>;
 }) {
@@ -56,14 +58,17 @@ function makeClient(opts: {
         writes.push({ table, op: "update", payload });
         const error = table === "system_requests" && opts.updateError ? { message: opts.updateError } : null;
         if (!error && table === "system_requests" && request) request = { ...request, ...payload };
+        // A conditional UPDATE returns the rows it touched. `casLoses` mimics a
+        // condition that no longer matches: no error, but zero rows.
+        const rows = error || (table === "system_requests" && opts.casLoses) ? [] : [{ id: request?.id ?? "req-1" }];
         // The result must survive the trailing .eq() of update().eq("id", …).
         const chain: any = {
           eq: () => chain,
           is: () => chain,
           in: () => chain,
           select: () => chain,
-          maybeSingle: async () => ({ data: null, error }),
-          then: (r: any) => Promise.resolve({ data: null, error }).then(r),
+          maybeSingle: async () => ({ data: rows[0] ?? null, error }),
+          then: (r: any) => Promise.resolve({ data: rows, error }).then(r),
         };
         return chain;
       },
@@ -625,5 +630,87 @@ describe("the mail relay only forwards a message that carries its own system num
     expect(src).toContain("if (parsed.duplicate) stats.duplicate++;");
     expect(src).toContain("else if (parsed.skipped) stats.skipped++;");
     expect(src).toContain("else stats.sent++;");
+  });
+});
+
+describe("a conditional update that matches no row is never a success", () => {
+  it("reports a conflict instead of 'linked' when the CAS loses", async () => {
+    const { client } = makeClient({
+      systems: [{ id: "sys-1", status: "closed", system_code: "0882309477" }],
+      casLoses: true,
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res.kind).toBe("conflict");
+  });
+
+  it("reports a conflict instead of 'ambiguous' when the CAS loses", async () => {
+    const { client } = makeClient({
+      systems: [
+        { id: "sys-1", status: "closed", system_code: "0882309477" },
+        { id: "sys-2", status: "open", system_code: "0882309477" },
+      ],
+      casLoses: true,
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect(res.kind).toBe("conflict");
+  });
+
+  it("does not count a lost race as a linked request", async () => {
+    const { client } = makeClient({
+      systems: [{ id: "sys-1", status: "closed", system_code: "0882309477" }],
+      casLoses: true,
+    });
+    const res = await linkRequestToExistingSystem(client, "req-1", "0882309477");
+    expect((res as any).systemId).toBeUndefined();
+  });
+});
+
+describe("תאור הדיווח is stored per message", () => {
+  const withDesc = `${BODY}\nתאור הדיווח: שורה ראשונה\nשורה שנייה`;
+
+  it("stores the description that came with this message", async () => {
+    const { client, writes } = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(client, { gmailMessageId: "m-d1", body: withDesc, sourceRequestType: "pticha" });
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.report_description).toContain("שורה ראשונה");
+    expect(inserted.payload.report_description).toContain("שורה שנייה");
+  });
+
+  it("stores null when the message carries no description", async () => {
+    const { client, writes } = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(client, { gmailMessageId: "m-d2", body: BODY, sourceRequestType: "pticha" });
+    const inserted = writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(inserted.payload.report_description ?? null).toBeNull();
+  });
+
+  it("never copies a description from another message of the same thread", async () => {
+    const a = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(a.client, { gmailMessageId: "m-a", gmailThreadId: "t-9", body: withDesc, sourceRequestType: "pticha" });
+    const b = makeClient({ settings: { request_automation_mode: { mode: "dry_run" } } });
+    await ingestSystemRequest(b.client, { gmailMessageId: "m-b", gmailThreadId: "t-9", body: BODY, sourceRequestType: "pticha" });
+    const second = b.writes.find((w) => w.table === "system_requests" && w.op === "insert")!;
+    expect(second.payload.report_description ?? null).toBeNull();
+  });
+});
+
+describe("the mail relay reads its target and its description safely", () => {
+  const script = () => import("node:fs").then((fs) => fs.readFileSync("apps-script/email-relay.gs", "utf8"));
+
+  it("takes the webhook addresses from Script Properties", async () => {
+    const src = await script();
+    expect(src).toContain("getProperty('REQUEST_WEBHOOK_URL')");
+    expect(src).toContain("getProperty('WEBHOOK_URL')");
+  });
+
+  it("guards the scheduled scan with a lock", async () => {
+    const src = await script();
+    expect(src).toContain("LockService.getScriptLock()");
+    expect(src).toContain("function pollMailboxLocked_()");
+  });
+
+  it("sends the description of the very message being forwarded", async () => {
+    const src = await script();
+    expect(src).toContain("function messageReportDescription_(msg)");
+    expect(src).toContain("reportDescription: messageReportDescription_(msg) || null,");
   });
 });

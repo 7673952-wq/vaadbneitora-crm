@@ -18,6 +18,8 @@ export type IngestPayload = {
   receivedAt?: string | null;
   attachmentName?: string | null;
   attachmentIndex?: number | null;
+  /** "תאור הדיווח" as extracted by the relay from THIS message. */
+  reportDescription?: string | null;
   /** Request type derived from the Gmail label the message was found under. */
   sourceRequestType?: string | null;
   sourceLabel?: string | null;
@@ -85,6 +87,8 @@ export type ManualDecisionPlan =
       mode: "start" | "resume";
       /** Status this decision committed to; a resume never re-reads intent. */
       targetStatus: string | null;
+      /** Name chosen for a system created by this decision (create_system). */
+      targetName: string | null;
       /** The status change of THIS decision already went through. */
       statusAlreadyApplied: boolean;
       /** Side effects already ran once; they must not run again. */
@@ -92,6 +96,12 @@ export type ManualDecisionPlan =
       /** A system was already created/linked by this same decision. */
       systemAlreadyLinked: boolean;
     };
+
+/** An empty string is never a business value — it is stored as NULL. */
+export function normalizeIntentValue(value: unknown): string | null {
+  const v = String(value ?? "").trim();
+  return v ? v : null;
+}
 
 /**
  * Decides how a manual decision proceeds, from the DURABLE intent stored on
@@ -101,11 +111,16 @@ export type ManualDecisionPlan =
  * status already equals the target, and re-deriving the decision from state
  * would silently downgrade it to "kept". A retry resumes the same action, and
  * a different action is refused.
+ *
+ * The chosen system NAME is part of that intent too, so a crash between the
+ * intent write and the INSERT cannot make the retry create a card with a
+ * different (placeholder) name than the one the user typed.
  */
 export function planManualDecision(
   req: {
     manual_action?: string | null;
     manual_target_status?: string | null;
+    manual_target_name?: string | null;
     status_applied_at?: string | null;
     side_effects_completed_at?: string | null;
     system_id?: string | null;
@@ -113,16 +128,21 @@ export function planManualDecision(
   },
   action: ManualAction,
   requestedStatus?: string | null,
+  requestedName?: string | null,
 ): ManualDecisionPlan {
   const started = String(req.manual_action ?? "").trim();
   if (started && started !== action) return { mode: "conflict", startedAction: started };
   const resuming = Boolean(started);
   const target = resuming
-    ? (req.manual_target_status ?? null)
-    : (requestedStatus?.trim() || req.proposed_status || null);
+    ? normalizeIntentValue(req.manual_target_status)
+    : (normalizeIntentValue(requestedStatus) ?? normalizeIntentValue(req.proposed_status));
+  const name = resuming
+    ? normalizeIntentValue(req.manual_target_name)
+    : normalizeIntentValue(requestedName);
   return {
     mode: resuming ? "resume" : "start",
-    targetStatus: target ? String(target) : null,
+    targetStatus: target,
+    targetName: name,
     statusAlreadyApplied: resuming && Boolean(req.status_applied_at),
     sideEffectsDone: Boolean(req.side_effects_completed_at),
     systemAlreadyLinked: resuming && Boolean(req.system_id),
@@ -133,6 +153,7 @@ export function planManualDecision(
 export type LinkExistingResult =
   | { kind: "none" }
   | { kind: "ambiguous" }
+  | { kind: "conflict" }
   | { kind: "linked"; systemId: string; status: string | null };
 
 /**
@@ -140,6 +161,10 @@ export type LinkExistingResult =
  * The link itself is never a decision: no status change, no caller phone —
  * the request stays open so the user chooses what to do with it.
  * Exactly one match links; several matches stay unlinked and ask for a human.
+ *
+ * Both writes are compare-and-swap and must PROVE a row moved. A conditional
+ * update that matched nothing returns `conflict` — never "linked" — so a lost
+ * race can never be counted or reported as a success.
  */
 export async function linkRequestToExistingSystem(
   supabaseAdmin: any, requestId: string, codeNorm: string,
@@ -148,26 +173,29 @@ export async function linkRequestToExistingSystem(
   if (matches.length === 0) return { kind: "none" };
 
   if (matches.length > 1) {
-    const { error } = await supabaseAdmin.from("system_requests").update({
+    const { data: rows, error } = await supabaseAdmin.from("system_requests").update({
       decision_status: "needs_decision",
       last_error: "נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית",
-    }).eq("id", requestId).in("decision_status", OPEN_DECISIONS);
+    }).eq("id", requestId).in("decision_status", OPEN_DECISIONS).select("id");
     if (error) throw new Error(error.message);
+    if (!rows?.length) return { kind: "conflict" };
     return { kind: "ambiguous" };
   }
 
   const match = matches[0] as any;
   // CAS: only an open, still-unlinked request may be attached, so two parallel
   // actions cannot link the same request twice.
-  const { error } = await supabaseAdmin.from("system_requests").update({
+  const { data: rows, error } = await supabaseAdmin.from("system_requests").update({
     system_id: match.id,
     prev_status: match.status ?? null,
     last_completed_state: "matched",
     last_error: null,
-  }).eq("id", requestId).is("system_id", null).in("decision_status", OPEN_DECISIONS);
+  }).eq("id", requestId).is("system_id", null).in("decision_status", OPEN_DECISIONS).select("id");
   if (error) throw new Error(error.message);
+  if (!rows?.length) return { kind: "conflict" };
   return { kind: "linked", systemId: match.id, status: match.status ?? null };
 }
+
 
 /**
  * One-off repair for rows ingested before the link step existed: an open
@@ -183,16 +211,18 @@ export async function relinkOpenRequests(supabaseAdmin: any, crmKey = "yemot") {
     .limit(500);
   if (error) throw new Error(error.message);
 
-  let linked = 0, ambiguous = 0, missing = 0;
+  let linked = 0, ambiguous = 0, missing = 0, conflicts = 0;
   for (const row of (data ?? []) as any[]) {
     const codeNorm = String(row.system_code_norm ?? "").trim();
     if (!codeNorm) { missing += 1; continue; }
     const res = await linkRequestToExistingSystem(supabaseAdmin, row.id, codeNorm);
     if (res.kind === "linked") linked += 1;
     else if (res.kind === "ambiguous") ambiguous += 1;
+    // A lost race is not a repair and not a missing system.
+    else if (res.kind === "conflict") conflicts += 1;
     else missing += 1;
   }
-  return { scanned: (data ?? []).length, linked, ambiguous, missing };
+  return { scanned: (data ?? []).length, linked, ambiguous, missing, conflicts };
 }
 
 /**
@@ -357,6 +387,9 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     subject: payload.subject ?? null,
     attachment_name: payload.attachmentName ?? null,
     attachment_index: typeof payload.attachmentIndex === "number" ? payload.attachmentIndex : null,
+    // The relay's own extraction wins when present; otherwise the body of THIS
+    // message is parsed. Never inherited from another message in the thread.
+    report_description: (String(payload.reportDescription ?? "").trim() || parsed.reportDescription) ?? null,
     received_at: receivedIso,
     processing_state: "received",
     automation_mode: mode,
@@ -399,6 +432,14 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   }
   if (!row) return { ok: false, completed: false, retry: true, error: "could not persist request" };
   const req = row as any;
+  // A re-scan of the same message must never blank a stored description, and
+  // must never write the description of a different message onto this row.
+  const incomingDescription = (String(payload.reportDescription ?? "").trim() || parsed.reportDescription) ?? null;
+  if (incomingDescription && !String(req.report_description ?? "").trim()) {
+    await supabaseAdmin.from("system_requests")
+      .update({ report_description: incomingDescription }).eq("id", req.id);
+    req.report_description = incomingDescription;
+  }
   if (req.processing_state === "done") {
     return { ok: true, completed: true, duplicate: true, requestId: req.id, decision: req.decision_status };
   }

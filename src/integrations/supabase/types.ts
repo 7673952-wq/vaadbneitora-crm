@@ -1040,6 +1040,7 @@ export type Database = {
           manual_last_error: string | null
           manual_started_at: string | null
           manual_started_by: string | null
+          manual_target_name: string | null
           manual_target_status: string | null
           new_status: string | null
           phone_added_at: string | null
@@ -1048,6 +1049,7 @@ export type Database = {
           proposed_action: string | null
           proposed_status: string | null
           received_at: string
+          report_description: string | null
           request_number: string | null
           request_type: string | null
           rule_id: string | null
@@ -1086,6 +1088,7 @@ export type Database = {
           manual_last_error?: string | null
           manual_started_at?: string | null
           manual_started_by?: string | null
+          manual_target_name?: string | null
           manual_target_status?: string | null
           new_status?: string | null
           phone_added_at?: string | null
@@ -1094,6 +1097,7 @@ export type Database = {
           proposed_action?: string | null
           proposed_status?: string | null
           received_at?: string
+          report_description?: string | null
           request_number?: string | null
           request_type?: string | null
           rule_id?: string | null
@@ -1132,6 +1136,7 @@ export type Database = {
           manual_last_error?: string | null
           manual_started_at?: string | null
           manual_started_by?: string | null
+          manual_target_name?: string | null
           manual_target_status?: string | null
           new_status?: string | null
           phone_added_at?: string | null
@@ -1140,6 +1145,7 @@ export type Database = {
           proposed_action?: string | null
           proposed_status?: string | null
           received_at?: string
+          report_description?: string | null
           request_number?: string | null
           request_type?: string | null
           rule_id?: string | null
@@ -1551,10 +1557,12 @@ export type Database = {
         Returns: Json
       }
       purge_old_activity_logs: { Args: { _days?: number }; Returns: Json }
-      release_system_request_claim: {
-        Args: { _actor: string; _id: string }
-        Returns: boolean
-      }
+      release_system_request_claim:
+        | { Args: { _actor: string; _id: string }; Returns: boolean }
+        | {
+            Args: { _actor: string; _error: string; _id: string }
+            Returns: boolean
+          }
       reports_summary: {
         Args: {
           _agent?: string

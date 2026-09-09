@@ -5,14 +5,17 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import {
   Mail, Search, Send, RefreshCw, Settings2, PenSquare, Inbox, ArrowUpRight, Users,
-  MailOpen, SendHorizontal, Trash2, Pencil, IdCard, X, Check,
+  MailOpen, SendHorizontal, Trash2, Pencil, IdCard, X, Check, Star, Archive,
+  ShieldAlert, Reply, ReplyAll, Forward, ArchiveRestore, Layers,
 } from "lucide-react";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
 import {
-  listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead,
+  listMailThreads, getMailThread, sendMailboxMessage, markMailThreadRead, markMailThreadUnread,
   getMailboxSettings, listMailContacts, updateMailMessage, deleteMailMessage, deleteMailThread,
+  setMailThreadState, getMailFolderCounts,
 } from "@/lib/mail.functions";
+import { MAIL_FOLDERS, type MailFolder } from "@/lib/mailbox-prefs";
 import { setMyEmailSignature } from "@/lib/email.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
@@ -31,21 +34,29 @@ export const Route = createFileRoute("/_authenticated/mail")({
   }),
 });
 
-type Filter = "all" | "unread" | "inbox" | "sent";
+type Filter = MailFolder;
 
-const FILTERS: { key: Filter; label: string }[] = [
-  { key: "all", label: "הכל" },
-  { key: "unread", label: "לא נקראו" },
-  { key: "inbox", label: "נכנס" },
-  { key: "sent", label: "יוצא" },
+const FILTERS: { key: Filter; label: string; icon: typeof Mail }[] = [
+  { key: "inbox", label: "דואר נכנס", icon: Inbox },
+  { key: "unread", label: "לא נקראו", icon: MailOpen },
+  { key: "starred", label: "מסומנים", icon: Star },
+  { key: "sent", label: "נשלחו", icon: SendHorizontal },
+  { key: "archive", label: "ארכיון", icon: Archive },
+  { key: "spam", label: "ספאם", icon: ShieldAlert },
+  { key: "trash", label: "אשפה", icon: Trash2 },
+  { key: "all", label: "כל הדואר", icon: Layers },
 ];
 
-const FILTER_ICONS = {
-  all: Mail,
-  unread: MailOpen,
-  inbox: Inbox,
-  sent: SendHorizontal,
-} satisfies Record<Filter, typeof Mail>;
+/** Quoted original, the way Gmail prefixes a reply/forward. */
+function quote(subject: string | null, messages: { fromName: string | null; fromAddress: string | null; agentName: string | null; direction: string; createdAt: string; body: string }[]) {
+  const last = messages[messages.length - 1];
+  if (!last) return "";
+  const inbound = last.direction === "in" || last.direction === "inbound";
+  const who = inbound ? (last.fromName || last.fromAddress || "לא ידוע") : (last.agentName || "נציג");
+  const when = new Date(last.createdAt).toLocaleString("he-IL");
+  const quoted = String(last.body || "").split("\n").map((l) => `> ${l}`).join("\n");
+  return `\n\n---------- הודעה מקורית ----------\nנושא: ${subject || "(ללא נושא)"}\nמאת: ${who} · ${when}\n\n${quoted}\n`;
+}
 
 function fmt(iso: string) {
   const d = new Date(iso);

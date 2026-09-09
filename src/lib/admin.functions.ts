@@ -150,6 +150,8 @@ export const createUser = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
     await assertCanManageRole(context, { grantRole: data.role });
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_user_manage", context.userId);
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: created, error } = await supabaseAdmin.auth.admin.createUser({
@@ -172,6 +174,8 @@ export const deleteUser = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
     await assertCanManageRole(context, { targetUserId: data.user_id });
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_user_manage", context.userId);
     if (data.user_id === context.userId) throw new AppError("לא ניתן למחוק את עצמך", { code: "bad_request" });
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.deleteUser(data.user_id);
@@ -187,6 +191,8 @@ export const setUserRole = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
     await assertCanManageRole(context, { grantRole: data.role, targetUserId: data.user_id });
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_user_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
     const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
@@ -206,6 +212,8 @@ export const updateUserDisplayName = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
     await assertCanManageRole(context, { targetUserId: data.user_id });
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_user_manage", context.userId);
     const displayName = sanitizeText(data.display_name);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("profiles").update({ display_name: displayName }).eq("id", data.user_id);
@@ -222,6 +230,8 @@ export const updateUserEmail = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
     await assertCanManageRole(context, { targetUserId: data.user_id });
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_user_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { email: data.email, email_confirm: true });
     if (error) throw fromSupabase(error);
@@ -236,6 +246,8 @@ export const updateUserPassword = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "users_manage");
     await assertCanManageRole(context, { targetUserId: data.user_id });
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_user_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.user_id, { password: data.password });
     if (error) throw fromSupabase(error);

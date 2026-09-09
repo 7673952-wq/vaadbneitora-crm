@@ -2013,32 +2013,47 @@ async function runYemotVoiceSend(
   // Serialize with a short DB-backed lock (reuses the rate-limit counter).
   const lockDigits = String(phoneForLog ?? "").replace(/\D/g, "");
   if (lockDigits) {
+    const logLockFailure = async (message: string) => {
+      await supabaseAdmin.from("voice_message_log").insert({
+        system_id: systemId,
+        system_code: systemCodeForLog,
+        phone: phoneForLog,
+        phone_index: phoneIndex,
+        status_key: statusForLog,
+        send_mode: sendMode,
+        success: false,
+        error_message: message.slice(0, 500),
+        created_by: userId ?? null,
+      }).then(() => {}, () => {});
+    };
+    let hits: number | null = null;
     try {
-      const { data: hits } = await supabaseAdmin.rpc("bump_rate_limit", {
+      // Supabase reports a failure as an `error` object without throwing, so
+      // both paths are checked: a lock we did not really take must never be
+      // treated as taken.
+      const { data, error } = await supabaseAdmin.rpc("bump_rate_limit", {
         _key: `voice-send:${lockDigits}`,
         _window_seconds: 30,
       });
-      if (Number(hits ?? 0) > 1) {
-        throw new Error("שליחה נוספת למספר זה בוצעה ממש עכשיו — נסה שוב בעוד כחצי דקה");
-      }
+      if (error) throw new Error(error.message);
+      hits = Number(data ?? 0);
     } catch (e: any) {
-      if (String(e?.message ?? "").includes("נסה שוב")) {
-        await supabaseAdmin.from("voice_message_log").insert({
-          system_id: systemId,
-          system_code: systemCodeForLog,
-          phone: phoneForLog,
-          phone_index: phoneIndex,
-          status_key: statusForLog,
-          send_mode: sendMode,
-          success: false,
-          error_message: String(e.message).slice(0, 500),
-          created_by: userId ?? null,
-        }).then(() => {}, () => {});
-        throw e;
-      }
-      console.warn("[voice] lock unavailable", e?.message ?? e);
+      const message = `נעילת השליחה אינה זמינה — נסה שוב: ${String(e?.message ?? e)}`;
+      await logLockFailure(message);
+      throw new Error(message);
+    }
+    if (!Number.isFinite(hits) || (hits as number) < 1) {
+      const message = "נעילת השליחה אינה זמינה — נסה שוב";
+      await logLockFailure(message);
+      throw new Error(message);
+    }
+    if ((hits as number) > 1) {
+      const message = "שליחה נוספת למספר זה בוצעה ממש עכשיו — נסה שוב בעוד כחצי דקה";
+      await logLockFailure(message);
+      throw new Error(message);
     }
   }
+
 
   try {
     const result = await runYemotVoiceSendInner(supabaseAdmin, systemId, phoneIndex);

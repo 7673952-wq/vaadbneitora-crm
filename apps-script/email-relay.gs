@@ -862,6 +862,9 @@ function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started)
               receivedAt: msg.getDate().toISOString(),
               attachmentName: att ? att.name : null,
               attachmentIndex: att ? att.index : null,
+              // Read from THIS message only — a recording is not required for a
+              // description to exist, and vice versa.
+              reportDescription: messageReportDescription_(msg) || null,
               // The label the message was found under is the authoritative
               // request type; the CRM cross-checks it against the body.
               sourceRequestType: requestType,

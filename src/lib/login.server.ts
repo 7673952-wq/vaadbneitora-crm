@@ -1,6 +1,10 @@
 // Server-side login throttling. Backed by the existing `api_rate_limits`
 // table (via the bump_rate_limit function) so it survives across workers and
 // cannot be bypassed from the browser.
+//
+// Every database call here checks BOTH the returned error and the data:
+// Supabase returns an error object instead of throwing, so a try/catch alone
+// would silently treat a broken counter as "no failures so far".
 
 const WINDOW_SECONDS = 15 * 60;
 const FREE_ATTEMPTS = 5;
@@ -10,17 +14,21 @@ function key(email: string) {
   return `login_fail:${email}`;
 }
 
+function windowStartIso(windowSeconds: number) {
+  return new Date(Math.floor(Date.now() / 1000 / windowSeconds) * windowSeconds * 1000).toISOString();
+}
+
 /** Reads the current failure count without incrementing it. */
 async function currentFailures(supabaseAdmin: any, email: string): Promise<number> {
-  const windowStart = new Date(
-    Math.floor(Date.now() / 1000 / WINDOW_SECONDS) * WINDOW_SECONDS * 1000,
-  ).toISOString();
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("api_rate_limits")
     .select("hits")
     .eq("bucket_key", key(email))
-    .eq("window_start", windowStart)
+    .eq("window_start", windowStartIso(WINDOW_SECONDS))
     .maybeSingle();
+  // Fail closed: without a working counter we cannot tell a first attempt
+  // from the hundredth one.
+  if (error) throw new Error("בדיקת האבטחה אינה זמינה כרגע — נסה שוב בעוד רגע");
   return Number((data as any)?.hits ?? 0);
 }
 
@@ -41,7 +49,11 @@ export async function throttleLogin(supabaseAdmin: any, email: string): Promise<
 }
 
 export async function noteLoginFailure(supabaseAdmin: any, email: string): Promise<void> {
-  await supabaseAdmin.rpc("bump_rate_limit", { _key: key(email), _window_seconds: WINDOW_SECONDS });
+  const { error } = await supabaseAdmin.rpc("bump_rate_limit", {
+    _key: key(email),
+    _window_seconds: WINDOW_SECONDS,
+  });
+  if (error) throw new Error("בדיקת האבטחה אינה זמינה כרגע — נסה שוב בעוד רגע");
 }
 
 export async function clearLoginFailures(supabaseAdmin: any, email: string): Promise<void> {
@@ -64,15 +76,13 @@ function otpKey(userId: string) {
  * (5 per 15 minutes). Counts every send — first one and resends alike.
  */
 export async function throttleOtpSend(supabaseAdmin: any, userId: string): Promise<void> {
-  const windowStart = new Date(
-    Math.floor(Date.now() / 1000 / OTP_WINDOW_SECONDS) * OTP_WINDOW_SECONDS * 1000,
-  ).toISOString();
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("api_rate_limits")
     .select("hits, updated_at")
     .eq("bucket_key", otpKey(userId))
-    .eq("window_start", windowStart)
+    .eq("window_start", windowStartIso(OTP_WINDOW_SECONDS))
     .maybeSingle();
+  if (error) throw new Error("בדיקת האבטחה אינה זמינה כרגע — נסה שוב בעוד רגע");
   const hits = Number((data as any)?.hits ?? 0);
   const last = (data as any)?.updated_at ? new Date((data as any).updated_at).getTime() : 0;
   if (hits >= OTP_MAX_PER_WINDOW) {
@@ -84,8 +94,9 @@ export async function throttleOtpSend(supabaseAdmin: any, userId: string): Promi
 }
 
 export async function noteOtpSend(supabaseAdmin: any, userId: string): Promise<void> {
-  await supabaseAdmin.rpc("bump_rate_limit", {
+  const { error } = await supabaseAdmin.rpc("bump_rate_limit", {
     _key: otpKey(userId),
     _window_seconds: OTP_WINDOW_SECONDS,
   });
+  if (error) throw new Error("בדיקת האבטחה אינה זמינה כרגע — נסה שוב בעוד רגע");
 }

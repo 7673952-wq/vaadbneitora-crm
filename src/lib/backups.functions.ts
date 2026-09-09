@@ -161,6 +161,9 @@ export const restoreBackup = createServerFn({ method: "POST" })
     checkRateLimit(`${context.userId}:restoreBackup`, 2, 300_000);
     await assertSuperAdmin(context);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { enforceDbRateLimit } = await import("@/lib/db-rate-limit.server");
+    await enforceDbRateLimit(supabaseAdmin, { scope: "backup_restore", identity: context.userId });
+
 
     // Pre-restore audit entry — captures intent even if the restore crashes.
     const { data: prof } = await supabaseAdmin

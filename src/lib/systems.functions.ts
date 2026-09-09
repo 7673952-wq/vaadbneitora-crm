@@ -2426,9 +2426,12 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { enforceDbRateLimit } = await import("@/lib/db-rate-limit.server");
+    await enforceDbRateLimit(supabaseAdmin, { scope: "voice_send", identity: context.userId });
     const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
     return runYemotVoiceSend(supabaseAdmin, data.systemId, idx, "manual", context.userId);
   });
+
 
 // ============= Additional caller phones =============
 

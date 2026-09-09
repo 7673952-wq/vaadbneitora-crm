@@ -2271,9 +2271,18 @@ export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId:
         void logInfo(`[auto-voice] system=${systemId} debounced for ${debounce}s -> ${sendAt}`);
         return;
       }
-      await clearPendingVoice(supabaseAdmin, systemId);
+      // The pending marker is cleared only AFTER the send succeeded. Clearing
+      // it first would drop the message entirely if the send then failed.
       const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId, "auto");
+      if (result.fail > 0) {
+        const retryAt = new Date(Date.now() + VOICE_RETRY_MINUTES[0]! * 60_000).toISOString();
+        await schedulePendingVoice(supabaseAdmin, systemId, retryAt, "retry", 1, `${result.fail} שליחות נכשלו`);
+        void logInfo(`[auto-voice] system=${systemId} partial failure, requeued: ${JSON.stringify(result)}`);
+        return;
+      }
+      await clearPendingVoice(supabaseAdmin, systemId);
       void logInfo(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
+
     } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
       await schedulePendingVoice(supabaseAdmin, systemId, nextStart.toISOString(), "window");

@@ -432,6 +432,14 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   }
   if (!row) return { ok: false, completed: false, retry: true, error: "could not persist request" };
   const req = row as any;
+  // A re-scan of the same message must never blank a stored description, and
+  // must never write the description of a different message onto this row.
+  const incomingDescription = (String(payload.reportDescription ?? "").trim() || parsed.reportDescription) ?? null;
+  if (incomingDescription && !String(req.report_description ?? "").trim()) {
+    await supabaseAdmin.from("system_requests")
+      .update({ report_description: incomingDescription }).eq("id", req.id);
+    req.report_description = incomingDescription;
+  }
   if (req.processing_state === "done") {
     return { ok: true, completed: true, duplicate: true, requestId: req.id, decision: req.decision_status };
   }

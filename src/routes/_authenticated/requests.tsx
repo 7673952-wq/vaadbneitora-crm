@@ -342,9 +342,20 @@ function RequestCard({
         <p className="mt-3 text-xs text-muted-foreground">אין לך הרשאת טיפול בבקשות.</p>
       )}
 
+      {/* A decision that started but did not finish keeps its intent, so the
+          screen says what is still missing instead of looking untouched. */}
+      {r.manual_action && pending && (
+        <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+          פעולה שהתחילה ולא הושלמה: {ACTION_LABELS[r.manual_action] ?? r.manual_action}
+          {r.status_applied_at ? " — הסטטוס כבר עודכן, ממתין להשלמת הפעולות הנלוות" : " — ממתין להשלמה"}
+          {". "}לחיצה חוזרת על אותה פעולה תמשיך מהשלב שנעצר.
+        </p>
+      )}
+
       {/* Renaming the system straight from the request: the mail often carries
-          the real name while the card still holds a temporary one. */}
-      {canDecide && hasSystem && (
+          the real name while the card still holds a temporary one. The same
+          field also names a system that is about to be created. */}
+      {canDecide && (hasSystem || hasCode) && (
         <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
             שם המערכת
@@ -355,14 +366,20 @@ function RequestCard({
               className="w-60 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
             />
           </label>
-          <Button size="sm" variant="outline"
-            disabled={busy || nameDraft.trim().length < 2 || nameDraft.trim() === (r.system?.name ?? "")}
-            onClick={() => onRename(nameDraft.trim())}>
-            <Pencil className="size-4" />
-            שמור שם
-          </Button>
-          {r.system?.name_pending && (
-            <span className="text-[11px] font-medium text-amber-700">שם זמני — מומלץ לעדכן</span>
+          {hasSystem ? (
+            <>
+              <Button size="sm" variant="outline"
+                disabled={busy || nameDraft.trim().length < 2 || nameDraft.trim() === (r.system?.name ?? "")}
+                onClick={() => onRename(nameDraft.trim())}>
+                <Pencil className="size-4" />
+                שמור שם
+              </Button>
+              {r.system?.name_pending && (
+                <span className="text-[11px] font-medium text-amber-700">שם זמני — מומלץ לעדכן</span>
+              )}
+            </>
+          ) : (
+            <span className="text-[11px] text-muted-foreground">ישמש כשם המערכת החדשה. בלי שם — ייווצר שם זמני.</span>
           )}
         </div>
       )}
@@ -393,11 +410,12 @@ function RequestCard({
                   </Button>
                 ) : (
                   <Button size="sm" disabled={!choice || busy}
-                    onClick={() => onDecide({ id: r.id, action: "create_system", toStatus: choice })}>
+                    onClick={() => onDecide({ id: r.id, action: "create_system", toStatus: choice, name: nameDraft.trim() || null })}>
                     <Plus className="size-4" />
                     צור מערכת בסטטוס {choice ? `"${label(choice)}"` : ""}
                   </Button>
                 )}
+
                 {hasSystem && (
                   <Button size="sm" variant="outline" disabled={busy}
                     onClick={() => onDecide({ id: r.id, action: "keep" })}>

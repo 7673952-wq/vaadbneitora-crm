@@ -133,6 +133,7 @@ export function planManualDecision(
 export type LinkExistingResult =
   | { kind: "none" }
   | { kind: "ambiguous" }
+  | { kind: "conflict" }
   | { kind: "linked"; systemId: string; status: string | null };
 
 /**
@@ -140,6 +141,10 @@ export type LinkExistingResult =
  * The link itself is never a decision: no status change, no caller phone —
  * the request stays open so the user chooses what to do with it.
  * Exactly one match links; several matches stay unlinked and ask for a human.
+ *
+ * Both writes are compare-and-swap and must PROVE a row moved. A conditional
+ * update that matched nothing returns `conflict` — never "linked" — so a lost
+ * race can never be counted or reported as a success.
  */
 export async function linkRequestToExistingSystem(
   supabaseAdmin: any, requestId: string, codeNorm: string,
@@ -148,26 +153,29 @@ export async function linkRequestToExistingSystem(
   if (matches.length === 0) return { kind: "none" };
 
   if (matches.length > 1) {
-    const { error } = await supabaseAdmin.from("system_requests").update({
+    const { data: rows, error } = await supabaseAdmin.from("system_requests").update({
       decision_status: "needs_decision",
       last_error: "נמצאה יותר ממערכת אחת עם מספר זה — יש לשייך ידנית",
-    }).eq("id", requestId).in("decision_status", OPEN_DECISIONS);
+    }).eq("id", requestId).in("decision_status", OPEN_DECISIONS).select("id");
     if (error) throw new Error(error.message);
+    if (!rows?.length) return { kind: "conflict" };
     return { kind: "ambiguous" };
   }
 
   const match = matches[0] as any;
   // CAS: only an open, still-unlinked request may be attached, so two parallel
   // actions cannot link the same request twice.
-  const { error } = await supabaseAdmin.from("system_requests").update({
+  const { data: rows, error } = await supabaseAdmin.from("system_requests").update({
     system_id: match.id,
     prev_status: match.status ?? null,
     last_completed_state: "matched",
     last_error: null,
-  }).eq("id", requestId).is("system_id", null).in("decision_status", OPEN_DECISIONS);
+  }).eq("id", requestId).is("system_id", null).in("decision_status", OPEN_DECISIONS).select("id");
   if (error) throw new Error(error.message);
+  if (!rows?.length) return { kind: "conflict" };
   return { kind: "linked", systemId: match.id, status: match.status ?? null };
 }
+
 
 /**
  * One-off repair for rows ingested before the link step existed: an open

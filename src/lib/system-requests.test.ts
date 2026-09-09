@@ -692,3 +692,25 @@ describe("תאור הדיווח is stored per message", () => {
     expect(second.payload.report_description ?? null).toBeNull();
   });
 });
+
+describe("the mail relay reads its target and its description safely", () => {
+  const script = () => import("node:fs").then((fs) => fs.readFileSync("apps-script/email-relay.gs", "utf8"));
+
+  it("takes the webhook addresses from Script Properties", async () => {
+    const src = await script();
+    expect(src).toContain("getProperty('REQUEST_WEBHOOK_URL')");
+    expect(src).toContain("getProperty('WEBHOOK_URL')");
+  });
+
+  it("guards the scheduled scan with a lock", async () => {
+    const src = await script();
+    expect(src).toContain("LockService.getScriptLock()");
+    expect(src).toContain("function pollMailboxLocked_()");
+  });
+
+  it("sends the description of the very message being forwarded", async () => {
+    const src = await script();
+    expect(src).toContain("function messageReportDescription_(msg)");
+    expect(src).toContain("reportDescription: messageReportDescription_(msg) || null,");
+  });
+});

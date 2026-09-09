@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { throttleOtpSend, noteOtpSend } from "@/lib/login.server";
+import { throttleOtpSend, noteOtpSend, throttleLogin, noteLoginFailure } from "@/lib/login.server";
 
 /** Minimal stand-in for the admin client used by the throttle helpers. */
 function fakeAdmin(row: { hits: number; updated_at: string } | null) {
@@ -45,5 +45,38 @@ describe("OTP send throttle", () => {
     const { client, rpc } = fakeAdmin(null);
     await noteOtpSend(client, "u1");
     expect(rpc).toHaveBeenCalledWith("bump_rate_limit", expect.objectContaining({ _key: "otp_send:u1" }));
+  });
+});
+
+// Supabase reports failures as an `error` object rather than throwing, so a
+// broken counter must not read as "no attempts so far".
+function brokenAdmin(message: string) {
+  return {
+    rpc: vi.fn().mockResolvedValue({ data: null, error: { message } }),
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          eq: () => ({ maybeSingle: async () => ({ data: null, error: { message } }) }),
+        }),
+      }),
+    }),
+  } as any;
+}
+
+describe("throttling fails closed when the counter is unavailable", () => {
+  it("refuses an OTP send when the read fails", async () => {
+    await expect(throttleOtpSend(brokenAdmin("timeout"), "u1")).rejects.toThrow(/אינה זמינה/);
+  });
+
+  it("refuses to record an OTP send when the counter errors", async () => {
+    await expect(noteOtpSend(brokenAdmin("timeout"), "u1")).rejects.toThrow(/אינה זמינה/);
+  });
+
+  it("refuses a login attempt when the failure count cannot be read", async () => {
+    await expect(throttleLogin(brokenAdmin("timeout"), "a@b.c")).rejects.toThrow(/אינה זמינה/);
+  });
+
+  it("refuses to swallow a failed login-failure record", async () => {
+    await expect(noteLoginFailure(brokenAdmin("timeout"), "a@b.c")).rejects.toThrow(/אינה זמינה/);
   });
 });

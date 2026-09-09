@@ -64,3 +64,12 @@ export async function enforceDbRateLimit(
     throw new AppError("בוצעו יותר מדי פעולות בזמן קצר — נסה שוב בעוד רגע", { code: "rate_limited" });
   }
 }
+
+/**
+ * Convenience wrapper for server functions that have not created the admin
+ * client yet. Same fail-closed behaviour as enforceDbRateLimit.
+ */
+export async function limitSensitiveAction(scope: SensitiveScope, identity: string): Promise<void> {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  await enforceDbRateLimit(supabaseAdmin, { scope, identity });
+}

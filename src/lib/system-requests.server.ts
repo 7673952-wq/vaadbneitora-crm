@@ -85,6 +85,8 @@ export type ManualDecisionPlan =
       mode: "start" | "resume";
       /** Status this decision committed to; a resume never re-reads intent. */
       targetStatus: string | null;
+      /** Name chosen for a system created by this decision (create_system). */
+      targetName: string | null;
       /** The status change of THIS decision already went through. */
       statusAlreadyApplied: boolean;
       /** Side effects already ran once; they must not run again. */
@@ -92,6 +94,12 @@ export type ManualDecisionPlan =
       /** A system was already created/linked by this same decision. */
       systemAlreadyLinked: boolean;
     };
+
+/** An empty string is never a business value — it is stored as NULL. */
+export function normalizeIntentValue(value: unknown): string | null {
+  const v = String(value ?? "").trim();
+  return v ? v : null;
+}
 
 /**
  * Decides how a manual decision proceeds, from the DURABLE intent stored on
@@ -101,11 +109,16 @@ export type ManualDecisionPlan =
  * status already equals the target, and re-deriving the decision from state
  * would silently downgrade it to "kept". A retry resumes the same action, and
  * a different action is refused.
+ *
+ * The chosen system NAME is part of that intent too, so a crash between the
+ * intent write and the INSERT cannot make the retry create a card with a
+ * different (placeholder) name than the one the user typed.
  */
 export function planManualDecision(
   req: {
     manual_action?: string | null;
     manual_target_status?: string | null;
+    manual_target_name?: string | null;
     status_applied_at?: string | null;
     side_effects_completed_at?: string | null;
     system_id?: string | null;
@@ -113,16 +126,21 @@ export function planManualDecision(
   },
   action: ManualAction,
   requestedStatus?: string | null,
+  requestedName?: string | null,
 ): ManualDecisionPlan {
   const started = String(req.manual_action ?? "").trim();
   if (started && started !== action) return { mode: "conflict", startedAction: started };
   const resuming = Boolean(started);
   const target = resuming
-    ? (req.manual_target_status ?? null)
-    : (requestedStatus?.trim() || req.proposed_status || null);
+    ? normalizeIntentValue(req.manual_target_status)
+    : (normalizeIntentValue(requestedStatus) ?? normalizeIntentValue(req.proposed_status));
+  const name = resuming
+    ? normalizeIntentValue(req.manual_target_name)
+    : normalizeIntentValue(requestedName);
   return {
     mode: resuming ? "resume" : "start",
-    targetStatus: target ? String(target) : null,
+    targetStatus: target,
+    targetName: name,
     statusAlreadyApplied: resuming && Boolean(req.status_applied_at),
     sideEffectsDone: Boolean(req.side_effects_completed_at),
     systemAlreadyLinked: resuming && Boolean(req.system_id),

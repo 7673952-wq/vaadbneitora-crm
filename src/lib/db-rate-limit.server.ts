@@ -55,10 +55,10 @@ export async function enforceDbRateLimit(
   });
   // Supabase returns an error object instead of throwing; both mean the
   // counter did not run, and a sensitive action must not continue blindly.
-  if (error) throw new AppError("בדיקת קצב הפעולות אינה זמינה כרגע — נסה שוב בעוד רגע", { code: "rate_limit_unavailable" });
+  if (error) throw new AppError("בדיקת קצב הפעולות אינה זמינה כרגע — נסה שוב בעוד רגע", { code: "internal" });
   const hits = Number(data ?? 0);
   if (!Number.isFinite(hits) || hits <= 0) {
-    throw new AppError("בדיקת קצב הפעולות אינה זמינה כרגע — נסה שוב בעוד רגע", { code: "rate_limit_unavailable" });
+    throw new AppError("בדיקת קצב הפעולות אינה זמינה כרגע — נסה שוב בעוד רגע", { code: "internal" });
   }
   if (hits > limit) {
     throw new AppError("בוצעו יותר מדי פעולות בזמן קצר — נסה שוב בעוד רגע", { code: "rate_limited" });

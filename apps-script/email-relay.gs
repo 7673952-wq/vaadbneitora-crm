@@ -101,8 +101,12 @@ function CFG_() {
     // Overridable via Script Properties PTICHA_LABEL / SGIRA_LABEL.
     PTICHA_LABEL: PropertiesService.getScriptProperties().getProperty('PTICHA_LABEL') || 'מספרים לפתיחה',
     SGIRA_LABEL: PropertiesService.getScriptProperties().getProperty('SGIRA_LABEL') || 'מספרים לחסימה',
-    REQUEST_WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/system-request',
-    WEBHOOK_URL: 'https://vaadbneitora-crm.vercel.app/api/public/hooks/inbound-email',
+    // Target host lives in Script Properties, so staging and production can be
+    // pointed apart without editing (and re-deploying) the script.
+    REQUEST_WEBHOOK_URL: PropertiesService.getScriptProperties().getProperty('REQUEST_WEBHOOK_URL')
+      || 'https://vaadbneitora-crm.vercel.app/api/public/hooks/system-request',
+    WEBHOOK_URL: PropertiesService.getScriptProperties().getProperty('WEBHOOK_URL')
+      || 'https://vaadbneitora-crm.vercel.app/api/public/hooks/inbound-email',
     MAILBOX_EMAIL: 'a033135556@gmail.com',
     SENDER_NAME: 'CRM',
     // The Gmail label configured in ניהול → מיילים. Applied automatically

@@ -63,7 +63,7 @@ function fmt(iso?: string | null) {
   return new Date(iso).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
 }
 
-type DecideVars = { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null };
+type DecideVars = { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null; name?: string | null };
 
 function RequestsPage() {
   const qc = useQueryClient();

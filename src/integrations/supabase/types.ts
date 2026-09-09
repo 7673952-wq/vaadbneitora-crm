@@ -1036,6 +1036,11 @@ export type Database = {
           id: string
           last_completed_state: string
           last_error: string | null
+          manual_action: string | null
+          manual_last_error: string | null
+          manual_started_at: string | null
+          manual_started_by: string | null
+          manual_target_status: string | null
           new_status: string | null
           phone_added_at: string | null
           prev_status: string | null
@@ -1077,6 +1082,11 @@ export type Database = {
           id?: string
           last_completed_state?: string
           last_error?: string | null
+          manual_action?: string | null
+          manual_last_error?: string | null
+          manual_started_at?: string | null
+          manual_started_by?: string | null
+          manual_target_status?: string | null
           new_status?: string | null
           phone_added_at?: string | null
           prev_status?: string | null
@@ -1118,6 +1128,11 @@ export type Database = {
           id?: string
           last_completed_state?: string
           last_error?: string | null
+          manual_action?: string | null
+          manual_last_error?: string | null
+          manual_started_at?: string | null
+          manual_started_by?: string | null
+          manual_target_status?: string | null
           new_status?: string | null
           phone_added_at?: string | null
           prev_status?: string | null

@@ -65,11 +65,12 @@ export const listSystemRequests = createServerFn({ method: "GET" })
  */
 export const decideSystemRequest = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null }) =>
+  .inputValidator((d: { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null; name?: string | null }) =>
     z.object({
       id: z.string().uuid(),
       action: z.enum(["apply", "keep", "ignore", "create_system"]),
       toStatus: z.string().max(60).nullable().optional(),
+      name: z.string().max(120).nullable().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
     const { loadAuthorizedRequest, assertKnownStatus } = await import("@/lib/requests-access.server");
@@ -82,6 +83,9 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     const { hasPermission } = await import("@/lib/permissions.server");
     if (!(await hasPermission(context.userId, "status_change", crmKey))) throw new Error("אין הרשאה");
 
+    const { enforceDbRateLimit } = await import("@/lib/db-rate-limit.server");
+    await enforceDbRateLimit(supabaseAdmin, { scope: "request_decide", identity: context.userId });
+
     // Atomic claim: only the winner may run any side effect below.
     const { data: claimed, error: claimError } = await supabaseAdmin.rpc("claim_system_request", {
       _id: data.id, _actor: context.userId,
@@ -90,9 +94,25 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     if (!claimed) return { ok: true, alreadyDecided: true };
     const req = claimed as any;
 
-    const release = async () => {
-      await supabaseAdmin.rpc("release_system_request_claim", { _id: data.id, _actor: context.userId });
+    const release = async (lastError?: string) => {
+      await supabaseAdmin.from("system_requests")
+        .update({ decision_claim_at: null, decision_claim_by: null, manual_last_error: lastError ?? null })
+        .eq("id", data.id);
     };
+
+    // ---- Durable intent -----------------------------------------------
+    // A decision that has already started owns the request. A retry resumes
+    // exactly that decision; a DIFFERENT action is refused instead of turning
+    // a half-finished `apply` into a `keep`/`ignore`.
+    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, planManualDecision, OPEN_DECISIONS: OPEN } =
+      await import("@/lib/system-requests.server");
+    const plan = planManualDecision(req, data.action, data.toStatus ?? null);
+    if (plan.mode === "conflict") {
+      await release();
+      throw new Error("פעולה אחרת על בקשה זו כבר החלה ולא הושלמה — יש להשלים אותה תחילה");
+    }
+    const resuming = plan.mode === "resume";
+    const intentStatus = plan.targetStatus;
 
     const patch: any = {
       decided_by: context.userId,
@@ -100,83 +120,132 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       dry_run: false,
       decision_claim_at: null,
       decision_claim_by: null,
+      manual_last_error: null,
     };
-    const { addCallerPhone, applyStatusSideEffects, findSystemsByNormalizedCode, linkRequestToExistingSystem, OPEN_DECISIONS: OPEN } =
-      await import("@/lib/system-requests.server");
+
+
+    /** Side effects run once per request; a resume skips what already ran. */
+    const runSideEffectsOnce = async (systemId: string, toStatus: string) => {
+      if (req.side_effects_completed_at) return;
+      await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
+      const { error } = await supabaseAdmin.from("system_requests")
+        .update({ side_effects_completed_at: new Date().toISOString() }).eq("id", data.id);
+      if (error) throw new Error(`סימון סיום הפעולות הנלוות נכשל: ${error.message}`);
+    };
 
     try {
+      if (!resuming) {
+        // Persist the intent BEFORE the first side effect, so any crash from
+        // here on is resumable and can never be re-interpreted.
+        const { data: intentRows, error: intentError } = await supabaseAdmin.from("system_requests").update({
+          manual_action: data.action,
+          manual_target_status: data.toStatus ?? req.proposed_status ?? null,
+          manual_started_by: context.userId,
+          manual_started_at: new Date().toISOString(),
+        }).eq("id", data.id).is("manual_action", null).select("id");
+        if (intentError) throw new Error(`שמירת ההחלטה נכשלה: ${intentError.message}`);
+        if (!intentRows?.length) throw new Error("פעולה אחרת על בקשה זו כבר החלה — רענן ונסה שוב");
+      }
+
       if (data.action === "create_system") {
         const codeNorm = String(req.system_code_norm ?? "").trim();
         if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");
-        if (req.system_id) throw new Error("הבקשה כבר משויכת למערכת");
+        const toStatus = String(intentStatus ?? data.toStatus ?? req.proposed_status ?? "").trim();
 
-        // Re-check inside the claim: the system may exist already, created
-        // meanwhile or simply never linked to this request.
-        const link = await linkRequestToExistingSystem(supabaseAdmin, data.id, codeNorm);
-        if (link.kind === "ambiguous") { await release(); return { ok: true, multipleMatches: true }; }
-        if (link.kind === "linked") { await release(); return { ok: true, linkedExisting: true, systemId: link.systemId }; }
+        if (resuming && req.system_id) {
+          // The system was already created/linked by the attempt that owns this
+          // decision — continue from the step that did not finish.
+          if (!toStatus) throw new Error("חסר סטטוס יעד להשלמת הפעולה");
+          await runSideEffectsOnce(req.system_id, toStatus);
+          patch.decision_status = "manual_applied";
+        } else {
+          if (req.system_id) throw new Error("הבקשה כבר משויכת למערכת");
 
-        const toStatus = String(data.toStatus ?? req.proposed_status ?? "").trim();
-        if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
-        await assertKnownStatus(supabaseAdmin, toStatus);
-        const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
-          system_code: req.system_code_raw ?? codeNorm,
-          name: `מערכת ${codeNorm}`,
-          name_pending: true,
-          status: toStatus as any,
-          caller_phone: req.caller_phone ?? null,
-          source: "בקשה מהמייל",
-        }).select("id").maybeSingle();
-        let systemId = (created as any)?.id as string | undefined;
-        if (!systemId) {
-          // A concurrent creation won the unique code index — adopt that system
-          // instead of failing, so a retry never creates a second card.
-          const again = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
-          systemId = again.length === 1 ? (again[0] as any).id : undefined;
+          // Re-check inside the claim: the system may exist already, created
+          // meanwhile or simply never linked to this request.
+          const link = await linkRequestToExistingSystem(supabaseAdmin, data.id, codeNorm);
+          if (link.kind === "ambiguous") {
+            await supabaseAdmin.from("system_requests").update({ manual_action: null, manual_target_status: null }).eq("id", data.id);
+            await release(); return { ok: true, multipleMatches: true };
+          }
+          if (link.kind === "linked") {
+            await supabaseAdmin.from("system_requests").update({ manual_action: null, manual_target_status: null }).eq("id", data.id);
+            await release(); return { ok: true, linkedExisting: true, systemId: link.systemId };
+          }
+
+          if (!toStatus) throw new Error("יש לבחור סטטוס למערכת החדשה");
+          await assertKnownStatus(supabaseAdmin, toStatus);
+          // The name may be chosen right here, at creation time; without one the
+          // card gets a placeholder marked as "temporary name".
+          const chosenName = String(data.name ?? "").trim();
+          const { data: created, error: createError } = await supabaseAdmin.from("systems").insert({
+            system_code: req.system_code_raw ?? codeNorm,
+            name: chosenName || `מערכת ${codeNorm}`,
+            name_pending: !chosenName,
+            status: toStatus as any,
+            caller_phone: req.caller_phone ?? null,
+            source: "בקשה מהמייל",
+          }).select("id").maybeSingle();
+          let systemId = (created as any)?.id as string | undefined;
+          if (!systemId) {
+            // A concurrent creation won the unique code index — adopt that system
+            // instead of failing, so a retry never creates a second card.
+            const again = await findSystemsByNormalizedCode(supabaseAdmin, codeNorm);
+            systemId = again.length === 1 ? (again[0] as any).id : undefined;
+          }
+          if (!systemId) throw new Error(`יצירת המערכת נכשלה${createError?.message ? `: ${createError.message}` : ""}`);
+
+          // Link BEFORE the side effects, so a crash in the middle can never
+          // leave a created system with no link back to its request.
+          const { data: linkRows, error: linkError } = await supabaseAdmin.from("system_requests").update({
+            system_id: systemId,
+            new_status: toStatus,
+            status_applied_at: new Date().toISOString(),
+            last_completed_state: "matched",
+          }).eq("id", data.id).select("id");
+          if (linkError) throw new Error(`קישור הבקשה למערכת נכשל: ${linkError.message}`);
+          if (!linkRows?.length) throw new Error("קישור הבקשה למערכת לא בוצע — רענן ונסה שוב");
+
+          await runSideEffectsOnce(systemId, toStatus);
+          patch.decision_status = "manual_applied";
         }
-        if (!systemId) throw new Error(`יצירת המערכת נכשלה${createError?.message ? `: ${createError.message}` : ""}`);
-
-        // Link BEFORE the side effects, so a crash in the middle can never
-        // leave a created system with no link back to its request.
-        const { data: linkRows, error: linkError } = await supabaseAdmin.from("system_requests").update({
-          system_id: systemId,
-          new_status: toStatus,
-          status_applied_at: new Date().toISOString(),
-          last_completed_state: "matched",
-        }).eq("id", data.id).select("id");
-        if (linkError) throw new Error(`קישור הבקשה למערכת נכשל: ${linkError.message}`);
-        if (!linkRows?.length) throw new Error("קישור הבקשה למערכת לא בוצע — רענן ונסה שוב");
-
-        await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
-        patch.decision_status = "manual_applied";
       } else if (data.action === "apply") {
-        const toStatus = String(data.toStatus ?? req.proposed_status ?? "").trim();
+        const toStatus = String(intentStatus ?? data.toStatus ?? req.proposed_status ?? "").trim();
         const systemId = req.system_id;
         if (!toStatus || !systemId) throw new Error("חסר סטטוס יעד או מערכת");
         await assertKnownStatus(supabaseAdmin, toStatus);
-        const { data: sys, error: sysError } = await supabaseAdmin
-          .from("systems").select("status").eq("id", systemId).maybeSingle();
-        if (sysError) throw new Error(sysError.message);
-        const from = String((sys as any)?.status ?? "");
-        if (from === toStatus) {
-          // Nothing to change — treat it as "handled without a status change",
-          // which still records the caller phone.
+
+        if (resuming && req.status_applied_at) {
+          // The status change of THIS decision already went through; only the
+          // remaining steps are replayed. Never downgraded to "kept".
           await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
-          patch.decision_status = "kept";
-        } else {
-          const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
-            _request_id: data.id,
-            _system_id: systemId,
-            _from_status: from,
-            _to_status: toStatus,
-            _reason: "החלטה ידנית על בקשה מהמייל",
-          });
-          // Technical failure vs. a legitimate `false` (the status moved meanwhile).
-          if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
-          if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
-          await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
-          await applyStatusSideEffects(supabaseAdmin, systemId, toStatus, data.id);
+          await runSideEffectsOnce(systemId, toStatus);
           patch.decision_status = "manual_applied";
+        } else {
+          const { data: sys, error: sysError } = await supabaseAdmin
+            .from("systems").select("status").eq("id", systemId).maybeSingle();
+          if (sysError) throw new Error(sysError.message);
+          const from = String((sys as any)?.status ?? "");
+          if (from === toStatus) {
+            // Genuinely nothing to change (no earlier attempt applied it) —
+            // handled without a status change, caller phone still recorded.
+            await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
+            patch.decision_status = "kept";
+          } else {
+            const { data: applied, error: applyError } = await supabaseAdmin.rpc("apply_request_status_change", {
+              _request_id: data.id,
+              _system_id: systemId,
+              _from_status: from,
+              _to_status: toStatus,
+              _reason: "החלטה ידנית על בקשה מהמייל",
+            });
+            // Technical failure vs. a legitimate `false` (the status moved meanwhile).
+            if (applyError) throw new Error(`עדכון הסטטוס נכשל: ${applyError.message}`);
+            if (applied !== true) throw new Error("הסטטוס השתנה בינתיים — רענן ונסה שוב");
+            await addCallerPhone(supabaseAdmin, req, systemId, req.caller_phone);
+            await runSideEffectsOnce(systemId, toStatus);
+            patch.decision_status = "manual_applied";
+          }
         }
       } else if (data.action === "keep") {
         // Handled, status untouched — but the caller phone is still recorded.
@@ -196,12 +265,14 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       if (error) throw new Error(error.message);
       if (!updated?.length) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
       return { ok: true };
-    } catch (e) {
-      // A failed attempt must never leave the request locked for the next try.
-      await release().catch(() => {});
+    } catch (e: any) {
+      // A failed attempt must never leave the request locked for the next try,
+      // and the recorded intent stays so the retry resumes the same decision.
+      await release(String(e?.message ?? e).slice(0, 300)).catch(() => {});
       throw e;
     }
   });
+
 
 /**
  * Fixes the system code on an OLDER request row that was ingested before the

@@ -2013,32 +2013,47 @@ async function runYemotVoiceSend(
   // Serialize with a short DB-backed lock (reuses the rate-limit counter).
   const lockDigits = String(phoneForLog ?? "").replace(/\D/g, "");
   if (lockDigits) {
+    const logLockFailure = async (message: string) => {
+      await supabaseAdmin.from("voice_message_log").insert({
+        system_id: systemId,
+        system_code: systemCodeForLog,
+        phone: phoneForLog,
+        phone_index: phoneIndex,
+        status_key: statusForLog,
+        send_mode: sendMode,
+        success: false,
+        error_message: message.slice(0, 500),
+        created_by: userId ?? null,
+      }).then(() => {}, () => {});
+    };
+    let hits: number | null = null;
     try {
-      const { data: hits } = await supabaseAdmin.rpc("bump_rate_limit", {
+      // Supabase reports a failure as an `error` object without throwing, so
+      // both paths are checked: a lock we did not really take must never be
+      // treated as taken.
+      const { data, error } = await supabaseAdmin.rpc("bump_rate_limit", {
         _key: `voice-send:${lockDigits}`,
         _window_seconds: 30,
       });
-      if (Number(hits ?? 0) > 1) {
-        throw new Error("שליחה נוספת למספר זה בוצעה ממש עכשיו — נסה שוב בעוד כחצי דקה");
-      }
+      if (error) throw new Error(error.message);
+      hits = Number(data ?? 0);
     } catch (e: any) {
-      if (String(e?.message ?? "").includes("נסה שוב")) {
-        await supabaseAdmin.from("voice_message_log").insert({
-          system_id: systemId,
-          system_code: systemCodeForLog,
-          phone: phoneForLog,
-          phone_index: phoneIndex,
-          status_key: statusForLog,
-          send_mode: sendMode,
-          success: false,
-          error_message: String(e.message).slice(0, 500),
-          created_by: userId ?? null,
-        }).then(() => {}, () => {});
-        throw e;
-      }
-      console.warn("[voice] lock unavailable", e?.message ?? e);
+      const message = `נעילת השליחה אינה זמינה — נסה שוב: ${String(e?.message ?? e)}`;
+      await logLockFailure(message);
+      throw new Error(message);
+    }
+    if (!Number.isFinite(hits) || (hits as number) < 1) {
+      const message = "נעילת השליחה אינה זמינה — נסה שוב";
+      await logLockFailure(message);
+      throw new Error(message);
+    }
+    if ((hits as number) > 1) {
+      const message = "שליחה נוספת למספר זה בוצעה ממש עכשיו — נסה שוב בעוד כחצי דקה";
+      await logLockFailure(message);
+      throw new Error(message);
     }
   }
+
 
   try {
     const result = await runYemotVoiceSendInner(supabaseAdmin, systemId, phoneIndex);
@@ -2072,22 +2087,27 @@ async function runYemotVoiceSend(
 // Source of truth for "did this caller already get a message about this exact
 // status": voice_message_log. Returns the set of normalized phone digits that
 // were successfully messaged for the given system + status.
+//
+// THROWS when the log cannot be read. Returning an empty set on a database
+// failure would look like "nobody was messaged yet" and re-call every caller.
 async function sentPhoneDigitsForStatus(supabaseAdmin: any, systemId: string, statusKey: string | null) {
   const set = new Set<string>();
   if (!statusKey) return set;
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("voice_message_log")
     .select("phone")
     .eq("system_id", systemId)
     .eq("status_key", statusKey)
     .eq("success", true)
     .limit(500);
+  if (error) throw new Error(`קריאת יומן ההודעות נכשלה: ${error.message}`);
   for (const row of (data ?? []) as any[]) {
     const digits = String(row?.phone ?? "").replace(/\D/g, "");
     if (digits) set.add(digits);
   }
   return set;
 }
+
 
 // Configurable debounce (seconds) between a status change and the automatic
 // voice send, so a mistaken status keystroke doesn't immediately call callers.
@@ -2106,7 +2126,10 @@ export async function readVoiceDebounceSeconds(supabaseAdmin: any): Promise<numb
 
 // Sends to every caller (primary + additional) who hasn't yet received a
 // message for the system's CURRENT status. Used by the automatic
-// status-triggered send and by the queued/cron sender. Never throws.
+// status-triggered send and by the queued/cron sender.
+//
+// THROWS when the system row or the send log cannot be read, so the caller
+// keeps the message in the queue instead of recording a silent "nothing to do".
 export type VoiceSendMode = "auto" | "queue" | "manual";
 
 async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string, sendMode: VoiceSendMode = "auto", userId?: string | null) {
@@ -2115,10 +2138,12 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
     .select("caller_phone, phone, status, additional_caller_phones")
     .eq("id", systemId)
     .maybeSingle();
-  if (sysErr || !sysRow) return { ok: 0, fail: 0, targets: 0 };
+  if (sysErr) throw new Error(`קריאת המערכת נכשלה: ${sysErr.message}`);
+  if (!sysRow) return { ok: 0, fail: 0, targets: 0 };
   const sys = sysRow as any;
   const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
   const alreadySent = await sentPhoneDigitsForStatus(supabaseAdmin, systemId, sys.status ?? null);
+
   const digitsOf = (v: unknown) => String(v ?? "").replace(/\D/g, "");
 
   const targets: number[] = [];
@@ -2246,9 +2271,18 @@ export async function maybeScheduleOrSendAutoVoice(supabaseAdmin: any, systemId:
         void logInfo(`[auto-voice] system=${systemId} debounced for ${debounce}s -> ${sendAt}`);
         return;
       }
-      await clearPendingVoice(supabaseAdmin, systemId);
+      // The pending marker is cleared only AFTER the send succeeded. Clearing
+      // it first would drop the message entirely if the send then failed.
       const result = await autoSendUnsentVoiceMessages(supabaseAdmin, systemId, "auto");
+      if (result.fail > 0) {
+        const retryAt = new Date(Date.now() + VOICE_RETRY_MINUTES[0]! * 60_000).toISOString();
+        await schedulePendingVoice(supabaseAdmin, systemId, retryAt, "retry", 1, `${result.fail} שליחות נכשלו`);
+        void logInfo(`[auto-voice] system=${systemId} partial failure, requeued: ${JSON.stringify(result)}`);
+        return;
+      }
+      await clearPendingVoice(supabaseAdmin, systemId);
       void logInfo(`[auto-voice] system=${systemId} sent immediately, result=${JSON.stringify(result)}`);
+
     } else {
       const nextStart = nextIsraelWindowStart(now, cur.auto_send_start_hour);
       await schedulePendingVoice(supabaseAdmin, systemId, nextStart.toISOString(), "window");
@@ -2426,9 +2460,12 @@ export const sendVoiceMessage = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await ensureCanWrite(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { enforceDbRateLimit } = await import("@/lib/db-rate-limit.server");
+    await enforceDbRateLimit(supabaseAdmin, { scope: "voice_send", identity: context.userId });
     const idx = typeof data.phoneIndex === "number" ? data.phoneIndex : -1;
     return runYemotVoiceSend(supabaseAdmin, data.systemId, idx, "manual", context.userId);
   });
+
 
 // ============= Additional caller phones =============
 

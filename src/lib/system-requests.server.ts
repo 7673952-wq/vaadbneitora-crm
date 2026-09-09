@@ -77,6 +77,59 @@ export async function findSystemsByNormalizedCode(supabaseAdmin: any, codeNorm: 
 /** Decision rows that may still be acted upon. */
 export const OPEN_DECISIONS = ["needs_decision", "simulated"];
 
+export type ManualAction = "apply" | "keep" | "ignore" | "create_system";
+
+export type ManualDecisionPlan =
+  | { mode: "conflict"; startedAction: string }
+  | {
+      mode: "start" | "resume";
+      /** Status this decision committed to; a resume never re-reads intent. */
+      targetStatus: string | null;
+      /** The status change of THIS decision already went through. */
+      statusAlreadyApplied: boolean;
+      /** Side effects already ran once; they must not run again. */
+      sideEffectsDone: boolean;
+      /** A system was already created/linked by this same decision. */
+      systemAlreadyLinked: boolean;
+    };
+
+/**
+ * Decides how a manual decision proceeds, from the DURABLE intent stored on
+ * the request — never from the current state of the system card.
+ *
+ * That distinction is the whole point: after a partial `apply` the system
+ * status already equals the target, and re-deriving the decision from state
+ * would silently downgrade it to "kept". A retry resumes the same action, and
+ * a different action is refused.
+ */
+export function planManualDecision(
+  req: {
+    manual_action?: string | null;
+    manual_target_status?: string | null;
+    status_applied_at?: string | null;
+    side_effects_completed_at?: string | null;
+    system_id?: string | null;
+    proposed_status?: string | null;
+  },
+  action: ManualAction,
+  requestedStatus?: string | null,
+): ManualDecisionPlan {
+  const started = String(req.manual_action ?? "").trim();
+  if (started && started !== action) return { mode: "conflict", startedAction: started };
+  const resuming = Boolean(started);
+  const target = resuming
+    ? (req.manual_target_status ?? null)
+    : (requestedStatus?.trim() || req.proposed_status || null);
+  return {
+    mode: resuming ? "resume" : "start",
+    targetStatus: target ? String(target) : null,
+    statusAlreadyApplied: resuming && Boolean(req.status_applied_at),
+    sideEffectsDone: Boolean(req.side_effects_completed_at),
+    systemAlreadyLinked: resuming && Boolean(req.system_id),
+  };
+}
+
+
 export type LinkExistingResult =
   | { kind: "none" }
   | { kind: "ambiguous" }

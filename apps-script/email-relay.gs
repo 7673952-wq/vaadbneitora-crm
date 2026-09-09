@@ -791,6 +791,30 @@ function messageSystemCode_(msg) {
   return digits.length >= 4 ? digits : '';
 }
 
+/**
+ * The "תאור הדיווח" text of THIS message, or '' when it has none. Multi-line
+ * text is kept whole; the value is never taken from another message.
+ */
+function messageReportDescription_(msg) {
+  var body = '';
+  try { body = msg.getPlainBody() || ''; } catch (e) { return ''; }
+  var lines = String(body).replace(/\r\n/g, '\n').split('\n');
+  var out = [];
+  var collecting = false;
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (!collecting) {
+      var m = line.match(/^\s*ת[יא]?אור\s*ה?דיווח\s*[:\-]?\s*(.*)$/);
+      if (m) { collecting = true; if (m[1] && m[1].trim()) out.push(m[1].trim()); }
+      continue;
+    }
+    // Another known field starts here → the description ended.
+    if (/^\s*[^\s:]{1,30}(\s+[^\s:]{1,30}){0,3}\s*:/.test(line)) break;
+    out.push(line);
+  }
+  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function syncRequestLabel_(labelName, requestType, afterSeconds, stats, started) {
   var cfg = CFG_();
   var query = 'label:"' + String(labelName).replace(/"/g, '') + '" after:' + afterSeconds;

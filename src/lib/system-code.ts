@@ -107,7 +107,7 @@ export function extractReportDescription(input: unknown): string | null {
  */
 export function parseRequestEmail(input: { subject?: string | null; body?: string | null }): ParsedRequest {
   const subject = String(input.subject ?? "");
-  const body = String(input.body ?? "");
+  const body = emailToPlainText(input.body);
   const text = `${subject}\n${body}`;
 
   let requestType: RequestType | null = null;

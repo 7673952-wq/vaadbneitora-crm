@@ -18,6 +18,8 @@ export type IngestPayload = {
   receivedAt?: string | null;
   attachmentName?: string | null;
   attachmentIndex?: number | null;
+  /** "תאור הדיווח" as extracted by the relay from THIS message. */
+  reportDescription?: string | null;
   /** Request type derived from the Gmail label the message was found under. */
   sourceRequestType?: string | null;
   sourceLabel?: string | null;

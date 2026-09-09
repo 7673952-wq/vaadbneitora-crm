@@ -15,7 +15,7 @@ import {
   getMailboxSettings, listMailContacts, updateMailMessage, deleteMailMessage, deleteMailThread,
   setMailThreadState, getMailFolderCounts,
 } from "@/lib/mail.functions";
-import { MAIL_FOLDERS, type MailFolder } from "@/lib/mailbox-prefs";
+import type { MailFolder } from "@/lib/mailbox-prefs";
 import { setMyEmailSignature } from "@/lib/email.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,9 @@ function MailboxPage() {
   const editFn = useServerFn(updateMailMessage);
   const deleteMsgFn = useServerFn(deleteMailMessage);
   const deleteThreadFn = useServerFn(deleteMailThread);
+  const unreadFn = useServerFn(markMailThreadUnread);
+  const stateFn = useServerFn(setMailThreadState);
+  const countsFn = useServerFn(getMailFolderCounts);
 
   const { data: me } = useQuery({
     queryKey: ["me"],
@@ -106,7 +109,7 @@ function MailboxPage() {
   const canEditMail = Boolean(me?.isSuperAdmin || mailPerms.emails_edit);
   const canDeleteMail = Boolean(me?.isSuperAdmin || mailPerms.emails_delete);
 
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<Filter>("inbox");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [composing, setComposing] = useState(false);
@@ -120,6 +123,7 @@ function MailboxPage() {
   const [useGeneral, setUseGeneral] = useState(false);
   const [reply, setReply] = useState("");
   const [signature, setSignature] = useState("");
+  const [composeMode, setComposeMode] = useState<"new" | "reply" | "reply_all" | "forward">("new");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
 
@@ -141,6 +145,13 @@ function MailboxPage() {
   const { data: threads = [], isFetching, refetch } = useQuery({
     queryKey: ["mail_threads", filter, search],
     queryFn: async () => listFn({ data: { filter, search: search || undefined } }),
+    enabled: canViewMail,
+    refetchInterval: refreshMs > 0 ? refreshMs : false,
+  });
+
+  const { data: counts } = useQuery({
+    queryKey: ["mail_counts"],
+    queryFn: async () => countsFn({}),
     enabled: canViewMail,
     refetchInterval: refreshMs > 0 ? refreshMs : false,
   });
@@ -179,6 +190,36 @@ function MailboxPage() {
   const refreshMail = () => {
     qc.invalidateQueries({ queryKey: ["mail_threads"] });
     qc.invalidateQueries({ queryKey: ["mail_thread"] });
+    qc.invalidateQueries({ queryKey: ["mail_counts"] });
+  };
+
+  /** Star / archive / spam / trash — Gmail's filing actions. */
+  const fileThread = useMutation({
+    mutationFn: async (vars: { threadId: string; starred?: boolean; archived?: boolean; spam?: boolean; trashed?: boolean }) =>
+      stateFn({ data: vars }),
+    onSuccess: () => refreshMail(),
+    onError: (e: any) => toast.error(e?.message ?? "הפעולה נכשלה"),
+  });
+
+  const markUnread = useMutation({
+    mutationFn: async (threadId: string) => unreadFn({ data: { threadId } }),
+    onSuccess: () => { toast.success("סומן כלא נקרא"); setSelected(null); refreshMail(); },
+    onError: (e: any) => toast.error(e?.message ?? "הפעולה נכשלה"),
+  });
+
+  /** Opens the composer prefilled the way Gmail does for each action. */
+  const startCompose = (mode: "new" | "reply" | "reply_all" | "forward") => {
+    setComposeMode(mode);
+    if (mode === "new") { setTo(""); setSubject(""); setBody(""); }
+    else {
+      const others = [...new Set(messages.flatMap((m) => [m.fromAddress, m.toAddress]).filter(Boolean) as string[])]
+        .filter((a) => a.toLowerCase() !== (settings?.address ?? "").toLowerCase());
+      const base = current?.subject ?? "";
+      if (mode === "reply") { setTo(current?.address ?? ""); setSubject(base); setBody(""); }
+      if (mode === "reply_all") { setTo(others.join(", ") || (current?.address ?? "")); setSubject(base); setBody(""); }
+      if (mode === "forward") { setTo(""); setSubject(base.startsWith("Fwd:") ? base : `Fwd: ${base}`); setBody(quote(base, messages)); }
+    }
+    setComposing(true);
   };
 
   const send = useMutation({

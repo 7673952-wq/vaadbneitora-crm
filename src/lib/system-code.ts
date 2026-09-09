@@ -38,6 +38,8 @@ export type ParsedRequest = {
   systemCodeNorm: string | null;
   callerPhone: string | null;
   callerPhoneNorm: string | null;
+  /** Free text under the "תאור הדיווח" heading (the recording transcript). */
+  reportDescription: string | null;
 };
 
 const TYPE_PATTERNS: Array<{ type: RequestType; re: RegExp }> = [
@@ -52,6 +54,51 @@ function firstMatch(text: string, patterns: RegExp[]): string | null {
   }
   return null;
 }
+
+/** HTML mail → plain text, keeping the line structure the parser relies on. */
+export function emailToPlainText(input: unknown): string {
+  let s = String(input ?? "");
+  if (/<[a-z!/][^>]*>/i.test(s)) {
+    s = s
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|tr|li|h[1-6])>/gi, "\n")
+      .replace(/<\/?[^>]+>/g, "")
+      .replace(/&nbsp;/gi, " ")
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+      .replace(/&amp;/g, "&");
+  }
+  return s.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
+}
+
+/** A new "label:" line ends the description block. */
+const FIELD_LABEL_LINE = /^[ \t]*[\u0590-\u05FF A-Za-z.'׳"״_-]{2,40}[ \t]*:/;
+
+/**
+ * Pulls the multi-line text that follows the "תאור הדיווח" heading of ONE
+ * message. Only whitespace is normalized — the transcript itself is stored
+ * exactly as written, and it is never taken from another message.
+ */
+export function extractReportDescription(input: unknown): string | null {
+  const text = emailToPlainText(input);
+  const head = /(?:תאור|תיאור)\s*ה?דיווח\s*[:\-]?[ \t]*/i.exec(text);
+  if (!head) return null;
+  const rest = text.slice(head.index + head[0].length);
+  const lines = rest.split("\n");
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i] ?? "";
+    // The heading may sit alone on its line; the first line is part of the
+    // value either way. Any later "label:" line starts a new field.
+    if (i > 0 && FIELD_LABEL_LINE.test(line)) break;
+    if (i > 0 && /^[ \t]*-{2,}[ \t]*$/.test(line)) break;
+    out.push(line.replace(/[ \t]+$/, ""));
+  }
+  const value = out.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  return value ? value : null;
+}
+
 
 /**
  * Parses a pticha/sgira request email. Tolerant of field order and of missing

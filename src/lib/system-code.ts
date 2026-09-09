@@ -147,6 +147,8 @@ export function parseRequestEmail(input: { subject?: string | null; body?: strin
     systemCodeNorm: systemCodeNorm || null,
     callerPhone: callerPhone ? callerPhone.trim() : null,
     callerPhoneNorm: callerPhoneNorm || null,
+    // Per message only: the description of THIS body, never of the thread.
+    reportDescription: extractReportDescription(body),
   };
 }
 

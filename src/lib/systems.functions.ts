@@ -2087,22 +2087,27 @@ async function runYemotVoiceSend(
 // Source of truth for "did this caller already get a message about this exact
 // status": voice_message_log. Returns the set of normalized phone digits that
 // were successfully messaged for the given system + status.
+//
+// THROWS when the log cannot be read. Returning an empty set on a database
+// failure would look like "nobody was messaged yet" and re-call every caller.
 async function sentPhoneDigitsForStatus(supabaseAdmin: any, systemId: string, statusKey: string | null) {
   const set = new Set<string>();
   if (!statusKey) return set;
-  const { data } = await supabaseAdmin
+  const { data, error } = await supabaseAdmin
     .from("voice_message_log")
     .select("phone")
     .eq("system_id", systemId)
     .eq("status_key", statusKey)
     .eq("success", true)
     .limit(500);
+  if (error) throw new Error(`קריאת יומן ההודעות נכשלה: ${error.message}`);
   for (const row of (data ?? []) as any[]) {
     const digits = String(row?.phone ?? "").replace(/\D/g, "");
     if (digits) set.add(digits);
   }
   return set;
 }
+
 
 // Configurable debounce (seconds) between a status change and the automatic
 // voice send, so a mistaken status keystroke doesn't immediately call callers.

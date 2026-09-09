@@ -387,6 +387,9 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     subject: payload.subject ?? null,
     attachment_name: payload.attachmentName ?? null,
     attachment_index: typeof payload.attachmentIndex === "number" ? payload.attachmentIndex : null,
+    // The relay's own extraction wins when present; otherwise the body of THIS
+    // message is parsed. Never inherited from another message in the thread.
+    report_description: (String(payload.reportDescription ?? "").trim() || parsed.reportDescription) ?? null,
     received_at: receivedIso,
     processing_state: "received",
     automation_mode: mode,

@@ -30,7 +30,16 @@ export const listSystemRequests = createServerFn({ method: "GET" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     let q = supabaseAdmin
       .from("system_requests")
-      .select("*")
+      .select([
+        "id", "crm_key", "gmail_message_id", "gmail_thread_id", "request_type", "request_number",
+        "system_code_raw", "system_code_norm", "caller_phone", "system_id", "processing_state",
+        "decision_status", "dry_run", "prev_status", "proposed_status", "proposed_action",
+        "new_status", "status_applied_at", "phone_added_at", "attempts", "last_error",
+        "attachment_name", "attachment_index", "subject", "report_description",
+        "decided_by", "decided_at", "received_at", "created_at", "updated_at",
+        "automation_mode", "duplicate_of", "manual_action", "manual_target_status",
+        "manual_target_name", "manual_last_error",
+      ].join(", "))
       .in("crm_key", crmKeys)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 100);

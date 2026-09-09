@@ -120,7 +120,10 @@ export function BackupsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const { data: schedule } = useQuery({
     queryKey: ["backup-schedule"],
     queryFn: async () => scheduleFn({}),
+    enabled: me?.isSuperAdmin === true,
+    retry: false,
   });
+
 
 
   const runMut = useMutation({

@@ -5,8 +5,10 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { BACKUP_TABLES } from "@/lib/backup-tables";
 import { backupNow, listBackups, getBackupFileUrl, getBackupZipUrl, deleteBackup, restoreBackup, sendBackupByEmail } from "@/lib/backups.functions";
-import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig } from "@/lib/admin.functions";
+import { getMyRole, getBackupWebhookConfig, setBackupWebhookConfig, getBackupSchedule } from "@/lib/admin.functions";
+import { describeBackupSchedule } from "@/lib/backup-schedule-text";
 import { Download, Trash2, Database, RefreshCw, ShieldAlert, Archive, Upload, Mail, Settings } from "lucide-react";
+
 
 export const Route = createFileRoute("/_authenticated/backups")({
   component: BackupsPage,

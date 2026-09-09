@@ -421,10 +421,19 @@ function MailboxPage() {
                 const active = selected === t.threadId;
                 const fromCard = Boolean(t.systemId || t.recordId);
                 return (
+                  <div key={t.threadId} className={`relative rounded-xl border transition ${active ? "border-primary/50 bg-primary/5 shadow-sm" : "border-transparent hover:border-border hover:bg-muted/50"}`}>
                   <button
-                    key={t.threadId}
+                    type="button"
+                    title={t.starred ? "ביטול סימון" : "סימון בכוכב"}
+                    aria-label={t.starred ? "ביטול סימון בכוכב" : "סימון בכוכב"}
+                    onClick={() => fileThread.mutate({ threadId: t.threadId, starred: !t.starred })}
+                    className="absolute left-2 top-2 z-10 rounded p-1 hover:bg-muted"
+                  >
+                    <Star className={`h-3.5 w-3.5 ${t.starred ? "fill-amber-400 text-amber-400" : "text-muted-foreground"}`} />
+                  </button>
+                  <button
                     onClick={() => openThread(t.threadId)}
-                    className={`w-full rounded-xl border p-2.5 text-right transition ${active ? "border-primary/50 bg-primary/5 shadow-sm" : "border-transparent hover:border-border hover:bg-muted/50"}`}
+                    className="w-full rounded-xl p-2.5 text-right"
                   >
                     <div className="flex items-start gap-2.5">
                       <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-full text-[11px] font-semibold ${t.unread > 0 ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
@@ -449,6 +458,7 @@ function MailboxPage() {
                       </div>
                     </div>
                   </button>
+                  </div>
                 );
               })}
             </div>
@@ -506,14 +516,53 @@ function MailboxPage() {
                     <ArrowUpRight className="h-3 w-3" /> כרטיס המערכת
                   </a>
                 )}
-                {canDeleteMail && (
-                  <Button
-                    variant="ghost" size="icon" title="מחיקת השרשור" aria-label="מחיקת השרשור"
-                    onClick={() => { if (confirm("למחוק את כל השיחה מהמערכת?")) removeThread.mutate(selected); }}
-                  >
-                    <Trash2 className="text-destructive" />
+                <div className="flex items-center gap-0.5">
+                  <Button variant="ghost" size="icon" title="תשובה" aria-label="תשובה" onClick={() => startCompose("reply")}>
+                    <Reply />
                   </Button>
-                )}
+                  <Button variant="ghost" size="icon" title="תשובה לכולם" aria-label="תשובה לכולם" onClick={() => startCompose("reply_all")}>
+                    <ReplyAll />
+                  </Button>
+                  <Button variant="ghost" size="icon" title="העברה" aria-label="העברה" onClick={() => startCompose("forward")}>
+                    <Forward />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.starred ? "ביטול סימון" : "סימון בכוכב"} aria-label="סימון בכוכב"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, starred: !current?.starred })}
+                  >
+                    <Star className={current?.starred ? "fill-amber-400 text-amber-400" : ""} />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.archived ? "החזרה לדואר נכנס" : "העברה לארכיון"} aria-label="ארכיון"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, archived: !current?.archived })}
+                  >
+                    {current?.archived ? <ArchiveRestore /> : <Archive />}
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.spam ? "זה לא ספאם" : "דיווח כספאם"} aria-label="ספאם"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, spam: !current?.spam })}
+                  >
+                    <ShieldAlert className={current?.spam ? "text-destructive" : ""} />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon" title={current?.trashed ? "שחזור מהאשפה" : "העברה לאשפה"} aria-label="אשפה"
+                    onClick={() => selected && fileThread.mutate({ threadId: selected, trashed: !current?.trashed })}
+                  >
+                    <Trash2 />
+                  </Button>
+                  <Button variant="ghost" size="icon" title="סימון כלא נקרא" aria-label="סימון כלא נקרא"
+                    onClick={() => selected && markUnread.mutate(selected)}>
+                    <MailOpen />
+                  </Button>
+                  {canDeleteMail && (
+                    <Button
+                      variant="ghost" size="icon" title="מחיקה לצמיתות" aria-label="מחיקה לצמיתות"
+                      onClick={() => { if (confirm("למחוק את כל השיחה מהמערכת לצמיתות?")) removeThread.mutate(selected); }}
+                    >
+                      <X className="text-destructive" />
+                    </Button>
+                  )}
+                </div>
               </div>
 
               <div className="max-h-[45vh] space-y-2.5 overflow-y-auto pl-1">

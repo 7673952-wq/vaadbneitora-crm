@@ -191,16 +191,18 @@ export async function relinkOpenRequests(supabaseAdmin: any, crmKey = "yemot") {
     .limit(500);
   if (error) throw new Error(error.message);
 
-  let linked = 0, ambiguous = 0, missing = 0;
+  let linked = 0, ambiguous = 0, missing = 0, conflicts = 0;
   for (const row of (data ?? []) as any[]) {
     const codeNorm = String(row.system_code_norm ?? "").trim();
     if (!codeNorm) { missing += 1; continue; }
     const res = await linkRequestToExistingSystem(supabaseAdmin, row.id, codeNorm);
     if (res.kind === "linked") linked += 1;
     else if (res.kind === "ambiguous") ambiguous += 1;
+    // A lost race is not a repair and not a missing system.
+    else if (res.kind === "conflict") conflicts += 1;
     else missing += 1;
   }
-  return { scanned: (data ?? []).length, linked, ambiguous, missing };
+  return { scanned: (data ?? []).length, linked, ambiguous, missing, conflicts };
 }
 
 /**

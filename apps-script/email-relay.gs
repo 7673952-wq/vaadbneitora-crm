@@ -187,6 +187,21 @@ var RUN_BUDGET_MS = 270000;
 var RUN_RESERVE_MS = 30000;
 
 function POLL_MAILBOX() {
+  // A single scan at a time: two overlapping timed runs would work the same
+  // mailbox and fight over the sync cursor.
+  var lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    Logger.log('Another POLL_MAILBOX run is still going — skipping this pass.');
+    return { skippedLocked: true, timedOut: false };
+  }
+  try {
+    return pollMailboxLocked_();
+  } finally {
+    try { lock.releaseLock(); } catch (e) { /* the run already ended */ }
+  }
+}
+
+function pollMailboxLocked_() {
   prepareSyncVersion_();
   var started = new Date().getTime();
   var cfg = CFG_();

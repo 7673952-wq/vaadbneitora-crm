@@ -650,6 +650,36 @@ export type Database = {
         }
         Relationships: []
       }
+      mail_thread_state: {
+        Row: {
+          archived: boolean
+          spam: boolean
+          starred: boolean
+          thread_id: string
+          trashed: boolean
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          archived?: boolean
+          spam?: boolean
+          starred?: boolean
+          thread_id: string
+          trashed?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          archived?: boolean
+          spam?: boolean
+          starred?: boolean
+          thread_id?: string
+          trashed?: boolean
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       mfa_grants: {
         Row: {
           consumed_at: string | null

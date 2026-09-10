@@ -72,8 +72,26 @@ export function emailToPlainText(input: unknown): string {
   return s.replace(/\r\n/g, "\n").replace(/\u00a0/g, " ");
 }
 
-/** A new "label:" line ends the description block. */
-const FIELD_LABEL_LINE = /^[ \t]*[\u0590-\u05FF A-Za-z.'׳"״_-]{2,40}[ \t]*:/;
+/**
+ * The description block ends ONLY at a heading the request emails actually
+ * use (or a "----" separator). A colon inside the caller's own sentence
+ * ("אמרתי: לא", "בשעה 12:30", "הערה: חשוב") must never cut the text short.
+ * Keep this list in sync with KNOWN_HEADINGS_ in apps-script/email-relay.gs.
+ */
+export const REPORT_KNOWN_HEADINGS: RegExp[] = [
+  /^[ \t]*(?:מספר|מס[.'׳]?)\s*ה?בקשה[ \t]*[:\-]/,
+  /^[ \t]*בקשה\s*מס[.'׳]?[ \t]*[:\-]/,
+  /^[ \t]*(?:מספר|מזהה|מס[.'׳]?)\s*ה?מערכת[ \t]*[:\-]/,
+  /^[ \t]*(?:שם\s*ה?מערכת|שם\s*ה?פונה|שם\s*ה?לקוח|שם)[ \t]*[:\-]/,
+  /^[ \t]*(?:טלפון(?:\s*ה?פונה)?|מספר\s*ה?פונה|לזיהוי|נייד|טלפון\s*נוסף)[ \t]*[:\-]/,
+  /^[ \t]*(?:סוג\s*ה?בקשה|סוג\s*ה?פנייה|סטטוס|תאריך|שעה|מייל|דוא"ל|דואל|אימייל|כתובת|הערות\s*ה?מערכת)[ \t]*[:\-]/,
+  /^[ \t]*(?:request\s*(?:number|no\.?|id|type)|system\s*(?:number|code|id|name)|phone|caller|email|date|time|status|name)[ \t]*[:\-]/i,
+];
+
+/** True when this line opens one of the known request-email fields. */
+export function isKnownReportHeading(line: string): boolean {
+  return REPORT_KNOWN_HEADINGS.some((re) => re.test(line));
+}
 
 /**
  * Pulls the multi-line text that follows the "תאור הדיווח" heading of ONE
@@ -90,8 +108,8 @@ export function extractReportDescription(input: unknown): string | null {
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i] ?? "";
     // The heading may sit alone on its line; the first line is part of the
-    // value either way. Any later "label:" line starts a new field.
-    if (i > 0 && FIELD_LABEL_LINE.test(line)) break;
+    // value either way. Only a KNOWN field heading (or a separator) ends it.
+    if (i > 0 && isKnownReportHeading(line)) break;
     if (i > 0 && /^[ \t]*-{2,}[ \t]*$/.test(line)) break;
     out.push(line.replace(/[ \t]+$/, ""));
   }

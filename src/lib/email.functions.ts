@@ -135,7 +135,10 @@ export const setMyEmailSignature = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { signature: string }) => z.object({ signature: z.string().max(2000) }).parse(d))
   .handler(async ({ data, context }) => {
-    const { error } = await context.supabase
+    // No direct UPDATE grant on profiles for authenticated users: the only
+    // row a caller may touch is their own, enforced here by the verified id.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin
       .from("profiles" as any).update({ email_signature: sanitizeOptional(data.signature) ?? "" }).eq("id", context.userId);
     if (error) throw new Error(error.message);
     return { ok: true };

@@ -392,12 +392,58 @@ export const listPendingVoiceSends = createServerFn({ method: "GET" })
       };
     });
     
+    // Durable per-phone send guards: a row still "sending" past its stale
+    // window, or already flipped to "unknown", must not be auto-retried
+    // until a human acknowledges it here.
+    const { data: deliveries } = await supabaseAdmin
+      .from("voice_deliveries")
+      .select("system_id, phone_index, phone, status, error, started_at, send_mode")
+      .in("status", ["unknown", "sending"])
+      .limit(500);
+
+    const systemsById = new Map((systems ?? []).map((sys: any) => [sys.id, sys]));
+    const unknown = (deliveries ?? []).map((d: any) => {
+      const sys = systemsById.get(d.system_id);
+      const setting = sys ? settingsByKey.get(sys.status) : undefined;
+      return {
+        system_id: d.system_id,
+        phone_index: d.phone_index,
+        phone: d.phone,
+        status: d.status,
+        error: d.error ?? null,
+        started_at: d.started_at,
+        send_mode: d.send_mode,
+        system_code: sys?.system_code ?? null,
+        status_label: setting?.label ?? sys?.status ?? null,
+      };
+    });
+
     return { 
       total: pending.length,
       pending: pending.filter((p: any) => p.isPending && p.voice_enabled),
       sent_today: pending.filter((p: any) => p.isSent && p.voice_enabled && new Date(p.voice_message_sent_at).toDateString() === new Date().toDateString()),
       sent_all: pending.filter((p: any) => p.isSent && p.voice_enabled),
+      unknown,
     };
+  });
+
+export const acknowledgeVoiceDelivery = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { systemId: string; phoneIndex: number }) =>
+    z.object({ systemId: z.string().uuid(), phoneIndex: z.number().int() }).parse(d))
+  .handler(async ({ data, context }) => {
+    await assertPermission(context, "settings_manage");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { enforceDbRateLimit } = await import("@/lib/db-rate-limit.server");
+    await enforceDbRateLimit(supabaseAdmin, { scope: "voice_send", identity: context.userId });
+    const { data: ok, error } = await supabaseAdmin.rpc("acknowledge_voice_delivery", {
+      _system_id: data.systemId,
+      _phone_index: data.phoneIndex,
+      _actor: context.userId,
+    });
+    if (error) throw new Error(error.message);
+    if (!ok) throw new Error("לא ניתן לאשר את התוצאה — ייתכן שהיא כבר טופלה");
+    return { ok: true };
   });
 
 export const listVoiceMessageLog = createServerFn({ method: "GET" })

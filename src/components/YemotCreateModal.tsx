@@ -11,6 +11,7 @@ import {
   createSystem, findSystemByName, findSystemByCode,
   findSystemsByCallerPhone, addSubSystem, ensureCategoryRoot,
 } from "@/lib/systems.functions";
+import { computeNameMatch, isCategoryName, virtualCategoryOption, VIRTUAL_PARENT_ID } from "@/lib/system-matching";
 
 export type CreateInitial = {
   system_code?: string;
@@ -71,14 +72,6 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.caller_phone, callerLookupFn]);
-  // Names that must ALWAYS present the "open as sub / open as new root" choice,
-  // even when no matching root exists yet in the DB. If sub is chosen the root
-  // is created on-the-fly by ensureCategoryRoot before the sub is attached.
-  const CATEGORY_NAMES = ["קו ההגנה"];
-  const normalizeName = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-  const isCategoryName = (s: string) => CATEGORY_NAMES.some((c) => normalizeName(c) === normalizeName(s));
-  const VIRTUAL_PARENT_ID = "__virtual_category_root__";
-
   useEffect(() => {
     const v = form.name.trim();
     if (v.length < 2) { setSuggestions([]); setMatchedParent(null); setMatchedParentOptions([]); return; }
@@ -88,42 +81,10 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
         const rows = await findFn({ data: { name: v } });
         if (cancelled) return;
         setSuggestions(rows ?? []);
-        const norm = (s: string) => (s ?? "").trim().toLowerCase().replace(/\s+/g, " ");
-        const target = norm(v);
-        const exactMatches = (rows ?? []).filter((r: any) => norm(r.name) === target);
-        // Parent options: always resolve to the TRUE ROOT system so the new
-        // sub-system is attached directly to the root, never to a sub-of-sub.
-        // Walk up using both the row and its embedded parent (findSystemByName
-        // embeds one level) plus any other rows returned by the search.
+        const { parentOptions: opts, isVirtualCategory } = computeNameMatch(v, rows ?? []);
         const isValidParent = (p: any) =>
           !!p && typeof p.id === "string" && p.id.trim()
             && typeof p.name === "string" && p.name.trim();
-        const byId = new Map<string, any>();
-        for (const r of (rows ?? [])) {
-          byId.set(r.id, r);
-          if (r.parent && r.parent.id) byId.set(r.parent.id, r.parent);
-        }
-        const resolveRoot = (r: any): any | null => {
-          let node = r;
-          for (let hop = 0; hop < 10 && node; hop++) {
-            if (!node.parent_system_id) return node;
-            const next = byId.get(node.parent_system_id) ?? node.parent ?? null;
-            if (!next || next.id === node.id) return node;
-            node = next;
-          }
-          return node;
-        };
-        const optsMap = new Map<string, any>();
-        const addOpt = (p: any) => {
-          if (!isValidParent(p)) return;
-          if (optsMap.has(p.id)) return;
-          optsMap.set(p.id, { id: p.id, system_code: p.system_code ?? "", name: p.name });
-        };
-        for (const r of exactMatches) {
-          const root = resolveRoot(r);
-          if (root) addOpt(root);
-        }
-        const opts = Array.from(optsMap.values());
         const initialParent = isValidParent(initial?.parent) ? initial!.parent : null;
         const initialPick = initial?.parent_id
           ? (opts.find((p: any) => p.id === initial.parent_id) ?? initialParent ?? null)
@@ -133,8 +94,8 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
         setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
         // Category-name fallback: even when no root match was found, present the
         // sub/root choice so users can always attach a new sub under the category.
-        if (!initialPick && isCategoryName(v)) {
-          const virtual = { id: VIRTUAL_PARENT_ID, name: v.trim(), system_code: "" };
+        if (!initialPick && isVirtualCategory) {
+          const virtual = virtualCategoryOption(v);
           setMatchedParent(virtual);
           setMatchedParentOptions([virtual]);
           setCreateMode((current) => initial?.createMode ?? current);

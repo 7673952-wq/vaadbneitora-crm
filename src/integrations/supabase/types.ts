@@ -416,6 +416,57 @@ export type Database = {
         }
         Relationships: []
       }
+      email_deliveries: {
+        Row: {
+          attempts: number
+          claim_at: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          idempotency_key: string
+          kind: string
+          last_error: string | null
+          relay_message_id: string | null
+          relay_thread_id: string | null
+          sent_at: string | null
+          status: string
+          target: Json
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          claim_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          idempotency_key: string
+          kind: string
+          last_error?: string | null
+          relay_message_id?: string | null
+          relay_thread_id?: string | null
+          sent_at?: string | null
+          status: string
+          target?: Json
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          claim_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          idempotency_key?: string
+          kind?: string
+          last_error?: string | null
+          relay_message_id?: string | null
+          relay_thread_id?: string | null
+          sent_at?: string | null
+          status?: string
+          target?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       email_messages: {
         Row: {
           agent_id: string | null
@@ -680,6 +731,59 @@ export type Database = {
         }
         Relationships: []
       }
+      mention_email_deliveries: {
+        Row: {
+          attempts: number
+          claim_at: string | null
+          created_at: string
+          id: string
+          last_error: string | null
+          mention_id: string
+          next_retry_at: string
+          retry_requested_at: string | null
+          retry_requested_by: string | null
+          sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          claim_at?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          mention_id: string
+          next_retry_at?: string
+          retry_requested_at?: string | null
+          retry_requested_by?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          claim_at?: string | null
+          created_at?: string
+          id?: string
+          last_error?: string | null
+          mention_id?: string
+          next_retry_at?: string
+          retry_requested_at?: string | null
+          retry_requested_by?: string | null
+          sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mention_email_deliveries_mention_id_fkey"
+            columns: ["mention_id"]
+            isOneToOne: true
+            referencedRelation: "note_mentions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       mfa_grants: {
         Row: {
           consumed_at: string | null
@@ -748,6 +852,57 @@ export type Database = {
           verified_at?: string
         }
         Relationships: []
+      }
+      note_mentions: {
+        Row: {
+          created_at: string
+          crm_key: string
+          id: string
+          mentioned_by: string | null
+          mentioned_user_id: string
+          record_id: string | null
+          source_note_id: string
+          source_type: string
+          system_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          crm_key: string
+          id?: string
+          mentioned_by?: string | null
+          mentioned_user_id: string
+          record_id?: string | null
+          source_note_id: string
+          source_type: string
+          system_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          crm_key?: string
+          id?: string
+          mentioned_by?: string | null
+          mentioned_user_id?: string
+          record_id?: string | null
+          source_note_id?: string
+          source_type?: string
+          system_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "note_mentions_record_id_fkey"
+            columns: ["record_id"]
+            isOneToOne: false
+            referencedRelation: "crm_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "note_mentions_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       notification_role_defaults: {
         Row: {
@@ -1058,6 +1213,9 @@ export type Database = {
           decision_claim_at: string | null
           decision_claim_by: string | null
           decision_status: string | null
+          delete_reason: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           dry_run: boolean
           duplicate_of: string | null
           error_at: string | null
@@ -1068,10 +1226,14 @@ export type Database = {
           last_error: string | null
           manual_action: string | null
           manual_last_error: string | null
+          manual_root_confirmed_matches: Json | null
           manual_started_at: string | null
           manual_started_by: string | null
+          manual_system_action: string | null
           manual_target_name: string | null
+          manual_target_parent_system_id: string | null
           manual_target_status: string | null
+          manual_target_system_id: string | null
           new_status: string | null
           phone_added_at: string | null
           prev_status: string | null
@@ -1106,6 +1268,9 @@ export type Database = {
           decision_claim_at?: string | null
           decision_claim_by?: string | null
           decision_status?: string | null
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           dry_run?: boolean
           duplicate_of?: string | null
           error_at?: string | null
@@ -1116,10 +1281,14 @@ export type Database = {
           last_error?: string | null
           manual_action?: string | null
           manual_last_error?: string | null
+          manual_root_confirmed_matches?: Json | null
           manual_started_at?: string | null
           manual_started_by?: string | null
+          manual_system_action?: string | null
           manual_target_name?: string | null
+          manual_target_parent_system_id?: string | null
           manual_target_status?: string | null
+          manual_target_system_id?: string | null
           new_status?: string | null
           phone_added_at?: string | null
           prev_status?: string | null
@@ -1154,6 +1323,9 @@ export type Database = {
           decision_claim_at?: string | null
           decision_claim_by?: string | null
           decision_status?: string | null
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           dry_run?: boolean
           duplicate_of?: string | null
           error_at?: string | null
@@ -1164,10 +1336,14 @@ export type Database = {
           last_error?: string | null
           manual_action?: string | null
           manual_last_error?: string | null
+          manual_root_confirmed_matches?: Json | null
           manual_started_at?: string | null
           manual_started_by?: string | null
+          manual_system_action?: string | null
           manual_target_name?: string | null
+          manual_target_parent_system_id?: string | null
           manual_target_status?: string | null
+          manual_target_system_id?: string | null
           new_status?: string | null
           phone_added_at?: string | null
           prev_status?: string | null
@@ -1194,6 +1370,20 @@ export type Database = {
             columns: ["duplicate_of"]
             isOneToOne: false
             referencedRelation: "system_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "system_requests_manual_target_parent_system_id_fkey"
+            columns: ["manual_target_parent_system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "system_requests_manual_target_system_id_fkey"
+            columns: ["manual_target_system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
             referencedColumns: ["id"]
           },
           {
@@ -1432,6 +1622,74 @@ export type Database = {
         }
         Relationships: []
       }
+      voice_deliveries: {
+        Row: {
+          acknowledged_at: string | null
+          acknowledged_by: string | null
+          campaign_id: string | null
+          claim_at: string
+          created_at: string
+          error: string | null
+          finished_at: string | null
+          id: string
+          phone: string | null
+          phone_index: number
+          send_mode: string
+          started_at: string
+          started_by: string | null
+          status: string
+          status_key: string | null
+          system_id: string
+          updated_at: string
+        }
+        Insert: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          campaign_id?: string | null
+          claim_at?: string
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          phone?: string | null
+          phone_index: number
+          send_mode?: string
+          started_at?: string
+          started_by?: string | null
+          status: string
+          status_key?: string | null
+          system_id: string
+          updated_at?: string
+        }
+        Update: {
+          acknowledged_at?: string | null
+          acknowledged_by?: string | null
+          campaign_id?: string | null
+          claim_at?: string
+          created_at?: string
+          error?: string | null
+          finished_at?: string | null
+          id?: string
+          phone?: string | null
+          phone_index?: number
+          send_mode?: string
+          started_at?: string
+          started_by?: string | null
+          status?: string
+          status_key?: string | null
+          system_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "voice_deliveries_system_id_fkey"
+            columns: ["system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       voice_message_log: {
         Row: {
           created_at: string
@@ -1487,6 +1745,23 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      acknowledge_voice_delivery: {
+        Args: { _actor: string; _phone_index: number; _system_id: string }
+        Returns: boolean
+      }
+      add_note_with_mentions: {
+        Args: {
+          _author: string
+          _author_name: string
+          _body: string
+          _crm_key: string
+          _mention_all: boolean
+          _mentioned_user_ids: string[]
+          _source_type: string
+          _target_id: string
+        }
+        Returns: Json
+      }
       add_request_caller_phone: {
         Args: { _phone: string; _request_id: string; _system_id: string }
         Returns: boolean
@@ -1509,9 +1784,46 @@ export type Database = {
         }
         Returns: boolean
       }
+      begin_email_delivery: {
+        Args: {
+          _actor: string
+          _key: string
+          _kind: string
+          _stale_seconds?: number
+          _target: Json
+        }
+        Returns: Json
+      }
+      begin_voice_delivery: {
+        Args: {
+          _actor: string
+          _phone: string
+          _phone_index: number
+          _send_mode: string
+          _stale_seconds?: number
+          _status_key: string
+          _system_id: string
+        }
+        Returns: string
+      }
       bump_rate_limit: {
         Args: { _key: string; _window_seconds: number }
         Returns: number
+      }
+      claim_mention_deliveries: {
+        Args: { _limit?: number; _stale_seconds?: number }
+        Returns: {
+          attempts: number
+          crm_key: string
+          delivery_id: string
+          mention_id: string
+          mentioned_by: string
+          mentioned_user_id: string
+          record_id: string
+          source_note_id: string
+          source_type: string
+          system_id: string
+        }[]
       }
       claim_system_request: {
         Args: { _actor: string; _id: string; _stale_seconds?: number }
@@ -1526,7 +1838,13 @@ export type Database = {
           voice_pending_reason: string
         }[]
       }
+      cron_token_valid: {
+        Args: { _name: string; _token: string }
+        Returns: boolean
+      }
+      drain_mention_queue_job: { Args: never; Returns: boolean }
       drain_voice_queue_job: { Args: never; Returns: boolean }
+      ensure_mention_queue_job: { Args: never; Returns: boolean }
       ensure_voice_queue_job: { Args: never; Returns: boolean }
       find_systems_by_code_key: {
         Args: { _key: string }
@@ -1541,6 +1859,37 @@ export type Database = {
           system_code: string
         }[]
       }
+      finish_email_delivery: {
+        Args: {
+          _error?: string
+          _key: string
+          _relay_message_id?: string
+          _relay_thread_id?: string
+          _status: string
+        }
+        Returns: boolean
+      }
+      finish_mention_delivery: {
+        Args: {
+          _delivery_id: string
+          _error?: string
+          _retry_in_seconds?: number
+          _status: string
+        }
+        Returns: boolean
+      }
+      finish_voice_delivery: {
+        Args: {
+          _actor?: string
+          _campaign_id?: string
+          _error?: string
+          _phone_index: number
+          _status: string
+          _system_id: string
+        }
+        Returns: boolean
+      }
+      get_queue_status: { Args: never; Returns: Json }
       get_voice_queue_endpoint: { Args: never; Returns: string }
       has_crm_access: {
         Args: { _crm_key: string; _user_id: string }
@@ -1602,8 +1951,31 @@ export type Database = {
         }
         Returns: Json
       }
+      requeue_mention_delivery: {
+        Args: { _actor: string; _delivery_id: string }
+        Returns: boolean
+      }
+      restore_system_request: {
+        Args: { _actor: string; _id: string }
+        Returns: boolean
+      }
       set_change_reason: { Args: { p_reason: string }; Returns: undefined }
+      set_queue_endpoint: {
+        Args: { _name: string; _url: string }
+        Returns: boolean
+      }
+      set_user_role_atomic: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
       set_voice_queue_endpoint: { Args: { _url: string }; Returns: boolean }
+      soft_delete_system_request: {
+        Args: { _actor: string; _id: string; _reason?: string }
+        Returns: boolean
+      }
       systems_status_counts: {
         Args: { _agent?: string; _from?: string; _to?: string }
         Returns: {
@@ -1611,6 +1983,17 @@ export type Database = {
           secondary_status: string
           status: string
         }[]
+      }
+      update_note_with_mentions: {
+        Args: {
+          _body: string
+          _editor: string
+          _mention_all: boolean
+          _mentioned_user_ids: string[]
+          _note_id: string
+          _source_type: string
+        }
+        Returns: Json
       }
       voice_cron_token_valid: { Args: { _token: string }; Returns: boolean }
     }

@@ -1959,17 +1959,6 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
   }, (json) => json.responseStatus === "OK");
 
   const nowIso = new Date().toISOString();
-  let sentAtError: any = null;
-  if (idx < 0) {
-    const { error } = await supabaseAdmin.from("systems").update({ voice_message_sent_at: nowIso }).eq("id", systemId);
-    sentAtError = error;
-  } else {
-    const next = additional.slice();
-    next[idx] = { ...(next[idx] ?? {}), phone: rawPhone, sent_at: nowIso };
-    const { error } = await supabaseAdmin.from("systems").update({ additional_caller_phones: next } as any).eq("id", systemId);
-    sentAtError = error;
-  }
-  if (sentAtError) throw new Error(sentAtError.message);
 
   return {
     ok: true,
@@ -1980,7 +1969,7 @@ async function runYemotVoiceSendInner(supabaseAdmin: any, systemId: string, phon
 
 // Public entry point: runs the core send, and always logs the attempt
 // (success or failure) to voice_message_log for the admin log view.
-async function runYemotVoiceSend(
+export async function runYemotVoiceSend(
   supabaseAdmin: any,
   systemId: string,
   phoneIndex: number,
@@ -2057,30 +2046,64 @@ async function runYemotVoiceSend(
   }
 
 
+  // Durable, DB-backed claim BEFORE any provider call: makes the send
+  // idempotent across overlapping/duplicate triggers (manual click + queue,
+  // two open tabs, retried cron, etc). A stale "sending" row (crashed
+  // mid-send) is flipped to "unknown" and MUST NOT be retried automatically.
+  let beginResult: string;
+  try {
+    const { data, error } = await supabaseAdmin.rpc("begin_voice_delivery", {
+      _system_id: systemId,
+      _phone_index: phoneIndex,
+      _phone: phoneForLog,
+      _status_key: statusForLog,
+      _send_mode: sendMode,
+      _actor: userId ?? null,
+      _stale_seconds: 600,
+    });
+    if (error) throw new Error(error.message);
+    beginResult = String(data ?? "");
+  } catch (e: any) {
+    throw new Error(`נעילת שליחת ההודעה נכשלה: ${String(e?.message ?? e)}`);
+  }
+
+  if (beginResult === "busy") {
+    const err: any = new Error("שליחה למספר זה כבר מתבצעת — המתן לסיומה");
+    err.code = "voice_busy";
+    throw err;
+  }
+  if (beginResult === "unknown") {
+    const err: any = new Error("תוצאת השליחה הקודמת למספר זה אינה ודאית — נדרש אישור ידני ב'ניהול → תור ההודעות' לפני שליחה חוזרת");
+    err.code = "voice_unknown";
+    throw err;
+  }
+
   try {
     const result = await runYemotVoiceSendInner(supabaseAdmin, systemId, phoneIndex);
-    await supabaseAdmin.from("voice_message_log").insert({
-      system_id: systemId,
-      system_code: systemCodeForLog,
-      phone: phoneForLog,
-      phone_index: phoneIndex,
-      status_key: statusForLog,
-      send_mode: sendMode,
-      success: true,
-      created_by: userId ?? null,
-    }).then(() => {}, () => {});
-    return result;
+    const { data: finished, error: finishErr } = await supabaseAdmin.rpc("finish_voice_delivery", {
+      _system_id: systemId,
+      _phone_index: phoneIndex,
+      _status: "sent",
+      _error: null,
+      _campaign_id: result?.campaignId != null ? String(result.campaignId) : null,
+      _actor: userId ?? null,
+    });
+    if (finishErr || !finished) {
+      // The provider call already succeeded — do NOT throw a misleading
+      // failure and do NOT retry the provider. The row stays "sending" and
+      // will surface as "unknown" once it goes stale, for manual review.
+      void logInfo(`[voice] finish_voice_delivery(sent) failed system=${systemId} phone_index=${phoneIndex}: ${finishErr?.message ?? "CAS mismatch"}`);
+      return { ...result, recorded: false };
+    }
+    return { ...result, recorded: true };
   } catch (e: any) {
-    await supabaseAdmin.from("voice_message_log").insert({
-      system_id: systemId,
-      system_code: systemCodeForLog,
-      phone: phoneForLog,
-      phone_index: phoneIndex,
-      status_key: statusForLog,
-      send_mode: sendMode,
-      success: false,
-      error_message: String(e?.message ?? e).slice(0, 500),
-      created_by: userId ?? null,
+    await supabaseAdmin.rpc("finish_voice_delivery", {
+      _system_id: systemId,
+      _phone_index: phoneIndex,
+      _status: "failed",
+      _error: String(e?.message ?? e).slice(0, 500),
+      _campaign_id: null,
+      _actor: userId ?? null,
     }).then(() => {}, () => {});
     throw e;
   }
@@ -2141,7 +2164,7 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
     .eq("id", systemId)
     .maybeSingle();
   if (sysErr) throw new Error(`קריאת המערכת נכשלה: ${sysErr.message}`);
-  if (!sysRow) return { ok: 0, fail: 0, targets: 0 };
+  if (!sysRow) return { ok: 0, fail: 0, blocked: 0, targets: 0 };
   const sys = sysRow as any;
   const additional = normalizeAdditionalCallerPhones(sys.additional_caller_phones);
   const alreadySent = await sentPhoneDigitsForStatus(supabaseAdmin, systemId, sys.status ?? null);
@@ -2156,16 +2179,19 @@ async function autoSendUnsentVoiceMessages(supabaseAdmin: any, systemId: string,
     if (d && !alreadySent.has(d)) targets.push(i);
   });
 
-  let ok = 0, fail = 0;
+  let ok = 0, fail = 0, blocked = 0;
   for (const phoneIndex of targets) {
     try {
       await runYemotVoiceSend(supabaseAdmin, systemId, phoneIndex, sendMode, userId);
       ok++;
-    } catch {
-      fail++;
+    } catch (e: any) {
+      // A duplicate-send guard ("busy"/"unknown") is not a delivery failure —
+      // retrying it would just hit the very same guard again.
+      if (e?.code === "voice_busy" || e?.code === "voice_unknown") blocked++;
+      else fail++;
     }
   }
-  return { ok, fail, targets: targets.length };
+  return { ok, fail, blocked, targets: targets.length };
 }
 
 
@@ -2331,7 +2357,7 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
   const settings = await readStatusSettings(supabaseAdmin);
   const settingsByKey = new Map(settings.map((s) => [s.status_key, s]));
   const now = new Date();
-  let sent = 0, failed = 0, skipped = 0, requeued = 0, retrying = 0, noTargets = 0;
+  let sent = 0, failed = 0, skipped = 0, requeued = 0, retrying = 0, noTargets = 0, blocked = 0;
 
   for (const row of (claimed ?? []) as any[]) {
     const cur = settingsByKey.get(row.status);
@@ -2350,7 +2376,7 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
     // A debounced message is a normal automatic send that simply waited out
     // the safety delay. Only a message parked for the hour window is "queued".
     const mode: VoiceSendMode = row.voice_pending_reason === "window" ? "queue" : "auto";
-    let result = { ok: 0, fail: 0, targets: 0 };
+    let result = { ok: 0, fail: 0, blocked: 0, targets: 0 };
     let crashed: string | null = null;
     try {
       result = await autoSendUnsentVoiceMessages(supabaseAdmin, row.id, mode);
@@ -2359,7 +2385,11 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
     }
 
     if (!crashed && result.fail === 0) {
-      await clearPendingVoice(supabaseAdmin, row.id);
+      // "blocked" targets (busy/unknown) are left as-is: they are not a
+      // delivery failure, and retrying would just hit the same guard again.
+      // The row is cleared as long as nothing genuinely failed.
+      await clearPendingVoice(supabaseAdmin, row.id, result.blocked > 0 ? `${result.blocked} נחסמו (ראה תור ההודעות)` : null);
+      blocked += result.blocked;
       if (result.targets === 0) noTargets++;
       else sent += result.ok;
       continue;
@@ -2383,7 +2413,7 @@ export async function processPendingVoiceSends(supabaseAdmin: any) {
   return {
     ok: true,
     processed: (claimed ?? []).length,
-    sent, failed, skipped, requeued, retrying, noTargets,
+    sent, failed, skipped, requeued, retrying, noTargets, blocked,
   };
 }
 

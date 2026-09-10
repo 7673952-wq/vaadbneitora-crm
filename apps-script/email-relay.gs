@@ -792,13 +792,41 @@ function messageSystemCode_(msg) {
 }
 
 /**
+ * Field headings the request emails really use. Only one of these (or a
+ * "----" separator) ends the description — a colon inside the caller's own
+ * sentence ("בשעה 12:30", "אמרתי: לא") must not cut the text short.
+ * Keep in sync with REPORT_KNOWN_HEADINGS in src/lib/system-code.ts.
+ */
+var KNOWN_HEADINGS_ = [
+  /^[ \t]*(?:מספר|מס[.'׳]?)\s*ה?בקשה[ \t]*[:\-]/,
+  /^[ \t]*בקשה\s*מס[.'׳]?[ \t]*[:\-]/,
+  /^[ \t]*(?:מספר|מזהה|מס[.'׳]?)\s*ה?מערכת[ \t]*[:\-]/,
+  /^[ \t]*(?:שם\s*ה?מערכת|שם\s*ה?פונה|שם\s*ה?לקוח|שם)[ \t]*[:\-]/,
+  /^[ \t]*(?:טלפון(?:\s*ה?פונה)?|מספר\s*ה?פונה|לזיהוי|נייד|טלפון\s*נוסף)[ \t]*[:\-]/,
+  /^[ \t]*(?:סוג\s*ה?בקשה|סוג\s*ה?פנייה|סטטוס|תאריך|שעה|מייל|דוא"ל|דואל|אימייל|כתובת|הערות\s*ה?מערכת)[ \t]*[:\-]/,
+  /^[ \t]*(?:request\s*(?:number|no\.?|id|type)|system\s*(?:number|code|id|name)|phone|caller|email|date|time|status|name)[ \t]*[:\-]/i
+];
+
+function isKnownHeading_(line) {
+  for (var i = 0; i < KNOWN_HEADINGS_.length; i++) {
+    if (KNOWN_HEADINGS_[i].test(line)) return true;
+  }
+  return false;
+}
+
+/**
  * The "תאור הדיווח" text of THIS message, or '' when it has none. Multi-line
  * text is kept whole; the value is never taken from another message.
  */
 function messageReportDescription_(msg) {
   var body = '';
   try { body = msg.getPlainBody() || ''; } catch (e) { return ''; }
-  var lines = String(body).replace(/\r\n/g, '\n').split('\n');
+  return extractReportDescriptionFromText_(body);
+}
+
+/** Pure helper (no Gmail objects) so the rule can be unit-tested. */
+function extractReportDescriptionFromText_(body) {
+  var lines = String(body || '').replace(/\r\n/g, '\n').split('\n');
   var out = [];
   var collecting = false;
   for (var i = 0; i < lines.length; i++) {
@@ -808,9 +836,10 @@ function messageReportDescription_(msg) {
       if (m) { collecting = true; if (m[1] && m[1].trim()) out.push(m[1].trim()); }
       continue;
     }
-    // Another known field starts here → the description ended.
-    if (/^\s*[^\s:]{1,30}(\s+[^\s:]{1,30}){0,3}\s*:/.test(line)) break;
-    out.push(line);
+    // Only a KNOWN field heading (or a separator line) ends the description.
+    if (isKnownHeading_(line)) break;
+    if (/^\s*-{2,}\s*$/.test(line)) break;
+    out.push(line.replace(/[ \t]+$/, ''));
   }
   return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }

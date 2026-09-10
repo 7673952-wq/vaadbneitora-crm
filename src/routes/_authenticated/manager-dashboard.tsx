@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Fragment, useState } from "react";
 import { toast } from "sonner";
 import { getManagerDashboard, getSystemsByCallerPhone } from "@/lib/manager-dashboard.functions";
-import { getMyRole, listPendingVoiceSends } from "@/lib/admin.functions";
+import { getMyRole, listPendingVoiceSends, acknowledgeVoiceDelivery } from "@/lib/admin.functions";
 import { scanSystemSeries, createMissingSystems, manualSendPendingVoice, rescheduleVoicePending } from "@/lib/systems.functions";
 import { STATUS_OPTIONS, STATUS_LABEL, buildDialNumber } from "@/lib/status";
 import { LayoutDashboard, AlertTriangle, CheckCircle2, Clock, TrendingUp, Plus, BarChart3, ArrowLeft, Search, X, Volume2, RefreshCw, Send, Phone } from "lucide-react";
@@ -264,6 +264,7 @@ function VoiceQueuePanel() {
   const listFn = useServerFn(listPendingVoiceSends);
   const sendNowFn = useServerFn(manualSendPendingVoice);
   const rescheduleFn = useServerFn(rescheduleVoicePending);
+  const acknowledgeFn = useServerFn(acknowledgeVoiceDelivery);
 
   const { data, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ["voice_queue"],
@@ -287,10 +288,17 @@ function VoiceQueuePanel() {
     onError: (e: any) => toast.error(e.message),
   });
 
+  const acknowledgeMut = useMutation({
+    mutationFn: async (v: { systemId: string; phoneIndex: number }) => acknowledgeFn({ data: v }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["voice_queue"] }); toast.success("התוצאה אושרה — ניתן לשלוח שוב"); },
+    onError: (e: any) => toast.error(e.message),
+  });
+
   if (isLoading) return null;
 
   const pending = data?.pending || [];
   const sentToday = data?.sent_today || [];
+  const unknown = data?.unknown || [];
 
   return (
     <div className="space-y-4">
@@ -370,6 +378,50 @@ function VoiceQueuePanel() {
           </tbody>
         </table>
       </div>
+
+      {unknown.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-amber-700 px-1">
+            <AlertTriangle className="h-4 w-4" />
+            תוצאה לא ודאית — לא נשלח שוב אוטומטית ({unknown.length})
+          </h3>
+          <div className="bg-card border border-amber-300 rounded-xl overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-amber-50 border-b border-amber-200">
+                <tr className="text-right">
+                  <th className="px-4 py-2 font-medium text-muted-foreground">קוד מערכת</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground">טלפון</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground">סטטוס</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground">שגיאה</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground">התחיל ב-</th>
+                  <th className="px-4 py-2 font-medium text-muted-foreground"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {unknown.map((row: any) => (
+                  <tr key={`${row.system_id}-${row.phone_index}`} className="hover:bg-accent/30 transition-colors">
+                    <td className="px-4 py-2 font-mono font-bold">
+                      <Link to="/systems/$id" params={{ id: row.system_id }} className="hover:underline">{row.system_code ?? row.system_id}</Link>
+                    </td>
+                    <td className="px-4 py-2 font-mono" dir="ltr">{row.phone}</td>
+                    <td className="px-4 py-2">{row.status_label ?? row.status}</td>
+                    <td className="px-4 py-2 max-w-[16rem] truncate" title={row.error ?? ""}>{row.error ?? "—"}</td>
+                    <td className="px-4 py-2">{row.started_at ? new Date(row.started_at).toLocaleString("he-IL") : "—"}</td>
+                    <td className="px-4 py-2 text-left">
+                      <button
+                        disabled={acknowledgeMut.isPending}
+                        onClick={() => acknowledgeMut.mutate({ systemId: row.system_id, phoneIndex: row.phone_index })}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50">
+                        אשר וסגור
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {sentToday.length > 0 && (
         <div className="space-y-3">

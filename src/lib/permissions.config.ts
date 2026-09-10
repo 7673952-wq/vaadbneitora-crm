@@ -41,6 +41,7 @@ export const PERMISSION_DEFINITIONS = [
   { key: "requests_view", label: "צפייה בבקשות", description: "צפייה בתור בקשות הפתיחה/סגירה מהמייל ובהיסטוריית הבקשות בכרטיס מערכת" },
   { key: "requests_decide", label: "טיפול בבקשות", description: "קבלת החלטה על בקשה: החלת סטטוס, השארה ללא שינוי או התעלמות (מחייב גם צפייה בבקשות)" },
   { key: "requests_manage", label: "ניהול אוטומציית בקשות", description: "שינוי מצב האוטומציה, כללי הבקשות וסטטוסי ברירת המחדל" },
+  { key: "requests_delete", label: "מחיקת בקשות", description: "מחיקה רכה ושחזור של בקשות מהמייל (מחייב גם צפייה בבקשות)" },
 ] as const;
 
 export type PermissionKey = (typeof PERMISSION_DEFINITIONS)[number]["key"];
@@ -60,6 +61,7 @@ export const PERMISSION_LABEL = Object.fromEntries(
 export const PERMISSION_PREREQUISITES: Partial<Record<PermissionKey, PermissionKey[]>> = {
   requests_decide: ["requests_view"],
   requests_manage: ["requests_view"],
+  requests_delete: ["requests_view"],
 };
 
 /** Allowed-by-default permission keys per role. Anything absent defaults to false. */
@@ -73,11 +75,12 @@ const DEFAULT_ALLOWED: Record<Role, PermissionKey[]> = {
     "systems_read", "systems_write", "system_name_edit", "status_change", "agent_transfer",
     "notes_write", "emails_send", "emails_edit", "emails_delete", "files_manage",
     "import_export", "series_manage", "backup_manage", "settings_manage", "mailbox_view",
-    "history_edit",
+    "history_edit", "requests_delete",
   ],
   // Requests automation is deliberately super-admin-only until it is trusted
   // in production; grant it explicitly in ניהול → הרשאות when needed.
   super_admin: [...PERMISSION_KEYS],
+  // requests_delete defaults to admin+super_admin only, everyone else false.
 };
 
 export const DEFAULT_ROLE_PERMISSIONS = Object.fromEntries(

@@ -17,6 +17,7 @@ import {
 } from "@/lib/mail.functions";
 import type { MailFolder } from "@/lib/mailbox-prefs";
 import { setMyEmailSignature } from "@/lib/email.functions";
+import { getSendIntentKey, clearSendIntentKey } from "@/lib/send-intent-key";
 import { getMyRole } from "@/lib/admin.functions";
 import { Button } from "@/components/ui/button";
 
@@ -124,6 +125,7 @@ function MailboxPage() {
   const [reply, setReply] = useState("");
   const [signature, setSignature] = useState("");
   const [composeMode, setComposeMode] = useState<"new" | "reply" | "reply_all" | "forward">("new");
+  const [sendScope, setSendScope] = useState<string>("mail:compose");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
 
@@ -210,6 +212,12 @@ function MailboxPage() {
   /** Opens the composer prefilled the way Gmail does for each action. */
   const startCompose = (mode: "new" | "reply" | "reply_all" | "forward") => {
     setComposeMode(mode);
+    // Mint (or reuse) the idempotency key the moment the composer opens, so
+    // a refresh mid-draft or a resend after a network hiccup reuses the
+    // same key instead of risking a duplicate send.
+    const scope = mode === "new" ? "mail:compose" : mode === "forward" ? `mail:forward:${selected ?? "new"}` : `mail:${mode}:${selected ?? "new"}`;
+    setSendScope(scope);
+    getSendIntentKey(scope);
     if (mode === "new") { setTo(""); setSubject(""); setBody(""); }
     else {
       const others = [...new Set(messages.flatMap((m) => [m.fromAddress, m.toAddress]).filter(Boolean) as string[])]
@@ -224,14 +232,27 @@ function MailboxPage() {
 
   const send = useMutation({
     mutationFn: async (vars: { to: string; subject?: string; body: string; threadId?: string | null }) =>
-      sendFn({ data: { ...vars, useGeneralName: useGeneral, cleanupLevel: cleanup } }),
+      sendFn({ data: { ...vars, useGeneralName: useGeneral, cleanupLevel: cleanup, idempotencyKey: getSendIntentKey(sendScope) } }),
     onSuccess: (res) => {
+      // The key's job is done once the server confirms success or tells us
+      // it was already sent (duplicate) — only then is it safe to mint a
+      // fresh key for the next message.
+      clearSendIntentKey(sendScope);
       toast.success("המייל נשלח");
       setComposing(false); setTo(""); setSubject(""); setBody(""); setReply("");
       refreshMail();
       if (res?.threadId) setSelected(res.threadId);
     },
-    onError: (e: any) => toast.error(e?.message ?? "שליחת המייל נכשלה"),
+    onError: (e: any) => {
+      // "busy"/"unknown" are terminal from the client's point of view — the
+      // previous attempt with this key is still in flight or its outcome is
+      // uncertain, so the key must not be reused for a fresh click.
+      const message = e?.message ?? "שליחת המייל נכשלה";
+      if (message.includes("כבר מתבצעת") || message.includes("אינה ודאית")) {
+        clearSendIntentKey(sendScope);
+      }
+      toast.error(message);
+    },
   });
 
   const editMsg = useMutation({

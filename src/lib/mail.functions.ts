@@ -5,6 +5,7 @@ import { fromSupabase } from "@/lib/errors";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
 import { parseMailboxPrefs, applyThreadFiling, threadInFolder, MAIL_FOLDERS, type MailboxPrefs, type MailFolder } from "@/lib/mailbox-prefs";
 import { parseEmailAddress } from "@/lib/email-address";
+import { beginEmailDelivery, finishEmailDelivery, idempotencyErrorFor, type DeliveryRpcClient } from "@/lib/email-delivery.server";
 
 export type MailThread = {
   threadId: string;
@@ -417,6 +418,7 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
         threadId: z.string().max(200).nullable().optional(),
         useGeneralName: z.boolean().optional(),
         cleanupLevel: z.enum(["none", "light", "standard", "strict"]).optional(),
+        idempotencyKey: z.string().min(1).max(200).optional(),
       })
       .parse(input),
   )
@@ -457,15 +459,29 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
       ? { secret: relaySecret, action: "reply", gmailThreadId: threadId, to: data.to, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject ?? "", body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive };
 
+    const idemKey = data.idempotencyKey;
+    if (idemKey) {
+      const delivery = await beginEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, {
+        key: idemKey, kind: "mailbox_email", actor: context.userId,
+        target: { to: data.to, threadId },
+      });
+      if (delivery.action === "duplicate") return { ok: true, threadId: delivery.message_id ?? threadId ?? "", duplicate: true };
+      if (delivery.action === "busy" || delivery.action === "unknown") throw idempotencyErrorFor(delivery.action);
+    }
+
     let res: Response;
     try {
       const { postToRelay } = await import("@/lib/relay.server");
       res = await postToRelay(relayUrl, payload);
     } catch {
+      if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: "failed", error: "relay_unreachable" });
       throw new Error("לא ניתן להתחבר לשרת השליחה (Apps Script) — בדוק את הכתובת בהגדרות");
     }
     const json: any = await res.json().catch(() => ({}));
-    if (!res.ok || !json?.ok) throw new Error(json?.error ? `שליחה נכשלה: ${json.error}` : "שליחת המייל נכשלה");
+    if (!res.ok || !json?.ok) {
+      if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: "failed", error: json?.error ?? "relay_error" });
+      throw new Error(json?.error ? `שליחה נכשלה: ${json.error}` : "שליחת המייל נכשלה");
+    }
 
     // Always (not just on a brand-new thread) upsert the mapping using the
     // thread id the relay actually returns: on the fallback path (customer
@@ -484,6 +500,7 @@ export const sendMailboxMessage = createServerFn({ method: "POST" })
       body: cleanedBody,
       read_at: new Date().toISOString(),
     });
+    if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: error ? "unknown" : "sent", relayMessageId: json.gmailMessageId, relayThreadId: gmailThreadId, error: error?.message });
     if (error) throw fromSupabase(error);
     return { ok: true, threadId: gmailThreadId };
   });

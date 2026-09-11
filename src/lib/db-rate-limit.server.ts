@@ -18,7 +18,11 @@ export type SensitiveScope =
   | "import_export"
   | "voice_send"
   | "backup_manage"
-  | "backup_restore";
+  | "backup_restore"
+  | "request_delete"
+  | "mention_requeue"
+  | "mention_process"
+  | "queue_config";
 
 /**
  * Limits chosen from real usage: a person clicking through the UI stays far
@@ -42,6 +46,13 @@ export const SENSITIVE_LIMITS: Record<SensitiveScope, { limit: number; windowSec
   voice_send: { limit: 20, windowSeconds: 60 },
   backup_manage: { limit: 5, windowSeconds: 300 },
   backup_restore: { limit: 2, windowSeconds: 3600 },
+  // Soft delete / restore of requests: deliberate clicks, never bulk.
+  request_delete: { limit: 30, windowSeconds: 60 },
+  // Mention email queue: manual retries and "process now" are rare.
+  mention_requeue: { limit: 30, windowSeconds: 60 },
+  mention_process: { limit: 6, windowSeconds: 60 },
+  // Endpoint / base-URL configuration changes are one-off admin actions.
+  queue_config: { limit: 10, windowSeconds: 300 },
 };
 
 export async function enforceDbRateLimit(

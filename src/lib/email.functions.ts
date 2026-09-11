@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAuthMfa } from "@/lib/mfa.middleware";
 import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { cleanEmailContent, type EmailCleanupLevel } from "@/lib/email-cleanup";
+import { beginEmailDelivery, finishEmailDelivery, idempotencyErrorFor, type DeliveryRpcClient } from "@/lib/email-delivery.server";
 
 async function ensureCanWrite(userId: string) {
   const { assertCanWrite } = await import("@/lib/permissions.server");
@@ -248,7 +249,7 @@ export const listRecordEmailThread = createServerFn({ method: "POST" })
 // ============= Send / reply =============
 export const sendSystemEmail = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel }) =>
+  .inputValidator((d: { system_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel; idempotencyKey?: string }) =>
     z.object({
       system_id: z.string().uuid(),
       to: z.string().email(),
@@ -257,6 +258,7 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
       gmail_thread_id: z.string().nullable().optional(),
       use_general_name: z.boolean().optional(),
       cleanup_level: z.enum(["none", "light", "standard", "strict"]).optional(),
+      idempotencyKey: z.string().min(1).max(200).optional(),
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
@@ -291,15 +293,27 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
       ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, to: data.to, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature, label: gmailRouting.label, archive: gmailRouting.archive };
 
+    const idemKey = data.idempotencyKey;
+    if (idemKey) {
+      const delivery = await beginEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, {
+        key: idemKey, kind: "system_email", actor: context.userId,
+        target: { system_id: data.system_id, to: data.to, gmail_thread_id: data.gmail_thread_id ?? null },
+      });
+      if (delivery.action === "duplicate") return { ok: true, gmailThreadId: delivery.message_id ?? data.gmail_thread_id ?? null, duplicate: true };
+      if (delivery.action === "busy" || delivery.action === "unknown") throw idempotencyErrorFor(delivery.action);
+    }
+
     let relayRes: Response;
     try {
       const { postToRelay } = await import("@/lib/relay.server");
       relayRes = await postToRelay(relayUrl, relayPayload);
-    } catch {
+    } catch (e) {
+      if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: "failed", error: "relay_unreachable" });
       throw new Error("לא ניתן להתחבר לשרת השליחה (Apps Script) — בדוק את הכתובת בהגדרות");
     }
     const relayJson: any = await relayRes.json().catch(() => ({}));
     if (!relayRes.ok || !relayJson?.ok) {
+      if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: "failed", error: relayJson?.error ?? "relay_error" });
       throw new Error(relayJson?.error ? `שליחה נכשלה: ${relayJson.error}` : "שליחת המייל נכשלה");
     }
 
@@ -323,6 +337,7 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
       subject: data.subject,
        body: cleanedBody,
     });
+    if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: insertErr ? "unknown" : "sent", relayMessageId: gmailMessageId, relayThreadId: gmailThreadId, error: insertErr?.message });
     if (insertErr) throw new Error(insertErr.message);
 
     return { ok: true, gmailThreadId };
@@ -330,8 +345,9 @@ export const sendSystemEmail = createServerFn({ method: "POST" })
 
 export const sendRecordEmail = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { record_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; cleanup_level?: EmailCleanupLevel }) => z.object({
+  .inputValidator((d: { record_id: string; to: string; subject: string; body: string; gmail_thread_id?: string | null; cleanup_level?: EmailCleanupLevel; idempotencyKey?: string }) => z.object({
     record_id: z.string().uuid(), to: z.string().email(), subject: z.string().max(300), body: z.string().min(1).max(20000), gmail_thread_id: z.string().nullable().optional(), cleanup_level: z.enum(["none", "light", "standard", "strict"]).optional(),
+    idempotencyKey: z.string().min(1).max(200).optional(),
   }).parse(d))
   .handler(async ({ data, context }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -357,13 +373,34 @@ export const sendRecordEmail = createServerFn({ method: "POST" })
     const payload = data.gmail_thread_id
       ? { secret: relaySecret, action: "reply", gmailThreadId: data.gmail_thread_id, to: data.to, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive }
       : { secret: relaySecret, action: "send", to: data.to, subject: data.subject, body: cleanedBody, agentName, agentSignature: (profile as any)?.email_signature || "", label: gmailRouting.label, archive: gmailRouting.archive };
+
+    const idemKey = data.idempotencyKey;
+    if (idemKey) {
+      const delivery = await beginEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, {
+        key: idemKey, kind: "record_email", actor: context.userId,
+        target: { record_id: data.record_id, to: data.to, gmail_thread_id: data.gmail_thread_id ?? null },
+      });
+      if (delivery.action === "duplicate") return { ok: true, gmailThreadId: delivery.message_id ?? data.gmail_thread_id ?? null, duplicate: true };
+      if (delivery.action === "busy" || delivery.action === "unknown") throw idempotencyErrorFor(delivery.action);
+    }
+
     const { postToRelay } = await import("@/lib/relay.server");
-    const response = await postToRelay(relayUrl, payload);
+    let response: Response;
+    try {
+      response = await postToRelay(relayUrl, payload);
+    } catch (e) {
+      if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: "failed", error: "relay_unreachable" });
+      throw new Error("לא ניתן להתחבר לשרת השליחה (Apps Script) — בדוק את הכתובת בהגדרות");
+    }
     const result: any = await response.json().catch(() => ({}));
-    if (!response.ok || !result?.ok) throw new Error(result?.error || "שליחת המייל נכשלה");
+    if (!response.ok || !result?.ok) {
+      if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: "failed", error: result?.error ?? "relay_error" });
+      throw new Error(result?.error || "שליחת המייל נכשלה");
+    }
     // Always upsert with the returned thread id (see comment in sendSystemEmail).
     await supabaseAdmin.from("email_threads" as any).upsert({ gmail_thread_id: result.gmailThreadId, crm_record_id: data.record_id });
     const { error } = await supabaseAdmin.from("email_messages" as any).insert({ crm_record_id: data.record_id, direction: "outbound", gmail_thread_id: result.gmailThreadId, gmail_message_id: result.gmailMessageId ?? null, agent_id: context.userId, agent_name: agentName, to_address: data.to, subject: data.subject, body: cleanedBody });
+    if (idemKey) await finishEmailDelivery(supabaseAdmin as unknown as DeliveryRpcClient, { key: idemKey, status: error ? "unknown" : "sent", relayMessageId: result.gmailMessageId, relayThreadId: result.gmailThreadId, error: error?.message });
     if (error) throw new Error(error.message);
     return { ok: true, gmailThreadId: result.gmailThreadId as string };
   });

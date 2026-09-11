@@ -23,7 +23,7 @@ export async function assertCrmAccess(supabase: any, userId: string, crmKey: str
  */
 export async function assertRequestPermission(
   userId: string,
-  permission: "requests_view" | "requests_decide" | "requests_manage",
+  permission: "requests_view" | "requests_decide" | "requests_manage" | "requests_delete",
   crmKey = "yemot",
 ) {
   const { hasPermission } = await import("@/lib/permissions.server");
@@ -37,7 +37,7 @@ export async function assertRequestPermission(
  */
 export async function crmKeysWithPermission(
   userId: string,
-  permission: "requests_view" | "requests_decide" | "requests_manage",
+  permission: "requests_view" | "requests_decide" | "requests_manage" | "requests_delete",
 ): Promise<string[]> {
   const { listUserCrmKeys, hasPermission } = await import("@/lib/permissions.server");
   const keys = await listUserCrmKeys(userId);
@@ -48,7 +48,7 @@ export async function crmKeysWithPermission(
 /** Same, but throws when the user holds the permission in no CRM at all. */
 export async function requireCrmKeysWithPermission(
   userId: string,
-  permission: "requests_view" | "requests_decide" | "requests_manage",
+  permission: "requests_view" | "requests_decide" | "requests_manage" | "requests_delete",
 ): Promise<string[]> {
   const keys = await crmKeysWithPermission(userId, permission);
   if (!keys.length) throw new Error("אין הרשאה");
@@ -65,13 +65,21 @@ export async function loadAuthorizedRequest(
   userSupabase: any,
   userId: string,
   id: string,
-  permission: "requests_view" | "requests_decide" | "requests_manage",
+  permission: "requests_view" | "requests_decide" | "requests_manage" | "requests_delete",
   columns = "*",
+  opts?: { allowDeleted?: boolean },
 ) {
+  // `deleted_at` is always fetched (even when the caller asked for a narrower
+  // column list) so the soft-delete gate below can never be bypassed by an
+  // incomplete select.
+  const select = columns === "*" || columns.includes("deleted_at") ? columns : `${columns}, deleted_at`;
   const { data: req, error } = await supabaseAdmin
-    .from("system_requests").select(columns).eq("id", id).maybeSingle();
+    .from("system_requests").select(select).eq("id", id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!req) throw new Error("הבקשה לא נמצאה");
+  // A soft-deleted request is refused for every action except the restore
+  // flow itself, which passes `allowDeleted: true` explicitly.
+  if ((req as any).deleted_at && !opts?.allowDeleted) throw new Error("הבקשה נמחקה");
   const crmKey = String((req as any).crm_key ?? "yemot");
   await assertCrmAccess(userSupabase, userId, crmKey);
   await assertRequestPermission(userId, permission, crmKey);

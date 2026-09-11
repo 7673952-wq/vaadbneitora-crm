@@ -159,12 +159,26 @@ export const createUser = createServerFn({ method: "POST" })
       user_metadata: { display_name: displayName },
     });
     if (error) throw fromSupabase(error);
-    const [{ error: profileError }, { error: roleError }] = await Promise.all([
-      supabaseAdmin.from("profiles").upsert({ id: created.user.id, display_name: displayName }),
-      supabaseAdmin.from("user_roles").upsert({ user_id: created.user.id, role: data.role }),
-    ]);
-    if (profileError) throw fromSupabase(profileError);
-    if (roleError) throw fromSupabase(roleError);
+    const { error: profileError } = await supabaseAdmin
+      .from("profiles")
+      .upsert({ id: created.user.id, display_name: displayName });
+    const { data: roleOk, error: roleError } = profileError
+      ? { data: false, error: null }
+      : await supabaseAdmin.rpc("set_user_role_atomic", { _user_id: created.user.id, _role: data.role });
+    if (profileError || roleError || !roleOk) {
+      // Compensation: never leave an auth user without profile + role (it would be invisible to admins
+      // yet able to sign in). Deleting the fresh auth user cascades to profiles/user_roles.
+      const { error: cleanupError } = await supabaseAdmin.auth.admin.deleteUser(created.user.id);
+      const cause = profileError ?? roleError;
+      if (cleanupError) {
+        throw new AppError(
+          `יצירת המשתמש נכשלה (${cause?.message ?? "תפקיד"}) וגם הניקוי נכשל — מחק את המשתמש ידנית וצור מחדש`,
+          { code: "server_error" },
+        );
+      }
+      if (cause) throw fromSupabase(cause);
+      throw new AppError("שיוך התפקיד נכשל — המשתמש לא נוצר", { code: "server_error" });
+    }
     return { id: created.user.id };
   });
 
@@ -194,13 +208,13 @@ export const setUserRole = createServerFn({ method: "POST" })
     const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
     await limitSensitiveAction("admin_user_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    await supabaseAdmin.from("user_roles").delete().eq("user_id", data.user_id);
-    const rows: { user_id: string; role: "admin" | "agent" | "super_admin" | "viewer" }[] =
-      data.role === "super_admin"
-        ? [{ user_id: data.user_id, role: "admin" }, { user_id: data.user_id, role: "super_admin" }]
-        : [{ user_id: data.user_id, role: data.role }];
-    const { error } = await supabaseAdmin.from("user_roles").insert(rows);
+    // One transaction in the DB: the old roles are never removed without the new one landing.
+    const { data: ok, error } = await supabaseAdmin.rpc("set_user_role_atomic", {
+      _user_id: data.user_id,
+      _role: data.role,
+    });
     if (error) throw fromSupabase(error);
+    if (!ok) throw new AppError("עדכון התפקיד נכשל", { code: "server_error" });
     return { ok: true };
   });
 

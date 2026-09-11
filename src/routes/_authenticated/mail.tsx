@@ -181,6 +181,9 @@ function MailboxPage() {
     setSelected(threadId);
     setReply("");
     setEditingId(null);
+    const scope = `mail:reply:${threadId}`;
+    setSendScope(scope);
+    getSendIntentKey(scope);
     if (!threadId.startsWith("msg:")) {
       try {
         await readFn({ data: { threadId } });

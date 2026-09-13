@@ -27,6 +27,7 @@ import { Route as ApiPublicWeeklyCrmReportRouteImport } from './routes/api/publi
 import { Route as AuthenticatedCCrmIndexRouteImport } from './routes/_authenticated/c.$crm.index'
 import { Route as AuthenticatedCCrmIdRouteImport } from './routes/_authenticated/c.$crm.$id'
 import { Route as ApiPublicHooksInboundEmailRouteImport } from './routes/api/public/hooks/inbound-email'
+import { Route as ApiPublicHooksProcessMentionQueueRouteImport } from './routes/api/public/hooks/process-mention-queue'
 import { Route as ApiPublicHooksProcessVoiceQueueRouteImport } from './routes/api/public/hooks/process-voice-queue'
 import { Route as ApiPublicHooksScheduledBackupCheckRouteImport } from './routes/api/public/hooks/scheduled-backup-check'
 import { Route as ApiPublicHooksSystemRequestRouteImport } from './routes/api/public/hooks/system-request'
@@ -123,6 +124,12 @@ const ApiPublicHooksInboundEmailRoute =
     path: '/api/public/hooks/inbound-email',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiPublicHooksProcessMentionQueueRoute =
+  ApiPublicHooksProcessMentionQueueRouteImport.update({
+    id: '/api/public/hooks/process-mention-queue',
+    path: '/api/public/hooks/process-mention-queue',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiPublicHooksProcessVoiceQueueRoute =
   ApiPublicHooksProcessVoiceQueueRouteImport.update({
     id: '/api/public/hooks/process-voice-queue',
@@ -159,6 +166,7 @@ export interface FileRoutesByFullPath {
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/c/$crm/$id': typeof AuthenticatedCCrmIdRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
+  '/api/public/hooks/process-mention-queue': typeof ApiPublicHooksProcessMentionQueueRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/system-request': typeof ApiPublicHooksSystemRequestRoute
@@ -181,6 +189,7 @@ export interface FileRoutesByTo {
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/c/$crm/$id': typeof AuthenticatedCCrmIdRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
+  '/api/public/hooks/process-mention-queue': typeof ApiPublicHooksProcessMentionQueueRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/system-request': typeof ApiPublicHooksSystemRequestRoute
@@ -205,6 +214,7 @@ export interface FileRoutesById {
   '/api/public/weekly-crm-report': typeof ApiPublicWeeklyCrmReportRoute
   '/_authenticated/c/$crm/$id': typeof AuthenticatedCCrmIdRoute
   '/api/public/hooks/inbound-email': typeof ApiPublicHooksInboundEmailRoute
+  '/api/public/hooks/process-mention-queue': typeof ApiPublicHooksProcessMentionQueueRoute
   '/api/public/hooks/process-voice-queue': typeof ApiPublicHooksProcessVoiceQueueRoute
   '/api/public/hooks/scheduled-backup-check': typeof ApiPublicHooksScheduledBackupCheckRoute
   '/api/public/hooks/system-request': typeof ApiPublicHooksSystemRequestRoute
@@ -229,6 +239,7 @@ export interface FileRouteTypes {
     | '/api/public/weekly-crm-report'
     | '/c/$crm/$id'
     | '/api/public/hooks/inbound-email'
+    | '/api/public/hooks/process-mention-queue'
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/system-request'
@@ -251,6 +262,7 @@ export interface FileRouteTypes {
     | '/api/public/weekly-crm-report'
     | '/c/$crm/$id'
     | '/api/public/hooks/inbound-email'
+    | '/api/public/hooks/process-mention-queue'
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/system-request'
@@ -274,6 +286,7 @@ export interface FileRouteTypes {
     | '/api/public/weekly-crm-report'
     | '/_authenticated/c/$crm/$id'
     | '/api/public/hooks/inbound-email'
+    | '/api/public/hooks/process-mention-queue'
     | '/api/public/hooks/process-voice-queue'
     | '/api/public/hooks/scheduled-backup-check'
     | '/api/public/hooks/system-request'
@@ -287,6 +300,7 @@ export interface RootRouteChildren {
   ApiPublicHealthRoute: typeof ApiPublicHealthRoute
   ApiPublicWeeklyCrmReportRoute: typeof ApiPublicWeeklyCrmReportRoute
   ApiPublicHooksInboundEmailRoute: typeof ApiPublicHooksInboundEmailRoute
+  ApiPublicHooksProcessMentionQueueRoute: typeof ApiPublicHooksProcessMentionQueueRoute
   ApiPublicHooksProcessVoiceQueueRoute: typeof ApiPublicHooksProcessVoiceQueueRoute
   ApiPublicHooksScheduledBackupCheckRoute: typeof ApiPublicHooksScheduledBackupCheckRoute
   ApiPublicHooksSystemRequestRoute: typeof ApiPublicHooksSystemRequestRoute
@@ -420,6 +434,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicHooksInboundEmailRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/hooks/process-mention-queue': {
+      id: '/api/public/hooks/process-mention-queue'
+      path: '/api/public/hooks/process-mention-queue'
+      fullPath: '/api/public/hooks/process-mention-queue'
+      preLoaderRoute: typeof ApiPublicHooksProcessMentionQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/public/hooks/process-voice-queue': {
       id: '/api/public/hooks/process-voice-queue'
       path: '/api/public/hooks/process-voice-queue'
@@ -484,6 +505,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiPublicHealthRoute: ApiPublicHealthRoute,
   ApiPublicWeeklyCrmReportRoute: ApiPublicWeeklyCrmReportRoute,
   ApiPublicHooksInboundEmailRoute: ApiPublicHooksInboundEmailRoute,
+  ApiPublicHooksProcessMentionQueueRoute:
+    ApiPublicHooksProcessMentionQueueRoute,
   ApiPublicHooksProcessVoiceQueueRoute: ApiPublicHooksProcessVoiceQueueRoute,
   ApiPublicHooksScheduledBackupCheckRoute:
     ApiPublicHooksScheduledBackupCheckRoute,

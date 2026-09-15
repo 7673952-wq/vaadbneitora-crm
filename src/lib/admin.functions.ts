@@ -173,11 +173,11 @@ export const createUser = createServerFn({ method: "POST" })
       if (cleanupError) {
         throw new AppError(
           `יצירת המשתמש נכשלה (${cause?.message ?? "תפקיד"}) וגם הניקוי נכשל — מחק את המשתמש ידנית וצור מחדש`,
-          { code: "server_error" },
+          { code: "internal" },
         );
       }
       if (cause) throw fromSupabase(cause);
-      throw new AppError("שיוך התפקיד נכשל — המשתמש לא נוצר", { code: "server_error" });
+      throw new AppError("שיוך התפקיד נכשל — המשתמש לא נוצר", { code: "internal" });
     }
     return { id: created.user.id };
   });
@@ -214,7 +214,7 @@ export const setUserRole = createServerFn({ method: "POST" })
       _role: data.role,
     });
     if (error) throw fromSupabase(error);
-    if (!ok) throw new AppError("עדכון התפקיד נכשל", { code: "server_error" });
+    if (!ok) throw new AppError("עדכון התפקיד נכשל", { code: "internal" });
     return { ok: true };
   });
 

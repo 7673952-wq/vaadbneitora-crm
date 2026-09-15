@@ -403,22 +403,32 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     // The DB unique index is the arbiter, so two concurrent deliveries cannot
     // both win. The row is still recorded, flagged and linked to the original.
     if (text.includes("system_requests_dedupe_uniq")) {
+      // A soft-deleted original still holds the business key (the partial
+      // index only excludes rows already flagged as duplicates), so it is
+      // still "the" row this insert collided with. But a deleted original was
+      // explicitly removed from the queue — silently stamping this new row as
+      // a duplicate of it would make it vanish from view too. Instead it is
+      // linked (to satisfy the constraint and keep the audit trail) but left
+      // for a human to decide.
       const { data: original } = await supabaseAdmin
-        .from("system_requests").select("id")
+        .from("system_requests").select("id, deleted_at")
         .eq("crm_key", crmKey)
         .eq("request_type", requestType)
         .eq("system_code_norm", parsed.systemCodeNorm)
         .eq("request_number", parsed.requestNumber)
         .is("duplicate_of", null)
         .maybeSingle();
+      const originalDeleted = Boolean((original as any)?.deleted_at);
       await supabaseAdmin.from("system_requests").insert({
         ...insertRow,
         duplicate_of: (original as any)?.id ?? null,
         processing_state: "done",
         last_completed_state: "parsed",
-        decision_status: "duplicate",
+        decision_status: originalDeleted ? "needs_decision" : "duplicate",
         dry_run: false,
-        last_error: "כפילות — אותה בקשה כבר נקלטה",
+        last_error: originalDeleted
+          ? "בקשה עם אותו מספר קיימת אך נמחקה — נדרשת החלטה ידנית"
+          : "כפילות — אותה בקשה כבר נקלטה",
       }).then(() => {}, () => {});
     } else if (!text.includes("system_requests_gmail_message_id_key") && !text.includes("23505")) {
       return { ok: false, completed: false, retry: true, error: `שמירת הבקשה נכשלה: ${insertError.message}` };
@@ -432,12 +442,21 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   }
   if (!row) return { ok: false, completed: false, retry: true, error: "could not persist request" };
   const req = row as any;
+  // A soft-deleted request was explicitly taken out of the queue. A re-scan of
+  // the same Gmail message must never resurrect it or create a second row for
+  // the same message id (that id is still unique in the DB).
+  if (req.deleted_at) {
+    return { ok: true, completed: true, skipped: true, reason: "deleted", requestId: req.id };
+  }
   // A re-scan of the same message must never blank a stored description, and
   // must never write the description of a different message onto this row.
   const incomingDescription = (String(payload.reportDescription ?? "").trim() || parsed.reportDescription) ?? null;
   if (incomingDescription && !String(req.report_description ?? "").trim()) {
-    await supabaseAdmin.from("system_requests")
+    const { error: descError } = await supabaseAdmin.from("system_requests")
       .update({ report_description: incomingDescription }).eq("id", req.id);
+    if (descError) {
+      return { ok: false, completed: false, retry: true, error: `שמירת תאור הדיווח נכשלה: ${descError.message}` };
+    }
     req.report_description = incomingDescription;
   }
   if (req.processing_state === "done") {
@@ -678,4 +697,66 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     return { ok: false, completed: false, retry: true, requestId: req.id, error: String(e?.message ?? e) };
   }
 
+}
+
+// ---------------------------------------------------------------------------
+// System-name matching + soft delete/restore for the requests screen.
+// ---------------------------------------------------------------------------
+
+import type { SystemLite, ConfirmedMatch } from "@/lib/system-matching";
+import { computeNameMatch, decideRootCreation } from "@/lib/system-matching";
+
+/** Candidate systems (with their parent, for root resolution) for a typed name. */
+export async function queryCandidateSystemsByName(
+  supabaseAdmin: any, crmKey: string, name: string,
+): Promise<SystemLite[]> {
+  const q = String(name ?? "").trim();
+  if (!q) return [];
+  const { data, error } = await supabaseAdmin
+    .from("systems")
+    .select("id, name, system_code, parent_system_id, parent:parent_system_id(id, name, system_code, parent_system_id)")
+    .ilike("name", q)
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as SystemLite[];
+}
+
+/** Pure match computed against freshly-loaded candidates — never trusts a cached list. */
+export async function matchSystemNameForRequest(supabaseAdmin: any, crmKey: string, name: string) {
+  const rows = await queryCandidateSystemsByName(supabaseAdmin, crmKey, name);
+  return computeNameMatch(name, rows);
+}
+
+/**
+ * Re-evaluates a "create a new root anyway" decision against the CURRENT
+ * matches, never against a bare client boolean. See `decideRootCreation`.
+ */
+export async function checkManualRootCreation(
+  supabaseAdmin: any, crmKey: string, name: string, snapshot: ConfirmedMatch[] | null | undefined,
+) {
+  const match = await matchSystemNameForRequest(supabaseAdmin, crmKey, name);
+  const currentMatches: ConfirmedMatch[] = match.parentOptions.map((o) => ({
+    id: o.id, name: o.name, system_code: o.system_code,
+  }));
+  return decideRootCreation(currentMatches, snapshot);
+}
+
+/** Soft-deletes a request; throws on a technical failure or a lost race (already deleted). */
+export async function softDeleteSystemRequest(
+  supabaseAdmin: any, id: string, actorId: string, reason?: string | null,
+): Promise<true> {
+  const { data, error } = await supabaseAdmin.rpc("soft_delete_system_request", {
+    _id: id, _actor: actorId, _reason: reason ?? null,
+  });
+  if (error) throw new Error(`מחיקת הבקשה נכשלה: ${error.message}`);
+  if (data !== true) throw new Error("הבקשה כבר נמחקה");
+  return true;
+}
+
+/** Restores a soft-deleted request; throws on a technical failure or if it was not deleted. */
+export async function restoreSystemRequestRow(supabaseAdmin: any, id: string, actorId: string): Promise<true> {
+  const { data, error } = await supabaseAdmin.rpc("restore_system_request", { _id: id, _actor: actorId });
+  if (error) throw new Error(`שחזור הבקשה נכשל: ${error.message}`);
+  if (data !== true) throw new Error("הבקשה אינה מחוקה");
+  return true;
 }

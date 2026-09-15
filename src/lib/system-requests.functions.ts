@@ -17,14 +17,22 @@ function settingKey(base: string, crmKey: string) {
 
 export const listSystemRequests = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { decision?: string | null; limit?: number } | undefined) =>
+  .inputValidator((d: { decision?: string | null; limit?: number; includeDeleted?: boolean } | undefined) =>
     z.object({
       decision: z.string().max(40).nullable().optional(),
       limit: z.number().int().min(1).max(200).optional(),
+      includeDeleted: z.boolean().optional(),
     }).parse(d ?? {}))
   .handler(async ({ data, context }) => {
-    const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
+    const { requireCrmKeysWithPermission, crmKeysWithPermission } = await import("@/lib/requests-access.server");
     const crmKeys = await requireCrmKeysWithPermission(context.userId, "requests_view");
+    // Only deleted rows are shown when includeDeleted is on — and only to
+    // someone who actually holds requests_delete in at least one of the CRMs.
+    let showDeleted = false;
+    if (data.includeDeleted) {
+      const deleteKeys = await crmKeysWithPermission(context.userId, "requests_delete");
+      showDeleted = deleteKeys.length > 0;
+    }
     // Direct browser access to system_requests is revoked in the DB — reads go
     // through the service-role client, filtered to the caller's CRMs.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -38,11 +46,18 @@ export const listSystemRequests = createServerFn({ method: "GET" })
         "attachment_name", "attachment_index", "subject", "report_description",
         "decided_by", "decided_at", "received_at", "created_at", "updated_at",
         "automation_mode", "duplicate_of", "manual_action", "manual_target_status",
-        "manual_target_name", "manual_last_error",
+        "manual_target_name", "manual_last_error", "manual_system_action",
+        "manual_target_system_id", "manual_target_parent_system_id",
+        "deleted_at", "deleted_by", "delete_reason",
       ].join(", "))
       .in("crm_key", crmKeys)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 100);
+    if (showDeleted) {
+      q = q.not("deleted_at", "is", null);
+    } else {
+      q = q.is("deleted_at", null);
+    }
     if (data.decision === "open") {
       // Everything still waiting for a human: never decided, or decided only
       // as a test run while the automation is in check mode.
@@ -686,4 +701,58 @@ export const listRequestsForSystem = createServerFn({ method: "POST" })
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 10);
     return rows ?? [];
+  });
+
+// ============= Soft delete / restore =============
+
+export const deleteSystemRequest = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string; reason?: string | null }) =>
+    z.object({ id: z.string().uuid(), reason: z.string().max(300).nullable().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { crmKey } = await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_delete", "id, crm_key",
+    );
+    void crmKey;
+    const { softDeleteSystemRequest } = await import("@/lib/system-requests.server");
+    await softDeleteSystemRequest(supabaseAdmin, data.id, context.userId, data.reason ?? null);
+    return { ok: true };
+  });
+
+export const restoreSystemRequest = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string }) => z.object({ id: z.string().uuid() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_delete", "id, crm_key",
+      { allowDeleted: true },
+    );
+    const { restoreSystemRequestRow } = await import("@/lib/system-requests.server");
+    await restoreSystemRequestRow(supabaseAdmin, data.id, context.userId);
+    return { ok: true };
+  });
+
+/** Live system-name matches for the chooser (link existing / sub / new root). */
+export const matchRequestSystemName = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string; name: string }) =>
+    z.object({ id: z.string().uuid(), name: z.string().min(1).max(120) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { crmKey } = await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_decide", "id, crm_key",
+    );
+    const { matchSystemNameForRequest } = await import("@/lib/system-requests.server");
+    const { isCategoryName, virtualCategoryOption } = await import("@/lib/system-matching");
+    const result = await matchSystemNameForRequest(supabaseAdmin, crmKey, data.name);
+    return {
+      ...result,
+      virtualOption: result.isVirtualCategory ? virtualCategoryOption(data.name) : null,
+      isCategoryName: isCategoryName(data.name),
+    };
   });

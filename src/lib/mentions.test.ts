@@ -89,12 +89,14 @@ describe("processMentionQueue", () => {
       relaySecret: "s3cr3t",
       baseUrl: "https://example.com/app",
     });
-    const postToRelay = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 }));
+    const postToRelay = vi.fn(
+      async (_url: string, _payload: unknown) => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
 
     const result = await processMentionQueue(admin, { postToRelay });
 
     expect(postToRelay).toHaveBeenCalledTimes(1);
-    const [url, payload] = postToRelay.mock.calls[0];
+    const [url, payload] = postToRelay.mock.calls[0]!;
     expect(url).toBe("https://relay.example/exec");
     expect((payload as any).action).toBe("send_notification");
     expect((payload as any).idempotencyKey).toBe("d1");

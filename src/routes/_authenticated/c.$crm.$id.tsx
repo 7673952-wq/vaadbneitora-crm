@@ -5,7 +5,9 @@ import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { ArrowRight, Clock, Mail, Phone, Save, Send, Trash2 } from "lucide-react";
 import { useMyCrms } from "@/lib/use-crms";
-import { getRecord, updateRecord, addRecordNote, deleteRecord, deleteRecordNote, listFieldDefs, updateRecordNote } from "@/lib/crm-records.functions";
+import { getRecord, updateRecord, deleteRecord, deleteRecordNote, listFieldDefs } from "@/lib/crm-records.functions";
+import { addNoteWithMentions, updateNoteWithMentions } from "@/lib/mentions.functions";
+import { collectMentionPayload, mentionsStillInText, deriveMentionsFromText, type MentionPick } from "@/lib/mention-ids";
 import { listAgents } from "@/lib/systems.functions";
 import { listRecordEmailThread, sendRecordEmail } from "@/lib/email.functions";
 import { GENERIC_STATUSES } from "./c.$crm.index";
@@ -25,13 +27,13 @@ function RecordDetail() {
 
   const getFn = useServerFn(getRecord);
   const updateFn = useServerFn(updateRecord);
-  const noteFn = useServerFn(addRecordNote);
+  const noteFn = useServerFn(addNoteWithMentions);
   const delFn = useServerFn(deleteRecord);
   const fieldsFn = useServerFn(listFieldDefs);
   const agentsFn = useServerFn(listAgents);
   const emailFn = useServerFn(listRecordEmailThread);
   const sendEmailFn = useServerFn(sendRecordEmail);
-  const editNoteFn = useServerFn(updateRecordNote);
+  const editNoteFn = useServerFn(updateNoteWithMentions);
   const deleteNoteFn = useServerFn(deleteRecordNote);
 
   const { data, isLoading } = useQuery({
@@ -46,6 +48,7 @@ function RecordDetail() {
   const { data: emails = [] } = useQuery({ queryKey: ["crm_record_emails", id], queryFn: async () => emailFn({ data: { record_id: id } }) });
 
   const [noteText, setNoteText] = useState("");
+  const [notePicks, setNotePicks] = useState<MentionPick[]>([]);
   const [busy, setBusy] = useState(false);
   const [mailOpen, setMailOpen] = useState(false);
   const [mailSubject, setMailSubject] = useState("");
@@ -84,12 +87,33 @@ function RecordDetail() {
     }
   }
 
+  function handleNoteChange(v: string) {
+    setNoteText(v);
+    const options: MentionPick[] = [{ all: true as const, name: "כולם" }, ...agents.map((a: any) => ({ id: a.id as string, name: a.display_name as string }))];
+    setNotePicks((prev) => {
+      const next = [...prev];
+      for (const opt of options) {
+        const name = "all" in opt && opt.all ? (opt.name ?? "כולם") : (opt as { id: string; name: string }).name;
+        if (!name) continue;
+        const alreadyTracked = next.some((p) => ("all" in p && p.all ? (p.name ?? "כולם") : (p as { id: string; name: string }).name) === name);
+        if (!alreadyTracked && v.includes(`@${name}`)) next.push(opt);
+      }
+      return next;
+    });
+  }
+
   async function addNote() {
-    if (!noteText.trim()) return;
+    const body = noteText.trim();
+    if (!body) return;
     try {
-      await noteFn({ data: { recordId: id, crmKey: crm, body: noteText } });
+      const picks = mentionsStillInText(body, notePicks);
+      const { mentionedUserIds, mentionAll } = collectMentionPayload(picks);
+      const res = await noteFn({ data: { sourceType: "crm_record_note", crmKey: crm, targetId: id, body, mentionedUserIds, mentionAll } });
       setNoteText("");
+      setNotePicks([]);
       await qc.invalidateQueries({ queryKey: ["crm_record", id] });
+      const n = res?.recipients?.length ?? 0;
+      toast.success(n > 0 ? `ההערה נשמרה · נשלח מייל ל-${n} מתויגים` : "ההערה נוספה");
     } catch (e: any) {
       toast.error(e?.message ?? "שגיאה בהוספת הערה");
     }
@@ -174,7 +198,7 @@ function RecordDetail() {
               <div className="flex gap-2 mb-3">
                 <input
                   value={noteText}
-                  onChange={(e) => setNoteText(e.target.value)}
+                  onChange={(e) => handleNoteChange(e.target.value)}
                   onKeyDown={(e) => { if (e.key === "Enter") addNote(); }}
                   placeholder="הוסף הערה..."
                   list="crm-mention-options"
@@ -193,7 +217,15 @@ function RecordDetail() {
                     {n.authorName ?? "—"} · {new Date(n.createdAt).toLocaleString("he-IL")}
                   </div>
                   {canWrite && <div className="flex gap-2 mt-1 text-[11px]">
-                    <button onClick={async () => { const body = prompt("עריכת הערה", n.body); if (!body?.trim()) return; await editNoteFn({ data: { id: n.id, body } }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-primary">ערוך</button>
+                    <button onClick={async () => {
+                      const body = prompt("עריכת הערה", n.body);
+                      if (!body?.trim()) return;
+                      const { mentionedUserIds, mentionAll } = deriveMentionsFromText(body, agents.map((a: any) => ({ id: a.id, name: a.display_name })));
+                      const res = await editNoteFn({ data: { sourceType: "crm_record_note", noteId: n.id, body, mentionedUserIds, mentionAll } });
+                      qc.invalidateQueries({ queryKey: ["crm_record", id] });
+                      const cnt = res?.recipients?.length ?? 0;
+                      toast.success(cnt > 0 ? `ההערה נשמרה · נשלח מייל ל-${cnt} מתויגים` : "ההערה עודכנה");
+                    }} className="text-primary">ערוך</button>
                     <button onClick={async () => { if (!confirm("למחוק הערה?")) return; await deleteNoteFn({ data: { id: n.id } }); qc.invalidateQueries({ queryKey: ["crm_record", id] }); }} className="text-destructive">מחק</button>
                   </div>}
                 </div>

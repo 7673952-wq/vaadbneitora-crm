@@ -714,3 +714,137 @@ describe("the mail relay reads its target and its description safely", () => {
     expect(src).toContain("reportDescription: messageReportDescription_(msg) || null,");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Soft delete / restore + soft-delete-aware ingest (system-requests.server.ts)
+// ---------------------------------------------------------------------------
+import { softDeleteSystemRequest, restoreSystemRequestRow } from "./system-requests.server";
+
+describe("softDeleteSystemRequest / restoreSystemRequestRow", () => {
+  it("throws when the delete RPC reports a technical failure", async () => {
+    const { client } = makeClient({ rpcErrors: { soft_delete_system_request: "db down" } });
+    await expect(softDeleteSystemRequest(client, "req-1", "user-1", "reason")).rejects.toThrow(/db down/);
+  });
+
+  it("throws when the delete RPC returns false (already deleted)", async () => {
+    const { client } = makeClient({ rpcResults: { soft_delete_system_request: false } });
+    await expect(softDeleteSystemRequest(client, "req-1", "user-1")).rejects.toThrow(/כבר נמחקה/);
+  });
+
+  it("resolves true when the delete RPC succeeds", async () => {
+    const { client, rpcCalls } = makeClient({ rpcResults: { soft_delete_system_request: true } });
+    await expect(softDeleteSystemRequest(client, "req-1", "user-1", "מיותרת")).resolves.toBe(true);
+    expect(rpcCalls).toContainEqual({ fn: "soft_delete_system_request", args: { _id: "req-1", _actor: "user-1", _reason: "מיותרת" } });
+  });
+
+  it("throws when the restore RPC reports a technical failure", async () => {
+    const { client } = makeClient({ rpcErrors: { restore_system_request: "db down" } });
+    await expect(restoreSystemRequestRow(client, "req-1", "user-1")).rejects.toThrow(/db down/);
+  });
+
+  it("throws when the restore RPC returns false (not deleted)", async () => {
+    const { client } = makeClient({ rpcResults: { restore_system_request: false } });
+    await expect(restoreSystemRequestRow(client, "req-1", "user-1")).rejects.toThrow(/אינה מחוקה/);
+  });
+
+  it("resolves true when the restore RPC succeeds", async () => {
+    const { client } = makeClient({ rpcResults: { restore_system_request: true } });
+    await expect(restoreSystemRequestRow(client, "req-1", "user-1")).resolves.toBe(true);
+  });
+});
+
+describe("ingestSystemRequest — soft-delete awareness", () => {
+  const LIVE = { request_automation_mode: { mode: "live" } };
+
+  it("rescanning a soft-deleted message inserts nothing and reports it as skipped/deleted", async () => {
+    const { client, writes } = makeClient({
+      settings: LIVE,
+      existingRequest: {
+        id: "req-del", processing_state: "done", decision_status: "needs_decision",
+        deleted_at: new Date().toISOString(),
+      },
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "del-1", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ ok: true, completed: true, skipped: true, reason: "deleted", requestId: "req-del" });
+    // No insert on top of the existing row, no state write.
+    expect(writes.filter((w) => w.table === "system_requests" && w.op === "insert")).toHaveLength(0);
+    expect(writes.filter((w) => w.table === "system_requests" && w.op === "update")).toHaveLength(0);
+  });
+
+  it("a business-key duplicate of a soft-deleted original becomes needs_decision, not a silent duplicate", async () => {
+    // The unique dedupe index collision path: builder() treats the first
+    // insert as "the" row unless we force a pre-existing one keyed by
+    // gmail_message_id — here we simulate the collision by pre-seeding a
+    // request row with the SAME gmail_message_id but flag the "original" the
+    // duplicate branch looks up via crm_key/request_type/code/number as deleted.
+    const original = {
+      id: "orig-1", deleted_at: new Date().toISOString(),
+    };
+    let readsForOriginal = 0;
+    const { client: baseClient, writes } = makeClient({ settings: LIVE });
+    // Wrap the fake client's `from` so the specific maybeSingle() lookup for
+    // "the original by business key" returns our deleted original, while the
+    // insert on system_requests is forced to look like a dedupe-index hit.
+    const client: any = {
+      ...baseClient,
+      from: (table: string) => {
+        const api = baseClient.from(table);
+        if (table === "system_requests") {
+          const origApi: any = { ...api };
+          origApi.insert = (payload: any) => {
+            if (!payload.duplicate_of && readsForOriginal === 0) {
+              // First insert: simulate the unique dedupe-index violation.
+              writes.push({ table, op: "insert", payload });
+              return {
+                then: (resolve: any) =>
+                  Promise.resolve({ data: null, error: { code: "23505", message: "duplicate key value violates unique constraint \"system_requests_dedupe_uniq\"" } }).then(resolve),
+              };
+            }
+            return api.insert(payload);
+          };
+          origApi.select = (cols?: string) => {
+            const chain = api.select(cols);
+            const origChain: any = { ...chain };
+            origChain.eq = (col: string, val: unknown) => {
+              const next = chain.eq(col, val);
+              const origNext: any = { ...next };
+              origNext.eq = (c2: string, v2: unknown) => origNext ;
+              return next;
+            };
+            origChain.maybeSingle = async () => {
+              readsForOriginal += 1;
+              if (readsForOriginal === 1) return { data: original, error: null };
+              return { data: { id: "req-dup", gmail_message_id: "dup-1", processing_state: "done", decision_status: "needs_decision" }, error: null };
+            };
+            return origChain;
+          };
+          return origApi;
+        }
+        return api;
+      },
+    };
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "dup-1", body: BODY, sourceRequestType: "pticha" });
+    expect(res.ok).toBe(true);
+    const dupInsert = writes.find((w) => w.table === "system_requests" && w.op === "insert" && w.payload.duplicate_of);
+    expect(dupInsert?.payload.decision_status).toBe("needs_decision");
+    expect(dupInsert?.payload.duplicate_of).toBe("orig-1");
+  });
+
+  it("retries when persisting the report description on a rescan fails", async () => {
+    const { client } = makeClient({
+      settings: LIVE,
+      systems: [{ id: "sys-1", status: "closed" }],
+      existingRequest: {
+        id: "req-1", processing_state: "received", report_description: null,
+      },
+      readErrors: {},
+      updateError: "connection reset",
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "rd-1", body: BODY, sourceRequestType: "pticha", reportDescription: "תיאור חדש",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.retry).toBe(true);
+    expect(res.error).toMatch(/תאור הדיווח/);
+  });
+});

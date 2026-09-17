@@ -4,14 +4,16 @@ import { useServerFn } from "@tanstack/react-start";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getSystem, listAgents, listMainSystems,
-  updateSystem, addNote, deleteSystem, addSubSystem,
+  updateSystem, deleteSystem, addSubSystem,
   setReminder, dismissReminder, setParent, sendVoiceMessage,
   addAdditionalCallerPhone, updateAdditionalCallerPhone, removeAdditionalCallerPhone,
-  updateNote, deleteNote, updateActivityLog, deleteActivityLog, listSystemActivity,
+  deleteNote, updateActivityLog, deleteActivityLog, listSystemActivity,
   listSystemNotes, listSystemTransfers,
 } from "@/lib/systems.functions";
 
 import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
+import { addNoteWithMentions, updateNoteWithMentions } from "@/lib/mentions.functions";
+import { collectMentionPayload, mentionsStillInText, deriveMentionsFromText, type MentionPick } from "@/lib/mention-ids";
 import { listSystemEmailThread, sendSystemEmail, listEmailTemplates, getEmailGeneralName } from "@/lib/email.functions";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
@@ -135,7 +137,7 @@ function SystemDetail() {
   const agentsFn = useServerFn(listAgents);
   const mainsFn = useServerFn(listMainSystems);
   const updateFn = useServerFn(updateSystem);
-  const noteFn = useServerFn(addNote);
+  const noteFn = useServerFn(addNoteWithMentions);
   const deleteFn = useServerFn(deleteSystem);
   const meFn = useServerFn(getMyRole);
   const subFn = useServerFn(addSubSystem);
@@ -168,6 +170,7 @@ function SystemDetail() {
   const [mentionQuery, setMentionQuery] = useState<string | null>(null); // null = closed
   const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const [mentionFilter, setMentionFilter] = useState<string | null>(null);
+  const [notePicks, setNotePicks] = useState<MentionPick[]>([]);
   // Older activity pages loaded on demand ("טען עוד") + activity filters.
   const [olderActivity, setOlderActivity] = useState<any[]>([]);
   // Notes and transfers are paged the same way (getSystem only sends the newest 50).
@@ -383,23 +386,36 @@ function SystemDetail() {
     },
   });
   const noteMut = useMutation({
-    mutationFn: noteFn,
-    onSuccess: () => {
+    mutationFn: (v: { body: string }) => {
+      const picks = mentionsStillInText(v.body, notePicks);
+      const { mentionedUserIds, mentionAll } = collectMentionPayload(picks);
+      return noteFn({ data: { sourceType: "system_note", crmKey: "yemot", targetId: id, body: v.body, mentionedUserIds, mentionAll } });
+    },
+    onSuccess: (res: any) => {
       qc.invalidateQueries({ queryKey: ["system", id] });
       qc.invalidateQueries({ queryKey: ["my_notifications"] });
       if (noteEditorRef.current) noteEditorRef.current.innerHTML = "";
       setMentionQuery(null);
-      toast.success("ההערה נוספה");
+      setNotePicks([]);
+      const n = res?.recipients?.length ?? 0;
+      toast.success(n > 0 ? `ההערה נשמרה · נשלח מייל ל-${n} מתויגים` : "ההערה נוספה");
     },
     onError: (e: any) => toast.error(e.message),
   });
-  const updateNoteFn = useServerFn(updateNote);
+  const updateNoteFn = useServerFn(updateNoteWithMentions);
   const deleteNoteFn = useServerFn(deleteNote);
   const updateActivityFn = useServerFn(updateActivityLog);
   const deleteActivityFn = useServerFn(deleteActivityLog);
   const editNoteMut = useMutation({
-    mutationFn: updateNoteFn,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["system", id] }); toast.success("ההערה עודכנה"); },
+    mutationFn: (v: { noteId: string; body: string }) => {
+      const { mentionedUserIds, mentionAll } = deriveMentionsFromText(v.body, (agents ?? []).map((a: any) => ({ id: a.id, name: a.display_name })));
+      return updateNoteFn({ data: { sourceType: "system_note", noteId: v.noteId, body: v.body, mentionedUserIds, mentionAll } });
+    },
+    onSuccess: (res: any) => {
+      qc.invalidateQueries({ queryKey: ["system", id] });
+      const n = res?.recipients?.length ?? 0;
+      toast.success(n > 0 ? `ההערה נשמרה · נשלח מייל ל-${n} מתויגים` : "ההערה עודכנה");
+    },
     onError: (e: any) => toast.error(e.message),
   });
   const removeNoteMut = useMutation({
@@ -532,7 +548,12 @@ function SystemDetail() {
   }, [allMentionOptions, mentionQuery]);
 
   // Insert a mention chip at the current caret, replacing the `@query` typed so far.
-  function insertMention(name: string) {
+  function insertMention(opt: { id: string; label: string }) {
+    const name = opt.label;
+    setNotePicks((prev) => [
+      ...prev,
+      opt.id === "__all" ? { all: true as const, name } : { id: opt.id, name },
+    ]);
     const editor = noteEditorRef.current;
     if (!editor) return;
     const sel = window.getSelection();
@@ -1227,7 +1248,7 @@ function SystemDetail() {
             and visually quiet until it is focused. Hidden without the
             "כתיבת הערות" permission. */}
         {canWriteNotes && (
-        <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ data: { system_id: id, body } }); }}
+        <form onSubmit={(e) => { e.preventDefault(); const body = serializeNote(); if (body) noteMut.mutate({ body }); }}
           className="flex gap-1.5 mb-3 relative items-start opacity-80 focus-within:opacity-100 transition-opacity">
 
           <div className="relative flex-1">
@@ -1245,7 +1266,7 @@ function SystemDetail() {
                   if (e.key === "Enter" || e.key === "Tab") {
                     e.preventDefault();
                     const pick = mentionOptions[mentionActiveIndex] ?? mentionOptions[0];
-                    if (pick) insertMention(pick.label);
+                    if (pick) insertMention(pick);
                     return;
                   }
                   if (e.key === "Escape") { e.preventDefault(); setMentionQuery(null); return; }
@@ -1253,7 +1274,7 @@ function SystemDetail() {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
                   const body = serializeNote();
-                  if (body) noteMut.mutate({ data: { system_id: id, body } });
+                  if (body) noteMut.mutate({ body });
                 }
               }}
               data-placeholder="הוסף הערה... הקלד @ לתיוג"
@@ -1267,7 +1288,7 @@ function SystemDetail() {
                   const active = idx === mentionActiveIndex;
                   return (
                     <button key={opt.id} type="button"
-                      onMouseDown={(e) => { e.preventDefault(); insertMention(opt.label); }}
+                      onMouseDown={(e) => { e.preventDefault(); insertMention(opt); }}
                       onMouseEnter={() => setMentionActiveIndex(idx)}
                       className={`w-full text-right px-3 py-2 text-sm flex items-center gap-2 ${active ? "bg-accent" : "hover:bg-accent"}`}>
                       <span className="inline-flex items-center justify-center h-6 w-6 rounded-full bg-primary/15 text-primary text-[11px] font-semibold">{initial}</span>
@@ -1362,7 +1383,7 @@ function SystemDetail() {
                               onClick={() => {
                                 const next = window.prompt("עריכת הערה:", n.body || "");
                                 if (next !== null && next.trim() && next !== n.body) {
-                                  editNoteMut.mutate({ data: { id: n.id, body: next.trim() } });
+                                  editNoteMut.mutate({ noteId: n.id, body: next.trim() });
                                 }
                               }}
                             >✎</button>

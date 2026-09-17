@@ -34,6 +34,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { SecurityPanel } from "@/components/SecurityPanel";
+import { BackgroundQueuesCard } from "@/components/BackgroundQueuesCard";
 
 import {
   listRoleNotificationDefaults, updateRoleNotificationDefault,
@@ -1553,6 +1554,7 @@ function NotificationsPanel({ crms = [] }: { crms?: CrmSummary[] }) {
       </div>
 
       {isLoading || !data ? <div className="text-muted-foreground text-sm">טוען...</div> : <NotificationsGrid data={data} mut={mut} />}
+      <BackgroundQueuesCard />
     </div>
   );
 }

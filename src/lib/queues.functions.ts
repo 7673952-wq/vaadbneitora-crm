@@ -127,9 +127,9 @@ export const listMentionDeliveries = createServerFn({ method: "GET" })
       systemIds.size ? supabaseAdmin.from("systems").select("id, system_code").in("id", Array.from(systemIds)) : Promise.resolve({ data: [] as any[] }),
       recordIds.size ? supabaseAdmin.from("crm_records").select("id, record_code").in("id", Array.from(recordIds)) : Promise.resolve({ data: [] as any[] }),
     ] as any);
-    const profileMap = new Map((profiles ?? []).map((p: any) => [p.id, p.display_name]));
-    const systemMap = new Map((systems ?? []).map((s: any) => [s.id, s.system_code]));
-    const recordMap = new Map((records ?? []).map((r: any) => [r.id, r.record_code]));
+    const profileMap = new Map<string, string>((profiles ?? []).map((p: any) => [p.id, p.display_name ?? "—"]));
+    const systemMap = new Map<string, string>((systems ?? []).map((s: any) => [s.id, s.system_code ?? "—"]));
+    const recordMap = new Map<string, string>((records ?? []).map((r: any) => [r.id, r.record_code ?? "—"]));
     return rows.map((r) => {
       const nm = r.note_mentions ?? {};
       return {
@@ -143,7 +143,7 @@ export const listMentionDeliveries = createServerFn({ method: "GET" })
         mentionedUserName: profileMap.get(nm.mentioned_user_id) ?? "—",
         mentionedByName: profileMap.get(nm.mentioned_by) ?? "—",
         crmKey: nm.crm_key,
-        code: nm.system_id ? systemMap.get(nm.system_id) : (nm.record_id ? recordMap.get(nm.record_id) : null),
+        code: (nm.system_id ? systemMap.get(nm.system_id) : (nm.record_id ? recordMap.get(nm.record_id) : null)) ?? null,
       };
     });
   });

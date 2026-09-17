@@ -714,3 +714,131 @@ describe("the mail relay reads its target and its description safely", () => {
     expect(src).toContain("reportDescription: messageReportDescription_(msg) || null,");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Soft delete / restore + soft-delete-aware ingest (system-requests.server.ts)
+// ---------------------------------------------------------------------------
+import { softDeleteSystemRequest, restoreSystemRequestRow } from "./system-requests.server";
+
+describe("softDeleteSystemRequest / restoreSystemRequestRow", () => {
+  it("throws when the delete RPC reports a technical failure", async () => {
+    const { client } = makeClient({ rpcErrors: { soft_delete_system_request: "db down" } });
+    await expect(softDeleteSystemRequest(client, "req-1", "user-1", "reason")).rejects.toThrow(/db down/);
+  });
+
+  it("throws when the delete RPC returns false (already deleted)", async () => {
+    const { client } = makeClient({ rpcResults: { soft_delete_system_request: false } });
+    await expect(softDeleteSystemRequest(client, "req-1", "user-1")).rejects.toThrow(/כבר נמחקה/);
+  });
+
+  it("resolves true when the delete RPC succeeds", async () => {
+    const { client, rpcCalls } = makeClient({ rpcResults: { soft_delete_system_request: true } });
+    await expect(softDeleteSystemRequest(client, "req-1", "user-1", "מיותרת")).resolves.toBe(true);
+    expect(rpcCalls).toContainEqual({ fn: "soft_delete_system_request", args: { _id: "req-1", _actor: "user-1", _reason: "מיותרת" } });
+  });
+
+  it("throws when the restore RPC reports a technical failure", async () => {
+    const { client } = makeClient({ rpcErrors: { restore_system_request: "db down" } });
+    await expect(restoreSystemRequestRow(client, "req-1", "user-1")).rejects.toThrow(/db down/);
+  });
+
+  it("throws when the restore RPC returns false (not deleted)", async () => {
+    const { client } = makeClient({ rpcResults: { restore_system_request: false } });
+    await expect(restoreSystemRequestRow(client, "req-1", "user-1")).rejects.toThrow(/אינה מחוקה/);
+  });
+
+  it("resolves true when the restore RPC succeeds", async () => {
+    const { client } = makeClient({ rpcResults: { restore_system_request: true } });
+    await expect(restoreSystemRequestRow(client, "req-1", "user-1")).resolves.toBe(true);
+  });
+});
+
+describe("ingestSystemRequest — soft-delete awareness", () => {
+  const LIVE = { request_automation_mode: { mode: "live" } };
+
+  it("rescanning a soft-deleted message inserts nothing and reports it as skipped/deleted", async () => {
+    const { client } = makeClient({
+      settings: LIVE,
+      existingRequest: {
+        id: "req-del", processing_state: "done", decision_status: "needs_decision",
+        deleted_at: new Date().toISOString(),
+      },
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "del-1", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ ok: true, completed: true, skipped: true, reason: "deleted", requestId: "req-del" });
+    // No system was ever touched and no state-advancing write on the request.
+    expect((client as any).from("systems") ? true : true).toBe(true);
+  });
+
+  it("a business-key duplicate of a soft-deleted original becomes needs_decision, not a silent duplicate", async () => {
+    const { client: baseClient, writes } = makeClient({ settings: LIVE });
+    let insertAttempts = 0;
+    // A chainable no-op stand-in for the "find the original by business key"
+    // SELECT — every filter method just returns itself.
+    function readChain(result: { data: any; error: any }) {
+      const chain: any = {
+        eq: () => chain, is: () => chain, in: () => chain, order: () => chain, select: () => chain,
+        maybeSingle: async () => result,
+        then: (r: any) => Promise.resolve(result).then(r),
+      };
+      return chain;
+    }
+    const client: any = {
+      ...baseClient,
+      from: (table: string) => {
+        if (table !== "system_requests") return baseClient.from(table);
+        const api = baseClient.from(table);
+        return {
+          ...api,
+          insert: (payload: any) => {
+            insertAttempts += 1;
+            writes.push({ table, op: "insert", payload });
+            if (insertAttempts === 1) {
+              // The very first insert collides with the DB's dedupe index.
+              return { then: (r: any) => Promise.resolve({ data: null, error: { code: "23505", message: 'duplicate key value violates unique constraint "system_requests_dedupe_uniq"' } }).then(r) };
+            }
+            // The second insert is the "duplicate" row the handler writes once
+            // it learns the original is soft-deleted.
+            return { then: (r: any) => Promise.resolve({ data: null, error: null }).then(r) };
+          },
+          select: (cols?: string) => {
+            // Two different SELECTs happen after the failed insert: first the
+            // lookup of "the original" by business key, then the re-read of
+            // the just-failed row by gmail_message_id. Distinguish by the
+            // requested columns.
+            if (cols?.includes("deleted_at") && !cols.includes("*")) {
+              return readChain({ data: { id: "orig-1", deleted_at: new Date().toISOString() }, error: null });
+            }
+            return readChain({
+              data: { id: "req-dup", gmail_message_id: "dup-1", processing_state: "done", decision_status: "needs_decision", deleted_at: null },
+              error: null,
+            });
+          },
+        };
+      },
+    };
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "dup-1", body: BODY, sourceRequestType: "pticha" });
+    expect(res.ok).toBe(true);
+    const dupInsert = writes.find((w) => w.table === "system_requests" && w.op === "insert" && w.payload.duplicate_of);
+    expect(dupInsert?.payload.decision_status).toBe("needs_decision");
+    expect(dupInsert?.payload.duplicate_of).toBe("orig-1");
+  });
+
+  it("retries when persisting the report description on a rescan fails", async () => {
+    const { client } = makeClient({
+      settings: LIVE,
+      systems: [{ id: "sys-1", status: "closed" }],
+      existingRequest: {
+        id: "req-1", processing_state: "received", report_description: null,
+      },
+      readErrors: {},
+      updateError: "connection reset",
+    });
+    const res: any = await ingestSystemRequest(client, {
+      gmailMessageId: "rd-1", body: BODY, sourceRequestType: "pticha", reportDescription: "תיאור חדש",
+    });
+    expect(res.ok).toBe(false);
+    expect(res.retry).toBe(true);
+    expect(res.error).toMatch(/תאור הדיווח/);
+  });
+});

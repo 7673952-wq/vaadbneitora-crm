@@ -32,6 +32,11 @@ const SENSITIVE_ACTIONS: { action: string; scope: string; file: string }[] = [
   { action: "saveRequestRule", scope: "request_manage", file: "src/lib/system-requests.functions.ts" },
   { action: "setRequestAutomationSettings", scope: "request_manage", file: "src/lib/system-requests.functions.ts" },
   { action: "decideSystemRequest", scope: "request_decide", file: "src/lib/system-requests.functions.ts" },
+  { action: "deleteSystemRequest", scope: "request_delete", file: "src/lib/system-requests.functions.ts" },
+  { action: "restoreSystemRequest", scope: "request_delete", file: "src/lib/system-requests.functions.ts" },
+  { action: "requeueMentionDelivery", scope: "mention_requeue", file: "src/lib/queues.functions.ts" },
+  { action: "processMentionQueueNow", scope: "mention_process", file: "src/lib/queues.functions.ts" },
+  { action: "setAppBaseUrl", scope: "queue_config", file: "src/lib/queues.functions.ts" },
 ];
 
 function handlerBody(source: string, action: string): string {

@@ -14,6 +14,8 @@ import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { readStatusSettings } from "@/lib/status-settings";
 import { normalizeAdditionalCallerPhones } from "@/lib/caller-phones";
 import { systemCodeMatchKey } from "@/lib/system-code";
+import { searchCandidateSystems } from "@/lib/system-search";
+
 
 // If a system_code doesn't already start with "0" or "972", and has
 // fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->

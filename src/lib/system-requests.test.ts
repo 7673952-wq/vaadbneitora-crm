@@ -1016,3 +1016,95 @@ describe("system_requests reads exclude soft-deleted rows", () => {
     expect(body).toContain('.is("deleted_at", null)');
   });
 });
+
+// ---------------------------------------------------------------------------
+// getSystemRequestById + deleted-row visibility across list/summary/rules
+// (system-requests.functions.ts) — static source checks, same convention used
+// by the "system_requests reads exclude soft-deleted rows" block above.
+// ---------------------------------------------------------------------------
+describe("system-requests.functions.ts — deep-link lookup and deleted-row rules", () => {
+  const source = require("node:fs").readFileSync("src/lib/system-requests.functions.ts", "utf8");
+
+  function handlerBody(name: string): string {
+    const start = source.indexOf(`export const ${name} = createServerFn`);
+    expect(start, `${name} not found`).toBeGreaterThanOrEqual(0);
+    const nextExport = source.indexOf("\nexport const ", start + 1);
+    return source.slice(start, nextExport < 0 ? source.length : nextExport);
+  }
+
+  it("getSystemRequestById exists and is guarded by the requests_view permission, like the list", () => {
+    const body = handlerBody("getSystemRequestById");
+    expect(body).toContain('"requests_view"');
+    expect(body).toContain("loadAuthorizedRequest");
+  });
+
+  it("getSystemRequestById selects report_description and deleted_at, and returns the system relation", () => {
+    const body = handlerBody("getSystemRequestById");
+    expect(body).toContain("report_description");
+    expect(body).toContain("deleted_at");
+    expect(body).toContain("system:");
+  });
+
+  it("getSystemRequestById only allows a soft-deleted row through when includeDeleted is passed", () => {
+    const body = handlerBody("getSystemRequestById");
+    expect(body).toMatch(/allowDeleted:\s*!!data\.includeDeleted/);
+  });
+
+  it("deleteSystemRequest is guarded by requests_delete and the rate limiter, and only ever soft-deletes", () => {
+    const body = handlerBody("deleteSystemRequest");
+    expect(body).toContain('"requests_delete"');
+    expect(body).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
+    expect(body).toContain("softDeleteSystemRequest");
+    expect(body).not.toContain(".delete(");
+  });
+
+  it("restoreSystemRequest is guarded by requests_delete, the rate limiter, and allows loading a deleted row", () => {
+    const body = handlerBody("restoreSystemRequest");
+    expect(body).toContain('"requests_delete"');
+    expect(body).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
+    expect(body).toContain("allowDeleted: true");
+    expect(body).toContain("restoreSystemRequestRow");
+  });
+
+  it("listRequestsForSystem returns the fields needed to render a Hebrew status label", () => {
+    const body = handlerBody("listRequestsForSystem");
+    expect(body).toContain("decision_status");
+    expect(body).toContain("new_status");
+    expect(body).toContain("proposed_status");
+    expect(body).toContain("report_description");
+    expect(body).toContain('.is("deleted_at", null)');
+  });
+
+  it("listSystemRequests shows deleted rows only under includeDeleted, and hides them otherwise", () => {
+    const body = handlerBody("listSystemRequests");
+    expect(body).toMatch(/showDeleted\s*=\s*deleteKeys\.length > 0/);
+    expect(body).toContain('q.not("deleted_at", "is", null)');
+    expect(body).toContain('q.is("deleted_at", null)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rescanning a soft-deleted request's gmail_message_id must not create a
+// duplicate — the dedup lookup sees soft-deleted rows too.
+// ---------------------------------------------------------------------------
+describe("dedup lookup by gmail_message_id sees soft-deleted rows (no duplicate on rescan)", () => {
+  it("ingestSystemRequest finds the soft-deleted original by gmail_message_id and reports no new row, instead of inserting a duplicate", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      existingRequest: {
+        id: "req-was-deleted",
+        processing_state: "done",
+        decision_status: "needs_decision",
+        deleted_at: new Date().toISOString(),
+      },
+    });
+    const res: any = await ingestSystemRequest(
+      client,
+      { gmailMessageId: "rescanned-1", body: BODY, sourceRequestType: "pticha" },
+    );
+    // The existing (soft-deleted) row was found by its business key — nothing
+    // new was inserted for the same message.
+    expect(res).toMatchObject({ ok: true, completed: true, skipped: true, reason: "deleted", requestId: "req-was-deleted" });
+    expect(writes.some((w) => w.table === "system_requests" && w.op === "insert")).toBe(false);
+  });
+});

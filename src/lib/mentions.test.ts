@@ -127,20 +127,40 @@ describe("processMentionQueue", () => {
   });
 
 
-  it("backs off 60s on the first relay failure and fails outright on the fifth attempt", async () => {
+  it("bases backoff on the attempts value returned by claim_mention_deliveries (already incremented), not attempts+1", async () => {
+    const postToRelay = vi.fn(async () => new Response(JSON.stringify({ ok: false, error: "בעיה" }), { status: 500 }));
+    const expected = [
+      { attempts: 1, seconds: 60 },
+      { attempts: 2, seconds: 300 },
+      { attempts: 3, seconds: 900 },
+      { attempts: 4, seconds: 3600 },
+    ];
+    for (const { attempts, seconds } of expected) {
+      const { admin, finishCalls } = makeSupabaseAdmin({
+        claimRows: [[baseRow({ attempts })]],
+        relayUrl: "https://relay.example/exec",
+        relaySecret: "s3cr3t",
+        baseUrl: "https://example.com/app",
+      });
+      await processMentionQueue(admin, { postToRelay });
+      expect(finishCalls[0]).toMatchObject({ _delivery_id: "d1", _status: "pending", _retry_in_seconds: seconds });
+    }
+  });
+
+  it("fails outright exactly on the fifth attempt returned by the RPC (not the sixth)", async () => {
     const postToRelay = vi.fn(async () => new Response(JSON.stringify({ ok: false, error: "בעיה" }), { status: 500 }));
 
-    const attempt1 = makeSupabaseAdmin({
-      claimRows: [[baseRow({ attempts: 0 })]],
+    const attempt4 = makeSupabaseAdmin({
+      claimRows: [[baseRow({ attempts: 4 })]],
       relayUrl: "https://relay.example/exec",
       relaySecret: "s3cr3t",
       baseUrl: "https://example.com/app",
     });
-    await processMentionQueue(attempt1.admin, { postToRelay });
-    expect(attempt1.finishCalls[0]).toMatchObject({ _delivery_id: "d1", _status: "pending", _retry_in_seconds: 60 });
+    await processMentionQueue(attempt4.admin, { postToRelay });
+    expect(attempt4.finishCalls[0]).toMatchObject({ _delivery_id: "d1", _status: "pending", _retry_in_seconds: 3600 });
 
     const attempt5 = makeSupabaseAdmin({
-      claimRows: [[baseRow({ attempts: 4 })]],
+      claimRows: [[baseRow({ attempts: 5 })]],
       relayUrl: "https://relay.example/exec",
       relaySecret: "s3cr3t",
       baseUrl: "https://example.com/app",

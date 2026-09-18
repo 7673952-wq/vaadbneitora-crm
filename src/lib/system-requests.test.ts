@@ -975,7 +975,71 @@ describe("executeManualSystemAction", () => {
       expect((res as any).matches).toMatchObject([{ id: "sys-race" }]);
     });
   });
+
+  // A well-formed UUID coming from the browser proves nothing: every id is
+  // verified server-side, and every creating action needs `systems_write`.
+  describe("authorization", () => {
+    it("rejects a forged targetSystemId that does not exist", async () => {
+      const { client, writes } = makeClient({ systems: [] });
+      await expect(executeManualSystemAction(client, "user-1", baseReq, {
+        systemAction: "link_existing", targetSystemId: "11111111-1111-1111-1111-111111111111",
+      })).rejects.toThrow();
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("rejects a forged parentSystemId that does not exist", async () => {
+      const { client, writes } = makeClient({ systems: [] });
+      await expect(executeManualSystemAction(client, "user-1", baseReq, {
+        systemAction: "create_sub", parentSystemId: "22222222-2222-2222-2222-222222222222", name: "תת",
+      })).rejects.toThrow();
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("a request from another CRM can never target a systems row", async () => {
+      const { client, writes } = makeClient({ systems: [{ id: "sys-existing" }] });
+      await expect(executeManualSystemAction(client, "user-1", { ...baseReq, crm_key: "other" }, {
+        systemAction: "link_existing", targetSystemId: "sys-existing",
+      })).rejects.toThrow(/CRM/);
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("a caller without access to the request's CRM is rejected", async () => {
+      perms.crmAccess = false;
+      try {
+        const { client } = makeClient({ systems: [...seeded] });
+        await expect(executeManualSystemAction(client, "user-1", baseReq, {
+          systemAction: "link_existing", targetSystemId: "sys-existing",
+        })).rejects.toThrow();
+      } finally { perms.crmAccess = true; }
+    });
+
+    it("create_sub and create_root require systems_write", async () => {
+      perms.systemsWrite = false;
+      try {
+        const sub = makeClient({ systems: [...seeded] });
+        await expect(executeManualSystemAction(sub.client, "user-1", baseReq, {
+          systemAction: "create_sub", parentSystemId: "parent-1", name: "תת",
+        })).rejects.toThrow();
+        expect(sub.writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+
+        const root = makeClient({});
+        await expect(executeManualSystemAction(root.client, "user-1", baseReq, {
+          systemAction: "create_root", name: "מערכת חדשה",
+        })).rejects.toThrow();
+        expect(root.writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+      } finally { perms.systemsWrite = true; }
+    });
+
+    it("a valid action with the right permissions works", async () => {
+      const { client } = makeClient({ systems: [...seeded] });
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
+        systemAction: "create_sub", parentSystemId: "parent-1", name: "תת מערכת",
+      });
+      expect(res).toMatchObject({ ok: true });
+    });
+  });
 });
+
 
 describe("checkManualRootCreation", () => {
   it("creates when no system currently matches the name", async () => {

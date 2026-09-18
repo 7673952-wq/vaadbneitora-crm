@@ -3,12 +3,15 @@ export type QueueUrls = { voice_queue: string | null; mention_queue: string | nu
 export type QueueProbeResult = {
   urlConfigured: boolean;
   tokenConfigured: boolean;
+  /** true/false once the endpoint answered a token-bearing ping; null when unknown. */
+  tokenValid: boolean | null;
   armed: boolean;
   pending: number;
   reachable: boolean;
   status?: number;
   error?: string;
 };
+
 
 function extractUrl(entry: unknown): string | null {
   if (!entry) return null;

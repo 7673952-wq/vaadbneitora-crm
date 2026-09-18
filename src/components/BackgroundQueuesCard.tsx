@@ -199,23 +199,18 @@ export function BackgroundQueuesCard() {
           {queueRows.map((q) => {
             const h = health[q.key];
             if (!h) return null;
+            const verdict = queueVerdict(h);
             return (
               <div key={q.key} className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{q.name}:</span>
-                {!h.urlConfigured ? (
-                  <Badge variant="destructive">לא הוגדרה כתובת</Badge>
-                ) : (
-                  <Badge variant={h.reachable ? "default" : "destructive"}>{h.reachable ? "תקין" : "לא תקין"}</Badge>
-                )}
-                <Badge variant={h.tokenConfigured ? "default" : "destructive"}>
-                  {h.tokenConfigured ? "אסימון מוגדר" : "אסימון לא מוגדר"}
-                </Badge>
+                <Badge variant={verdict.ok ? "default" : "destructive"}>{verdict.ok ? "תקין" : "לא תקין"}</Badge>
+                {!verdict.ok && <span className="text-muted-foreground">{verdict.message}</span>}
                 <Badge variant={h.armed ? "default" : "outline"}>{h.armed ? "מופעל" : "כבוי"}</Badge>
                 <span className="text-muted-foreground">ממתינים: {h.pending}</span>
-                {h.error && <span className="text-muted-foreground">{h.error}</span>}
               </div>
             );
           })}
+
         </div>
       )}
 

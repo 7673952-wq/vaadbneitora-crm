@@ -74,25 +74,46 @@ export const checkQueueHealth = createServerFn({ method: "POST" })
   .handler(async ({ context }) => {
     await assertQueueAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { queueInfoFromStatus, classifyQueueProbe } = await import("@/lib/queue-status");
     const { data: status } = await (supabaseAdmin as any).rpc("get_queue_status");
-    const queues = (status as any)?.queues ?? status ?? {};
-    const urls: Record<string, string | undefined> = {
-      voice_queue: queues?.voice_queue?.url ?? queues?.voice_queue,
-      mention_queue: queues?.mention_queue?.url ?? queues?.mention_queue,
-    };
-    const results: Record<string, { reachable: boolean; status?: number; error?: string }> = {};
-    for (const [name, url] of Object.entries(urls)) {
-      if (!url || typeof url !== "string") {
-        results[name] = { reachable: false, error: "לא הוגדרה כתובת" };
+    const results: Record<string, import("@/lib/queue-status").QueueProbeResult> = {};
+    for (const name of ["voice_queue", "mention_queue"] as const) {
+      const info = queueInfoFromStatus(status, name);
+      if (!info.url) {
+        results[name] = {
+          urlConfigured: false,
+          tokenConfigured: info.tokenConfigured,
+          armed: info.armed,
+          pending: info.pending,
+          reachable: false,
+          error: "לא הוגדרה כתובת",
+        };
         continue;
       }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(url, { method: "GET", signal: controller.signal });
-        results[name] = { reachable: res.status === 200 || res.status === 405, status: res.status };
+        const res = await fetch(info.url, { method: "GET", signal: controller.signal });
+        const classified = classifyQueueProbe(res.status);
+        results[name] = {
+          urlConfigured: true,
+          tokenConfigured: info.tokenConfigured,
+          armed: info.armed,
+          pending: info.pending,
+          reachable: classified.reachable,
+          status: res.status,
+          error: classified.error,
+        };
       } catch (e: any) {
-        results[name] = { reachable: false, error: e?.message ?? "שגיאת רשת" };
+        const classified = classifyQueueProbe(undefined, e?.message ?? "שגיאת רשת");
+        results[name] = {
+          urlConfigured: true,
+          tokenConfigured: info.tokenConfigured,
+          armed: info.armed,
+          pending: info.pending,
+          reachable: classified.reachable,
+          error: classified.error,
+        };
       } finally {
         clearTimeout(timer);
       }

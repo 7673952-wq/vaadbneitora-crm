@@ -747,6 +747,8 @@ export const deleteSystemRequest = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("request_delete", context.userId);
     const { crmKey } = await loadAuthorizedRequest(
       supabaseAdmin, context.supabase, context.userId, data.id, "requests_delete", "id, crm_key",
     );
@@ -762,6 +764,8 @@ export const restoreSystemRequest = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("request_delete", context.userId);
     await loadAuthorizedRequest(
       supabaseAdmin, context.supabase, context.userId, data.id, "requests_delete", "id, crm_key",
       { allowDeleted: true },

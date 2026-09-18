@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { normalizeSourceRequestType, ingestSystemRequest, linkRequestToExistingSystem } from "./system-requests.server";
+import { normalizeSourceRequestType, ingestSystemRequest, linkRequestToExistingSystem, checkManualRootCreation, executeManualSystemAction } from "./system-requests.server";
 
 vi.mock("@/lib/systems.functions", () => ({
   maybeScheduleOrSendAutoVoice: vi.fn(async () => {}),
@@ -28,6 +28,10 @@ function makeClient(opts: {
   casLoses?: boolean;
   /** Force a failed READ, keyed by app_settings key or by table name. */
   readErrors?: Record<string, string>;
+  /** Candidate rows returned for a name-match (ilike) query on `systems`. */
+  nameMatches?: any[];
+  /** Force the next `systems` INSERT to fail with this error instead of succeeding. */
+  systemInsertError?: { code?: string; message: string } | null;
 }) {
   const writes: Array<{ table: string; op: string; payload: any }> = [];
   const rpcCalls: Array<{ fn: string; args: any }> = [];
@@ -46,14 +50,29 @@ function makeClient(opts: {
           request = { id: "req-1", processing_state: "received", ...payload };
         }
         if (table === "systems") {
-          const created = { id: "sys-new", status: payload.status };
-          (opts.systems ??= []).push(created);
-          const result = { data: created, error: null };
-          return { ...api, maybeSingle: async () => result, then: (r: any) => Promise.resolve(result).then(r) };
+          let result: { data: any; error: any };
+          if (opts.systemInsertError) {
+            result = { data: null, error: opts.systemInsertError };
+          } else {
+            const created = {
+              id: "sys-new", status: payload.status, name: payload.name,
+              system_code: payload.system_code ?? null, parent_system_id: payload.parent_system_id ?? null,
+            };
+            (opts.systems ??= []).push(created);
+            result = { data: created, error: null };
+          }
+          const insertChain: any = {
+            select: () => insertChain,
+            maybeSingle: async () => result,
+            then: (r: any) => Promise.resolve(result).then(r),
+          };
+          return insertChain;
         }
         const result = { data: null, error: null };
         return { ...api, then: (r: any) => Promise.resolve(result).then(r) };
       },
+      ilike: (col: string, val: unknown) => { filters[col] = val; return api; },
+      limit: () => api,
       update: (payload: any) => {
         writes.push({ table, op: "update", payload });
         const error = table === "system_requests" && opts.updateError ? { message: opts.updateError } : null;
@@ -89,6 +108,9 @@ function makeClient(opts: {
         const err = opts.readErrors?.[table] ? { message: opts.readErrors[table] } : null;
         if (err) return Promise.resolve({ data: null, error: err }).then(r);
         if (table === "system_request_rules") return Promise.resolve({ data: opts.rules ?? [], error: null }).then(r);
+        if (table === "systems" && "name" in filters) {
+          return Promise.resolve({ data: opts.nameMatches ?? [], error: null }).then(r);
+        }
         return Promise.resolve({ data: [], error: null }).then(r);
       },
     };
@@ -840,5 +862,124 @@ describe("ingestSystemRequest — soft-delete awareness", () => {
     expect(res.ok).toBe(false);
     expect(res.retry).toBe(true);
     expect(res.error).toMatch(/תאור הדיווח/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Manual "which system does this request belong to" decision
+// (checkManualRootCreation / executeManualSystemAction).
+// ---------------------------------------------------------------------------
+describe("executeManualSystemAction", () => {
+  const baseReq = {
+    id: "req-1", crm_key: "yemot",
+    system_code_raw: "0882309477", system_code_norm: "882309477", caller_phone: "0527673952",
+  };
+
+  it("persists the decision on the request row before running the side effect", async () => {
+    const { client, writes } = makeClient({});
+    await executeManualSystemAction(client, baseReq, {
+      systemAction: "link_existing", targetSystemId: "sys-existing",
+    });
+    const requestWrites = writes.filter((w) => w.table === "system_requests" && w.op === "update");
+    expect(requestWrites.length).toBeGreaterThanOrEqual(2);
+    // The FIRST write is the persisted decision itself, not the link.
+    expect(requestWrites[0]!.payload).toMatchObject({ manual_system_action: "link_existing", manual_target_system_id: "sys-existing" });
+    expect(requestWrites[0]!.payload.system_id).toBeUndefined();
+    // Only afterwards does the request get linked to the system (the side effect).
+    expect(requestWrites[1]!.payload).toMatchObject({ system_id: "sys-existing" });
+  });
+
+  it("link_existing links the request to the given system without creating one", async () => {
+    const { client, writes } = makeClient({});
+    const res = await executeManualSystemAction(client, baseReq, {
+      systemAction: "link_existing", targetSystemId: "sys-existing",
+    });
+    expect(res).toEqual({ ok: true, systemId: "sys-existing" });
+    expect(writes.some((w) => w.table === "systems")).toBe(false);
+  });
+
+  it("create_sub inserts a system with parent_system_id set", async () => {
+    const { client, writes } = makeClient({});
+    const res = await executeManualSystemAction(client, baseReq, {
+      systemAction: "create_sub", parentSystemId: "parent-1", name: "תת מערכת",
+    });
+    expect(res).toMatchObject({ ok: true, systemId: "sys-new" });
+    const insert = writes.find((w) => w.table === "systems" && w.op === "insert")!;
+    expect(insert.payload).toMatchObject({ parent_system_id: "parent-1", name: "תת מערכת" });
+    const link = writes.find((w) => w.table === "system_requests" && w.op === "update" && w.payload.system_id);
+    expect(link?.payload.system_id).toBe("sys-new");
+  });
+
+  describe("create_root", () => {
+    const rootMatch = [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }];
+
+    it("state A: a match exists and there is no confirmed-matches snapshot → conflict, nothing inserted", async () => {
+      const { client, writes } = makeClient({ nameMatches: rootMatch });
+      const res = await executeManualSystemAction(client, baseReq, {
+        systemAction: "create_root", name: "מערכת קיימת",
+      });
+      expect(res).toMatchObject({ ok: false, conflict: true });
+      expect((res as any).matches).toMatchObject([{ id: "sys-match" }]);
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("state B: the snapshot covers the current matches → the root is created", async () => {
+      const { client, writes } = makeClient({ nameMatches: rootMatch });
+      const res = await executeManualSystemAction(client, baseReq, {
+        systemAction: "create_root", name: "מערכת קיימת",
+        confirmedMatches: [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }],
+      });
+      expect(res).toMatchObject({ ok: true, systemId: "sys-new" });
+      const insert = writes.find((w) => w.table === "systems" && w.op === "insert")!;
+      expect(insert.payload).toMatchObject({ name: "מערכת קיימת", parent_system_id: null });
+    });
+
+    it("a new match outside the confirmed snapshot → conflict", async () => {
+      const { client, writes } = makeClient({
+        nameMatches: [
+          { id: "sys-match", name: "מערכת קיימת", system_code: "111" },
+          { id: "sys-other", name: "מערכת קיימת", system_code: "222" },
+        ],
+      });
+      const res = await executeManualSystemAction(client, baseReq, {
+        systemAction: "create_root", name: "מערכת קיימת",
+        confirmedMatches: [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }],
+      });
+      expect(res).toMatchObject({ ok: false, conflict: true });
+      expect((res as any).matches.map((m: any) => m.id).sort()).toEqual(["sys-match", "sys-other"]);
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("a unique-violation race on the insert is reported as a conflict, never thrown", async () => {
+      const { client } = makeClient({
+        nameMatches: [{ id: "sys-race", name: "מערכת חדשה", system_code: "333" }],
+        systemInsertError: { code: "23505", message: 'duplicate key value violates unique constraint "systems_name_uniq"' },
+      });
+      const res = await executeManualSystemAction(client, baseReq, {
+        systemAction: "create_root", name: "מערכת חדשה",
+      });
+      expect(res).toMatchObject({ ok: false, conflict: true });
+      expect((res as any).matches).toMatchObject([{ id: "sys-race" }]);
+    });
+  });
+});
+
+describe("checkManualRootCreation", () => {
+  it("creates when no system currently matches the name", async () => {
+    const { client } = makeClient({ nameMatches: [] });
+    const decision = await checkManualRootCreation(client, "yemot", "מערכת חדשה", null);
+    expect(decision).toEqual({ outcome: "create" });
+  });
+
+  it("conflicts when a match exists but there is no confirmed-matches snapshot", async () => {
+    const { client } = makeClient({ nameMatches: [{ id: "sys-1", name: "מערכת", system_code: "1" }] });
+    const decision = await checkManualRootCreation(client, "yemot", "מערכת", null);
+    expect(decision.outcome).toBe("conflict");
+  });
+
+  it("creates when the snapshot covers every current match", async () => {
+    const { client } = makeClient({ nameMatches: [{ id: "sys-1", name: "מערכת", system_code: "1" }] });
+    const decision = await checkManualRootCreation(client, "yemot", "מערכת", [{ id: "sys-1", name: "מערכת", system_code: "1" }]);
+    expect(decision).toEqual({ outcome: "create" });
   });
 });

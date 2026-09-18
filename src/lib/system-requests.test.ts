@@ -885,8 +885,11 @@ describe("executeManualSystemAction", () => {
     system_code_raw: "0882309477", system_code_norm: "882309477", caller_phone: "0527673952",
   };
 
+  // The target/parent must exist server-side; the stub seeds them.
+  const seeded = [{ id: "sys-existing", name: "מערכת קיימת" }, { id: "parent-1", name: "מערכת אב" }];
+
   it("persists the decision on the request row before running the side effect", async () => {
-    const { client, writes } = makeClient({});
+    const { client, writes } = makeClient({ systems: [...seeded] });
     await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "link_existing", targetSystemId: "sys-existing",
     });
@@ -900,7 +903,7 @@ describe("executeManualSystemAction", () => {
   });
 
   it("link_existing links the request to the given system without creating one", async () => {
-    const { client, writes } = makeClient({});
+    const { client, writes } = makeClient({ systems: [...seeded] });
     const res = await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "link_existing", targetSystemId: "sys-existing",
     });
@@ -909,7 +912,7 @@ describe("executeManualSystemAction", () => {
   });
 
   it("create_sub inserts a system with parent_system_id set", async () => {
-    const { client, writes } = makeClient({});
+    const { client, writes } = makeClient({ systems: [...seeded] });
     const res = await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "create_sub", parentSystemId: "parent-1", name: "תת מערכת",
     });

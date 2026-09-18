@@ -236,3 +236,78 @@ export const updateNoteWithMentions = createServerFn({ method: "POST" })
 
     return { noteId: parsed.note_id, recipients: parsed.recipients ?? [] };
   });
+
+
+// Statuses where we could not confirm the email was (not) already sent —
+// retrying them silently risks a duplicate email, so the caller must pass
+// explicit confirmation after seeing a clear warning.
+const AMBIGUOUS_DELIVERY_STATUSES = new Set(["unknown", "skipped_no_email"]);
+
+export const MENTION_RETRY_CONFIRM_MESSAGE =
+  "לא ניתן לאשר בוודאות אם המייל כבר נשלח למשתמש זה. יש לאשר במפורש שליחה חוזרת — ייתכן שהמייל כבר נשלח בעבר.";
+
+// Pure guard (unit-tested): throws unless a plain retry is safe, i.e. the
+// delivery is in a definitively failed state, or the caller explicitly
+// confirmed a retry of an ambiguous ("unknown"/"skipped_no_email") one.
+export function assertMentionRetryAllowed(status: string | undefined, confirmUnknown: boolean | undefined): void {
+  if (AMBIGUOUS_DELIVERY_STATUSES.has(status ?? "") && !confirmUnknown) {
+    throw new Error(MENTION_RETRY_CONFIRM_MESSAGE);
+  }
+}
+
+// Explicit, audited retry of a mention email delivery: checks permission +
+// rate limit (as before), then requires confirmation for ambiguous
+// statuses, then requeues via the existing RPC (which persists
+// retry_requested_by / retry_requested_at).
+export async function performMentionRetry(
+  supabaseAdmin: any,
+  input: { deliveryId: string; userId: string; confirmUnknown?: boolean },
+): Promise<{ ok: true }> {
+  const { assertPermission } = await import("@/lib/permissions.server");
+  await assertPermission(input.userId, "settings_manage", "yemot");
+
+  const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+  await limitSensitiveAction("mention_requeue", input.userId);
+
+  const { data: row, error: fetchErr } = await supabaseAdmin
+    .from("mention_email_deliveries")
+    .select("status")
+    .eq("id", input.deliveryId)
+    .maybeSingle();
+  if (fetchErr) throw new Error(fetchErr.message);
+  const status = (row as any)?.status as string | undefined;
+
+  assertMentionRetryAllowed(status, input.confirmUnknown);
+
+  const { data: ok, error } = await supabaseAdmin.rpc("requeue_mention_delivery", {
+    _delivery_id: input.deliveryId,
+    _actor: input.userId,
+  });
+  if (error) throw new Error(error.message);
+  if (!ok) throw new Error("לא ניתן היה לשלוח מחדש את ההודעה");
+
+  try {
+    await supabaseAdmin.rpc("ensure_mention_queue_job");
+  } catch {
+    // best-effort only — arming
+  }
+
+  return { ok: true };
+}
+
+export const retryMentionDelivery = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { deliveryId: string; confirmUnknown?: boolean }) =>
+    z.object({
+      deliveryId: z.string().uuid(),
+      confirmUnknown: z.boolean().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    return performMentionRetry(supabaseAdmin, {
+      deliveryId: data.deliveryId,
+      userId: context.userId,
+      confirmUnknown: data.confirmUnknown,
+    });
+  });

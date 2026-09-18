@@ -160,7 +160,7 @@ export async function processMentionQueue(
       }
 
       if (!relayConfig) {
-        const attempts = (row.attempts ?? 0) + 1;
+        const attempts = row.attempts ?? 0;
         if (attempts < 5) {
           await supabaseAdmin.rpc("finish_mention_delivery", {
             _delivery_id: row.delivery_id,
@@ -233,7 +233,7 @@ export async function processMentionQueue(
           counts.sent += 1;
         }
       } else {
-        const attempts = (row.attempts ?? 0) + 1;
+        const attempts = row.attempts ?? 0;
         if (attempts < 5) {
           await supabaseAdmin.rpc("finish_mention_delivery", {
             _delivery_id: row.delivery_id,

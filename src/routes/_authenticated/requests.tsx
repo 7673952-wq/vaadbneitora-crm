@@ -3,12 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Pencil, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Headphones, Inbox, Pencil, Play, Plus, RefreshCw, RotateCcw, ShieldQuestion, SkipForward, Trash2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
   setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem, matchRequestSystemName,
+  getSystemRequestById, deleteSystemRequest, restoreSystemRequest,
 } from "@/lib/system-requests.functions";
+
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";
 
@@ -82,7 +84,9 @@ function RequestsPage() {
   const qc = useQueryClient();
   const search = Route.useSearch();
   const focusReqId = search.req;
-  const [onlyPending, setOnlyPending] = useState(true);
+  const [view, setView] = useState<"pending" | "all" | "deleted">("pending");
+  const onlyPending = view === "pending";
+
   const fetchList = useServerFn(listSystemRequests);
   const fetchSettings = useServerFn(getRequestAutomationSettings);
   const decide = useServerFn(decideSystemRequest);
@@ -104,6 +108,7 @@ function RequestsPage() {
   const canView = isSuper || perms.requests_view === true;
   const canDecide = isSuper || (perms.requests_view === true && perms.requests_decide === true);
   const canManage = isSuper || (perms.requests_view === true && perms.requests_manage === true);
+  const canDelete = isSuper || (perms.requests_view === true && perms.requests_delete === true);
 
   // Recordings are streamed from Gmail on demand and never stored in the CRM.
   const audioMutation = useMutation({
@@ -120,12 +125,28 @@ function RequestsPage() {
   });
 
   const list = useQuery({
-    queryKey: ["system-requests", onlyPending],
+    queryKey: ["system-requests", view],
     // "open" = never decided AND decided-in-test-mode; both still need a human.
-    queryFn: () => fetchList({ data: { decision: onlyPending ? "open" : null, limit: 100 } }),
+    queryFn: () => fetchList({
+      data: view === "deleted"
+        ? { decision: null, limit: 100, includeDeleted: true }
+        : { decision: onlyPending ? "open" : null, limit: 100 },
+    }),
     refetchInterval: 60_000,
     enabled: canView,
   });
+
+  // Deep-link: a request reached from a system card may be decided, or simply
+  // outside the current filter/page — so it is fetched on its own and shown at
+  // the top, instead of silently landing on an unrelated list.
+  const fetchOne = useServerFn(getSystemRequestById);
+  const focused = useQuery({
+    queryKey: ["system-requests", "one", focusReqId],
+    queryFn: () => fetchOne({ data: { id: focusReqId as string, includeDeleted: true } }),
+    enabled: canView && Boolean(focusReqId),
+    staleTime: 30_000,
+  });
+
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["system-requests"] });
@@ -175,11 +196,32 @@ function RequestsPage() {
     onError: (e: any) => toast.error(String(e?.message ?? e)),
   });
 
-  const rows = (list.data ?? []) as any[];
+  const removeFn = useServerFn(deleteSystemRequest);
+  const restoreFn = useServerFn(restoreSystemRequest);
+  const deleteMutation = useMutation({
+    mutationFn: (vars: { id: string; reason: string | null }) => removeFn({ data: vars }),
+    onSuccess: () => { toast.success("הבקשה הועברה לנמחקות"); invalidate(); },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => restoreFn({ data: { id } }),
+    onSuccess: () => { toast.success("הבקשה שוחזרה"); invalidate(); },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+
+  const listRows = (list.data ?? []) as any[];
+  const focusedRow = (focused.data ?? null) as any | null;
+  // The deep-linked request always shows first, even when the active filter or
+  // the page limit would have hidden it.
+  const rows = useMemo(() => {
+    if (!focusedRow) return listRows;
+    return [focusedRow, ...listRows.filter((r) => r.id !== focusedRow.id)];
+  }, [focusedRow, listRows]);
   const pendingCount = useMemo(
-    () => rows.filter((r) => r.decision_status === "needs_decision" || r.decision_status === "simulated" || !r.decision_status).length,
-    [rows],
+    () => listRows.filter((r) => r.decision_status === "needs_decision" || r.decision_status === "simulated" || !r.decision_status).length,
+    [listRows],
   );
+
 
   // Deep-link focus: ?req=<id> scrolls that row into view and highlights it
   // once the list has loaded it.
@@ -250,13 +292,19 @@ function RequestsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-sm">
-        <Button variant={onlyPending ? "default" : "outline"} size="sm" onClick={() => setOnlyPending(true)}>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Button variant={view === "pending" ? "default" : "outline"} size="sm" onClick={() => setView("pending")}>
           דורש החלטה{pendingCount ? ` (${pendingCount})` : ""}
         </Button>
-        <Button variant={!onlyPending ? "default" : "outline"} size="sm" onClick={() => setOnlyPending(false)}>
+        <Button variant={view === "all" ? "default" : "outline"} size="sm" onClick={() => setView("all")}>
           כל הבקשות
         </Button>
+        {canDelete && (
+          <Button variant={view === "deleted" ? "default" : "outline"} size="sm" onClick={() => setView("deleted")}>
+            <Trash2 className="size-4" />
+            נמחקו
+          </Button>
+        )}
       </div>
 
       {list.isLoading ? (
@@ -267,14 +315,16 @@ function RequestsPage() {
           אין בקשות להצגה.
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-2">
           {rows.map((r) => (
             <RequestCard
               key={r.id}
               row={r}
               statuses={statusRows ?? []}
               canDecide={canDecide}
-              busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending}
+              canDelete={canDelete}
+              busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending
+                || deleteMutation.isPending || restoreMutation.isPending}
               audio={audio}
               audioPending={audioMutation.isPending}
               highlighted={focusReqId === r.id}
@@ -284,10 +334,13 @@ function RequestsPage() {
               onDecideAsync={(vars) => decideMutation.mutateAsync(vars)}
               onFixCode={(systemCode) => codeMutation.mutate({ id: r.id, systemCode })}
               onRename={(name) => renameMutation.mutate({ id: r.id, name })}
+              onDelete={(reason) => deleteMutation.mutate({ id: r.id, reason })}
+              onRestore={() => restoreMutation.mutate(r.id)}
             />
           ))}
         </ul>
       )}
+
     </div>
   );
 }
@@ -317,11 +370,11 @@ function ReportDescription({ text }: { text: string | null | undefined }) {
 
 type MatchOption = { id: string; system_code?: string | null; name: string };
 
-/** The "which system does this request belong to" flow: match the typed name
- * against existing systems and offer exactly three explicit actions — link to
- * an existing system, open as a sub-system, or open a brand-new root system
- * (which requires an explicit confirmation checkbox). Reuses
- * `matchRequestSystemName` / `decideSystemRequest` — no client-side matching. */
+/** The "which system does this request belong to" flow, kept deliberately
+ * small: when the typed name already exists, the user gets exactly two
+ * choices — open a NEW root system, or open it as a sub-system under one of the
+ * matching ROOT systems. Sub-systems sharing the name are never listed.
+ * Matching always runs on the server (`matchRequestSystemName`). */
 function SystemMatcher({
   requestId, name, disabled, onDecideAsync,
 }: {
@@ -332,15 +385,15 @@ function SystemMatcher({
 }) {
   const matchFn = useServerFn(matchRequestSystemName);
   const [debouncedName, setDebouncedName] = useState(name.trim());
-  const [pickedMatchId, setPickedMatchId] = useState<string>("");
-  const [pickedParentId, setPickedParentId] = useState<string>("");
-  const [confirmRoot, setConfirmRoot] = useState(false);
   const [conflictMatches, setConflictMatches] = useState<Array<{ id: string; name: string; system_code?: string | null }> | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedName(name.trim()), 400);
     return () => clearTimeout(t);
   }, [name]);
+
+  // A new name invalidates any earlier conflict warning.
+  useEffect(() => { setConflictMatches(null); }, [debouncedName]);
 
   const enabled = !disabled && debouncedName.length >= 2;
   const match = useQuery({
@@ -349,126 +402,68 @@ function SystemMatcher({
     enabled,
   });
 
-  const exactMatches = ((match.data as any)?.exactMatches ?? []) as MatchOption[];
+  // Only root systems — the parent a sub-system could hang off.
   const parentOptions = ((match.data as any)?.parentOptions ?? []) as MatchOption[];
-  const isVirtualCategory = Boolean((match.data as any)?.isVirtualCategory);
-  const virtualOption = (match.data as any)?.virtualOption as MatchOption | null | undefined;
+  const nameExists = parentOptions.length > 0 || Boolean((match.data as any)?.exactMatches?.length);
 
-  // Any change in the matches invalidates a previous pick — never submit a
-  // stale selection.
-  useEffect(() => {
-    if (!exactMatches.some((m) => m.id === pickedMatchId)) setPickedMatchId("");
-  }, [exactMatches]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!parentOptions.some((m) => m.id === pickedParentId)) setPickedParentId("");
-  }, [parentOptions]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const rootConfirmedMatches = () =>
-    (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
-
-  const runLinkExisting = async () => {
-    if (!pickedMatchId) return;
+  const runCreateSub = async (parentId: string) => {
     await onDecideAsync({
       id: requestId, action: "create_system", name: name.trim() || null,
-      systemAction: "link_existing", targetSystemId: pickedMatchId,
-    });
-  };
-
-  const runCreateSub = async () => {
-    if (!pickedParentId) return;
-    await onDecideAsync({
-      id: requestId, action: "create_system", name: name.trim() || null,
-      systemAction: "create_sub", parentSystemId: pickedParentId,
+      systemAction: "create_sub", parentSystemId: parentId,
     });
   };
 
   const runCreateRoot = async () => {
-    if (!confirmRoot || !name.trim()) return;
-    const confirmedMatches = rootConfirmedMatches();
+    if (!name.trim()) return;
+    const confirmedMatches = (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
     const res: any = await onDecideAsync({
       id: requestId, action: "create_system", name: name.trim() || null,
       systemAction: "create_root", confirmedMatches,
     });
-    if (res?.conflict) {
-      setConflictMatches(res.matches ?? []);
-      // A fresh, explicit re-confirmation is required before retrying.
-      setConfirmRoot(false);
-    } else {
-      setConflictMatches(null);
-    }
+    setConflictMatches(res?.conflict ? (res.matches ?? []) : null);
   };
 
   return (
-    <div className="rounded-md bg-muted/30 p-3 space-y-2">
-      <p className="text-xs font-medium text-foreground">שיוך הבקשה למערכת לפי השם שהוקלד</p>
-
-      {match.isFetching && <p className="text-[11px] text-muted-foreground">מחפש מערכות תואמות…</p>}
-
-      {exactMatches.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">נמצאו מערכות בשם זהה — ניתן לקשר לאחת מהן:</p>
-          <div className="flex flex-wrap gap-2">
-            {exactMatches.map((m) => (
-              <label key={m.id} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs">
-                <input type="radio" name={`link-${requestId}`} checked={pickedMatchId === m.id}
-                  onChange={() => setPickedMatchId(m.id)} disabled={disabled} />
-                {m.name} {m.system_code ? `· ${m.system_code}` : ""}
-              </label>
-            ))}
-          </div>
-          <Button size="sm" variant="outline" disabled={disabled || !pickedMatchId} onClick={runLinkExisting}>
-            <Link2 className="size-4" />
-            קישור למערכת קיימת
-          </Button>
-        </div>
+    <div className="rounded-md bg-muted/30 p-2.5 space-y-2">
+      {match.isFetching ? (
+        <p className="text-[11px] text-muted-foreground">בודק אם השם קיים…</p>
+      ) : nameExists ? (
+        <p className="text-[11px] text-amber-700">השם הזה כבר קיים — בחר כיצד לפתוח:</p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">השם לא קיים במערכת — ייפתח כמערכת ראשית.</p>
       )}
 
-      {(parentOptions.length > 0 || isVirtualCategory) && (
-        <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">ניתן לפתוח כתת-מערכת תחת אחת מהמערכות הראשיות הבאות:</p>
-          <div className="flex flex-wrap gap-2">
-            {parentOptions.map((m) => (
-              <label key={m.id} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs">
-                <input type="radio" name={`parent-${requestId}`} checked={pickedParentId === m.id}
-                  onChange={() => setPickedParentId(m.id)} disabled={disabled} />
-                {m.name} {m.system_code ? `· ${m.system_code}` : ""}
-              </label>
-            ))}
-          </div>
-          <Button size="sm" variant="outline" disabled={disabled || !pickedParentId} onClick={runCreateSub}>
+      <div className="flex flex-wrap gap-2">
+        {parentOptions.map((m) => (
+          <Button key={m.id} size="sm" variant="outline" disabled={disabled} onClick={() => runCreateSub(m.id)}>
             <Plus className="size-4" />
-            פתיחה כתת-מערכת
+            תת-מערכת תחת {m.name}{m.system_code ? ` · ${m.system_code}` : ""}
           </Button>
-        </div>
-      )}
-
-      <div className="space-y-1 border-t border-border pt-2">
-        {(conflictMatches ?? (exactMatches.length ? exactMatches : parentOptions)).length > 0 && (
-          <p className="text-[11px] text-amber-700">
-            {conflictMatches
-              ? `נמצאה התנגשות מול מערכות בשם דומה: ${conflictMatches.map((m) => `${m.name}${m.system_code ? ` (${m.system_code})` : ""}`).join(", ")}. יש לאשר מחדש שמדובר במערכת שונה.`
-              : `שים לב: קיימות מערכות בשם דומה. פתיחת מערכת ראשית חדשה תיצור מערכת נפרדת.`}
-          </p>
-        )}
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={confirmRoot} onChange={(e) => setConfirmRoot(e.target.checked)} disabled={disabled} />
-          מאשר/ת שמדובר במערכת חדשה ושונה מהמערכות שהוצגו לעיל
-        </label>
-        <Button size="sm" variant="outline" disabled={disabled || !confirmRoot || !name.trim()} onClick={runCreateRoot}>
+        ))}
+        <Button size="sm" variant={nameExists ? "outline" : "default"} disabled={disabled || !name.trim()} onClick={runCreateRoot}>
           <Plus className="size-4" />
-          {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחת מערכת ראשית חדשה"}
+          {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחה כמערכת ראשית"}
         </Button>
       </div>
+
+      {conflictMatches && conflictMatches.length > 0 && (
+        <p className="text-[11px] text-amber-700">
+          בזמן הפעולה נמצאה מערכת נוספת בשם זה: {conflictMatches.map((m) => `${m.name}${m.system_code ? ` (${m.system_code})` : ""}`).join(", ")}. לחיצה נוספת תאשר פתיחת מערכת נפרדת.
+        </p>
+      )}
     </div>
   );
 }
 
+
 function RequestCard({
-  row: r, statuses, canDecide, busy, audio, audioPending, highlighted, cardRef, onPlay, onDecide, onDecideAsync, onFixCode, onRename,
+  row: r, statuses, canDecide, canDelete, busy, audio, audioPending, highlighted, cardRef,
+  onPlay, onDecide, onDecideAsync, onFixCode, onRename, onDelete, onRestore,
 }: {
   row: any;
   statuses: Array<{ status_key: string; label: string }>;
   canDecide: boolean;
+  canDelete: boolean;
   busy: boolean;
   audio: { id: string; url: string } | null;
   audioPending: boolean;
@@ -479,51 +474,89 @@ function RequestCard({
   onDecideAsync: (vars: DecideVars) => Promise<any>;
   onFixCode: (systemCode: string) => void;
   onRename: (name: string) => void;
+  onDelete: (reason: string | null) => void;
+  onRestore: () => void;
 }) {
   // A dry-run simulation was never applied, so it can still be acted on.
   const pending = r.decision_status === "needs_decision" || r.decision_status === "simulated";
   const hasSystem = Boolean(r.system_id);
   const hasCode = Boolean(r.system_code_norm);
+  const isDeleted = Boolean(r.deleted_at);
   const label = (key?: string | null) =>
     (key && statuses.find((s) => s.status_key === key)?.label) || key || "—";
 
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
+  // Collapsed by default so the queue stays scannable; the request reached
+  // from a system card opens itself.
+  const [open, setOpen] = useState(highlighted);
+  useEffect(() => { if (highlighted) setOpen(true); }, [highlighted]);
 
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
+
+  const remove = () => {
+    const reason = window.prompt("סיבת המחיקה (לא חובה):", "");
+    if (reason === null) return; // cancelled
+    if (!window.confirm("למחוק את הבקשה? אפשר לשחזר אותה מתצוגת 'נמחקו'.")) return;
+    onDelete(reason.trim() || null);
+  };
 
   return (
     <li
       ref={cardRef}
-      className={`rounded-xl border bg-card p-4 shadow-sm transition-colors ${
+      className={`rounded-xl border bg-card shadow-sm transition-colors ${
         highlighted ? "border-primary ring-2 ring-primary/40" : "border-border"
-      }`}
+      } ${isDeleted ? "opacity-70" : ""}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className={`rounded-md px-2 py-0.5 text-xs ${
+      {/* Compact single-line header — everything else opens on demand. */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-right text-sm"
+        >
+          {open ? <ChevronUp className="size-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="size-4 shrink-0 text-muted-foreground" />}
+          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
             r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700"
               : r.request_type === "sgira" ? "bg-rose-500/15 text-rose-700"
               : "bg-amber-500/15 text-amber-700"}`}>
-            {r.request_type === "pticha" ? "בקשת פתיחה"
-              : r.request_type === "sgira" ? "בקשת סגירה"
-              : "סוג בקשה לא זוהה"}
+            {r.request_type === "pticha" ? "פתיחה" : r.request_type === "sgira" ? "סגירה" : "לא זוהה"}
           </span>
-          {r.system ? (
-            <Link to="/systems/$id" params={{ id: r.system_id }} className="underline">
-              {r.system.system_code} · {r.system.name}
-            </Link>
-          ) : hasCode ? (
-            <span className="text-amber-700">מערכת {r.system_code_raw ?? r.system_code_norm} — המערכת אינה קיימת</span>
-          ) : (
-            <span className="text-muted-foreground">לא זוהה מספר מערכת</span>
+          <span className="truncate font-medium">
+            {r.system
+              ? `${r.system.system_code} · ${r.system.name}`
+              : hasCode
+                ? `מערכת ${r.system_code_raw ?? r.system_code_norm} — אינה קיימת`
+                : "לא זוהה מספר מערכת"}
+          </span>
+          {r.proposed_status && (
+            <span className="shrink-0 text-[11px] text-muted-foreground">← {label(r.proposed_status)}</span>
           )}
-        </div>
-        <span className="text-xs text-muted-foreground">{fmt(r.received_at)}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {DECISION_LABELS[r.decision_status] ?? r.decision_status ?? "בעיבוד"}
+          </span>
+          {mode && mode !== "live" && <span className="shrink-0 text-[11px] font-medium text-amber-700">בדיקה בלבד</span>}
+          {isDeleted && <span className="shrink-0 text-[11px] font-medium text-destructive">נמחקה</span>}
+          <span className="ms-auto shrink-0 text-[11px] text-muted-foreground">{fmt(r.received_at)}</span>
+        </button>
+        {canDelete && (
+          isDeleted ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onRestore} aria-label="שחזור הבקשה" title="שחזור">
+              <RotateCcw className="size-4" />
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={remove} aria-label="מחיקת הבקשה" title="מחיקה">
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          )
+        )}
       </div>
 
-      <div className="mt-2 grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+      {open && (
+      <div className="border-t border-border px-3 pb-3 pt-2">
+      <div className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
         <span>מספר בקשה: {r.request_number || "—"}</span>
         <span>טלפון פונה: {r.caller_phone || "—"}</span>
         <span>סטטוס נוכחי: {hasSystem ? label(r.system?.status ?? r.prev_status) : "אין מערכת"}</span>
@@ -542,6 +575,7 @@ function RequestCard({
           <ShieldQuestion className="size-3.5" /> {r.last_error}
         </p>
       )}
+
 
       {/* The transcript that came with this specific mail. Independent of the
           recording: either one may exist without the other. Renders nothing
@@ -679,6 +713,9 @@ function RequestCard({
           )}
         </div>
       )}
+      </div>
+      )}
     </li>
+
   );
 }

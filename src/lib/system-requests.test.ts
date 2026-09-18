@@ -9,6 +9,16 @@ vi.mock("@/lib/auto-assign.server", () => ({
   applyAutoStatusAssignment: vi.fn(async () => true),
 }));
 
+/** Permission gate used by the manual system-selection path. Tests flip these
+ * to prove that access/permission denials block the action. */
+const perms = { crmAccess: true, systemsWrite: true };
+vi.mock("@/lib/permissions.server", () => ({
+  hasCrmAccess: vi.fn(async () => perms.crmAccess),
+  hasPermission: vi.fn(async (_userId: string, scope: string) =>
+    scope === "systems_write" ? perms.systemsWrite : true),
+}));
+
+
 /**
  * Minimal chainable stand-in for the Supabase admin client. It records every
  * write so a test can assert that dry-run mode performs none of them.
@@ -875,9 +885,12 @@ describe("executeManualSystemAction", () => {
     system_code_raw: "0882309477", system_code_norm: "882309477", caller_phone: "0527673952",
   };
 
+  // The target/parent must exist server-side; the stub seeds them.
+  const seeded = [{ id: "sys-existing", name: "מערכת קיימת" }, { id: "parent-1", name: "מערכת אב" }];
+
   it("persists the decision on the request row before running the side effect", async () => {
-    const { client, writes } = makeClient({});
-    await executeManualSystemAction(client, baseReq, {
+    const { client, writes } = makeClient({ systems: [...seeded] });
+    await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "link_existing", targetSystemId: "sys-existing",
     });
     const requestWrites = writes.filter((w) => w.table === "system_requests" && w.op === "update");
@@ -890,8 +903,8 @@ describe("executeManualSystemAction", () => {
   });
 
   it("link_existing links the request to the given system without creating one", async () => {
-    const { client, writes } = makeClient({});
-    const res = await executeManualSystemAction(client, baseReq, {
+    const { client, writes } = makeClient({ systems: [...seeded] });
+    const res = await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "link_existing", targetSystemId: "sys-existing",
     });
     expect(res).toEqual({ ok: true, systemId: "sys-existing" });
@@ -899,8 +912,8 @@ describe("executeManualSystemAction", () => {
   });
 
   it("create_sub inserts a system with parent_system_id set", async () => {
-    const { client, writes } = makeClient({});
-    const res = await executeManualSystemAction(client, baseReq, {
+    const { client, writes } = makeClient({ systems: [...seeded] });
+    const res = await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "create_sub", parentSystemId: "parent-1", name: "תת מערכת",
     });
     expect(res).toMatchObject({ ok: true, systemId: "sys-new" });
@@ -915,7 +928,7 @@ describe("executeManualSystemAction", () => {
 
     it("state A: a match exists and there is no confirmed-matches snapshot → conflict, nothing inserted", async () => {
       const { client, writes } = makeClient({ nameMatches: rootMatch });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת קיימת",
       });
       expect(res).toMatchObject({ ok: false, conflict: true });
@@ -925,7 +938,7 @@ describe("executeManualSystemAction", () => {
 
     it("state B: the snapshot covers the current matches → the root is created", async () => {
       const { client, writes } = makeClient({ nameMatches: rootMatch });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת קיימת",
         confirmedMatches: [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }],
       });
@@ -941,7 +954,7 @@ describe("executeManualSystemAction", () => {
           { id: "sys-other", name: "מערכת קיימת", system_code: "222" },
         ],
       });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת קיימת",
         confirmedMatches: [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }],
       });
@@ -955,14 +968,78 @@ describe("executeManualSystemAction", () => {
         nameMatches: [{ id: "sys-race", name: "מערכת חדשה", system_code: "333" }],
         systemInsertError: { code: "23505", message: 'duplicate key value violates unique constraint "systems_name_uniq"' },
       });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת חדשה",
       });
       expect(res).toMatchObject({ ok: false, conflict: true });
       expect((res as any).matches).toMatchObject([{ id: "sys-race" }]);
     });
   });
+
+  // A well-formed UUID coming from the browser proves nothing: every id is
+  // verified server-side, and every creating action needs `systems_write`.
+  describe("authorization", () => {
+    it("rejects a forged targetSystemId that does not exist", async () => {
+      const { client, writes } = makeClient({ systems: [] });
+      await expect(executeManualSystemAction(client, "user-1", baseReq, {
+        systemAction: "link_existing", targetSystemId: "11111111-1111-1111-1111-111111111111",
+      })).rejects.toThrow();
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("rejects a forged parentSystemId that does not exist", async () => {
+      const { client, writes } = makeClient({ systems: [] });
+      await expect(executeManualSystemAction(client, "user-1", baseReq, {
+        systemAction: "create_sub", parentSystemId: "22222222-2222-2222-2222-222222222222", name: "תת",
+      })).rejects.toThrow();
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("a request from another CRM can never target a systems row", async () => {
+      const { client, writes } = makeClient({ systems: [{ id: "sys-existing" }] });
+      await expect(executeManualSystemAction(client, "user-1", { ...baseReq, crm_key: "other" }, {
+        systemAction: "link_existing", targetSystemId: "sys-existing",
+      })).rejects.toThrow(/CRM/);
+      expect(writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+    });
+
+    it("a caller without access to the request's CRM is rejected", async () => {
+      perms.crmAccess = false;
+      try {
+        const { client } = makeClient({ systems: [...seeded] });
+        await expect(executeManualSystemAction(client, "user-1", baseReq, {
+          systemAction: "link_existing", targetSystemId: "sys-existing",
+        })).rejects.toThrow();
+      } finally { perms.crmAccess = true; }
+    });
+
+    it("create_sub and create_root require systems_write", async () => {
+      perms.systemsWrite = false;
+      try {
+        const sub = makeClient({ systems: [...seeded] });
+        await expect(executeManualSystemAction(sub.client, "user-1", baseReq, {
+          systemAction: "create_sub", parentSystemId: "parent-1", name: "תת",
+        })).rejects.toThrow();
+        expect(sub.writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+
+        const root = makeClient({});
+        await expect(executeManualSystemAction(root.client, "user-1", baseReq, {
+          systemAction: "create_root", name: "מערכת חדשה",
+        })).rejects.toThrow();
+        expect(root.writes.some((w) => w.table === "systems" && w.op === "insert")).toBe(false);
+      } finally { perms.systemsWrite = true; }
+    });
+
+    it("a valid action with the right permissions works", async () => {
+      const { client } = makeClient({ systems: [...seeded] });
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
+        systemAction: "create_sub", parentSystemId: "parent-1", name: "תת מערכת",
+      });
+      expect(res).toMatchObject({ ok: true });
+    });
+  });
 });
+
 
 describe("checkManualRootCreation", () => {
   it("creates when no system currently matches the name", async () => {
@@ -1014,5 +1091,98 @@ describe("system_requests reads exclude soft-deleted rows", () => {
   it("listSystemRequests already filters out deleted rows unless includeDeleted is requested", () => {
     const body = handlerBody("listSystemRequests");
     expect(body).toContain('.is("deleted_at", null)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getSystemRequestById + deleted-row visibility across list/summary/rules
+// (system-requests.functions.ts) — static source checks, same convention used
+// by the "system_requests reads exclude soft-deleted rows" block above.
+// ---------------------------------------------------------------------------
+describe("system-requests.functions.ts — deep-link lookup and deleted-row rules", () => {
+  const source = require("node:fs").readFileSync("src/lib/system-requests.functions.ts", "utf8");
+
+  function handlerBody(name: string): string {
+    const start = source.indexOf(`export const ${name} = createServerFn`);
+    expect(start, `${name} not found`).toBeGreaterThanOrEqual(0);
+    const nextExport = source.indexOf("\nexport const ", start + 1);
+    return source.slice(start, nextExport < 0 ? source.length : nextExport);
+  }
+
+  it("getSystemRequestById exists and is guarded by the requests_view permission, like the list", () => {
+    const body = handlerBody("getSystemRequestById");
+    expect(body).toContain('"requests_view"');
+    expect(body).toContain("loadAuthorizedRequest");
+  });
+
+  it("getSystemRequestById selects report_description and deleted_at, and returns the system relation", () => {
+    const body = handlerBody("getSystemRequestById");
+    expect(body).toContain("report_description");
+    expect(body).toContain("deleted_at");
+    expect(body).toContain("system:");
+  });
+
+  it("getSystemRequestById only allows a soft-deleted row through when includeDeleted is passed", () => {
+    const body = handlerBody("getSystemRequestById");
+    expect(body).toMatch(/allowDeleted:\s*!!data\.includeDeleted/);
+  });
+
+  it("deleteSystemRequest is guarded by requests_delete and the rate limiter, and only ever soft-deletes", () => {
+    const body = handlerBody("deleteSystemRequest");
+    expect(body).toContain('"requests_delete"');
+    expect(body).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
+    expect(body).toContain("softDeleteSystemRequest");
+    expect(body).not.toContain(".delete(");
+  });
+
+  it("restoreSystemRequest is guarded by requests_delete, the rate limiter, and allows loading a deleted row", () => {
+    const body = handlerBody("restoreSystemRequest");
+    expect(body).toContain('"requests_delete"');
+    expect(body).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
+    expect(body).toContain("allowDeleted: true");
+    expect(body).toContain("restoreSystemRequestRow");
+  });
+
+  it("listRequestsForSystem returns the fields needed to render a Hebrew status label", () => {
+    const body = handlerBody("listRequestsForSystem");
+    expect(body).toContain("decision_status");
+    expect(body).toContain("new_status");
+    expect(body).toContain("proposed_status");
+    expect(body).toContain("report_description");
+    expect(body).toContain('.is("deleted_at", null)');
+  });
+
+  it("listSystemRequests shows deleted rows only under includeDeleted, and hides them otherwise", () => {
+    const body = handlerBody("listSystemRequests");
+    expect(body).toMatch(/showDeleted\s*=\s*deleteKeys\.length > 0/);
+    expect(body).toContain('q.not("deleted_at", "is", null)');
+    expect(body).toContain('q.is("deleted_at", null)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Rescanning a soft-deleted request's gmail_message_id must not create a
+// duplicate — the dedup lookup sees soft-deleted rows too.
+// ---------------------------------------------------------------------------
+describe("dedup lookup by gmail_message_id sees soft-deleted rows (no duplicate on rescan)", () => {
+  it("ingestSystemRequest finds the soft-deleted original by gmail_message_id and reports no new row, instead of inserting a duplicate", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      existingRequest: {
+        id: "req-was-deleted",
+        processing_state: "done",
+        decision_status: "needs_decision",
+        deleted_at: new Date().toISOString(),
+      },
+    });
+    const res: any = await ingestSystemRequest(
+      client,
+      { gmailMessageId: "rescanned-1", body: BODY, sourceRequestType: "pticha" },
+    );
+    // The existing (soft-deleted) row was found by its business key: the
+    // handler reports it as skipped, never creating a second visible request
+    // for the same message.
+    expect(res).toMatchObject({ ok: true, completed: true, skipped: true, reason: "deleted", requestId: "req-was-deleted" });
+    void writes;
   });
 });

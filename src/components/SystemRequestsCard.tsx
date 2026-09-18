@@ -5,6 +5,8 @@ import { useServerFn } from "@tanstack/react-start";
 import { ChevronDown, ChevronUp, Inbox } from "lucide-react";
 import { listRequestsForSystem } from "@/lib/system-requests.functions";
 import { decisionStatusLabel, requestTypeLabel } from "@/lib/request-labels";
+import { useStatusSettings } from "@/lib/use-status-settings";
+
 
 const OPEN_DECISIONS = new Set(["needs_decision", "simulated"]);
 
@@ -53,8 +55,18 @@ function ReportDescription({ text }: { text: string }) {
  */
 export function SystemRequestsCard({ systemId, canView }: { systemId: string; canView: boolean }) {
   const fetchFn = useServerFn(listRequestsForSystem);
+  const { maps } = useStatusSettings();
   const [expanded, setExpanded] = useState(false);
   useEffect(() => setExpanded(readExpanded()), []);
+
+  /** The status the request set/proposes, shown with the same Hebrew label the
+   * rest of the dashboard uses — never the raw English key from the DB. */
+  const statusLabel = (key: unknown): string | null => {
+    const k = String(key ?? "").trim();
+    if (!k) return null;
+    return maps.label[k] ?? k;
+  };
+
 
   const { data = [] } = useQuery({
     queryKey: ["system-requests", "for-system", systemId],
@@ -120,7 +132,10 @@ export function SystemRequestsCard({ systemId, canView }: { systemId: string; ca
                 </span>
                 <span className="text-muted-foreground">{fmt(r.received_at)}</span>
                 <span>{decisionStatusLabel(r.decision_status)}</span>
-                {r.new_status && <span className="text-muted-foreground">← {r.new_status}</span>}
+                {statusLabel(r.new_status ?? r.proposed_status) && (
+                  <span className="text-muted-foreground">← {statusLabel(r.new_status ?? r.proposed_status)}</span>
+                )}
+
                 {r.dry_run && <span className="font-medium text-amber-700">בדיקה בלבד</span>}
                 {r.report_description && <ReportDescription text={r.report_description} />}
               </Link>

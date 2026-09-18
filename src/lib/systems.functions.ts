@@ -14,6 +14,8 @@ import { sanitizeText, sanitizeOptional } from "@/lib/sanitize";
 import { readStatusSettings } from "@/lib/status-settings";
 import { normalizeAdditionalCallerPhones } from "@/lib/caller-phones";
 import { systemCodeMatchKey } from "@/lib/system-code";
+import { searchCandidateSystems } from "@/lib/system-search";
+
 
 // If a system_code doesn't already start with "0" or "972", and has
 // fewer than 10 digits, prepend "0" automatically (e.g. "512345678" ->
@@ -1403,34 +1405,11 @@ export const findSystemByName = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
   .inputValidator((d: { name: string }) => z.object({ name: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data, context }) => {
-    // Two passes so a name shared by many sub-systems never buries the true
-    // root parent below the row limit: first fetch any exact-name matches
-    // (roots and subs), then top up with fuzzy ilike matches.
-    const trimmed = data.name.trim();
-    const [exactRes, fuzzyRes] = await Promise.all([
-      context.supabase
-        .from("systems")
-        .select("id, system_code, name, parent_system_id, parent:systems!parent_system_id(id, system_code, name, parent_system_id)")
-        .ilike("name", trimmed)
-        .limit(50),
-      context.supabase
-        .from("systems")
-        .select("id, system_code, name, parent_system_id, parent:systems!parent_system_id(id, system_code, name, parent_system_id)")
-        .ilike("name", `%${trimmed}%`)
-        .order("name", { ascending: true })
-        .limit(20),
-    ]);
-    if (exactRes.error) throw new Error(exactRes.error.message);
-    if (fuzzyRes.error) throw new Error(fuzzyRes.error.message);
-    const seen = new Set<string>();
-    const merged: any[] = [];
-    for (const r of [...(exactRes.data ?? []), ...(fuzzyRes.data ?? [])]) {
-      if (seen.has(r.id)) continue;
-      seen.add(r.id);
-      merged.push(r);
-    }
-    return merged;
+    // Shared candidate search — the requests screen uses the exact same layer
+    // so both screens can never disagree about the same name.
+    return searchCandidateSystems(context.supabase, data.name);
   });
+
 
 export const findSystemByCode = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])

@@ -78,6 +78,45 @@ export const listSystemRequests = createServerFn({ method: "GET" })
   });
 
 /**
+ * Fetches one request by id, for deep-linking to a request that may not be on
+ * the current page/filter (e.g. from a notification or a search result).
+ * Guarded by the same `requests_view` permission as the list, and returns the
+ * same shape as a list row (including the system relation). Soft-deleted rows
+ * are included only when `includeDeleted` is passed — same rule as the list.
+ */
+export const getSystemRequestById = createServerFn({ method: "GET" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { id: string; includeDeleted?: boolean }) =>
+    z.object({ id: z.string().uuid(), includeDeleted: z.boolean().optional() }).parse(d))
+  .handler(async ({ data, context }) => {
+    const { loadAuthorizedRequest } = await import("@/lib/requests-access.server");
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const columns = [
+      "id", "crm_key", "gmail_message_id", "gmail_thread_id", "request_type", "request_number",
+      "system_code_raw", "system_code_norm", "caller_phone", "system_id", "processing_state",
+      "decision_status", "dry_run", "prev_status", "proposed_status", "proposed_action",
+      "new_status", "status_applied_at", "phone_added_at", "attempts", "last_error",
+      "attachment_name", "attachment_index", "subject", "report_description",
+      "decided_by", "decided_at", "received_at", "created_at", "updated_at",
+      "automation_mode", "duplicate_of", "manual_action", "manual_target_status",
+      "manual_target_name", "manual_last_error", "manual_system_action",
+      "manual_target_system_id", "manual_target_parent_system_id",
+      "deleted_at", "deleted_by", "delete_reason",
+    ].join(", ");
+    const { req } = await loadAuthorizedRequest(
+      supabaseAdmin, context.supabase, context.userId, data.id, "requests_view", columns,
+      { allowDeleted: !!data.includeDeleted },
+    );
+    let system: any = null;
+    if (req.system_id) {
+      const { data: sys } = await context.supabase
+        .from("systems").select("id, system_code, name, status, name_pending").eq("id", req.system_id).maybeSingle();
+      system = sys ?? null;
+    }
+    return { ...req, system };
+  });
+
+/**
  * A manual decision by an authorized user. This is deliberately NOT blocked by
  * `dry_run`: dry-run only stops the *automatic* pipeline. An explicit click
  * here is a human action and is carried out for real, with the same permission
@@ -212,7 +251,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         // before it does anything, so a crash mid-way is always resumable.
         const { executeManualSystemAction } = await import("@/lib/system-requests.server");
         const confirmedMatches = (data.confirmedMatches ?? []).map((id) => ({ id, name: "", system_code: null }));
-        const result = await executeManualSystemAction(supabaseAdmin, req, {
+        const result = await executeManualSystemAction(supabaseAdmin, context.userId, req, {
           systemAction: data.systemAction,
           targetSystemId: data.targetSystemId ?? null,
           parentSystemId: data.parentSystemId ?? null,

@@ -108,6 +108,7 @@ function RequestsPage() {
   const canView = isSuper || perms.requests_view === true;
   const canDecide = isSuper || (perms.requests_view === true && perms.requests_decide === true);
   const canManage = isSuper || (perms.requests_view === true && perms.requests_manage === true);
+  const canDelete = isSuper || (perms.requests_view === true && perms.requests_delete === true);
 
   // Recordings are streamed from Gmail on demand and never stored in the CRM.
   const audioMutation = useMutation({
@@ -124,12 +125,28 @@ function RequestsPage() {
   });
 
   const list = useQuery({
-    queryKey: ["system-requests", onlyPending],
+    queryKey: ["system-requests", view],
     // "open" = never decided AND decided-in-test-mode; both still need a human.
-    queryFn: () => fetchList({ data: { decision: onlyPending ? "open" : null, limit: 100 } }),
+    queryFn: () => fetchList({
+      data: view === "deleted"
+        ? { decision: null, limit: 100, includeDeleted: true }
+        : { decision: onlyPending ? "open" : null, limit: 100 },
+    }),
     refetchInterval: 60_000,
     enabled: canView,
   });
+
+  // Deep-link: a request reached from a system card may be decided, or simply
+  // outside the current filter/page — so it is fetched on its own and shown at
+  // the top, instead of silently landing on an unrelated list.
+  const fetchOne = useServerFn(getSystemRequestById);
+  const focused = useQuery({
+    queryKey: ["system-requests", "one", focusReqId],
+    queryFn: () => fetchOne({ data: { id: focusReqId as string, includeDeleted: true } }),
+    enabled: canView && Boolean(focusReqId),
+    staleTime: 30_000,
+  });
+
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["system-requests"] });

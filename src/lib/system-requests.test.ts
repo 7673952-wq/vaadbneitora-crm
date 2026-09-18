@@ -9,6 +9,16 @@ vi.mock("@/lib/auto-assign.server", () => ({
   applyAutoStatusAssignment: vi.fn(async () => true),
 }));
 
+/** Permission gate used by the manual system-selection path. Tests flip these
+ * to prove that access/permission denials block the action. */
+const perms = { crmAccess: true, systemsWrite: true };
+vi.mock("@/lib/permissions.server", () => ({
+  hasCrmAccess: vi.fn(async () => perms.crmAccess),
+  hasPermission: vi.fn(async (_userId: string, scope: string) =>
+    scope === "systems_write" ? perms.systemsWrite : true),
+}));
+
+
 /**
  * Minimal chainable stand-in for the Supabase admin client. It records every
  * write so a test can assert that dry-run mode performs none of them.

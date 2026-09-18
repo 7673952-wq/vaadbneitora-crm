@@ -759,6 +759,7 @@ export type ManualSystemActionResult =
  */
 export async function executeManualSystemAction(
   supabaseAdmin: any,
+  userId: string,
   req: {
     id: string;
     crm_key: string;
@@ -774,14 +775,88 @@ export async function executeManualSystemAction(
     name?: string | null;
   },
 ): Promise<ManualSystemActionResult> {
-  // ---- persist the decision BEFORE any side effect ------------------------
-  const { error: persistError } = await supabaseAdmin.from("system_requests").update({
-    manual_system_action: params.systemAction,
-    manual_target_system_id: params.targetSystemId ?? null,
-    manual_target_parent_system_id: params.parentSystemId ?? null,
-    manual_root_confirmed_matches: params.confirmedMatches ?? null,
-  }).eq("id", req.id);
-  if (persistError) throw new Error(`שמירת פעולת המערכת נכשלה: ${persistError.message}`);
+  const crmKey = String(req.crm_key ?? "yemot");
+  const { hasCrmAccess, hasPermission } = await import("@/lib/permissions.server");
+
+  // A caller with no access at all to the request's CRM may never act on any
+  // system-selection path for it, regardless of which action is requested.
+  if (!(await hasCrmAccess(userId, crmKey))) {
+    throw new Error("אין לך גישה ל-CRM זה");
+  }
+
+  // A system row is verified to exist AND belong to the request's CRM before
+  // its id is used for anything — never trust a well-formed UUID coming from
+  // the browser. This runs BEFORE any write that could use the id.
+  const verifySystemInCrm = async (systemId: string, label: string) => {
+    const { data, error } = await supabaseAdmin
+      .from("systems").select("id, crm_key").eq("id", systemId).maybeSingle();
+    if (error) throw new Error(`בדיקת ${label} נכשלה: ${error.message}`);
+    const found = data as { id?: string; crm_key?: string | null } | null;
+    if (!found?.id || String(found.crm_key ?? "yemot") !== crmKey) {
+      throw new Error(`${label} אינה קיימת או אינה שייכת ל-CRM של הבקשה`);
+    }
+  };
+
+  // ---- durable intent: once persisted, it is the ONLY source of truth -----
+  // A retry (or a second call racing the first) must resume the SAME action
+  // against the SAME target/parent/snapshot that were persisted — newly
+  // supplied data.* values for these fields are ignored, and an attempt to
+  // switch the action mid-flight is refused, never silently overwritten.
+  const { data: currentRow, error: readError } = await supabaseAdmin
+    .from("system_requests")
+    .select("manual_system_action, manual_target_system_id, manual_target_parent_system_id, manual_root_confirmed_matches")
+    .eq("id", req.id).maybeSingle();
+  if (readError) throw new Error(`קריאת מצב הבקשה נכשלה: ${readError.message}`);
+  const persistedAction = String((currentRow as any)?.manual_system_action ?? "").trim();
+
+  let systemAction: ManualSystemAction;
+  let targetSystemId: string | null;
+  let parentSystemId: string | null;
+  let confirmedMatches: ConfirmedMatch[] | null;
+
+  if (persistedAction) {
+    if (persistedAction !== params.systemAction) {
+      throw new Error("פעולת שיוך מערכת אחרת כבר החלה עבור בקשה זו — יש להשלים אותה תחילה");
+    }
+    systemAction = persistedAction as ManualSystemAction;
+    targetSystemId = (currentRow as any)?.manual_target_system_id ?? null;
+    parentSystemId = (currentRow as any)?.manual_target_parent_system_id ?? null;
+    confirmedMatches = (currentRow as any)?.manual_root_confirmed_matches ?? null;
+  } else {
+    systemAction = params.systemAction;
+    targetSystemId = params.targetSystemId ?? null;
+    parentSystemId = params.parentSystemId ?? null;
+    confirmedMatches = params.confirmedMatches ?? null;
+
+    // create_sub / create_root require systems_write; checked before the
+    // intent is persisted so a refused attempt never locks in an action the
+    // caller was never allowed to start.
+    if (systemAction === "create_sub" || systemAction === "create_root") {
+      if (!(await hasPermission(userId, "systems_write", crmKey))) {
+        throw new Error("אין הרשאת עריכה למערכות — לא ניתן ליצור מערכת/תת-מערכת");
+      }
+    }
+    if (systemAction === "link_existing") {
+      if (!targetSystemId) throw new Error("יש לבחור מערכת קיימת");
+      await verifySystemInCrm(targetSystemId, "המערכת שנבחרה");
+    }
+    if (systemAction === "create_sub") {
+      if (!parentSystemId) throw new Error("יש לבחור מערכת אב");
+      await verifySystemInCrm(parentSystemId, "מערכת האב");
+    }
+
+    // ---- persist the decision BEFORE any side effect ----------------------
+    // CAS: only the first call may write the intent; a racing/late duplicate
+    // call falls back to the persisted values above on its next read.
+    const { data: persistRows, error: persistError } = await supabaseAdmin.from("system_requests").update({
+      manual_system_action: systemAction,
+      manual_target_system_id: targetSystemId,
+      manual_target_parent_system_id: parentSystemId,
+      manual_root_confirmed_matches: confirmedMatches,
+    }).eq("id", req.id).is("manual_system_action", null).select("id");
+    if (persistError) throw new Error(`שמירת פעולת המערכת נכשלה: ${persistError.message}`);
+    if (!persistRows?.length) throw new Error("שמירת פעולת המערכת נכשלה — רענן ונסה שוב");
+  }
 
   const linkRequest = async (systemId: string) => {
     const { data: rows, error } = await supabaseAdmin
@@ -790,20 +865,24 @@ export async function executeManualSystemAction(
     if (!rows?.length) throw new Error("קישור הבקשה למערכת נכשל — רענן ונסה שוב");
   };
 
-  if (params.systemAction === "link_existing") {
-    if (!params.targetSystemId) throw new Error("יש לבחור מערכת קיימת");
-    await linkRequest(params.targetSystemId);
-    return { ok: true, systemId: params.targetSystemId };
+  if (systemAction === "link_existing") {
+    if (!targetSystemId) throw new Error("יש לבחור מערכת קיימת");
+    // Re-verify on resume too: a target persisted earlier must still exist
+    // and still belong to this CRM before it is used again.
+    await verifySystemInCrm(targetSystemId, "המערכת שנבחרה");
+    await linkRequest(targetSystemId);
+    return { ok: true, systemId: targetSystemId };
   }
 
-  if (params.systemAction === "create_sub") {
-    if (!params.parentSystemId) throw new Error("יש לבחור מערכת אב");
+  if (systemAction === "create_sub") {
+    if (!parentSystemId) throw new Error("יש לבחור מערכת אב");
+    await verifySystemInCrm(parentSystemId, "מערכת האב");
     const name = String(params.name ?? "").trim();
     const { data: created, error } = await supabaseAdmin.from("systems").insert({
       system_code: req.system_code_raw ?? req.system_code_norm ?? null,
       name: name || `מערכת ${req.system_code_norm ?? ""}`.trim(),
       name_pending: !name,
-      parent_system_id: params.parentSystemId,
+      parent_system_id: parentSystemId,
       caller_phone: req.caller_phone ?? null,
       source: "בקשה מהמייל",
     }).select("id").maybeSingle();
@@ -817,7 +896,7 @@ export async function executeManualSystemAction(
   // create_root
   const name = String(params.name ?? "").trim();
   if (!name) throw new Error("יש לבחור שם למערכת החדשה");
-  const decision = await checkManualRootCreation(supabaseAdmin, req.crm_key, name, params.confirmedMatches ?? null);
+  const decision = await checkManualRootCreation(supabaseAdmin, req.crm_key, name, confirmedMatches ?? null);
   if (decision.outcome === "conflict") {
     return { ok: false, conflict: true, matches: decision.matches };
   }

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
 import { processMentionQueue, validateHttpsBaseUrl, buildAppLink, resolveAppBaseUrl } from "@/lib/mentions.server";
-import { buildMentionRpcArgs, buildUpdateMentionRpcArgs, resolveRealCrmKeyForRecord } from "@/lib/mentions.functions";
+import {
+  buildMentionRpcArgs, buildUpdateMentionRpcArgs, resolveRealCrmKeyForRecord,
+  assertMentionRetryAllowed, performMentionRetry, MENTION_RETRY_CONFIRM_MESSAGE,
+} from "@/lib/mentions.functions";
 
 type Row = Record<string, any>;
 
@@ -358,5 +361,118 @@ describe("addNoteWithMentions authorization (crm_record_note)", () => {
       })(),
     ).rejects.toThrow("קוד CRM לא תואם לרשומה");
     expect(assertPermission).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("assertMentionRetryAllowed / performMentionRetry", () => {
+  it("allows a plain retry when the delivery is 'failed'", () => {
+    expect(() => assertMentionRetryAllowed("failed", undefined)).not.toThrow();
+  });
+
+  it("refuses an 'unknown' delivery without explicit confirmation, with a clear Hebrew warning", () => {
+    expect(() => assertMentionRetryAllowed("unknown", undefined)).toThrow(MENTION_RETRY_CONFIRM_MESSAGE);
+    expect(() => assertMentionRetryAllowed("skipped_no_email", false)).toThrow(MENTION_RETRY_CONFIRM_MESSAGE);
+  });
+
+  it("allows an 'unknown' delivery once the caller explicitly confirms", () => {
+    expect(() => assertMentionRetryAllowed("unknown", true)).not.toThrow();
+    expect(() => assertMentionRetryAllowed("skipped_no_email", true)).not.toThrow();
+  });
+
+  function makeRetryAdmin(status: string | null) {
+    const rpcCalls: any[] = [];
+    const admin = {
+      from: (table: string) => {
+        expect(table).toBe("mention_email_deliveries");
+        return {
+          select: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: status ? { status } : null, error: null }) }),
+          }),
+        };
+      },
+      rpc: vi.fn(async (name: string, args?: any) => {
+        rpcCalls.push({ name, args });
+        if (name === "requeue_mention_delivery") return { data: true, error: null };
+        if (name === "ensure_mention_queue_job") return { data: true, error: null };
+        return { data: null, error: null };
+      }),
+    };
+    return { admin, rpcCalls };
+  }
+
+  it("requeues a 'failed' delivery with a plain retry and records who requested it", async () => {
+    vi.resetModules();
+    const assertPermission = vi.fn(async () => {});
+    vi.doMock("@/lib/permissions.server", () => ({ assertPermission }));
+    const limitSensitiveAction = vi.fn(async () => {});
+    vi.doMock("@/lib/db-rate-limit.server", () => ({ limitSensitiveAction }));
+
+    const { performMentionRetry: fn } = await import("@/lib/mentions.functions");
+    const { admin, rpcCalls } = makeRetryAdmin("failed");
+
+    const result = await fn(admin, { deliveryId: "d1", userId: "u1" });
+
+    expect(result).toEqual({ ok: true });
+    expect(assertPermission).toHaveBeenCalledWith("u1", "settings_manage", "yemot");
+    expect(limitSensitiveAction).toHaveBeenCalledWith("mention_requeue", "u1");
+    // The RPC itself persists retry_requested_by/at using the passed _actor.
+    expect(rpcCalls[0]).toEqual({ name: "requeue_mention_delivery", args: { _delivery_id: "d1", _actor: "u1" } });
+
+    vi.doUnmock("@/lib/permissions.server");
+    vi.doUnmock("@/lib/db-rate-limit.server");
+    vi.resetModules();
+  });
+
+  it("refuses to requeue an 'unknown' delivery without confirmation", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/permissions.server", () => ({ assertPermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/db-rate-limit.server", () => ({ limitSensitiveAction: vi.fn(async () => {}) }));
+
+    const { performMentionRetry: fn } = await import("@/lib/mentions.functions");
+    const { admin, rpcCalls } = makeRetryAdmin("unknown");
+
+    await expect(fn(admin, { deliveryId: "d1", userId: "u1" })).rejects.toThrow(MENTION_RETRY_CONFIRM_MESSAGE);
+    expect(rpcCalls.find((c) => c.name === "requeue_mention_delivery")).toBeUndefined();
+
+    vi.doUnmock("@/lib/permissions.server");
+    vi.doUnmock("@/lib/db-rate-limit.server");
+    vi.resetModules();
+  });
+
+  it("requeues an 'unknown' delivery once confirmUnknown is passed", async () => {
+    vi.resetModules();
+    vi.doMock("@/lib/permissions.server", () => ({ assertPermission: vi.fn(async () => {}) }));
+    vi.doMock("@/lib/db-rate-limit.server", () => ({ limitSensitiveAction: vi.fn(async () => {}) }));
+
+    const { performMentionRetry: fn } = await import("@/lib/mentions.functions");
+    const { admin, rpcCalls } = makeRetryAdmin("unknown");
+
+    const result = await fn(admin, { deliveryId: "d1", userId: "u1", confirmUnknown: true });
+    expect(result).toEqual({ ok: true });
+    expect(rpcCalls[0]).toEqual({ name: "requeue_mention_delivery", args: { _delivery_id: "d1", _actor: "u1" } });
+
+    vi.doUnmock("@/lib/permissions.server");
+    vi.doUnmock("@/lib/db-rate-limit.server");
+    vi.resetModules();
+  });
+
+  it("rejects an unauthorized user before touching the delivery", async () => {
+    vi.resetModules();
+    const assertPermission = vi.fn(async () => { throw new Error("אין הרשאה"); });
+    vi.doMock("@/lib/permissions.server", () => ({ assertPermission }));
+    const limitSensitiveAction = vi.fn(async () => {});
+    vi.doMock("@/lib/db-rate-limit.server", () => ({ limitSensitiveAction }));
+
+    const { performMentionRetry: fn } = await import("@/lib/mentions.functions");
+    const { admin, rpcCalls } = makeRetryAdmin("failed");
+
+    await expect(fn(admin, { deliveryId: "d1", userId: "u1" })).rejects.toThrow("אין הרשאה");
+    expect(limitSensitiveAction).not.toHaveBeenCalled();
+    expect(rpcCalls.length).toBe(0);
+
+    vi.doUnmock("@/lib/permissions.server");
+    vi.doUnmock("@/lib/db-rate-limit.server");
+    vi.resetModules();
   });
 });

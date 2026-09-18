@@ -14,9 +14,10 @@ import { useStatusSettings } from "@/lib/use-status-settings";
 
 export const Route = createFileRoute("/_authenticated/requests")({
   component: RequestsPage,
-  validateSearch: (search: Record<string, unknown>) => ({
-    req: typeof search.req === "string" && search.req ? search.req : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { req?: string } => {
+    const req = typeof search.req === "string" && search.req ? search.req : undefined;
+    return req ? { req } : {};
+  },
   head: () => ({
     meta: [
       { title: "בקשות פתיחה וסגירה | תור דורש החלטה" },

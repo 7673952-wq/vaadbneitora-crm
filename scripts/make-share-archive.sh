@@ -37,14 +37,10 @@ rm -f "$ARCHIVE_PATH"
 FILE_LIST="$(mktemp)"
 trap 'rm -f "$FILE_LIST"' EXIT
 
-git ls-files | grep -v -E \
-  -e '(^|/)\.env($|\.[^/]*$)' \
-  | grep -v -E '/?\.env\.[^/]*$' \
-  > "$FILE_LIST.tmp1" || true
-# The two greps above are combined by re-running .env.example back in below;
-# simplest correct approach is a single pass with an explicit allowlist for
-# .env.example, done here instead:
-git ls-files | awk '
+# `core.quotepath=off` is required: with the default, git escapes non-ASCII
+# paths (e.g. Hebrew filenames) as C-quoted strings, and `zip -@` then cannot
+# find them and silently drops them from the archive.
+git -c core.quotepath=off ls-files | awk '
   {
     path = $0
     base = path
@@ -58,12 +54,12 @@ git ls-files | awk '
     if (lower ~ /\.pem$/) next
     if (lower ~ /\.pfx$/) next
     if (lower ~ /\.p12$/) next
+    if (lower ~ /dev\.vars/) next
     if (lower ~ /id_rsa/) next
     if (lower ~ /id_ed25519/) next
     print path
   }
 ' > "$FILE_LIST"
-rm -f "$FILE_LIST.tmp1"
 
 ENTRY_COUNT="$(wc -l < "$FILE_LIST" | tr -d ' ')"
 
@@ -74,5 +70,31 @@ fi
 
 zip -q -X "$ARCHIVE_PATH" -@ < "$FILE_LIST"
 
+# Self-verification: the archive is the artifact that gets delivered, so the
+# check runs on the archive itself, never on the intended file list.
+ZIP_LIST="$(mktemp)"
+unzip -Z1 "$ARCHIVE_PATH" > "$ZIP_LIST"
+ZIP_COUNT="$(wc -l < "$ZIP_LIST" | tr -d ' ')"
+
+if [ "$ZIP_COUNT" -ne "$ENTRY_COUNT" ]; then
+  echo "make-share-archive: expected $ENTRY_COUNT entries, archive has $ZIP_COUNT — refusing" >&2
+  rm -f "$ARCHIVE_PATH" "$ZIP_LIST"
+  exit 1
+fi
+
+# Anything matching the secret patterns inside the archive is a hard failure,
+# except .env.example which documents variable names only.
+LEAKED="$(grep -inE '(^|/)\.env($|\.)|credential|secret|\.pem$|\.pfx$|\.p12$|dev\.vars|id_rsa|id_ed25519' "$ZIP_LIST" \
+  | grep -v -E '(^|[0-9]+:)(.*/)?\.env\.example$' || true)"
+if [ -n "$LEAKED" ]; then
+  echo "make-share-archive: archive contains forbidden entries:" >&2
+  echo "$LEAKED" >&2
+  rm -f "$ARCHIVE_PATH" "$ZIP_LIST"
+  exit 1
+fi
+
 echo "Archive: $ARCHIVE_PATH"
-echo "Entries: $ENTRY_COUNT"
+echo "Entries: $ZIP_COUNT (verified inside the archive)"
+echo "Secret scan: clean (only .env.example allowed)"
+rm -f "$ZIP_LIST"
+

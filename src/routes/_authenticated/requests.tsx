@@ -292,13 +292,19 @@ function RequestsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2 text-sm">
-        <Button variant={onlyPending ? "default" : "outline"} size="sm" onClick={() => setOnlyPending(true)}>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Button variant={view === "pending" ? "default" : "outline"} size="sm" onClick={() => setView("pending")}>
           דורש החלטה{pendingCount ? ` (${pendingCount})` : ""}
         </Button>
-        <Button variant={!onlyPending ? "default" : "outline"} size="sm" onClick={() => setOnlyPending(false)}>
+        <Button variant={view === "all" ? "default" : "outline"} size="sm" onClick={() => setView("all")}>
           כל הבקשות
         </Button>
+        {canDelete && (
+          <Button variant={view === "deleted" ? "default" : "outline"} size="sm" onClick={() => setView("deleted")}>
+            <Trash2 className="size-4" />
+            נמחקו
+          </Button>
+        )}
       </div>
 
       {list.isLoading ? (
@@ -309,14 +315,16 @@ function RequestsPage() {
           אין בקשות להצגה.
         </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-2">
           {rows.map((r) => (
             <RequestCard
               key={r.id}
               row={r}
               statuses={statusRows ?? []}
               canDecide={canDecide}
-              busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending}
+              canDelete={canDelete}
+              busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending
+                || deleteMutation.isPending || restoreMutation.isPending}
               audio={audio}
               audioPending={audioMutation.isPending}
               highlighted={focusReqId === r.id}
@@ -326,10 +334,13 @@ function RequestsPage() {
               onDecideAsync={(vars) => decideMutation.mutateAsync(vars)}
               onFixCode={(systemCode) => codeMutation.mutate({ id: r.id, systemCode })}
               onRename={(name) => renameMutation.mutate({ id: r.id, name })}
+              onDelete={(reason) => deleteMutation.mutate({ id: r.id, reason })}
+              onRestore={() => restoreMutation.mutate(r.id)}
             />
           ))}
         </ul>
       )}
+
     </div>
   );
 }

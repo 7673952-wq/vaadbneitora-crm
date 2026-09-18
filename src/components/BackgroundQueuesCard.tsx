@@ -112,7 +112,7 @@ export function BackgroundQueuesCard() {
     { key: "mention_queue", name: "תור תיוגים", info: status.mention ?? {} },
   ];
 
-  const healthOk = health ? Object.values(health).every((h) => h.reachable) : false;
+  const healthOk = health ? Object.values(health).every((h) => queueVerdict(h).ok) : false;
   const isReady = !!appBaseUrl && healthOk;
 
   return (

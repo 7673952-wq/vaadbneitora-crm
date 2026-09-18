@@ -129,7 +129,7 @@ describe("computeNameMatch — sub vs root resolution", () => {
 
   it("ignores rows with no usable id/name when computing parent options", () => {
     const badRoot: SystemLite = { id: "", name: "" };
-    const badSub: SystemLite = { id: "sub-x", name: "יעד", parent_system_id: "", parent: badRoot as any };
+    const badSub: SystemLite = { id: "sub-x", name: "יעד", parent_system_id: "ghost-root", parent: badRoot as any };
     const res = computeNameMatch("יעד", [badSub]);
     expect(res.parentOptions).toEqual([]);
   });

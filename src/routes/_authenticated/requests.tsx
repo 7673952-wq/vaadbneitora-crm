@@ -3,12 +3,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
-import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Pencil, Play, Plus, RefreshCw, ShieldQuestion, SkipForward } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Headphones, Inbox, Pencil, Play, Plus, RefreshCw, RotateCcw, ShieldQuestion, SkipForward, Trash2, Link2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
   setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem, matchRequestSystemName,
+  getSystemRequestById, deleteSystemRequest, restoreSystemRequest,
 } from "@/lib/system-requests.functions";
+
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";
 

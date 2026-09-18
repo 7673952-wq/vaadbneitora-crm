@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -7,13 +7,16 @@ import { AlertTriangle, CheckCircle2, Headphones, Inbox, Link2, Pencil, Play, Pl
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
-  setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem,
+  setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem, matchRequestSystemName,
 } from "@/lib/system-requests.functions";
 import { getMyRole } from "@/lib/admin.functions";
 import { useStatusSettings } from "@/lib/use-status-settings";
 
 export const Route = createFileRoute("/_authenticated/requests")({
   component: RequestsPage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    req: typeof search.req === "string" && search.req ? search.req : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "בקשות פתיחה וסגירה | תור דורש החלטה" },
@@ -58,6 +61,11 @@ const ROW_MODE_NOTE: Record<string, string> = {
   live: "האוטומציה הייתה פעילה בזמן קליטת הבקשה",
 };
 
+// A valid Postgres UUID — used to filter out the virtual-category placeholder
+// id before it is ever sent to the server (whose confirmedMatches schema only
+// accepts real uuids).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function fmt(iso?: string | null) {
   if (!iso) return "—";
   return new Date(iso).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
@@ -71,6 +79,8 @@ type DecideVars = {
 
 function RequestsPage() {
   const qc = useQueryClient();
+  const search = Route.useSearch();
+  const focusReqId = search.req;
   const [onlyPending, setOnlyPending] = useState(true);
   const fetchList = useServerFn(listSystemRequests);
   const fetchSettings = useServerFn(getRequestAutomationSettings);
@@ -81,6 +91,8 @@ function RequestsPage() {
   const rename = useServerFn(renameRequestSystem);
   const [audio, setAudio] = useState<{ id: string; url: string } | null>(null);
   const { rows: statusRows } = useStatusSettings();
+  const rowRefs = useRef<Record<string, HTMLLIElement | null>>({});
+  const [scrolledTo, setScrolledTo] = useState<string | null>(null);
 
   // Permissions: the server enforces them too — this only hides what the user
   // cannot do. `requests_decide` already implies `requests_view` server-side.
@@ -168,6 +180,17 @@ function RequestsPage() {
     [rows],
   );
 
+  // Deep-link focus: ?req=<id> scrolls that row into view and highlights it
+  // once the list has loaded it.
+  useEffect(() => {
+    if (!focusReqId || scrolledTo === focusReqId) return;
+    const el = rowRefs.current[focusReqId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      setScrolledTo(focusReqId);
+    }
+  }, [focusReqId, rows, scrolledTo]);
+
   if (meLoading) {
     return <div dir="rtl" className="py-16 text-center text-sm text-muted-foreground">טוען…</div>;
   }
@@ -253,6 +276,8 @@ function RequestsPage() {
               busy={decideMutation.isPending || codeMutation.isPending || renameMutation.isPending}
               audio={audio}
               audioPending={audioMutation.isPending}
+              highlighted={focusReqId === r.id}
+              cardRef={(el) => { rowRefs.current[r.id] = el; }}
               onPlay={() => audioMutation.mutate(r.id)}
               onDecide={(vars) => decideMutation.mutate(vars)}
               onDecideAsync={(vars) => decideMutation.mutateAsync(vars)}
@@ -266,8 +291,179 @@ function RequestsPage() {
   );
 }
 
+/** Report description, clamped to ~2 lines with a show more/less toggle.
+ * Renders nothing when the request carries no description. */
+function ReportDescription({ text }: { text: string | null | undefined }) {
+  const [expanded, setExpanded] = useState(false);
+  const trimmed = String(text ?? "").trim();
+  if (!trimmed) return null;
+  return (
+    <div className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs">
+      <div className="mb-1 font-medium text-foreground">תאור הדיווח</div>
+      <p className={`whitespace-pre-wrap break-words text-muted-foreground ${expanded ? "" : "line-clamp-2"}`}>
+        {trimmed}
+      </p>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-1 text-[11px] font-medium text-primary underline"
+      >
+        {expanded ? "פחות" : "עוד"}
+      </button>
+    </div>
+  );
+}
+
+type MatchOption = { id: string; system_code?: string | null; name: string };
+
+/** The "which system does this request belong to" flow: match the typed name
+ * against existing systems and offer exactly three explicit actions — link to
+ * an existing system, open as a sub-system, or open a brand-new root system
+ * (which requires an explicit confirmation checkbox). Reuses
+ * `matchRequestSystemName` / `decideSystemRequest` — no client-side matching. */
+function SystemMatcher({
+  requestId, name, disabled, onDecideAsync,
+}: {
+  requestId: string;
+  name: string;
+  disabled: boolean;
+  onDecideAsync: (vars: DecideVars) => Promise<any>;
+}) {
+  const matchFn = useServerFn(matchRequestSystemName);
+  const [debouncedName, setDebouncedName] = useState(name.trim());
+  const [pickedMatchId, setPickedMatchId] = useState<string>("");
+  const [pickedParentId, setPickedParentId] = useState<string>("");
+  const [confirmRoot, setConfirmRoot] = useState(false);
+  const [conflictMatches, setConflictMatches] = useState<Array<{ id: string; name: string; system_code?: string | null }> | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedName(name.trim()), 400);
+    return () => clearTimeout(t);
+  }, [name]);
+
+  const enabled = !disabled && debouncedName.length >= 2;
+  const match = useQuery({
+    queryKey: ["request-system-name-match", requestId, debouncedName],
+    queryFn: () => matchFn({ data: { id: requestId, name: debouncedName } }),
+    enabled,
+  });
+
+  const exactMatches = ((match.data as any)?.exactMatches ?? []) as MatchOption[];
+  const parentOptions = ((match.data as any)?.parentOptions ?? []) as MatchOption[];
+  const isVirtualCategory = Boolean((match.data as any)?.isVirtualCategory);
+  const virtualOption = (match.data as any)?.virtualOption as MatchOption | null | undefined;
+
+  // Any change in the matches invalidates a previous pick — never submit a
+  // stale selection.
+  useEffect(() => {
+    if (!exactMatches.some((m) => m.id === pickedMatchId)) setPickedMatchId("");
+  }, [exactMatches]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!parentOptions.some((m) => m.id === pickedParentId)) setPickedParentId("");
+  }, [parentOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rootConfirmedMatches = () =>
+    (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
+
+  const runLinkExisting = async () => {
+    if (!pickedMatchId) return;
+    await onDecideAsync({
+      id: requestId, action: "create_system", name: name.trim() || null,
+      systemAction: "link_existing", targetSystemId: pickedMatchId,
+    });
+  };
+
+  const runCreateSub = async () => {
+    if (!pickedParentId) return;
+    await onDecideAsync({
+      id: requestId, action: "create_system", name: name.trim() || null,
+      systemAction: "create_sub", parentSystemId: pickedParentId,
+    });
+  };
+
+  const runCreateRoot = async () => {
+    if (!confirmRoot || !name.trim()) return;
+    const confirmedMatches = rootConfirmedMatches();
+    const res: any = await onDecideAsync({
+      id: requestId, action: "create_system", name: name.trim() || null,
+      systemAction: "create_root", confirmedMatches,
+    });
+    if (res?.conflict) {
+      setConflictMatches(res.matches ?? []);
+      // A fresh, explicit re-confirmation is required before retrying.
+      setConfirmRoot(false);
+    } else {
+      setConflictMatches(null);
+    }
+  };
+
+  return (
+    <div className="rounded-md bg-muted/30 p-3 space-y-2">
+      <p className="text-xs font-medium text-foreground">שיוך הבקשה למערכת לפי השם שהוקלד</p>
+
+      {match.isFetching && <p className="text-[11px] text-muted-foreground">מחפש מערכות תואמות…</p>}
+
+      {exactMatches.length > 0 && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">נמצאו מערכות בשם זהה — ניתן לקשר לאחת מהן:</p>
+          <div className="flex flex-wrap gap-2">
+            {exactMatches.map((m) => (
+              <label key={m.id} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs">
+                <input type="radio" name={`link-${requestId}`} checked={pickedMatchId === m.id}
+                  onChange={() => setPickedMatchId(m.id)} disabled={disabled} />
+                {m.name} {m.system_code ? `· ${m.system_code}` : ""}
+              </label>
+            ))}
+          </div>
+          <Button size="sm" variant="outline" disabled={disabled || !pickedMatchId} onClick={runLinkExisting}>
+            <Link2 className="size-4" />
+            קישור למערכת קיימת
+          </Button>
+        </div>
+      )}
+
+      {(parentOptions.length > 0 || isVirtualCategory) && (
+        <div className="space-y-1">
+          <p className="text-[11px] text-muted-foreground">ניתן לפתוח כתת-מערכת תחת אחת מהמערכות הראשיות הבאות:</p>
+          <div className="flex flex-wrap gap-2">
+            {parentOptions.map((m) => (
+              <label key={m.id} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs">
+                <input type="radio" name={`parent-${requestId}`} checked={pickedParentId === m.id}
+                  onChange={() => setPickedParentId(m.id)} disabled={disabled} />
+                {m.name} {m.system_code ? `· ${m.system_code}` : ""}
+              </label>
+            ))}
+          </div>
+          <Button size="sm" variant="outline" disabled={disabled || !pickedParentId} onClick={runCreateSub}>
+            <Plus className="size-4" />
+            פתיחה כתת-מערכת
+          </Button>
+        </div>
+      )}
+
+      <div className="space-y-1 border-t border-border pt-2">
+        {(conflictMatches ?? (exactMatches.length ? exactMatches : parentOptions)).length > 0 && (
+          <p className="text-[11px] text-amber-700">
+            {conflictMatches
+              ? `נמצאה התנגשות מול מערכות בשם דומה: ${conflictMatches.map((m) => `${m.name}${m.system_code ? ` (${m.system_code})` : ""}`).join(", ")}. יש לאשר מחדש שמדובר במערכת שונה.`
+              : `שים לב: קיימות מערכות בשם דומה. פתיחת מערכת ראשית חדשה תיצור מערכת נפרדת.`}
+          </p>
+        )}
+        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <input type="checkbox" checked={confirmRoot} onChange={(e) => setConfirmRoot(e.target.checked)} disabled={disabled} />
+          מאשר/ת שמדובר במערכת חדשה ושונה מהמערכות שהוצגו לעיל
+        </label>
+        <Button size="sm" variant="outline" disabled={disabled || !confirmRoot || !name.trim()} onClick={runCreateRoot}>
+          <Plus className="size-4" />
+          {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחת מערכת ראשית חדשה"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function RequestCard({
-  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onDecideAsync, onFixCode, onRename,
+  row: r, statuses, canDecide, busy, audio, audioPending, highlighted, cardRef, onPlay, onDecide, onDecideAsync, onFixCode, onRename,
 }: {
   row: any;
   statuses: Array<{ status_key: string; label: string }>;
@@ -275,6 +471,8 @@ function RequestCard({
   busy: boolean;
   audio: { id: string; url: string } | null;
   audioPending: boolean;
+  highlighted: boolean;
+  cardRef: (el: HTMLLIElement | null) => void;
   onPlay: () => void;
   onDecide: (vars: DecideVars) => void;
   onDecideAsync: (vars: DecideVars) => Promise<any>;
@@ -291,30 +489,16 @@ function RequestCard({
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
+
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
 
-  // Manual "which system does this request belong to" flow: link to an
-  // existing system, create a sub-system, or create a new root by name.
-  const [sysAction, setSysAction] = useState<"" | "link_existing" | "create_sub" | "create_root">("");
-  const [targetSystemId, setTargetSystemId] = useState("");
-  const [parentSystemId, setParentSystemId] = useState("");
-  const [conflictMatches, setConflictMatches] = useState<Array<{ id: string; name: string }> | null>(null);
-
-  const submitSystemAction = async () => {
-    const confirmedMatches = conflictMatches ? conflictMatches.map((m) => m.id) : undefined;
-    const res: any = await onDecideAsync({
-      id: r.id, action: "create_system", name: nameDraft.trim() || null,
-      systemAction: sysAction || null,
-      targetSystemId: sysAction === "link_existing" ? (targetSystemId.trim() || null) : null,
-      parentSystemId: sysAction === "create_sub" ? (parentSystemId.trim() || null) : null,
-      confirmedMatches,
-    });
-    if (res?.conflict) setConflictMatches(res.matches ?? []);
-    else setConflictMatches(null);
-  };
-
   return (
-    <li className="rounded-xl border border-border bg-card p-4 shadow-sm">
+    <li
+      ref={cardRef}
+      className={`rounded-xl border bg-card p-4 shadow-sm transition-colors ${
+        highlighted ? "border-primary ring-2 ring-primary/40" : "border-border"
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-semibold">
           <span className={`rounded-md px-2 py-0.5 text-xs ${
@@ -359,17 +543,9 @@ function RequestCard({
       )}
 
       {/* The transcript that came with this specific mail. Independent of the
-          recording: either one may exist without the other. */}
-      {String(r.report_description ?? "").trim() ? (
-        <details className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 text-xs" open>
-          <summary className="cursor-pointer font-medium text-foreground">תאור הדיווח</summary>
-          <p className="mt-1.5 max-h-56 overflow-auto whitespace-pre-wrap break-words text-muted-foreground">
-            {r.report_description}
-          </p>
-        </details>
-      ) : (
-        <p className="mt-2 text-[11px] text-muted-foreground">אין תאור דיווח</p>
-      )}
+          recording: either one may exist without the other. Renders nothing
+          when there is no description. */}
+      <ReportDescription text={r.report_description} />
 
       {r.attachment_name && (
         <div className="mt-3">
@@ -400,7 +576,8 @@ function RequestCard({
 
       {/* Renaming the system straight from the request: the mail often carries
           the real name while the card still holds a temporary one. The same
-          field also names a system that is about to be created. */}
+          field also drives the name-matching flow below for a request whose
+          system does not exist yet. */}
       {canDecide && (hasSystem || hasCode) && (
         <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-border pt-3">
           <label className="flex flex-col gap-1 text-xs text-muted-foreground">
@@ -434,89 +611,47 @@ function RequestCard({
         <div className="mt-3 space-y-2 border-t border-border pt-3">
           {hasCode ? (
             <>
-              <div className="flex flex-wrap items-end gap-2">
-                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                  בחירת סטטוס
-                  <select
-                    value={choice}
-                    onChange={(e) => setChoice(e.target.value)}
-                    className="min-w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
-                  >
-                    <option value="">— בחר סטטוס —</option>
-                    {statuses.map((s) => (
-                      <option key={s.status_key} value={s.status_key}>{s.label}</option>
-                    ))}
-                  </select>
-                </label>
-                {hasSystem ? (
+              {hasSystem && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    בחירת סטטוס
+                    <select
+                      value={choice}
+                      onChange={(e) => setChoice(e.target.value)}
+                      className="min-w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+                    >
+                      <option value="">— בחר סטטוס —</option>
+                      {statuses.map((s) => (
+                        <option key={s.status_key} value={s.status_key}>{s.label}</option>
+                      ))}
+                    </select>
+                  </label>
                   <Button size="sm" disabled={!choice || busy}
                     onClick={() => onDecide({ id: r.id, action: "apply", toStatus: choice })}>
                     <Play className="size-4" />
                     החל סטטוס {choice ? `"${label(choice)}"` : ""}
                   </Button>
-                ) : (
-                  <Button size="sm" disabled={!choice || busy}
-                    onClick={() => onDecide({ id: r.id, action: "create_system", toStatus: choice, name: nameDraft.trim() || null })}>
-                    <Plus className="size-4" />
-                    צור מערכת בסטטוס {choice ? `"${label(choice)}"` : ""}
-                  </Button>
-                )}
-
-                {hasSystem && (
                   <Button size="sm" variant="outline" disabled={busy}
                     onClick={() => onDecide({ id: r.id, action: "keep" })}>
                     השאר ללא שינוי
                   </Button>
-                )}
-                <Button size="sm" variant="ghost" disabled={busy}
-                  onClick={() => onDecide({ id: r.id, action: "ignore" })}>
-                  <SkipForward className="size-4" />
-                  התעלם
-                </Button>
-              </div>
+                  <Button size="sm" variant="ghost" disabled={busy}
+                    onClick={() => onDecide({ id: r.id, action: "ignore" })}>
+                    <SkipForward className="size-4" />
+                    התעלם
+                  </Button>
+                </div>
+              )}
 
               {!hasSystem && (
-                <div className="flex flex-wrap items-end gap-2 rounded-md bg-muted/30 p-2">
-                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                    שיוך לפי שם — פעולה
-                    <select value={sysAction} onChange={(e) => { setSysAction(e.target.value as any); setConflictMatches(null); }}
-                      className="min-w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground">
-                      <option value="">— בחר פעולה —</option>
-                      <option value="link_existing">מערכת קיימת</option>
-                      <option value="create_sub">תת־מערכת</option>
-                      <option value="create_root">מערכת חדשה</option>
-                    </select>
-                  </label>
-                  {sysAction === "link_existing" && (
-                    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                      מזהה מערכת קיימת
-                      <input value={targetSystemId} onChange={(e) => setTargetSystemId(e.target.value)}
-                        className="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground" />
-                    </label>
-                  )}
-                  {sysAction === "create_sub" && (
-                    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
-                      מזהה מערכת אב
-                      <input value={parentSystemId} onChange={(e) => setParentSystemId(e.target.value)}
-                        className="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground" />
-                    </label>
-                  )}
-                  {sysAction && (
-                    <Button size="sm" variant="outline" disabled={busy
-                        || (sysAction === "link_existing" && !targetSystemId.trim())
-                        || (sysAction === "create_sub" && !parentSystemId.trim())
-                        || (sysAction === "create_root" && !nameDraft.trim())}
-                      onClick={submitSystemAction}>
-                      {conflictMatches ? "אשר ובצע בכל זאת" : "בצע שיוך"}
-                    </Button>
-                  )}
-                  {conflictMatches && (
-                    <p className="w-full text-[11px] text-amber-700">
-                      נמצאה התאמה בשם דומה: {conflictMatches.map((m) => m.name || m.id).join(", ") || "—"}.
-                      לחיצה חוזרת על "אשר ובצע בכל זאת" מאשרת שהמערכות הללו אינן אותה מערכת.
-                    </p>
-                  )}
-                </div>
+                <>
+                  <SystemMatcher requestId={r.id} name={nameDraft} disabled={busy} onDecideAsync={onDecideAsync} />
+                  <Button size="sm" variant="ghost" disabled={busy}
+                    onClick={() => onDecide({ id: r.id, action: "ignore" })}>
+                    <SkipForward className="size-4" />
+                    התעלם
+                  </Button>
+                </>
               )}
               <p className="text-[11px] text-muted-foreground">
                 "השאר ללא שינוי" מסמן את הבקשה כטופלה בלי לשנות סטטוס, ומוסיף את מספר הפונה אם הוא חסר.

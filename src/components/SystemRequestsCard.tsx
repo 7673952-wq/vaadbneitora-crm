@@ -132,7 +132,10 @@ export function SystemRequestsCard({ systemId, canView }: { systemId: string; ca
                 </span>
                 <span className="text-muted-foreground">{fmt(r.received_at)}</span>
                 <span>{decisionStatusLabel(r.decision_status)}</span>
-                {r.new_status && <span className="text-muted-foreground">← {r.new_status}</span>}
+                {statusLabel(r.new_status ?? r.proposed_status) && (
+                  <span className="text-muted-foreground">← {statusLabel(r.new_status ?? r.proposed_status)}</span>
+                )}
+
                 {r.dry_run && <span className="font-medium text-amber-700">בדיקה בלבד</span>}
                 {r.report_description && <ReportDescription text={r.report_description} />}
               </Link>

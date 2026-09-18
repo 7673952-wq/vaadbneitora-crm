@@ -236,3 +236,56 @@ export const updateNoteWithMentions = createServerFn({ method: "POST" })
 
     return { noteId: parsed.note_id, recipients: parsed.recipients ?? [] };
   });
+
+
+// Explicit, confirmation-gated retry of a mention email delivery. `failed`
+// deliveries retry with a plain call; `unknown` and `skipped_no_email`
+// deliveries mean we could not confirm the email was (not) already sent, so
+// a retry there requires the caller to pass `confirmUnknown: true` after
+// showing the user a clear warning.
+export const retryMentionDelivery = createServerFn({ method: "POST" })
+  .middleware([requireAuthMfa])
+  .inputValidator((d: { deliveryId: string; confirmUnknown?: boolean }) =>
+    z.object({
+      deliveryId: z.string().uuid(),
+      confirmUnknown: z.boolean().optional(),
+    }).parse(d),
+  )
+  .handler(async ({ data, context }) => {
+    const { assertPermission } = await import("@/lib/permissions.server");
+    await assertPermission(context.userId, "settings_manage", "yemot");
+
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("mention_requeue", context.userId);
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: row, error: fetchErr } = await supabaseAdmin
+      .from("mention_email_deliveries")
+      .select("status")
+      .eq("id", data.deliveryId)
+      .maybeSingle();
+    if (fetchErr) throw new Error(fetchErr.message);
+    const status = (row as any)?.status as string | undefined;
+
+    if ((status === "unknown" || status === "skipped_no_email") && !data.confirmUnknown) {
+      throw new Error(
+        "לא ניתן לאשר בוודאות אם המייל כבר נשלח למשתמש זה. יש לאשר במפורש שליחה חוזרת — ייתכן שהמייל כבר נשלח בעבר.",
+      );
+    }
+
+    const { data: ok, error } = await (supabaseAdmin as any).rpc("requeue_mention_delivery", {
+      _delivery_id: data.deliveryId,
+      _actor: context.userId,
+    });
+    if (error) throw new Error(error.message);
+    if (!ok) throw new Error("לא ניתן היה לשלוח מחדש את ההודעה");
+
+    try {
+      await (supabaseAdmin as any).rpc("ensure_mention_queue_job");
+    } catch {
+      // best-effort only — arming
+    }
+
+    return { ok: true };
+  });

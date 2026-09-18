@@ -96,7 +96,7 @@ describe("send-intent-key", () => {
     };
     (globalThis as any).window = globalThis;
     let n = 0;
-    (globalThis as any).crypto = { randomUUID: () => `uuid-${++n}` };
+    vi.stubGlobal("crypto", { randomUUID: () => `uuid-${++n}` });
   });
 
   it("returns the same key for a scope until cleared", () => {

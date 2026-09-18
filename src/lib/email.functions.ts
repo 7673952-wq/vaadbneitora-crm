@@ -45,6 +45,8 @@ export const setEmailRelayConfig = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { assertPermissionInAnyCrm } = await import("@/lib/permissions.server");
     await assertPermissionInAnyCrm(context.userId, "backup_manage");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_integrations", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const normalizedUrl = data.url.trim().replace(/\/+$/, "");
     if (!/^https:\/\/script\.google\.com\/macros\/s\/[^/]+\/exec$/.test(normalizedUrl)) {

@@ -37,6 +37,13 @@ const SENSITIVE_ACTIONS: { action: string; scope: string; file: string }[] = [
   { action: "requeueMentionDelivery", scope: "mention_requeue", file: "src/lib/queues.functions.ts" },
   { action: "processMentionQueueNow", scope: "mention_process", file: "src/lib/queues.functions.ts" },
   { action: "setAppBaseUrl", scope: "queue_config", file: "src/lib/queues.functions.ts" },
+  { action: "setEmailRelayConfig", scope: "admin_integrations", file: "src/lib/email.functions.ts" },
+  { action: "setBackupWebhookConfig", scope: "admin_integrations", file: "src/lib/admin.functions.ts" },
+  { action: "deleteStatusSetting", scope: "status_manage", file: "src/lib/admin.functions.ts" },
+  { action: "deleteCrm", scope: "crm_manage", file: "src/lib/crms.functions.ts" },
+  { action: "setCrmUserRole", scope: "crm_manage", file: "src/lib/crms.functions.ts" },
+  { action: "updateActivityLog", scope: "history_edit", file: "src/lib/systems.functions.ts" },
+  { action: "deleteActivityLog", scope: "history_edit", file: "src/lib/systems.functions.ts" },
 ];
 
 function handlerBody(source: string, action: string): string {

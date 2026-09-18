@@ -927,6 +927,8 @@ export const updateActivityLog = createServerFn({ method: "POST" })
     await ensureCanWrite(context.userId);
     const { assertPermission } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "history_edit");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("history_edit", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { id, ...patch } = data;
     const { error } = await supabaseAdmin.from("system_activity_log").update(patch).eq("id", id);
@@ -941,6 +943,8 @@ export const deleteActivityLog = createServerFn({ method: "POST" })
     await ensureCanWrite(context.userId);
     const { assertPermission } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "history_edit");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("history_edit", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { error } = await supabaseAdmin.from("system_activity_log").delete().eq("id", data.id);
     if (error) throw new Error(error.message);

@@ -983,3 +983,36 @@ describe("checkManualRootCreation", () => {
     expect(decision).toEqual({ outcome: "create" });
   });
 });
+
+describe("system_requests reads exclude soft-deleted rows", () => {
+  const source = require("node:fs").readFileSync("src/lib/system-requests.functions.ts", "utf8");
+
+  function handlerBody(name: string): string {
+    const start = source.indexOf(`export const ${name} = createServerFn`);
+    expect(start, `${name} not found`).toBeGreaterThanOrEqual(0);
+    const nextExport = source.indexOf("\nexport const ", start + 1);
+    return source.slice(start, nextExport < 0 ? source.length : nextExport);
+  }
+
+  it("countPendingRequests filters out deleted rows", () => {
+    expect(handlerBody("countPendingRequests")).toContain('.is("deleted_at", null)');
+  });
+
+  it("getRequestsSummary filters out deleted rows in both the 24h select and the pending count", () => {
+    const body = handlerBody("getRequestsSummary");
+    const matches = body.match(/\.is\("deleted_at", null\)/g) ?? [];
+    expect(matches.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("listRequestsForSystem filters out deleted rows and selects report_description + system_id", () => {
+    const body = handlerBody("listRequestsForSystem");
+    expect(body).toContain('.is("deleted_at", null)');
+    expect(body).toContain("report_description");
+    expect(body).toContain("system_id");
+  });
+
+  it("listSystemRequests already filters out deleted rows unless includeDeleted is requested", () => {
+    const body = handlerBody("listSystemRequests");
+    expect(body).toContain('.is("deleted_at", null)');
+  });
+});

@@ -39,14 +39,10 @@ export async function resolveAppBaseUrl(supabaseAdmin: any): Promise<string | nu
   return validateHttpsBaseUrl(url);
 }
 
-function escapeHtml(input: string): string {
-  return String(input ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// HTML is no longer built here: the relay receives structured fields and
+// builds/escapes the email itself, so no escaping helper is needed.
+
+
 
 type ClaimedRow = {
   delivery_id: string;

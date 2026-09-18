@@ -114,3 +114,49 @@ describe("send-intent-key", () => {
     expect(a).not.toBe(b);
   });
 });
+
+import { readFileSync } from "node:fs";
+
+/**
+ * Item 7: all three ordinary-email send paths must accept an idempotency
+ * key and route the actual relay call through begin/finish email delivery —
+ * checked against the real source so a future refactor that drops the
+ * wiring on one path fails the suite instead of silently regressing.
+ */
+describe("all three send paths go through the durable delivery record", () => {
+  const cases: { fn: string; file: string; kind: string }[] = [
+    { fn: "sendSystemEmail", file: "src/lib/email.functions.ts", kind: "system_email" },
+    { fn: "sendRecordEmail", file: "src/lib/email.functions.ts", kind: "record_email" },
+    { fn: "sendMailboxMessage", file: "src/lib/mail.functions.ts", kind: "mailbox_email" },
+  ];
+
+  function handlerBody(source: string, name: string): string {
+    const start = source.indexOf(`export const ${name} = createServerFn`);
+    if (start < 0) return "";
+    const nextExport = source.indexOf("\nexport const ", start + 1);
+    return source.slice(start, nextExport < 0 ? source.length : nextExport);
+  }
+
+  const cache = new Map<string, string>();
+  const read = (file: string) => {
+    if (!cache.has(file)) cache.set(file, readFileSync(file, "utf8"));
+    return cache.get(file)!;
+  };
+
+  for (const { fn, file, kind } of cases) {
+    it(`${fn} accepts idempotencyKey and calls begin/finishEmailDelivery for kind "${kind}"`, () => {
+      const body = handlerBody(read(file), fn);
+      expect(body, `${fn} not found in ${file}`).not.toBe("");
+      expect(body).toMatch(/idempotencyKey/);
+      expect(body).toContain("beginEmailDelivery(");
+      expect(body).toContain("finishEmailDelivery(");
+      expect(body).toContain(`kind: "${kind}"`);
+      // The relay must never be called before the delivery record is opened:
+      // beginEmailDelivery's call site must appear before postToRelay's.
+      const beginIdx = body.indexOf("beginEmailDelivery(");
+      const relayIdx = body.indexOf("postToRelay(");
+      expect(beginIdx).toBeGreaterThan(-1);
+      expect(relayIdx).toBeGreaterThan(beginIdx);
+    });
+  }
+});

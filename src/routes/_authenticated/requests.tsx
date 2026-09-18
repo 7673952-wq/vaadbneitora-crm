@@ -196,11 +196,32 @@ function RequestsPage() {
     onError: (e: any) => toast.error(String(e?.message ?? e)),
   });
 
-  const rows = (list.data ?? []) as any[];
+  const removeFn = useServerFn(deleteSystemRequest);
+  const restoreFn = useServerFn(restoreSystemRequest);
+  const deleteMutation = useMutation({
+    mutationFn: (vars: { id: string; reason: string | null }) => removeFn({ data: vars }),
+    onSuccess: () => { toast.success("הבקשה הועברה לנמחקות"); invalidate(); },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+  const restoreMutation = useMutation({
+    mutationFn: (id: string) => restoreFn({ data: { id } }),
+    onSuccess: () => { toast.success("הבקשה שוחזרה"); invalidate(); },
+    onError: (e: any) => toast.error(String(e?.message ?? e)),
+  });
+
+  const listRows = (list.data ?? []) as any[];
+  const focusedRow = (focused.data ?? null) as any | null;
+  // The deep-linked request always shows first, even when the active filter or
+  // the page limit would have hidden it.
+  const rows = useMemo(() => {
+    if (!focusedRow) return listRows;
+    return [focusedRow, ...listRows.filter((r) => r.id !== focusedRow.id)];
+  }, [focusedRow, listRows]);
   const pendingCount = useMemo(
-    () => rows.filter((r) => r.decision_status === "needs_decision" || r.decision_status === "simulated" || !r.decision_status).length,
-    [rows],
+    () => listRows.filter((r) => r.decision_status === "needs_decision" || r.decision_status === "simulated" || !r.decision_status).length,
+    [listRows],
   );
+
 
   // Deep-link focus: ?req=<id> scrolls that row into view and highlights it
   // once the list has loaded it.

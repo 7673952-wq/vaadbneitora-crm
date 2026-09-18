@@ -55,8 +55,18 @@ function ReportDescription({ text }: { text: string }) {
  */
 export function SystemRequestsCard({ systemId, canView }: { systemId: string; canView: boolean }) {
   const fetchFn = useServerFn(listRequestsForSystem);
+  const { maps } = useStatusSettings();
   const [expanded, setExpanded] = useState(false);
   useEffect(() => setExpanded(readExpanded()), []);
+
+  /** The status the request set/proposes, shown with the same Hebrew label the
+   * rest of the dashboard uses — never the raw English key from the DB. */
+  const statusLabel = (key: unknown): string | null => {
+    const k = String(key ?? "").trim();
+    if (!k) return null;
+    return maps.label[k] ?? k;
+  };
+
 
   const { data = [] } = useQuery({
     queryKey: ["system-requests", "for-system", systemId],

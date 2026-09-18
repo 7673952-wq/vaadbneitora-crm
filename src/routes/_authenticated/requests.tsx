@@ -370,11 +370,11 @@ function ReportDescription({ text }: { text: string | null | undefined }) {
 
 type MatchOption = { id: string; system_code?: string | null; name: string };
 
-/** The "which system does this request belong to" flow: match the typed name
- * against existing systems and offer exactly three explicit actions — link to
- * an existing system, open as a sub-system, or open a brand-new root system
- * (which requires an explicit confirmation checkbox). Reuses
- * `matchRequestSystemName` / `decideSystemRequest` — no client-side matching. */
+/** The "which system does this request belong to" flow, kept deliberately
+ * small: when the typed name already exists, the user gets exactly two
+ * choices — open a NEW root system, or open it as a sub-system under one of the
+ * matching ROOT systems. Sub-systems sharing the name are never listed.
+ * Matching always runs on the server (`matchRequestSystemName`). */
 function SystemMatcher({
   requestId, name, disabled, onDecideAsync,
 }: {
@@ -385,15 +385,15 @@ function SystemMatcher({
 }) {
   const matchFn = useServerFn(matchRequestSystemName);
   const [debouncedName, setDebouncedName] = useState(name.trim());
-  const [pickedMatchId, setPickedMatchId] = useState<string>("");
-  const [pickedParentId, setPickedParentId] = useState<string>("");
-  const [confirmRoot, setConfirmRoot] = useState(false);
   const [conflictMatches, setConflictMatches] = useState<Array<{ id: string; name: string; system_code?: string | null }> | null>(null);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedName(name.trim()), 400);
     return () => clearTimeout(t);
   }, [name]);
+
+  // A new name invalidates any earlier conflict warning.
+  useEffect(() => { setConflictMatches(null); }, [debouncedName]);
 
   const enabled = !disabled && debouncedName.length >= 2;
   const match = useQuery({
@@ -402,119 +402,59 @@ function SystemMatcher({
     enabled,
   });
 
-  const exactMatches = ((match.data as any)?.exactMatches ?? []) as MatchOption[];
+  // Only root systems — the parent a sub-system could hang off.
   const parentOptions = ((match.data as any)?.parentOptions ?? []) as MatchOption[];
-  const isVirtualCategory = Boolean((match.data as any)?.isVirtualCategory);
-  const virtualOption = (match.data as any)?.virtualOption as MatchOption | null | undefined;
+  const nameExists = parentOptions.length > 0 || Boolean((match.data as any)?.exactMatches?.length);
 
-  // Any change in the matches invalidates a previous pick — never submit a
-  // stale selection.
-  useEffect(() => {
-    if (!exactMatches.some((m) => m.id === pickedMatchId)) setPickedMatchId("");
-  }, [exactMatches]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (!parentOptions.some((m) => m.id === pickedParentId)) setPickedParentId("");
-  }, [parentOptions]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const rootConfirmedMatches = () =>
-    (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
-
-  const runLinkExisting = async () => {
-    if (!pickedMatchId) return;
+  const runCreateSub = async (parentId: string) => {
     await onDecideAsync({
       id: requestId, action: "create_system", name: name.trim() || null,
-      systemAction: "link_existing", targetSystemId: pickedMatchId,
-    });
-  };
-
-  const runCreateSub = async () => {
-    if (!pickedParentId) return;
-    await onDecideAsync({
-      id: requestId, action: "create_system", name: name.trim() || null,
-      systemAction: "create_sub", parentSystemId: pickedParentId,
+      systemAction: "create_sub", parentSystemId: parentId,
     });
   };
 
   const runCreateRoot = async () => {
-    if (!confirmRoot || !name.trim()) return;
-    const confirmedMatches = rootConfirmedMatches();
+    if (!name.trim()) return;
+    const confirmedMatches = (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
     const res: any = await onDecideAsync({
       id: requestId, action: "create_system", name: name.trim() || null,
       systemAction: "create_root", confirmedMatches,
     });
-    if (res?.conflict) {
-      setConflictMatches(res.matches ?? []);
-      // A fresh, explicit re-confirmation is required before retrying.
-      setConfirmRoot(false);
-    } else {
-      setConflictMatches(null);
-    }
+    setConflictMatches(res?.conflict ? (res.matches ?? []) : null);
   };
 
   return (
-    <div className="rounded-md bg-muted/30 p-3 space-y-2">
-      <p className="text-xs font-medium text-foreground">שיוך הבקשה למערכת לפי השם שהוקלד</p>
-
-      {match.isFetching && <p className="text-[11px] text-muted-foreground">מחפש מערכות תואמות…</p>}
-
-      {exactMatches.length > 0 && (
-        <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">נמצאו מערכות בשם זהה — ניתן לקשר לאחת מהן:</p>
-          <div className="flex flex-wrap gap-2">
-            {exactMatches.map((m) => (
-              <label key={m.id} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs">
-                <input type="radio" name={`link-${requestId}`} checked={pickedMatchId === m.id}
-                  onChange={() => setPickedMatchId(m.id)} disabled={disabled} />
-                {m.name} {m.system_code ? `· ${m.system_code}` : ""}
-              </label>
-            ))}
-          </div>
-          <Button size="sm" variant="outline" disabled={disabled || !pickedMatchId} onClick={runLinkExisting}>
-            <Link2 className="size-4" />
-            קישור למערכת קיימת
-          </Button>
-        </div>
+    <div className="rounded-md bg-muted/30 p-2.5 space-y-2">
+      {match.isFetching ? (
+        <p className="text-[11px] text-muted-foreground">בודק אם השם קיים…</p>
+      ) : nameExists ? (
+        <p className="text-[11px] text-amber-700">השם הזה כבר קיים — בחר כיצד לפתוח:</p>
+      ) : (
+        <p className="text-[11px] text-muted-foreground">השם לא קיים במערכת — ייפתח כמערכת ראשית.</p>
       )}
 
-      {(parentOptions.length > 0 || isVirtualCategory) && (
-        <div className="space-y-1">
-          <p className="text-[11px] text-muted-foreground">ניתן לפתוח כתת-מערכת תחת אחת מהמערכות הראשיות הבאות:</p>
-          <div className="flex flex-wrap gap-2">
-            {parentOptions.map((m) => (
-              <label key={m.id} className="flex items-center gap-1.5 rounded-md border border-input bg-background px-2 py-1 text-xs">
-                <input type="radio" name={`parent-${requestId}`} checked={pickedParentId === m.id}
-                  onChange={() => setPickedParentId(m.id)} disabled={disabled} />
-                {m.name} {m.system_code ? `· ${m.system_code}` : ""}
-              </label>
-            ))}
-          </div>
-          <Button size="sm" variant="outline" disabled={disabled || !pickedParentId} onClick={runCreateSub}>
+      <div className="flex flex-wrap gap-2">
+        {parentOptions.map((m) => (
+          <Button key={m.id} size="sm" variant="outline" disabled={disabled} onClick={() => runCreateSub(m.id)}>
             <Plus className="size-4" />
-            פתיחה כתת-מערכת
+            תת-מערכת תחת {m.name}{m.system_code ? ` · ${m.system_code}` : ""}
           </Button>
-        </div>
-      )}
-
-      <div className="space-y-1 border-t border-border pt-2">
-        {(conflictMatches ?? (exactMatches.length ? exactMatches : parentOptions)).length > 0 && (
-          <p className="text-[11px] text-amber-700">
-            {conflictMatches
-              ? `נמצאה התנגשות מול מערכות בשם דומה: ${conflictMatches.map((m) => `${m.name}${m.system_code ? ` (${m.system_code})` : ""}`).join(", ")}. יש לאשר מחדש שמדובר במערכת שונה.`
-              : `שים לב: קיימות מערכות בשם דומה. פתיחת מערכת ראשית חדשה תיצור מערכת נפרדת.`}
-          </p>
-        )}
-        <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={confirmRoot} onChange={(e) => setConfirmRoot(e.target.checked)} disabled={disabled} />
-          מאשר/ת שמדובר במערכת חדשה ושונה מהמערכות שהוצגו לעיל
-        </label>
-        <Button size="sm" variant="outline" disabled={disabled || !confirmRoot || !name.trim()} onClick={runCreateRoot}>
+        ))}
+        <Button size="sm" variant={nameExists ? "outline" : "default"} disabled={disabled || !name.trim()} onClick={runCreateRoot}>
           <Plus className="size-4" />
-          {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחת מערכת ראשית חדשה"}
+          {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחה כמערכת ראשית"}
         </Button>
       </div>
+
+      {conflictMatches && conflictMatches.length > 0 && (
+        <p className="text-[11px] text-amber-700">
+          בזמן הפעולה נמצאה מערכת נוספת בשם זה: {conflictMatches.map((m) => `${m.name}${m.system_code ? ` (${m.system_code})` : ""}`).join(", ")}. לחיצה נוספת תאשר פתיחת מערכת נפרדת.
+        </p>
+      )}
     </div>
   );
 }
+
 
 function RequestCard({
   row: r, statuses, canDecide, busy, audio, audioPending, highlighted, cardRef, onPlay, onDecide, onDecideAsync, onFixCode, onRename,

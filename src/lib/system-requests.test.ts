@@ -877,7 +877,7 @@ describe("executeManualSystemAction", () => {
 
   it("persists the decision on the request row before running the side effect", async () => {
     const { client, writes } = makeClient({});
-    await executeManualSystemAction(client, baseReq, {
+    await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "link_existing", targetSystemId: "sys-existing",
     });
     const requestWrites = writes.filter((w) => w.table === "system_requests" && w.op === "update");
@@ -891,7 +891,7 @@ describe("executeManualSystemAction", () => {
 
   it("link_existing links the request to the given system without creating one", async () => {
     const { client, writes } = makeClient({});
-    const res = await executeManualSystemAction(client, baseReq, {
+    const res = await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "link_existing", targetSystemId: "sys-existing",
     });
     expect(res).toEqual({ ok: true, systemId: "sys-existing" });
@@ -900,7 +900,7 @@ describe("executeManualSystemAction", () => {
 
   it("create_sub inserts a system with parent_system_id set", async () => {
     const { client, writes } = makeClient({});
-    const res = await executeManualSystemAction(client, baseReq, {
+    const res = await executeManualSystemAction(client, "user-1", baseReq, {
       systemAction: "create_sub", parentSystemId: "parent-1", name: "תת מערכת",
     });
     expect(res).toMatchObject({ ok: true, systemId: "sys-new" });
@@ -915,7 +915,7 @@ describe("executeManualSystemAction", () => {
 
     it("state A: a match exists and there is no confirmed-matches snapshot → conflict, nothing inserted", async () => {
       const { client, writes } = makeClient({ nameMatches: rootMatch });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת קיימת",
       });
       expect(res).toMatchObject({ ok: false, conflict: true });
@@ -925,7 +925,7 @@ describe("executeManualSystemAction", () => {
 
     it("state B: the snapshot covers the current matches → the root is created", async () => {
       const { client, writes } = makeClient({ nameMatches: rootMatch });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת קיימת",
         confirmedMatches: [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }],
       });
@@ -941,7 +941,7 @@ describe("executeManualSystemAction", () => {
           { id: "sys-other", name: "מערכת קיימת", system_code: "222" },
         ],
       });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת קיימת",
         confirmedMatches: [{ id: "sys-match", name: "מערכת קיימת", system_code: "111" }],
       });
@@ -955,7 +955,7 @@ describe("executeManualSystemAction", () => {
         nameMatches: [{ id: "sys-race", name: "מערכת חדשה", system_code: "333" }],
         systemInsertError: { code: "23505", message: 'duplicate key value violates unique constraint "systems_name_uniq"' },
       });
-      const res = await executeManualSystemAction(client, baseReq, {
+      const res = await executeManualSystemAction(client, "user-1", baseReq, {
         systemAction: "create_root", name: "מערכת חדשה",
       });
       expect(res).toMatchObject({ ok: false, conflict: true });

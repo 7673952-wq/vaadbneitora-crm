@@ -784,18 +784,23 @@ export async function executeManualSystemAction(
     throw new Error("אין לך גישה ל-CRM זה");
   }
 
-  // A system row is verified to exist AND belong to the request's CRM before
-  // its id is used for anything — never trust a well-formed UUID coming from
-  // the browser. This runs BEFORE any write that could use the id.
+  // A system row is verified to exist AND to belong to the request's CRM
+  // before its id is used for anything — never trust a well-formed UUID coming
+  // from the browser. `public.systems` IS the "yemot" CRM's record table (the
+  // other CRMs live in `crm_records`), so a request from another CRM can never
+  // target a systems row. This runs BEFORE any write that could use the id.
   const verifySystemInCrm = async (systemId: string, label: string) => {
+    if (crmKey !== "yemot") {
+      throw new Error(`${label} אינה שייכת ל-CRM של הבקשה`);
+    }
     const { data, error } = await supabaseAdmin
-      .from("systems").select("id, crm_key").eq("id", systemId).maybeSingle();
+      .from("systems").select("id").eq("id", systemId).maybeSingle();
     if (error) throw new Error(`בדיקת ${label} נכשלה: ${error.message}`);
-    const found = data as { id?: string; crm_key?: string | null } | null;
-    if (!found?.id || String(found.crm_key ?? "yemot") !== crmKey) {
+    if (!(data as { id?: string } | null)?.id) {
       throw new Error(`${label} אינה קיימת או אינה שייכת ל-CRM של הבקשה`);
     }
   };
+
 
   // ---- durable intent: once persisted, it is the ONLY source of truth -----
   // A retry (or a second call racing the first) must resume the SAME action

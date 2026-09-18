@@ -457,11 +457,13 @@ function SystemMatcher({
 
 
 function RequestCard({
-  row: r, statuses, canDecide, busy, audio, audioPending, highlighted, cardRef, onPlay, onDecide, onDecideAsync, onFixCode, onRename,
+  row: r, statuses, canDecide, canDelete, busy, audio, audioPending, highlighted, cardRef,
+  onPlay, onDecide, onDecideAsync, onFixCode, onRename, onDelete, onRestore,
 }: {
   row: any;
   statuses: Array<{ status_key: string; label: string }>;
   canDecide: boolean;
+  canDelete: boolean;
   busy: boolean;
   audio: { id: string; url: string } | null;
   audioPending: boolean;
@@ -472,51 +474,89 @@ function RequestCard({
   onDecideAsync: (vars: DecideVars) => Promise<any>;
   onFixCode: (systemCode: string) => void;
   onRename: (name: string) => void;
+  onDelete: (reason: string | null) => void;
+  onRestore: () => void;
 }) {
   // A dry-run simulation was never applied, so it can still be acted on.
   const pending = r.decision_status === "needs_decision" || r.decision_status === "simulated";
   const hasSystem = Boolean(r.system_id);
   const hasCode = Boolean(r.system_code_norm);
+  const isDeleted = Boolean(r.deleted_at);
   const label = (key?: string | null) =>
     (key && statuses.find((s) => s.status_key === key)?.label) || key || "—";
 
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
+  // Collapsed by default so the queue stays scannable; the request reached
+  // from a system card opens itself.
+  const [open, setOpen] = useState(highlighted);
+  useEffect(() => { if (highlighted) setOpen(true); }, [highlighted]);
 
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
+
+  const remove = () => {
+    const reason = window.prompt("סיבת המחיקה (לא חובה):", "");
+    if (reason === null) return; // cancelled
+    if (!window.confirm("למחוק את הבקשה? אפשר לשחזר אותה מתצוגת 'נמחקו'.")) return;
+    onDelete(reason.trim() || null);
+  };
 
   return (
     <li
       ref={cardRef}
-      className={`rounded-xl border bg-card p-4 shadow-sm transition-colors ${
+      className={`rounded-xl border bg-card shadow-sm transition-colors ${
         highlighted ? "border-primary ring-2 ring-primary/40" : "border-border"
-      }`}
+      } ${isDeleted ? "opacity-70" : ""}`}
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <span className={`rounded-md px-2 py-0.5 text-xs ${
+      {/* Compact single-line header — everything else opens on demand. */}
+      <div className="flex items-center gap-2 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 items-center gap-2 text-right text-sm"
+        >
+          {open ? <ChevronUp className="size-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="size-4 shrink-0 text-muted-foreground" />}
+          <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
             r.request_type === "pticha" ? "bg-emerald-500/15 text-emerald-700"
               : r.request_type === "sgira" ? "bg-rose-500/15 text-rose-700"
               : "bg-amber-500/15 text-amber-700"}`}>
-            {r.request_type === "pticha" ? "בקשת פתיחה"
-              : r.request_type === "sgira" ? "בקשת סגירה"
-              : "סוג בקשה לא זוהה"}
+            {r.request_type === "pticha" ? "פתיחה" : r.request_type === "sgira" ? "סגירה" : "לא זוהה"}
           </span>
-          {r.system ? (
-            <Link to="/systems/$id" params={{ id: r.system_id }} className="underline">
-              {r.system.system_code} · {r.system.name}
-            </Link>
-          ) : hasCode ? (
-            <span className="text-amber-700">מערכת {r.system_code_raw ?? r.system_code_norm} — המערכת אינה קיימת</span>
-          ) : (
-            <span className="text-muted-foreground">לא זוהה מספר מערכת</span>
+          <span className="truncate font-medium">
+            {r.system
+              ? `${r.system.system_code} · ${r.system.name}`
+              : hasCode
+                ? `מערכת ${r.system_code_raw ?? r.system_code_norm} — אינה קיימת`
+                : "לא זוהה מספר מערכת"}
+          </span>
+          {r.proposed_status && (
+            <span className="shrink-0 text-[11px] text-muted-foreground">← {label(r.proposed_status)}</span>
           )}
-        </div>
-        <span className="text-xs text-muted-foreground">{fmt(r.received_at)}</span>
+          <span className="shrink-0 text-[11px] text-muted-foreground">
+            {DECISION_LABELS[r.decision_status] ?? r.decision_status ?? "בעיבוד"}
+          </span>
+          {mode && mode !== "live" && <span className="shrink-0 text-[11px] font-medium text-amber-700">בדיקה בלבד</span>}
+          {isDeleted && <span className="shrink-0 text-[11px] font-medium text-destructive">נמחקה</span>}
+          <span className="ms-auto shrink-0 text-[11px] text-muted-foreground">{fmt(r.received_at)}</span>
+        </button>
+        {canDelete && (
+          isDeleted ? (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={onRestore} aria-label="שחזור הבקשה" title="שחזור">
+              <RotateCcw className="size-4" />
+            </Button>
+          ) : (
+            <Button size="sm" variant="ghost" disabled={busy} onClick={remove} aria-label="מחיקת הבקשה" title="מחיקה">
+              <Trash2 className="size-4 text-destructive" />
+            </Button>
+          )
+        )}
       </div>
 
-      <div className="mt-2 grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+      {open && (
+      <div className="border-t border-border px-3 pb-3 pt-2">
+      <div className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
         <span>מספר בקשה: {r.request_number || "—"}</span>
         <span>טלפון פונה: {r.caller_phone || "—"}</span>
         <span>סטטוס נוכחי: {hasSystem ? label(r.system?.status ?? r.prev_status) : "אין מערכת"}</span>
@@ -535,6 +575,7 @@ function RequestCard({
           <ShieldQuestion className="size-3.5" /> {r.last_error}
         </p>
       )}
+
 
       {/* The transcript that came with this specific mail. Independent of the
           recording: either one may exist without the other. Renders nothing

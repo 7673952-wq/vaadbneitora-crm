@@ -84,7 +84,9 @@ function RequestsPage() {
   const qc = useQueryClient();
   const search = Route.useSearch();
   const focusReqId = search.req;
-  const [onlyPending, setOnlyPending] = useState(true);
+  const [view, setView] = useState<"pending" | "all" | "deleted">("pending");
+  const onlyPending = view === "pending";
+
   const fetchList = useServerFn(listSystemRequests);
   const fetchSettings = useServerFn(getRequestAutomationSettings);
   const decide = useServerFn(decideSystemRequest);

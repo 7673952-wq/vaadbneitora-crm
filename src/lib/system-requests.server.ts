@@ -989,7 +989,11 @@ export async function releaseSystemRequestClaim(
 export async function clearManualIntent(supabaseAdmin: any, id: string): Promise<true> {
   const { data, error } = await supabaseAdmin
     .from("system_requests")
-    .update({ manual_action: null, manual_target_status: null, manual_target_name: null })
+    .update({
+      manual_action: null, manual_target_status: null, manual_target_name: null,
+      manual_system_action: null, manual_target_system_id: null,
+      manual_target_parent_system_id: null, manual_root_confirmed_matches: null,
+    })
     .eq("id", id)
     .select("id");
   if (error) throw new Error(`ניקוי כוונת ההחלטה נכשל: ${error.message}`);

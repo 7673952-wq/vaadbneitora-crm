@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { ListRestart, Server } from "lucide-react";
+import type { QueueProbeResult } from "@/lib/queue-status";
 
 const DELIVERY_STATUS_LABELS: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   pending: { label: "ממתין", variant: "secondary" },
@@ -44,7 +45,7 @@ export function BackgroundQueuesCard() {
   const processFn = useServerFn(processMentionQueueNow);
 
   const [baseUrl, setBaseUrl] = useState("");
-  const [health, setHealth] = useState<Record<string, { reachable: boolean; status?: number; error?: string }> | null>(null);
+  const [health, setHealth] = useState<Record<string, QueueProbeResult> | null>(null);
 
   const { data: statusData, isLoading: statusLoading, error: statusError } = useQuery({
     queryKey: ["queue_status"],
@@ -184,15 +185,23 @@ export function BackgroundQueuesCard() {
       </div>
 
       {health && (
-        <div className="space-y-1 text-sm">
+        <div className="space-y-2 text-sm">
           {queueRows.map((q) => {
             const h = health[q.key];
             if (!h) return null;
             return (
-              <div key={q.key} className="flex items-center gap-2">
+              <div key={q.key} className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{q.name}:</span>
-                <Badge variant={h.reachable ? "default" : "destructive"}>{h.reachable ? "תקין" : "לא תקין"}</Badge>
-                {h.status !== undefined && <span className="text-muted-foreground">קוד תגובה: {h.status}</span>}
+                {!h.urlConfigured ? (
+                  <Badge variant="destructive">לא הוגדרה כתובת</Badge>
+                ) : (
+                  <Badge variant={h.reachable ? "default" : "destructive"}>{h.reachable ? "תקין" : "לא תקין"}</Badge>
+                )}
+                <Badge variant={h.tokenConfigured ? "default" : "destructive"}>
+                  {h.tokenConfigured ? "אסימון מוגדר" : "אסימון לא מוגדר"}
+                </Badge>
+                <Badge variant={h.armed ? "default" : "outline"}>{h.armed ? "מופעל" : "כבוי"}</Badge>
+                <span className="text-muted-foreground">ממתינים: {h.pending}</span>
                 {h.error && <span className="text-muted-foreground">{h.error}</span>}
               </div>
             );

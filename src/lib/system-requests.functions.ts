@@ -144,10 +144,15 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
 
     // The release is guarded by the actor in the DB: a stale attempt coming
     // back to life can never clear the claim someone else now holds.
+    // Fail-closed: both the RPC error and its actor-scoped boolean result are
+    // checked, so a failed release can never be reported as success.
     const release = async (lastError?: string) => {
-      await supabaseAdmin.rpc("release_system_request_claim", {
-        _id: data.id, _actor: context.userId, _error: lastError ?? null,
-      });
+      const { releaseSystemRequestClaim } = await import("@/lib/system-requests.server");
+      await releaseSystemRequestClaim(supabaseAdmin, data.id, context.userId, lastError ?? null);
+    };
+    const clearIntent = async () => {
+      const { clearManualIntent } = await import("@/lib/system-requests.server");
+      await clearManualIntent(supabaseAdmin, data.id);
     };
 
     // ---- Durable intent -----------------------------------------------
@@ -214,8 +219,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           confirmedMatches,
           name: intentName ?? data.name ?? null,
         });
-        await supabaseAdmin.from("system_requests")
-          .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+        await clearIntent();
         if (!result.ok) {
           await release();
           return {
@@ -245,19 +249,16 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           if (link.kind === "conflict") {
             // The conditional update matched no row: someone else moved this
             // request meanwhile. Nothing was linked, so nothing is reported.
-            await supabaseAdmin.from("system_requests")
-              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await clearIntent();
             await release();
             return { ok: false as const, status: "conflict" as const, message: "הבקשה השתנתה בינתיים — רענן ונסה שוב" };
           }
           if (link.kind === "ambiguous") {
-            await supabaseAdmin.from("system_requests")
-              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await clearIntent();
             await release(); return { ok: true, multipleMatches: true };
           }
           if (link.kind === "linked") {
-            await supabaseAdmin.from("system_requests")
-              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await clearIntent();
             await release(); return { ok: true, linkedExisting: true, systemId: link.systemId };
           }
 
@@ -660,6 +661,7 @@ export const countPendingRequests = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("id", { count: "exact", head: true })
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .eq("processing_state", "done")
       .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return { count: count ?? 0 };
@@ -700,6 +702,7 @@ export const getRequestsSummary = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("decision_status, request_type, dry_run, received_at")
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .gte("received_at", since)
       .limit(1000);
     const rows = (data ?? []) as any[];
@@ -707,6 +710,7 @@ export const getRequestsSummary = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("id", { count: "exact", head: true })
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return {
       today: rows.length,
@@ -730,9 +734,10 @@ export const listRequestsForSystem = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows } = await supabaseAdmin
       .from("system_requests")
-      .select("id, request_type, decision_status, proposed_action, proposed_status, new_status, prev_status, dry_run, received_at, request_number, last_error")
+      .select("id, request_type, decision_status, proposed_action, proposed_status, new_status, prev_status, dry_run, received_at, request_number, last_error, report_description, system_id")
       .eq("system_id", data.systemId)
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 10);
     return rows ?? [];

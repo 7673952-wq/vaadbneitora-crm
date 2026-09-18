@@ -538,6 +538,8 @@ export const deleteStatusSetting = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertPermission(context, "settings_manage");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("status_manage", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     await deleteStatusSettingStable(supabaseAdmin, data.status_key, context.userId);
     return { ok: true };
@@ -866,6 +868,8 @@ export const setBackupWebhookConfig = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     await assertGlobalPermission(context, "backup_manage");
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("admin_integrations", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const now = new Date().toISOString();
     const { error: urlErr } = await supabaseAdmin.from("app_settings").upsert({

@@ -39,14 +39,10 @@ export async function resolveAppBaseUrl(supabaseAdmin: any): Promise<string | nu
   return validateHttpsBaseUrl(url);
 }
 
-function escapeHtml(input: string): string {
-  return String(input ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
-}
+// HTML is no longer built here: the relay receives structured fields and
+// builds/escapes the email itself, so no escaping helper is needed.
+
+
 
 type ClaimedRow = {
   delivery_id: string;
@@ -192,13 +188,6 @@ export async function processMentionQueue(
 
       const link = buildAppLink(baseUrl, ctx.path);
       const subject = `תויגת בהערה — ${authorName}`;
-      const escapedBody = escapeHtml(noteBody).replace(/\n/g, "<br>");
-      const html = `<div dir="rtl" style="font-family:Arial,sans-serif;text-align:right;">
-  <p><strong>${escapeHtml(authorName)}</strong> תייג/ה אותך בהערה:</p>
-  <blockquote style="border-right:3px solid #ccc;padding-right:10px;margin:10px 0;">${escapedBody}</blockquote>
-  <p>הקשר: ${escapeHtml(ctx.title)}</p>
-  <p><a href="${link}" style="display:inline-block;padding:8px 16px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;">לצפייה</a></p>
-</div>`;
       const text = `${authorName} תייג/ה אותך בהערה:\n\n${noteBody}\n\nהקשר: ${ctx.title}\n${link}`;
 
       const postToRelay = deps.postToRelay ?? (await import("@/lib/relay.server")).postToRelay;
@@ -206,15 +195,23 @@ export async function processMentionQueue(
       let relayOk = false;
       let relayError: string | null = null;
       try {
+        // Structured fields only — the relay builds and escapes the HTML
+        // itself and validates the button URL against APP_BASE_URL. No free
+        // HTML is sent from here.
         const res = await postToRelay(relayConfig.url, {
           action: "send_notification",
           secret: relayConfig.secret,
           to: email,
           subject,
           text,
-          html,
+          actorName: authorName,
+          noteBody,
+          contextTitle: ctx.title,
+          buttonUrl: link,
+          buttonLabel: "לצפייה",
           idempotencyKey: row.delivery_id,
         });
+
         const json: any = await res.json().catch(() => ({}));
         relayOk = res.ok && !!json?.ok;
         if (!relayOk) relayError = json?.error ?? "שליחה נכשלה";

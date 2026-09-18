@@ -22,7 +22,11 @@ export type SensitiveScope =
   | "request_delete"
   | "mention_requeue"
   | "mention_process"
-  | "queue_config";
+  | "queue_config"
+  | "admin_integrations"
+  | "crm_manage"
+  | "status_manage"
+  | "history_edit";
 
 /**
  * Limits chosen from real usage: a person clicking through the UI stays far
@@ -53,6 +57,14 @@ export const SENSITIVE_LIMITS: Record<SensitiveScope, { limit: number; windowSec
   mention_process: { limit: 6, windowSeconds: 60 },
   // Endpoint / base-URL configuration changes are one-off admin actions.
   queue_config: { limit: 10, windowSeconds: 300 },
+  // Relay/webhook connection settings: rare, deliberate admin configuration.
+  admin_integrations: { limit: 10, windowSeconds: 300 },
+  // Creating/deleting CRMs or reassigning a member's role in one.
+  crm_manage: { limit: 20, windowSeconds: 60 },
+  // Editing/removing a status definition affects every card using it.
+  status_manage: { limit: 20, windowSeconds: 60 },
+  // Editing/removing history rows is a manual audit-trail correction.
+  history_edit: { limit: 30, windowSeconds: 60 },
 };
 
 export async function enforceDbRateLimit(

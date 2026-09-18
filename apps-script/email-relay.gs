@@ -353,6 +353,7 @@ function doPost(e) {
     if (d.action === 'mark_read') return json_(markRead_(d));
     if (d.action === 'get_attachment') return json_(getAttachment_(d));
     if (d.action === 'ping') return json_({ ok: true, version: 21 });
+    if (d.action === 'send_notification') return json_(sendNotification_(d));
     return json_({ ok: false, error: 'unknown action' });
   } catch (err) { return json_({ ok: false, error: String(err && err.message || err) }); }
 }
@@ -707,6 +708,90 @@ function SETUP_GMAIL_FILTERS() {
   }
   var existing = Gmail.Users.Settings.Filters.list('me');
   Logger.log('Gmail API is reachable. Current filters: ' + JSON.stringify(existing.filter || []));
+}
+
+// --- send_notification: structured, server-composed notification email ---
+// The CRM app posts only plain fields here (to/subject/text/actorName/
+// contextTitle/buttonUrl/buttonLabel) — it never sends ready-made HTML for
+// this action. All HTML is built and escaped inside Apps Script, and any
+// call-to-action link is checked against APP_BASE_URL (Script Properties)
+// before it is ever put in an email, so a compromised/misconfigured caller
+// cannot use this endpoint to mail out an arbitrary or spoofed link.
+function sendNotification_(d) {
+  d = d || {};
+  if (!d.to) return { ok: false, error: 'missing to' };
+  if (!d.subject) return { ok: false, error: 'missing subject' };
+  var bodyText = d.text || d.body;
+  if (!bodyText) return { ok: false, error: 'missing text' };
+
+  if (d.buttonUrl) {
+    var baseUrl = PropertiesService.getScriptProperties().getProperty('APP_BASE_URL') || '';
+    var check = isAllowedNotificationUrl_(d.buttonUrl, baseUrl);
+    if (!check.ok) return { ok: false, error: check.error };
+  }
+
+  var html = buildNotificationHtml_({
+    actorName: d.actorName,
+    bodyText: bodyText,
+    contextTitle: d.contextTitle,
+    buttonUrl: d.buttonUrl,
+    buttonLabel: d.buttonLabel
+  });
+
+  GmailApp.sendEmail(d.to, d.subject, plain_(bodyText), { name: CFG_().SENDER_NAME, htmlBody: html });
+  return { ok: true };
+}
+
+// Pure validator: true only for an https URL whose host AND path prefix
+// match APP_BASE_URL exactly. Rejects http(s) mismatches, javascript:, data:
+// and any other scheme, and paths that merely start with the same string
+// without a real path-segment boundary (e.g. base "/app" must not accept
+// "/app-evil").
+function isAllowedNotificationUrl_(url, baseUrl) {
+  if (!url || typeof url !== 'string') return { ok: false, error: 'buttonUrl is missing' };
+  if (!baseUrl || typeof baseUrl !== 'string' || !baseUrl.trim()) {
+    return { ok: false, error: 'APP_BASE_URL is not configured' };
+  }
+  var urlMatch = /^https:\/\/([^\/\s?#]+)(\/[^\s?#]*)?$/.exec(String(url).trim());
+  if (!urlMatch) return { ok: false, error: 'buttonUrl must be a plain https URL' };
+  var baseMatch = /^https:\/\/([^\/\s?#]+)(\/[^\s?#]*)?$/.exec(String(baseUrl).trim().replace(/\/+$/, ''));
+  if (!baseMatch) return { ok: false, error: 'APP_BASE_URL is invalid' };
+
+  var host = urlMatch[1].toLowerCase();
+  var baseHost = baseMatch[1].toLowerCase();
+  if (host !== baseHost) return { ok: false, error: 'buttonUrl host does not match APP_BASE_URL' };
+
+  var path = urlMatch[2] || '/';
+  var basePath = (baseMatch[2] || '').replace(/\/+$/, '');
+  if (basePath) {
+    var withinBase = path === basePath || path.indexOf(basePath + '/') === 0;
+    if (!withinBase) return { ok: false, error: 'buttonUrl path is outside APP_BASE_URL' };
+  }
+  return { ok: true };
+}
+
+// Pure HTML builder: every text field is escaped via escapeHtml_/html_
+// before it touches the markup, and buttonUrl is only ever embedded after
+// isAllowedNotificationUrl_ has already accepted it (see sendNotification_).
+function buildNotificationHtml_(fields) {
+  fields = fields || {};
+  var actorLine = fields.actorName
+    ? '<p><strong>' + escapeHtml_(fields.actorName) + '</strong></p>'
+    : '';
+  var bodyHtml = html_(fields.bodyText || '');
+  var contextLine = fields.contextTitle
+    ? '<p>הקשר: ' + escapeHtml_(fields.contextTitle) + '</p>'
+    : '';
+  var button = '';
+  if (fields.buttonUrl) {
+    var label = fields.buttonLabel ? escapeHtml_(fields.buttonLabel) : 'לצפייה';
+    button = '<p><a href="' + escapeHtml_(fields.buttonUrl) + '" style="display:inline-block;padding:8px 16px;background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;">' + label + '</a></p>';
+  }
+  return '<div dir="rtl" style="font-family:Arial,sans-serif;text-align:right;">' +
+    actorLine +
+    '<blockquote style="border-right:3px solid #ccc;padding-right:10px;margin:10px 0;">' + bodyHtml + '</blockquote>' +
+    contextLine + button +
+    '</div>';
 }
 
 function json_(x) { return ContentService.createTextOutput(JSON.stringify(x)).setMimeType(ContentService.MimeType.JSON); }

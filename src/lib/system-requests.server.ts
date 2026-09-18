@@ -867,3 +867,53 @@ export async function restoreSystemRequestRow(supabaseAdmin: any, id: string, ac
   if (data !== true) throw new Error("הבקשה אינה מחוקה");
   return true;
 }
+
+/**
+ * Releases the atomic per-request claim taken by `claim_system_request`.
+ *
+ * The RPC is actor-scoped in the DB: it only clears the claim when `_actor`
+ * still matches the current claim holder, so a stale/late release from a
+ * timed-out attempt can never clear a claim a newer attempt now holds. That
+ * DB-side scoping is worthless, though, if the caller ignores the outcome —
+ * a failed or no-op release must never be treated as "cleanup done", because
+ * the caller (system-requests.functions.ts) uses this as the signal that it
+ * is safe to let another attempt pick the request up.
+ *
+ * NOTE: the current call site in `src/lib/system-requests.functions.ts`
+ * (forbidden file for this change) calls `supabaseAdmin.rpc(...)` directly
+ * and discards both the error and the boolean result — see the OPEN item
+ * reported alongside this change for the exact replacement needed there.
+ */
+export async function releaseSystemRequestClaim(
+  supabaseAdmin: any, id: string, actorId: string, lastError?: string | null,
+): Promise<true> {
+  const { data, error } = await supabaseAdmin.rpc("release_system_request_claim", {
+    _id: id, _actor: actorId, _error: lastError ?? null,
+  });
+  // A technical failure must propagate: silently continuing would let the
+  // caller believe the claim is free when it may still be held.
+  if (error) throw new Error(`שחרור הנעילה על הבקשה נכשל: ${error.message}`);
+  // The RPC is actor-scoped: a `false`/falsy result means either the row no
+  // longer exists or — critically — a DIFFERENT (newer) actor now holds the
+  // claim, so THIS (stale) attempt must not report success.
+  if (data !== true) throw new Error("שחרור הנעילה נכשל — הבקשה כבר בטיפול של משתמש אחר");
+  return true;
+}
+
+/**
+ * Clears the durable manual-decision intent (`manual_action` and its
+ * targets) once a decision has fully completed. Must never swallow a
+ * failed UPDATE: leaving the intent in place is safe (the next attempt just
+ * resumes it), but a caller that thinks the intent was cleared while the
+ * cleanup itself failed could then take a step that assumes a old state.
+ */
+export async function clearManualIntent(supabaseAdmin: any, id: string): Promise<true> {
+  const { data, error } = await supabaseAdmin
+    .from("system_requests")
+    .update({ manual_action: null, manual_target_status: null, manual_target_name: null })
+    .eq("id", id)
+    .select("id");
+  if (error) throw new Error(`ניקוי כוונת ההחלטה נכשל: ${error.message}`);
+  if (!data?.length) throw new Error("ניקוי כוונת ההחלטה נכשל — רענן ונסה שוב");
+  return true;
+}

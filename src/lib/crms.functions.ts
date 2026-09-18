@@ -98,6 +98,8 @@ export const deleteCrm = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => z.object({ key: z.string().trim().min(1) }).parse(input))
   .handler(async ({ data, context }) => {
     await assertCrmAdmin(context);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("crm_manage", context.userId);
     if (data.key === "yemot") throw new AppError("לא ניתן למחוק את המערכת הראשית");
     const { error } = await context.supabase.from("crms").delete().eq("key", data.key);
     if (error) throw fromSupabase(error);
@@ -141,6 +143,8 @@ export const setCrmUserRole = createServerFn({ method: "POST" })
     // role (up to super_admin) in a CRM they have no access to at all.
     const { assertPermission } = await import("@/lib/permissions.server");
     await assertPermission(context.userId, "permissions_manage", data.crmKey);
+    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
+    await limitSensitiveAction("crm_manage", context.userId);
     // Granting the top-level role stays reserved for a global super admin.
     if (data.role === "super_admin" && !(await isGlobalSuperAdmin(context))) {
       throw new AppError("רק מנהל ראשי יכול להעניק תפקיד מנהל ראשי", { code: "forbidden" });

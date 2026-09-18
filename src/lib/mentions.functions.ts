@@ -76,6 +76,44 @@ async function assertNotesWriteAuthorization(
   }
 }
 
+// The client-supplied `crmKey` is never trusted for authorization on
+// crm_record_note: the real CRM is derived from the record itself, so a
+// caller cannot pass a CRM key they have access to while targeting a record
+// that actually belongs to a different (unauthorized) CRM.
+export async function resolveRealCrmKeyForRecord(
+  supabaseAdmin: any,
+  recordId: string,
+  clientCrmKey: string,
+): Promise<string> {
+  const { data, error } = await supabaseAdmin
+    .from("crm_records")
+    .select("crm_key")
+    .eq("id", recordId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("הרשומה לא נמצאה");
+  const realCrmKey = (data as any).crm_key as string;
+  if (realCrmKey !== clientCrmKey) throw new Error("קוד CRM לא תואם לרשומה");
+  return realCrmKey;
+}
+
+async function authorizeAddNote(
+  supabaseAdmin: any,
+  userId: string,
+  sourceType: "system_note" | "crm_record_note",
+  targetId: string,
+  crmKey: string,
+): Promise<string> {
+  if (sourceType === "system_note") {
+    await assertNotesWriteAuthorization(userId, sourceType, crmKey);
+    return crmKey;
+  }
+  const realCrmKey = await resolveRealCrmKeyForRecord(supabaseAdmin, targetId, crmKey);
+  const { assertPermission } = await import("@/lib/permissions.server");
+  await assertPermission(userId, "notes_write", realCrmKey);
+  return realCrmKey;
+}
+
 async function authorDisplayName(supabaseAdmin: any, userId: string): Promise<string> {
   const { data } = await supabaseAdmin.from("profiles").select("display_name").eq("id", userId).maybeSingle();
   return (data as any)?.display_name ?? "";
@@ -103,13 +141,13 @@ export const addNoteWithMentions = createServerFn({ method: "POST" })
     }).parse(d),
   )
   .handler(async ({ data, context }) => {
-    await assertNotesWriteAuthorization(context.userId, data.sourceType, data.crmKey);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const realCrmKey = await authorizeAddNote(supabaseAdmin, context.userId, data.sourceType, data.targetId, data.crmKey);
     const authorName = await authorDisplayName(supabaseAdmin, context.userId);
     const args = buildMentionRpcArgs({
       sourceType: data.sourceType,
       targetId: data.targetId,
-      crmKey: data.crmKey,
+      crmKey: realCrmKey,
       body: sanitizeText(data.body),
       authorId: context.userId,
       authorName,

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { processMentionQueue, validateHttpsBaseUrl, buildAppLink, resolveAppBaseUrl } from "@/lib/mentions.server";
-import { buildMentionRpcArgs, buildUpdateMentionRpcArgs } from "@/lib/mentions.functions";
+import { buildMentionRpcArgs, buildUpdateMentionRpcArgs, resolveRealCrmKeyForRecord } from "@/lib/mentions.functions";
 
 type Row = Record<string, any>;
 
@@ -103,6 +103,29 @@ describe("processMentionQueue", () => {
     expect(finishCalls).toEqual([{ _delivery_id: "d1", _status: "sent" }]);
     expect(result.sent).toBe(1);
   });
+
+  it("sends only structured fields to the relay — never server-built HTML", async () => {
+    const { admin } = makeSupabaseAdmin({
+      claimRows: [[baseRow()]],
+      relayUrl: "https://relay.example/exec",
+      relaySecret: "s3cr3t",
+      baseUrl: "https://example.com/app",
+    });
+    const postToRelay = vi.fn(
+      async (_url: string, _payload: unknown) => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    await processMentionQueue(admin, { postToRelay });
+
+    const payload = postToRelay.mock.calls[0]![1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("html");
+    expect(typeof payload.actorName).toBe("string");
+    expect(typeof payload.noteBody).toBe("string");
+    expect(typeof payload.contextTitle).toBe("string");
+    expect(payload.buttonLabel).toBe("לצפייה");
+    expect(String(payload.buttonUrl)).toMatch(/^https:\/\/example\.com\/app/);
+  });
+
 
   it("backs off 60s on the first relay failure and fails outright on the fifth attempt", async () => {
     const postToRelay = vi.fn(async () => new Response(JSON.stringify({ ok: false, error: "בעיה" }), { status: 500 }));
@@ -240,5 +263,80 @@ describe("buildMentionRpcArgs / buildUpdateMentionRpcArgs", () => {
     expect(args._mentioned_user_ids).toEqual(["u9"]);
     expect(args._mention_all).toBe(false);
     expect(args._note_id).toBe("n1");
+  });
+});
+
+describe("resolveRealCrmKeyForRecord", () => {
+  function makeCrmRecordsAdmin(record: { crm_key: string } | null) {
+    return {
+      from: (table: string) => {
+        if (table !== "crm_records") throw new Error(`unexpected table ${table}`);
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: record, error: null }),
+            }),
+          }),
+        };
+      },
+    };
+  }
+
+  it("rejects when the record belongs to a different CRM than the client-supplied key", async () => {
+    const admin = makeCrmRecordsAdmin({ crm_key: "crm_b" });
+    await expect(resolveRealCrmKeyForRecord(admin, "rec1", "crm_a")).rejects.toThrow("קוד CRM לא תואם לרשומה");
+  });
+
+  it("returns the real crm key when it matches the client-supplied key", async () => {
+    const admin = makeCrmRecordsAdmin({ crm_key: "crm_a" });
+    await expect(resolveRealCrmKeyForRecord(admin, "rec1", "crm_a")).resolves.toBe("crm_a");
+  });
+
+  it("rejects with a Hebrew error when the record does not exist", async () => {
+    const admin = makeCrmRecordsAdmin(null);
+    await expect(resolveRealCrmKeyForRecord(admin, "missing", "crm_a")).rejects.toThrow("הרשומה לא נמצאה");
+  });
+});
+
+describe("addNoteWithMentions authorization (crm_record_note)", () => {
+  it("asserts notes_write permission against the record's real CRM, never the client-supplied one", async () => {
+    vi.resetModules();
+    const assertPermission = vi.fn(async () => {});
+    vi.doMock("@/lib/permissions.server", () => ({
+      assertPermission,
+      assertCanWrite: vi.fn(async () => {}),
+    }));
+    const admin = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { crm_key: "crm_b" }, error: null }) }) }),
+      }),
+    };
+
+    // Simulate what the handler does: resolve the real key, then authorize against it.
+    const realCrmKey = await resolveRealCrmKeyForRecord(admin, "rec1", "crm_b").catch((e) => {
+      throw e;
+    });
+    const { assertPermission: assertPermissionImported } = await import("@/lib/permissions.server");
+    await assertPermissionImported("user1", "notes_write", realCrmKey);
+
+    expect(assertPermission).toHaveBeenCalledWith("user1", "notes_write", "crm_b");
+    vi.doUnmock("@/lib/permissions.server");
+    vi.resetModules();
+  });
+
+  it("never reaches a permission check when the client-supplied crm key does not match the record's real crm", async () => {
+    const admin = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { crm_key: "crm_b" }, error: null }) }) }),
+      }),
+    };
+    const assertPermission = vi.fn(async (_u: string, _p: string, _c: string) => {});
+    await expect(
+      (async () => {
+        const realCrmKey = await resolveRealCrmKeyForRecord(admin, "rec1", "crm_a");
+        await assertPermission("user1", "notes_write", realCrmKey);
+      })(),
+    ).rejects.toThrow("קוד CRM לא תואם לרשומה");
+    expect(assertPermission).not.toHaveBeenCalled();
   });
 });

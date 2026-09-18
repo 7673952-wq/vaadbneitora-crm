@@ -144,10 +144,15 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
 
     // The release is guarded by the actor in the DB: a stale attempt coming
     // back to life can never clear the claim someone else now holds.
+    // Fail-closed: both the RPC error and its actor-scoped boolean result are
+    // checked, so a failed release can never be reported as success.
     const release = async (lastError?: string) => {
-      await supabaseAdmin.rpc("release_system_request_claim", {
-        _id: data.id, _actor: context.userId, _error: lastError ?? null,
-      });
+      const { releaseSystemRequestClaim } = await import("@/lib/system-requests.server");
+      await releaseSystemRequestClaim(supabaseAdmin, data.id, context.userId, lastError ?? null);
+    };
+    const clearIntent = async () => {
+      const { clearManualIntent } = await import("@/lib/system-requests.server");
+      await clearManualIntent(supabaseAdmin, data.id);
     };
 
     // ---- Durable intent -----------------------------------------------
@@ -214,8 +219,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           confirmedMatches,
           name: intentName ?? data.name ?? null,
         });
-        await supabaseAdmin.from("system_requests")
-          .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+        await clearIntent();
         if (!result.ok) {
           await release();
           return {
@@ -245,19 +249,16 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           if (link.kind === "conflict") {
             // The conditional update matched no row: someone else moved this
             // request meanwhile. Nothing was linked, so nothing is reported.
-            await supabaseAdmin.from("system_requests")
-              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await clearIntent();
             await release();
             return { ok: false as const, status: "conflict" as const, message: "הבקשה השתנתה בינתיים — רענן ונסה שוב" };
           }
           if (link.kind === "ambiguous") {
-            await supabaseAdmin.from("system_requests")
-              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await clearIntent();
             await release(); return { ok: true, multipleMatches: true };
           }
           if (link.kind === "linked") {
-            await supabaseAdmin.from("system_requests")
-              .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+            await clearIntent();
             await release(); return { ok: true, linkedExisting: true, systemId: link.systemId };
           }
 

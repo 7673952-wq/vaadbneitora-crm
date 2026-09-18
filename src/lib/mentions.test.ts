@@ -307,7 +307,7 @@ describe("addNoteWithMentions authorization (crm_record_note)", () => {
         select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { crm_key: "crm_b" }, error: null }) }) }),
       }),
     };
-    const assertPermission = vi.fn(async () => {});
+    const assertPermission = vi.fn(async (_u: string, _p: string, _c: string) => {});
     await expect(
       (async () => {
         const realCrmKey = await resolveRealCrmKeyForRecord(admin, "rec1", "crm_a");

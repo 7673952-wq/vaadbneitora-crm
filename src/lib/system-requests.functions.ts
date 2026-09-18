@@ -660,6 +660,7 @@ export const countPendingRequests = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("id", { count: "exact", head: true })
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .eq("processing_state", "done")
       .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return { count: count ?? 0 };
@@ -700,6 +701,7 @@ export const getRequestsSummary = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("decision_status, request_type, dry_run, received_at")
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .gte("received_at", since)
       .limit(1000);
     const rows = (data ?? []) as any[];
@@ -707,6 +709,7 @@ export const getRequestsSummary = createServerFn({ method: "GET" })
       .from("system_requests")
       .select("id", { count: "exact", head: true })
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .in("decision_status", (await import("@/lib/system-requests.server")).OPEN_DECISIONS);
     return {
       today: rows.length,
@@ -730,9 +733,10 @@ export const listRequestsForSystem = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data: rows } = await supabaseAdmin
       .from("system_requests")
-      .select("id, request_type, decision_status, proposed_action, proposed_status, new_status, prev_status, dry_run, received_at, request_number, last_error")
+      .select("id, request_type, decision_status, proposed_action, proposed_status, new_status, prev_status, dry_run, received_at, request_number, last_error, report_description, system_id")
       .eq("system_id", data.systemId)
       .in("crm_key", crmKeys)
+      .is("deleted_at", null)
       .order("received_at", { ascending: false })
       .limit(data.limit ?? 10);
     return rows ?? [];

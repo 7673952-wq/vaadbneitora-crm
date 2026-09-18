@@ -741,6 +741,113 @@ export async function checkManualRootCreation(
   return decideRootCreation(currentMatches, snapshot);
 }
 
+export type ManualSystemAction = "link_existing" | "create_sub" | "create_root";
+
+export type ManualSystemActionResult =
+  | { ok: true; systemId: string }
+  | { ok: false; conflict: true; matches: ConfirmedMatch[] };
+
+/**
+ * Executes a manually chosen "which system does this request belong to"
+ * decision. The decision (action + targets + the confirmed-matches snapshot)
+ * is ALWAYS persisted on the request row first, so a crash between the
+ * decision and its side effect is resumable and never re-interpreted from a
+ * stale state. `link_existing` never creates anything; `create_sub` always
+ * hangs off the given parent; `create_root` re-checks for a conflicting name
+ * against the confirmed-matches snapshot and refuses to insert a duplicate
+ * root — a unique-violation race is reported the same way, never thrown.
+ */
+export async function executeManualSystemAction(
+  supabaseAdmin: any,
+  req: {
+    id: string;
+    crm_key: string;
+    system_code_raw?: string | null;
+    system_code_norm?: string | null;
+    caller_phone?: string | null;
+  },
+  params: {
+    systemAction: ManualSystemAction;
+    targetSystemId?: string | null;
+    parentSystemId?: string | null;
+    confirmedMatches?: ConfirmedMatch[] | null;
+    name?: string | null;
+  },
+): Promise<ManualSystemActionResult> {
+  // ---- persist the decision BEFORE any side effect ------------------------
+  const { error: persistError } = await supabaseAdmin.from("system_requests").update({
+    manual_system_action: params.systemAction,
+    manual_target_system_id: params.targetSystemId ?? null,
+    manual_target_parent_system_id: params.parentSystemId ?? null,
+    manual_root_confirmed_matches: params.confirmedMatches ?? null,
+  }).eq("id", req.id);
+  if (persistError) throw new Error(`שמירת פעולת המערכת נכשלה: ${persistError.message}`);
+
+  const linkRequest = async (systemId: string) => {
+    const { data: rows, error } = await supabaseAdmin
+      .from("system_requests").update({ system_id: systemId }).eq("id", req.id).select("id");
+    if (error) throw new Error(`קישור הבקשה למערכת נכשל: ${error.message}`);
+    if (!rows?.length) throw new Error("קישור הבקשה למערכת נכשל — רענן ונסה שוב");
+  };
+
+  if (params.systemAction === "link_existing") {
+    if (!params.targetSystemId) throw new Error("יש לבחור מערכת קיימת");
+    await linkRequest(params.targetSystemId);
+    return { ok: true, systemId: params.targetSystemId };
+  }
+
+  if (params.systemAction === "create_sub") {
+    if (!params.parentSystemId) throw new Error("יש לבחור מערכת אב");
+    const name = String(params.name ?? "").trim();
+    const { data: created, error } = await supabaseAdmin.from("systems").insert({
+      system_code: req.system_code_raw ?? req.system_code_norm ?? null,
+      name: name || `מערכת ${req.system_code_norm ?? ""}`.trim(),
+      name_pending: !name,
+      parent_system_id: params.parentSystemId,
+      caller_phone: req.caller_phone ?? null,
+      source: "בקשה מהמייל",
+    }).select("id").maybeSingle();
+    if (error) throw new Error(`יצירת תת-המערכת נכשלה: ${error.message}`);
+    const systemId = (created as any)?.id as string | undefined;
+    if (!systemId) throw new Error("יצירת תת-המערכת נכשלה");
+    await linkRequest(systemId);
+    return { ok: true, systemId };
+  }
+
+  // create_root
+  const name = String(params.name ?? "").trim();
+  if (!name) throw new Error("יש לבחור שם למערכת החדשה");
+  const decision = await checkManualRootCreation(supabaseAdmin, req.crm_key, name, params.confirmedMatches ?? null);
+  if (decision.outcome === "conflict") {
+    return { ok: false, conflict: true, matches: decision.matches };
+  }
+
+  const { data: created, error } = await supabaseAdmin.from("systems").insert({
+    system_code: req.system_code_raw ?? req.system_code_norm ?? null,
+    name,
+    name_pending: false,
+    parent_system_id: null,
+    caller_phone: req.caller_phone ?? null,
+    source: "בקשה מהמייל",
+  }).select("id").maybeSingle();
+  if (error) {
+    // A concurrent creation of the same root name is a business conflict,
+    // never a technical failure to surface as a throw.
+    const text = `${(error as any).code ?? ""} ${error.message ?? ""}`.toLowerCase();
+    const isUniqueViolation = (error as any).code === "23505" || /unique|duplicate/.test(text);
+    if (!isUniqueViolation) throw new Error(`יצירת המערכת נכשלה: ${error.message}`);
+    const match = await matchSystemNameForRequest(supabaseAdmin, req.crm_key, name);
+    const currentMatches: ConfirmedMatch[] = match.parentOptions.map((o) => ({
+      id: o.id, name: o.name, system_code: o.system_code,
+    }));
+    return { ok: false, conflict: true, matches: currentMatches };
+  }
+  const systemId = (created as any)?.id as string | undefined;
+  if (!systemId) throw new Error("יצירת המערכת נכשלה");
+  await linkRequest(systemId);
+  return { ok: true, systemId };
+}
+
 /** Soft-deletes a request; throws on a technical failure or a lost race (already deleted). */
 export async function softDeleteSystemRequest(
   supabaseAdmin: any, id: string, actorId: string, reason?: string | null,

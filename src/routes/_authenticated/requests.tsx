@@ -63,7 +63,11 @@ function fmt(iso?: string | null) {
   return new Date(iso).toLocaleString("he-IL", { dateStyle: "short", timeStyle: "short" });
 }
 
-type DecideVars = { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null; name?: string | null };
+type DecideVars = {
+  id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null; name?: string | null;
+  systemAction?: "link_existing" | "create_sub" | "create_root" | null;
+  targetSystemId?: string | null; parentSystemId?: string | null; confirmedMatches?: string[] | null;
+};
 
 function RequestsPage() {
   const qc = useQueryClient();
@@ -251,6 +255,7 @@ function RequestsPage() {
               audioPending={audioMutation.isPending}
               onPlay={() => audioMutation.mutate(r.id)}
               onDecide={(vars) => decideMutation.mutate(vars)}
+              onDecideAsync={(vars) => decideMutation.mutateAsync(vars)}
               onFixCode={(systemCode) => codeMutation.mutate({ id: r.id, systemCode })}
               onRename={(name) => renameMutation.mutate({ id: r.id, name })}
             />
@@ -262,7 +267,7 @@ function RequestsPage() {
 }
 
 function RequestCard({
-  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onFixCode, onRename,
+  row: r, statuses, canDecide, busy, audio, audioPending, onPlay, onDecide, onDecideAsync, onFixCode, onRename,
 }: {
   row: any;
   statuses: Array<{ status_key: string; label: string }>;
@@ -272,6 +277,7 @@ function RequestCard({
   audioPending: boolean;
   onPlay: () => void;
   onDecide: (vars: DecideVars) => void;
+  onDecideAsync: (vars: DecideVars) => Promise<any>;
   onFixCode: (systemCode: string) => void;
   onRename: (name: string) => void;
 }) {
@@ -286,6 +292,26 @@ function RequestCard({
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
+
+  // Manual "which system does this request belong to" flow: link to an
+  // existing system, create a sub-system, or create a new root by name.
+  const [sysAction, setSysAction] = useState<"" | "link_existing" | "create_sub" | "create_root">("");
+  const [targetSystemId, setTargetSystemId] = useState("");
+  const [parentSystemId, setParentSystemId] = useState("");
+  const [conflictMatches, setConflictMatches] = useState<Array<{ id: string; name: string }> | null>(null);
+
+  const submitSystemAction = async () => {
+    const confirmedMatches = conflictMatches ? conflictMatches.map((m) => m.id) : undefined;
+    const res: any = await onDecideAsync({
+      id: r.id, action: "create_system", name: nameDraft.trim() || null,
+      systemAction: sysAction || null,
+      targetSystemId: sysAction === "link_existing" ? (targetSystemId.trim() || null) : null,
+      parentSystemId: sysAction === "create_sub" ? (parentSystemId.trim() || null) : null,
+      confirmedMatches,
+    });
+    if (res?.conflict) setConflictMatches(res.matches ?? []);
+    else setConflictMatches(null);
+  };
 
   return (
     <li className="rounded-xl border border-border bg-card p-4 shadow-sm">
@@ -448,6 +474,50 @@ function RequestCard({
                   התעלם
                 </Button>
               </div>
+
+              {!hasSystem && (
+                <div className="flex flex-wrap items-end gap-2 rounded-md bg-muted/30 p-2">
+                  <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    שיוך לפי שם — פעולה
+                    <select value={sysAction} onChange={(e) => { setSysAction(e.target.value as any); setConflictMatches(null); }}
+                      className="min-w-40 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground">
+                      <option value="">— בחר פעולה —</option>
+                      <option value="link_existing">מערכת קיימת</option>
+                      <option value="create_sub">תת־מערכת</option>
+                      <option value="create_root">מערכת חדשה</option>
+                    </select>
+                  </label>
+                  {sysAction === "link_existing" && (
+                    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      מזהה מערכת קיימת
+                      <input value={targetSystemId} onChange={(e) => setTargetSystemId(e.target.value)}
+                        className="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground" />
+                    </label>
+                  )}
+                  {sysAction === "create_sub" && (
+                    <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                      מזהה מערכת אב
+                      <input value={parentSystemId} onChange={(e) => setParentSystemId(e.target.value)}
+                        className="w-64 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground" />
+                    </label>
+                  )}
+                  {sysAction && (
+                    <Button size="sm" variant="outline" disabled={busy
+                        || (sysAction === "link_existing" && !targetSystemId.trim())
+                        || (sysAction === "create_sub" && !parentSystemId.trim())
+                        || (sysAction === "create_root" && !nameDraft.trim())}
+                      onClick={submitSystemAction}>
+                      {conflictMatches ? "אשר ובצע בכל זאת" : "בצע שיוך"}
+                    </Button>
+                  )}
+                  {conflictMatches && (
+                    <p className="w-full text-[11px] text-amber-700">
+                      נמצאה התאמה בשם דומה: {conflictMatches.map((m) => m.name || m.id).join(", ") || "—"}.
+                      לחיצה חוזרת על "אשר ובצע בכל זאת" מאשרת שהמערכות הללו אינן אותה מערכת.
+                    </p>
+                  )}
+                </div>
+              )}
               <p className="text-[11px] text-muted-foreground">
                 "השאר ללא שינוי" מסמן את הבקשה כטופלה בלי לשנות סטטוס, ומוסיף את מספר הפונה אם הוא חסר.
                 "התעלם" לא משנה דבר בכרטיס המערכת.

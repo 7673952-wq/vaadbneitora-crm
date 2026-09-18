@@ -89,12 +89,22 @@ export const listSystemRequests = createServerFn({ method: "GET" })
  */
 export const decideSystemRequest = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null; name?: string | null }) =>
+  .inputValidator((d: {
+    id: string; action: "apply" | "keep" | "ignore" | "create_system"; toStatus?: string | null; name?: string | null;
+    systemAction?: "link_existing" | "create_sub" | "create_root" | null;
+    targetSystemId?: string | null; parentSystemId?: string | null; confirmedMatches?: string[] | null;
+  }) =>
     z.object({
       id: z.string().uuid(),
       action: z.enum(["apply", "keep", "ignore", "create_system"]),
       toStatus: z.string().max(60).nullable().optional(),
       name: z.string().max(120).nullable().optional(),
+      // Manual "which system does this request belong to" path — additive,
+      // the four actions above keep working exactly as before without it.
+      systemAction: z.enum(["link_existing", "create_sub", "create_root"]).nullable().optional(),
+      targetSystemId: z.string().uuid().nullable().optional(),
+      parentSystemId: z.string().uuid().nullable().optional(),
+      confirmedMatches: z.array(z.string().uuid()).max(50).optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
     const { loadAuthorizedRequest, assertKnownStatus } = await import("@/lib/requests-access.server");
@@ -190,7 +200,32 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         if (!intentRows?.length) throw new Error("פעולה אחרת על בקשה זו כבר החלה — רענן ונסה שוב");
       }
 
-      if (data.action === "create_system") {
+      if (data.action === "create_system" && data.systemAction) {
+        // Manual system-matching path: link to an existing system, create a
+        // sub-system under a chosen parent, or create a brand-new root — the
+        // decision itself was already persisted by executeManualSystemAction
+        // before it does anything, so a crash mid-way is always resumable.
+        const { executeManualSystemAction } = await import("@/lib/system-requests.server");
+        const confirmedMatches = (data.confirmedMatches ?? []).map((id) => ({ id, name: "", system_code: null }));
+        const result = await executeManualSystemAction(supabaseAdmin, req, {
+          systemAction: data.systemAction,
+          targetSystemId: data.targetSystemId ?? null,
+          parentSystemId: data.parentSystemId ?? null,
+          confirmedMatches,
+          name: intentName ?? data.name ?? null,
+        });
+        await supabaseAdmin.from("system_requests")
+          .update({ manual_action: null, manual_target_status: null, manual_target_name: null }).eq("id", data.id);
+        if (!result.ok) {
+          await release();
+          return {
+            ok: false as const, status: "conflict" as const, conflict: true, matches: result.matches,
+            message: "נמצאה מערכת בשם דומה — יש לבדוק ולאשר שוב",
+          };
+        }
+        await release();
+        return { ok: true, systemId: result.systemId };
+      } else if (data.action === "create_system") {
         const codeNorm = String(req.system_code_norm ?? "").trim();
         if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");
         const toStatus = String(intentStatus ?? data.toStatus ?? req.proposed_status ?? "").trim();

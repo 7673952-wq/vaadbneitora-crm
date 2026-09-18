@@ -16,7 +16,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ListRestart, Server } from "lucide-react";
-import type { QueueProbeResult } from "@/lib/queue-status";
+import { queueVerdict, type QueueProbeResult } from "@/lib/queue-status";
 
 const UNKNOWN_RETRY_WARNING =
   "לא ניתן לאשר בוודאות אם המייל כבר נשלח למשתמש זה. האם לשלוח את ההודעה שוב בכל זאת? ייתכן שהמייל כבר נשלח בעבר.";

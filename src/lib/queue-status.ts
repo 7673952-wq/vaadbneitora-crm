@@ -3,12 +3,15 @@ export type QueueUrls = { voice_queue: string | null; mention_queue: string | nu
 export type QueueProbeResult = {
   urlConfigured: boolean;
   tokenConfigured: boolean;
+  /** true/false once the endpoint answered a token-bearing ping; null when unknown. */
+  tokenValid: boolean | null;
   armed: boolean;
   pending: number;
   reachable: boolean;
   status?: number;
   error?: string;
 };
+
 
 function extractUrl(entry: unknown): string | null {
   if (!entry) return null;
@@ -59,3 +62,15 @@ export function classifyQueueProbe(status?: number, error?: string): { reachable
   if (status === 404) return { reachable: false, error: "הכתובת לא נמצאה — יש להגדיר מחדש" };
   return { reachable: false, error: `שגיאה (קוד ${status ?? "לא ידוע"})` };
 }
+
+/** Pure helper: the final Hebrew verdict for a queue, combining reachability
+ * with the result of the token-bearing ping. */
+export function queueVerdict(p: QueueProbeResult): { ok: boolean; message: string } {
+  if (!p.urlConfigured) return { ok: false, message: "לא הוגדרה כתובת" };
+  if (!p.reachable) return { ok: false, message: p.error ?? "לא נגיש" };
+  if (!p.tokenConfigured) return { ok: false, message: "לא הוגדר אסימון" };
+  if (p.tokenValid === false) return { ok: false, message: "האסימון אינו תקף" };
+  if (p.tokenValid === null) return { ok: false, message: "לא ניתן לאמת את האסימון" };
+  return { ok: true, message: "תקין" };
+}
+

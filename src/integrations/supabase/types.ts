@@ -1889,6 +1889,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      get_cron_token: { Args: { _name: string }; Returns: string }
       get_queue_status: { Args: never; Returns: Json }
       get_voice_queue_endpoint: { Args: never; Returns: string }
       has_crm_access: {

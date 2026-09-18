@@ -47,10 +47,11 @@ async function handleProcessMentionQueue(request: Request) {
 export const Route = createFileRoute("/api/public/hooks/process-mention-queue")({
   server: {
     handlers: {
-      GET: async () => new Response(JSON.stringify({ ok: true, queue: "mention" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      GET: async ({ request }) => {
+        const { queuePingResponse } = await import("@/lib/queue-ping.server");
+        return queuePingResponse(request, "mention");
+      },
+
       POST: async ({ request }) => handleProcessMentionQueue(request),
     },
   },

@@ -47,8 +47,14 @@ async function handleProcessVoiceQueue(request: Request) {
 export const Route = createFileRoute("/api/public/hooks/process-voice-queue")({
   server: {
     handlers: {
-      GET: async ({ request }) => handleProcessVoiceQueue(request),
+      // GET is a health ping only — it never processes the queue. Mirrors
+      // process-mention-queue.ts so both endpoints are probed the same way.
+      GET: async ({ request }) => {
+        const { queuePingResponse } = await import("@/lib/queue-ping.server");
+        return queuePingResponse(request, "voice");
+      },
       POST: async ({ request }) => handleProcessVoiceQueue(request),
     },
   },
 });
+

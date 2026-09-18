@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { queueUrlsFromStatus, queueInfoFromStatus, classifyQueueProbe } from "./queue-status";
+import { queueUrlsFromStatus, queueInfoFromStatus, classifyQueueProbe , queueVerdict } from "./queue-status";
 
 describe("queueUrlsFromStatus", () => {
   it("parses the real shape", () => {
@@ -77,5 +77,41 @@ describe("classifyQueueProbe", () => {
   });
   it("network failure reports a network error", () => {
     expect(classifyQueueProbe(undefined, "fetch failed")).toEqual({ reachable: false, error: "שגיאת רשת" });
+  });
+});
+
+describe("queueVerdict — the four distinct states the card shows", () => {
+  const base = {
+    urlConfigured: true, tokenConfigured: true, tokenValid: true,
+    armed: true, pending: 0, reachable: true,
+  } as const;
+
+  it("no url configured", () => {
+    expect(queueVerdict({ ...base, urlConfigured: false, tokenValid: null, reachable: false }))
+      .toEqual({ ok: false, message: "לא הוגדרה כתובת" });
+  });
+
+  it("wrong url (404) surfaces the probe error", () => {
+    expect(queueVerdict({ ...base, reachable: false, tokenValid: null, error: "הכתובת לא נמצאה — יש להגדיר מחדש" }))
+      .toEqual({ ok: false, message: "הכתובת לא נמצאה — יש להגדיר מחדש" });
+  });
+
+  it("no token configured is not healthy even when reachable", () => {
+    expect(queueVerdict({ ...base, tokenConfigured: false, tokenValid: null }))
+      .toEqual({ ok: false, message: "לא הוגדר אסימון" });
+  });
+
+  it("an invalid token is reported as such, not as a permission error", () => {
+    expect(queueVerdict({ ...base, tokenValid: false }))
+      .toEqual({ ok: false, message: "האסימון אינו תקף" });
+  });
+
+  it("an unverifiable token is not reported as healthy", () => {
+    expect(queueVerdict({ ...base, tokenValid: null }))
+      .toEqual({ ok: false, message: "לא ניתן לאמת את האסימון" });
+  });
+
+  it("reachable + token verified is healthy, even when the job is disarmed", () => {
+    expect(queueVerdict({ ...base, armed: false })).toEqual({ ok: true, message: "תקין" });
   });
 });

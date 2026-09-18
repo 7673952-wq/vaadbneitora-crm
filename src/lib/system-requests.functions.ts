@@ -251,7 +251,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         // before it does anything, so a crash mid-way is always resumable.
         const { executeManualSystemAction } = await import("@/lib/system-requests.server");
         const confirmedMatches = (data.confirmedMatches ?? []).map((id) => ({ id, name: "", system_code: null }));
-        const result = await executeManualSystemAction(supabaseAdmin, req, {
+        const result = await executeManualSystemAction(supabaseAdmin, context.userId, req, {
           systemAction: data.systemAction,
           targetSystemId: data.targetSystemId ?? null,
           parentSystemId: data.parentSystemId ?? null,

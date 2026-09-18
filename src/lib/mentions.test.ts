@@ -104,6 +104,29 @@ describe("processMentionQueue", () => {
     expect(result.sent).toBe(1);
   });
 
+  it("sends only structured fields to the relay — never server-built HTML", async () => {
+    const { admin } = makeSupabaseAdmin({
+      claimRows: [[baseRow()]],
+      relayUrl: "https://relay.example/exec",
+      relaySecret: "s3cr3t",
+      baseUrl: "https://example.com/app",
+    });
+    const postToRelay = vi.fn(
+      async (_url: string, _payload: unknown) => new Response(JSON.stringify({ ok: true }), { status: 200 }),
+    );
+
+    await processMentionQueue(admin, { postToRelay });
+
+    const payload = postToRelay.mock.calls[0]![1] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("html");
+    expect(typeof payload.actorName).toBe("string");
+    expect(typeof payload.noteBody).toBe("string");
+    expect(typeof payload.contextTitle).toBe("string");
+    expect(payload.buttonLabel).toBe("לצפייה");
+    expect(String(payload.buttonUrl)).toMatch(/^https:\/\/example\.com\/app/);
+  });
+
+
   it("backs off 60s on the first relay failure and fails outright on the fifth attempt", async () => {
     const postToRelay = vi.fn(async () => new Response(JSON.stringify({ ok: false, error: "בעיה" }), { status: 500 }));
 

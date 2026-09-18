@@ -75,7 +75,9 @@ export const checkQueueHealth = createServerFn({ method: "POST" })
     await assertQueueAdmin(context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { queueInfoFromStatus, classifyQueueProbe } = await import("@/lib/queue-status");
-    const { data: status } = await (supabaseAdmin as any).rpc("get_queue_status");
+    const { data: status, error: statusError } = await (supabaseAdmin as any).rpc("get_queue_status");
+    // A failed status read is a real failure, not an empty status.
+    if (statusError) throw new Error(`קריאת מצב התורים נכשלה: ${statusError.message}`);
     const results: Record<string, import("@/lib/queue-status").QueueProbeResult> = {};
     for (const name of ["voice_queue", "mention_queue"] as const) {
       const info = queueInfoFromStatus(status, name);
@@ -83,6 +85,7 @@ export const checkQueueHealth = createServerFn({ method: "POST" })
         results[name] = {
           urlConfigured: false,
           tokenConfigured: info.tokenConfigured,
+          tokenValid: null,
           armed: info.armed,
           pending: info.pending,
           reachable: false,
@@ -90,14 +93,35 @@ export const checkQueueHealth = createServerFn({ method: "POST" })
         };
         continue;
       }
+      // The probe presents the queue's real cron token so the check proves
+      // authentication works end to end. GET never processes the queue.
+      let token: string | null = null;
+      if (info.tokenConfigured) {
+        const { data: tokenRow } = await (supabaseAdmin as any).rpc("get_cron_token", { _name: name });
+        token = typeof tokenRow === "string" && tokenRow ? tokenRow : null;
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       try {
-        const res = await fetch(info.url, { method: "GET", signal: controller.signal });
+        const res = await fetch(info.url, {
+          method: "GET",
+          signal: controller.signal,
+          headers: token ? { "x-cron-token": token } : {},
+        });
         const classified = classifyQueueProbe(res.status);
+        let tokenValid: boolean | null = null;
+        if (classified.reachable && token) {
+          try {
+            const body: any = await res.json();
+            tokenValid = typeof body?.tokenValid === "boolean" ? body.tokenValid : null;
+          } catch {
+            tokenValid = null;
+          }
+        }
         results[name] = {
           urlConfigured: true,
           tokenConfigured: info.tokenConfigured,
+          tokenValid,
           armed: info.armed,
           pending: info.pending,
           reachable: classified.reachable,
@@ -109,6 +133,7 @@ export const checkQueueHealth = createServerFn({ method: "POST" })
         results[name] = {
           urlConfigured: true,
           tokenConfigured: info.tokenConfigured,
+          tokenValid: null,
           armed: info.armed,
           pending: info.pending,
           reachable: classified.reachable,
@@ -120,6 +145,7 @@ export const checkQueueHealth = createServerFn({ method: "POST" })
     }
     return results;
   });
+
 
 export const listMentionDeliveries = createServerFn({ method: "GET" })
   .middleware([requireAuthMfa])

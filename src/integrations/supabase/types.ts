@@ -1225,6 +1225,8 @@ export type Database = {
           last_completed_state: string
           last_error: string | null
           manual_action: string | null
+          manual_approval_required: boolean
+          manual_created_system_id: string | null
           manual_last_error: string | null
           manual_root_confirmed_matches: Json | null
           manual_started_at: string | null
@@ -1280,6 +1282,8 @@ export type Database = {
           last_completed_state?: string
           last_error?: string | null
           manual_action?: string | null
+          manual_approval_required?: boolean
+          manual_created_system_id?: string | null
           manual_last_error?: string | null
           manual_root_confirmed_matches?: Json | null
           manual_started_at?: string | null
@@ -1335,6 +1339,8 @@ export type Database = {
           last_completed_state?: string
           last_error?: string | null
           manual_action?: string | null
+          manual_approval_required?: boolean
+          manual_created_system_id?: string | null
           manual_last_error?: string | null
           manual_root_confirmed_matches?: Json | null
           manual_started_at?: string | null
@@ -1370,6 +1376,13 @@ export type Database = {
             columns: ["duplicate_of"]
             isOneToOne: false
             referencedRelation: "system_requests"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "system_requests_manual_created_system_id_fkey"
+            columns: ["manual_created_system_id"]
+            isOneToOne: false
+            referencedRelation: "systems"
             referencedColumns: ["id"]
           },
           {

@@ -195,27 +195,27 @@ export const listMentionDeliveries = createServerFn({ method: "GET" })
     });
   });
 
+/**
+ * Legacy entry point kept for existing callers. It performs NO retry logic of
+ * its own: everything goes through the SAME guard as `retryMentionDelivery`,
+ * so an ambiguous ("unknown"/"skipped_no_email") delivery can never be
+ * requeued without explicit confirmation through any server function.
+ */
 export const requeueMentionDelivery = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { deliveryId: string }) => z.object({ deliveryId: z.string().uuid() }).parse(d))
+  .inputValidator((d: { deliveryId: string; confirmUnknown?: boolean }) =>
+    z.object({ deliveryId: z.string().uuid(), confirmUnknown: z.boolean().optional() }).parse(d))
   .handler(async ({ data, context }) => {
     await assertQueueAdmin(context.userId);
-    const { limitSensitiveAction } = await import("@/lib/db-rate-limit.server");
-    await limitSensitiveAction("mention_requeue", context.userId);
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: ok, error } = await (supabaseAdmin as any).rpc("requeue_mention_delivery", {
-      _delivery_id: data.deliveryId,
-      _actor: context.userId,
+    const { performMentionRetry } = await import("@/lib/mentions.functions");
+    return performMentionRetry(supabaseAdmin, {
+      deliveryId: data.deliveryId,
+      userId: context.userId,
+      confirmUnknown: data.confirmUnknown,
     });
-    if (error) throw new Error(error.message);
-    if (!ok) throw new Error("לא ניתן היה לשלוח מחדש את ההודעה");
-    try {
-      await (supabaseAdmin as any).rpc("ensure_mention_queue_job");
-    } catch {
-      // log-only — best effort arming
-    }
-    return { ok: true };
   });
+
 
 export const processMentionQueueNow = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])

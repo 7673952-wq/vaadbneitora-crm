@@ -706,20 +706,19 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
 import type { SystemLite, ConfirmedMatch } from "@/lib/system-matching";
 import { computeNameMatch, decideRootCreation } from "@/lib/system-matching";
 
-/** Candidate systems (with their parent, for root resolution) for a typed name. */
+/**
+ * Candidate systems for a typed name — delegates to the SINGLE shared
+ * candidate-search layer (`searchCandidateSystems`) that the "open a new
+ * system" flow (`findSystemByName`) also uses, so the same typed name can
+ * never produce two different candidate lists or two different orderings.
+ */
 export async function queryCandidateSystemsByName(
   supabaseAdmin: any, crmKey: string, name: string,
 ): Promise<SystemLite[]> {
-  const q = String(name ?? "").trim();
-  if (!q) return [];
-  const { data, error } = await supabaseAdmin
-    .from("systems")
-    .select("id, name, system_code, parent_system_id, parent:parent_system_id(id, name, system_code, parent_system_id)")
-    .ilike("name", q)
-    .limit(50);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as SystemLite[];
+  const { searchCandidateSystems } = await import("@/lib/system-search");
+  return searchCandidateSystems(supabaseAdmin, name);
 }
+
 
 /** Pure match computed against freshly-loaded candidates — never trusts a cached list. */
 export async function matchSystemNameForRequest(supabaseAdmin: any, crmKey: string, name: string) {
@@ -809,10 +808,16 @@ export async function executeManualSystemAction(
   // switch the action mid-flight is refused, never silently overwritten.
   const { data: currentRow, error: readError } = await supabaseAdmin
     .from("system_requests")
-    .select("manual_system_action, manual_target_system_id, manual_target_parent_system_id, manual_root_confirmed_matches")
+    .select("manual_system_action, manual_target_system_id, manual_target_parent_system_id, manual_root_confirmed_matches, manual_created_system_id")
     .eq("id", req.id).maybeSingle();
   if (readError) throw new Error(`קריאת מצב הבקשה נכשלה: ${readError.message}`);
   const persistedAction = String((currentRow as any)?.manual_system_action ?? "").trim();
+  // Durable creation checkpoint: the id of the system this SAME decision
+  // already created. Written immediately after the INSERT and before any
+  // further step, so a retry after a half-way failure reuses that system
+  // instead of inserting a second one (or mistaking it for a new conflict).
+  const createdCheckpoint = ((currentRow as any)?.manual_created_system_id ?? null) as string | null;
+
 
   let systemAction: ManualSystemAction;
   let targetSystemId: string | null;
@@ -870,6 +875,28 @@ export async function executeManualSystemAction(
     if (!rows?.length) throw new Error("קישור הבקשה למערכת נכשל — רענן ונסה שוב");
   };
 
+  /**
+   * Records the just-created system on the request BEFORE anything else runs.
+   * CAS on a NULL checkpoint: if a concurrent call already wrote one, that id
+   * wins and this call reuses it, so only one system is ever kept per request.
+   */
+  const checkpointCreated = async (systemId: string): Promise<string> => {
+    const { data: rows, error } = await supabaseAdmin
+      .from("system_requests")
+      .update({ manual_created_system_id: systemId })
+      .eq("id", req.id)
+      .is("manual_created_system_id", null)
+      .select("id");
+    if (error) throw new Error(`שמירת המערכת שנוצרה נכשלה: ${error.message}`);
+    if (rows?.length) return systemId;
+    const { data: row, error: reReadError } = await supabaseAdmin
+      .from("system_requests").select("manual_created_system_id").eq("id", req.id).maybeSingle();
+    if (reReadError) throw new Error(`קריאת המערכת שנוצרה נכשלה: ${reReadError.message}`);
+    const winner = ((row as any)?.manual_created_system_id ?? null) as string | null;
+    if (!winner) throw new Error("שמירת המערכת שנוצרה נכשלה — רענן ונסה שוב");
+    return winner;
+  };
+
   if (systemAction === "link_existing") {
     if (!targetSystemId) throw new Error("יש לבחור מערכת קיימת");
     // Re-verify on resume too: a target persisted earlier must still exist
@@ -877,6 +904,14 @@ export async function executeManualSystemAction(
     await verifySystemInCrm(targetSystemId, "המערכת שנבחרה");
     await linkRequest(targetSystemId);
     return { ok: true, systemId: targetSystemId };
+  }
+
+  // Resume path for BOTH create actions: this decision already created a
+  // system. Never insert again, never re-run the conflict check — only finish
+  // the remaining step (linking the request to it).
+  if (createdCheckpoint) {
+    await linkRequest(createdCheckpoint);
+    return { ok: true, systemId: createdCheckpoint };
   }
 
   if (systemAction === "create_sub") {
@@ -892,8 +927,9 @@ export async function executeManualSystemAction(
       source: "בקשה מהמייל",
     }).select("id").maybeSingle();
     if (error) throw new Error(`יצירת תת-המערכת נכשלה: ${error.message}`);
-    const systemId = (created as any)?.id as string | undefined;
-    if (!systemId) throw new Error("יצירת תת-המערכת נכשלה");
+    const inserted = (created as any)?.id as string | undefined;
+    if (!inserted) throw new Error("יצירת תת-המערכת נכשלה");
+    const systemId = await checkpointCreated(inserted);
     await linkRequest(systemId);
     return { ok: true, systemId };
   }
@@ -926,10 +962,12 @@ export async function executeManualSystemAction(
     }));
     return { ok: false, conflict: true, matches: currentMatches };
   }
-  const systemId = (created as any)?.id as string | undefined;
-  if (!systemId) throw new Error("יצירת המערכת נכשלה");
+  const inserted = (created as any)?.id as string | undefined;
+  if (!inserted) throw new Error("יצירת המערכת נכשלה");
+  const systemId = await checkpointCreated(inserted);
   await linkRequest(systemId);
   return { ok: true, systemId };
+
 }
 
 /** Soft-deletes a request; throws on a technical failure or a lost race (already deleted). */
@@ -998,6 +1036,8 @@ export async function clearManualIntent(supabaseAdmin: any, id: string): Promise
       manual_action: null, manual_target_status: null, manual_target_name: null,
       manual_system_action: null, manual_target_system_id: null,
       manual_target_parent_system_id: null, manual_root_confirmed_matches: null,
+      manual_created_system_id: null,
+
     })
     .eq("id", id)
     .select("id");

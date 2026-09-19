@@ -1036,6 +1036,8 @@ export async function clearManualIntent(supabaseAdmin: any, id: string): Promise
       manual_action: null, manual_target_status: null, manual_target_name: null,
       manual_system_action: null, manual_target_system_id: null,
       manual_target_parent_system_id: null, manual_root_confirmed_matches: null,
+      manual_created_system_id: null,
+
     })
     .eq("id", id)
     .select("id");

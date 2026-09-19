@@ -706,20 +706,19 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
 import type { SystemLite, ConfirmedMatch } from "@/lib/system-matching";
 import { computeNameMatch, decideRootCreation } from "@/lib/system-matching";
 
-/** Candidate systems (with their parent, for root resolution) for a typed name. */
+/**
+ * Candidate systems for a typed name — delegates to the SINGLE shared
+ * candidate-search layer (`searchCandidateSystems`) that the "open a new
+ * system" flow (`findSystemByName`) also uses, so the same typed name can
+ * never produce two different candidate lists or two different orderings.
+ */
 export async function queryCandidateSystemsByName(
   supabaseAdmin: any, crmKey: string, name: string,
 ): Promise<SystemLite[]> {
-  const q = String(name ?? "").trim();
-  if (!q) return [];
-  const { data, error } = await supabaseAdmin
-    .from("systems")
-    .select("id, name, system_code, parent_system_id, parent:parent_system_id(id, name, system_code, parent_system_id)")
-    .ilike("name", q)
-    .limit(50);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as SystemLite[];
+  const { searchCandidateSystems } = await import("@/lib/system-search");
+  return searchCandidateSystems(supabaseAdmin, name);
 }
+
 
 /** Pure match computed against freshly-loaded candidates — never trusts a cached list. */
 export async function matchSystemNameForRequest(supabaseAdmin: any, crmKey: string, name: string) {

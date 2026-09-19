@@ -808,10 +808,16 @@ export async function executeManualSystemAction(
   // switch the action mid-flight is refused, never silently overwritten.
   const { data: currentRow, error: readError } = await supabaseAdmin
     .from("system_requests")
-    .select("manual_system_action, manual_target_system_id, manual_target_parent_system_id, manual_root_confirmed_matches")
+    .select("manual_system_action, manual_target_system_id, manual_target_parent_system_id, manual_root_confirmed_matches, manual_created_system_id")
     .eq("id", req.id).maybeSingle();
   if (readError) throw new Error(`קריאת מצב הבקשה נכשלה: ${readError.message}`);
   const persistedAction = String((currentRow as any)?.manual_system_action ?? "").trim();
+  // Durable creation checkpoint: the id of the system this SAME decision
+  // already created. Written immediately after the INSERT and before any
+  // further step, so a retry after a half-way failure reuses that system
+  // instead of inserting a second one (or mistaking it for a new conflict).
+  const createdCheckpoint = ((currentRow as any)?.manual_created_system_id ?? null) as string | null;
+
 
   let systemAction: ManualSystemAction;
   let targetSystemId: string | null;

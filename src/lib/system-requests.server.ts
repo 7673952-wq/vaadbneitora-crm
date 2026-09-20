@@ -42,6 +42,21 @@ export async function readAutomationMode(supabaseAdmin: any, crmKey = "yemot"): 
   return mode === "live" || mode === "off" ? mode : "dry_run";
 }
 
+/**
+ * "Require manual approval for every request" — a setting that is INDEPENDENT
+ * of off/dry_run/live. When it is on and the mode is `live`, the engine still
+ * computes everything but performs no operational write; the request waits for
+ * a human. Stored per CRM, exactly like the mode.
+ */
+export async function readManualApprovalRequired(supabaseAdmin: any, crmKey = "yemot"): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("app_settings").select("value")
+    .eq("key", requestSettingKey("request_require_manual_approval", crmKey)).maybeSingle();
+  if (error) throw new Error(`קריאת הגדרת האישור הידני נכשלה: ${error.message}`);
+  return (data?.value as { required?: boolean } | null)?.required === true;
+}
+
+
 async function readDefaultStatus(supabaseAdmin: any, type: RequestType, crmKey = "yemot"): Promise<string | null> {
   const { data, error } = await supabaseAdmin
     .from("app_settings").select("value")
@@ -365,13 +380,21 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   }
 
   // The mode is read before the row is written so the request permanently
-  // records the automation mode that was in effect when it arrived.
+  // records the automation mode that was in effect when it arrived. The
+  // manual-approval setting is snapshotted the same way, so a later change of
+  // the setting never rewrites the history of an already-ingested request.
   let mode: AutomationMode;
+  let requireApproval: boolean;
   try {
     mode = await readAutomationMode(supabaseAdmin, crmKey);
+    requireApproval = await readManualApprovalRequired(supabaseAdmin, crmKey);
   } catch (e: any) {
     return { ok: false, completed: false, retry: true, error: String(e?.message ?? e) };
   }
+  /** live + "require manual approval": compute everything, change nothing. */
+  const holdForApproval = mode === "live" && requireApproval;
+  const HOLD_MESSAGE = "ממתין לאישור ידני — לא בוצע שינוי";
+
 
   const insertRow = {
     crm_key: crmKey,
@@ -393,7 +416,9 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     received_at: receivedIso,
     processing_state: "received",
     automation_mode: mode,
+    manual_approval_required: holdForApproval,
   };
+
 
   const { error: insertError } = await supabaseAdmin.from("system_requests").insert(insertRow);
   if (insertError) {
@@ -563,6 +588,19 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
           });
           return { ok: true, completed: true, requestId: req.id, mode, decision: "simulated", wouldCreate: true };
         }
+        if (holdForApproval) {
+          // LIVE + manual approval: the proposal (create the system in the
+          // default status) is stored for a human. Nothing is created.
+          await done(supabaseAdmin, req.id, {
+            last_completed_state: "parsed",
+            decision_status: "needs_decision", dry_run: false,
+            proposed_action: "create_system",
+            proposed_status: defaultStatus,
+            last_error: HOLD_MESSAGE,
+          });
+          return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", awaitingApproval: true, wouldCreate: true };
+        }
+
 
         // LIVE: create once, in the configured default status. A brand-new
         // system deliberately does NOT go through the rule engine — the rules
@@ -632,6 +670,20 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       await done(supabaseAdmin, req.id, { decision_status: decision });
       return { ok: true, completed: true, requestId: req.id, mode, decision, proposed: outcome.action };
     }
+
+    if (holdForApproval) {
+      // LIVE + manual approval stops here, exactly like dry run stops above,
+      // except that this was NOT a test: the proposal is real and waits for a
+      // human. No status change, no phone added, no ignore/keep marking, no
+      // side effects, no voice send — the engine only proposes.
+      await done(supabaseAdmin, req.id, {
+        decision_status: "needs_decision",
+        dry_run: false,
+        last_error: HOLD_MESSAGE,
+      });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", awaitingApproval: true, proposed: outcome.action };
+    }
+
 
     // ---- decision first, actions after -------------------------------------
     // The decision determines which operational writes are allowed at all:

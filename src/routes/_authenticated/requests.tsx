@@ -488,12 +488,13 @@ function RequestCard({
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
-  // Collapsed by default so the queue stays scannable; the request reached
-  // from a system card opens itself.
-  const [open, setOpen] = useState(highlighted);
+  // Expanded by default — the queue is worked through, not just scanned.
+  const [open, setOpen] = useState(true);
   useEffect(() => { if (highlighted) setOpen(true); }, [highlighted]);
 
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
+  const awaitingApproval = mode === "live" && (r as any).manual_approval_required === true;
+
 
   const remove = () => {
     const reason = window.prompt("סיבת המחיקה (לא חובה):", "");
@@ -509,13 +510,15 @@ function RequestCard({
         highlighted ? "border-primary ring-2 ring-primary/40" : "border-border"
       } ${isDeleted ? "opacity-70" : ""}`}
     >
-      {/* Compact single-line header — everything else opens on demand. */}
+      {/* Single-line header. The system name is a real link to its card, so it
+          lives outside the toggle button instead of inside it. */}
       <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="flex min-w-0 flex-1 items-center gap-2 text-right text-sm"
+          aria-label={open ? "כווץ בקשה" : "הרחב בקשה"}
+          className="flex shrink-0 items-center gap-2 text-sm"
         >
           {open ? <ChevronUp className="size-4 shrink-0 text-muted-foreground" /> : <ChevronDown className="size-4 shrink-0 text-muted-foreground" />}
           <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
@@ -524,23 +527,42 @@ function RequestCard({
               : "bg-amber-500/15 text-amber-700"}`}>
             {r.request_type === "pticha" ? "פתיחה" : r.request_type === "sgira" ? "סגירה" : "לא זוהה"}
           </span>
-          <span className="truncate font-medium">
-            {r.system
-              ? `${r.system.system_code} · ${r.system.name}`
-              : hasCode
-                ? `מערכת ${r.system_code_raw ?? r.system_code_norm} — אינה קיימת`
-                : "לא זוהה מספר מערכת"}
+        </button>
+        {r.system ? (
+          <Link
+            to="/systems/$id"
+            params={{ id: r.system.id }}
+            className="truncate font-medium text-sm underline decoration-dotted hover:text-primary"
+          >
+            {r.system.system_code} · {r.system.name}
+          </Link>
+        ) : (
+          <span className="truncate text-sm font-medium">
+            {hasCode
+              ? `מערכת ${r.system_code_raw ?? r.system_code_norm} — אינה קיימת`
+              : "לא זוהה מספר מערכת"}
           </span>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-hidden
+          tabIndex={-1}
+          className="flex min-w-0 flex-1 items-center gap-2 text-right text-sm"
+        >
           {r.proposed_status && (
             <span className="shrink-0 text-[11px] text-muted-foreground">← {label(r.proposed_status)}</span>
           )}
           <span className="shrink-0 text-[11px] text-muted-foreground">
             {DECISION_LABELS[r.decision_status] ?? r.decision_status ?? "בעיבוד"}
           </span>
-          {mode && mode !== "live" && <span className="shrink-0 text-[11px] font-medium text-amber-700">בדיקה בלבד</span>}
+          {awaitingApproval
+            ? <span className="shrink-0 text-[11px] font-medium text-sky-700">פעיל · ממתין לאישור ידני</span>
+            : mode && mode !== "live" && <span className="shrink-0 text-[11px] font-medium text-amber-700">בדיקה בלבד</span>}
           {isDeleted && <span className="shrink-0 text-[11px] font-medium text-destructive">נמחקה</span>}
           <span className="ms-auto shrink-0 text-[11px] text-muted-foreground">{fmt(r.received_at)}</span>
         </button>
+
         {canDelete && (
           isDeleted ? (
             <Button size="sm" variant="ghost" disabled={busy} onClick={onRestore} aria-label="שחזור הבקשה" title="שחזור">

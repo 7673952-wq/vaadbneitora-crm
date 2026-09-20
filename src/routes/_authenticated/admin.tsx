@@ -706,7 +706,23 @@ function RequestAutomationPanel() {
             <option value="live">פעיל</option>
           </select>
         </Field>
-        <div>
+        <div className="max-w-64">
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={requireApproval}
+              onChange={(e) => setRequireApproval(e.target.checked)}
+              className="size-4 accent-primary"
+            />
+            דרוש אישור ידני לכל בקשה
+          </label>
+          {mode === "live" && requireApproval && (
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              האוטומציה תנתח כל בקשה ותציע את הפעולה המתאימה, אך לא תבצע שינוי לפני אישור ידני.
+            </p>
+          )}
+        </div>
+
           <Field label="סטטוס למערכת חדשה — בקשת פתיחה">
             <StatusSelect value={defPticha} onChange={setDefPticha} emptyLabel="ריק = לא ליצור מערכת" />
           </Field>

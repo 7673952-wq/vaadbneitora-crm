@@ -597,12 +597,13 @@ export const getRequestAutomationSettings = createServerFn({ method: "GET" })
 
 export const setRequestAutomationSettings = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])
-  .inputValidator((d: { mode: "off" | "dry_run" | "live"; crmKey?: string | null; defaultPticha?: string | null; defaultSgira?: string | null }) =>
+  .inputValidator((d: { mode: "off" | "dry_run" | "live"; crmKey?: string | null; defaultPticha?: string | null; defaultSgira?: string | null; requireManualApproval?: boolean }) =>
     z.object({
       mode: z.enum(["off", "dry_run", "live"]),
       crmKey: z.string().max(60).nullable().optional(),
       defaultPticha: z.string().max(60).nullable().optional(),
       defaultSgira: z.string().max(60).nullable().optional(),
+      requireManualApproval: z.boolean().optional(),
     }).parse(d))
   .handler(async ({ data, context }) => {
     const { assertRequestPermission, assertCrmAccess, assertKnownStatus } = await import("@/lib/requests-access.server");
@@ -619,11 +620,13 @@ export const setRequestAutomationSettings = createServerFn({ method: "POST" })
       { key: settingKey("request_automation_mode", crmKey), value: { mode: data.mode }, updated_at: now, updated_by: context.userId },
       { key: settingKey("request_default_status_pticha", crmKey), value: { status: data.defaultPticha ?? null }, updated_at: now, updated_by: context.userId },
       { key: settingKey("request_default_status_sgira", crmKey), value: { status: data.defaultSgira ?? null }, updated_at: now, updated_by: context.userId },
+      { key: settingKey("request_require_manual_approval", crmKey), value: { required: data.requireManualApproval === true }, updated_at: now, updated_by: context.userId },
     ];
     const { error } = await supabaseAdmin.from("app_settings").upsert(rows);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
 
 // ============= Recording playback =============
 

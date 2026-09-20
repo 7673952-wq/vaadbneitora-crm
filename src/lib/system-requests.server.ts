@@ -380,13 +380,21 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
   }
 
   // The mode is read before the row is written so the request permanently
-  // records the automation mode that was in effect when it arrived.
+  // records the automation mode that was in effect when it arrived. The
+  // manual-approval setting is snapshotted the same way, so a later change of
+  // the setting never rewrites the history of an already-ingested request.
   let mode: AutomationMode;
+  let requireApproval: boolean;
   try {
     mode = await readAutomationMode(supabaseAdmin, crmKey);
+    requireApproval = await readManualApprovalRequired(supabaseAdmin, crmKey);
   } catch (e: any) {
     return { ok: false, completed: false, retry: true, error: String(e?.message ?? e) };
   }
+  /** live + "require manual approval": compute everything, change nothing. */
+  const holdForApproval = mode === "live" && requireApproval;
+  const HOLD_MESSAGE = "ממתין לאישור ידני — לא בוצע שינוי";
+
 
   const insertRow = {
     crm_key: crmKey,

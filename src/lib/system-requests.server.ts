@@ -671,6 +671,20 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
       return { ok: true, completed: true, requestId: req.id, mode, decision, proposed: outcome.action };
     }
 
+    if (holdForApproval) {
+      // LIVE + manual approval stops here, exactly like dry run stops above,
+      // except that this was NOT a test: the proposal is real and waits for a
+      // human. No status change, no phone added, no ignore/keep marking, no
+      // side effects, no voice send — the engine only proposes.
+      await done(supabaseAdmin, req.id, {
+        decision_status: "needs_decision",
+        dry_run: false,
+        last_error: HOLD_MESSAGE,
+      });
+      return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", awaitingApproval: true, proposed: outcome.action };
+    }
+
+
     // ---- decision first, actions after -------------------------------------
     // The decision determines which operational writes are allowed at all:
     //   ignore         → nothing at all (no status, no phone, no assignment)

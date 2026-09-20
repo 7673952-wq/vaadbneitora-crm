@@ -42,6 +42,21 @@ export async function readAutomationMode(supabaseAdmin: any, crmKey = "yemot"): 
   return mode === "live" || mode === "off" ? mode : "dry_run";
 }
 
+/**
+ * "Require manual approval for every request" — a setting that is INDEPENDENT
+ * of off/dry_run/live. When it is on and the mode is `live`, the engine still
+ * computes everything but performs no operational write; the request waits for
+ * a human. Stored per CRM, exactly like the mode.
+ */
+export async function readManualApprovalRequired(supabaseAdmin: any, crmKey = "yemot"): Promise<boolean> {
+  const { data, error } = await supabaseAdmin
+    .from("app_settings").select("value")
+    .eq("key", requestSettingKey("request_require_manual_approval", crmKey)).maybeSingle();
+  if (error) throw new Error(`קריאת הגדרת האישור הידני נכשלה: ${error.message}`);
+  return (data?.value as { required?: boolean } | null)?.required === true;
+}
+
+
 async function readDefaultStatus(supabaseAdmin: any, type: RequestType, crmKey = "yemot"): Promise<string | null> {
   const { data, error } = await supabaseAdmin
     .from("app_settings").select("value")

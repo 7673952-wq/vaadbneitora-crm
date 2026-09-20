@@ -488,12 +488,13 @@ function RequestCard({
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
-  // Collapsed by default so the queue stays scannable; the request reached
-  // from a system card opens itself.
-  const [open, setOpen] = useState(highlighted);
+  // Expanded by default — the queue is worked through, not just scanned.
+  const [open, setOpen] = useState(true);
   useEffect(() => { if (highlighted) setOpen(true); }, [highlighted]);
 
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
+  const awaitingApproval = mode === "live" && (r as any).manual_approval_required === true;
+
 
   const remove = () => {
     const reason = window.prompt("סיבת המחיקה (לא חובה):", "");

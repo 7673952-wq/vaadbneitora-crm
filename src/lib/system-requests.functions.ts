@@ -48,7 +48,8 @@ export const listSystemRequests = createServerFn({ method: "GET" })
         "automation_mode", "duplicate_of", "manual_action", "manual_target_status",
         "manual_target_name", "manual_last_error", "manual_system_action",
         "manual_target_system_id", "manual_target_parent_system_id",
-        "deleted_at", "deleted_by", "delete_reason",
+        "deleted_at", "deleted_by", "delete_reason", "manual_approval_required",
+
       ].join(", "))
       .in("crm_key", crmKeys)
       .order("received_at", { ascending: false })

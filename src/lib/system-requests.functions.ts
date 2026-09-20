@@ -578,6 +578,7 @@ export const getRequestAutomationSettings = createServerFn({ method: "GET" })
       settingKey("request_automation_mode", crmKey),
       settingKey("request_default_status_pticha", crmKey),
       settingKey("request_default_status_sgira", crmKey),
+      settingKey("request_require_manual_approval", crmKey),
     ];
     const { data: rows, error } = await supabaseAdmin
       .from("app_settings").select("key, value").in("key", keys);
@@ -588,8 +589,11 @@ export const getRequestAutomationSettings = createServerFn({ method: "GET" })
       mode: (map.get(keys[0]!) as any)?.mode ?? "dry_run",
       defaultPticha: (map.get(keys[1]!) as any)?.status ?? null,
       defaultSgira: (map.get(keys[2]!) as any)?.status ?? null,
+      // Independent of the mode: when on, a `live` automation only proposes.
+      requireManualApproval: (map.get(keys[3]!) as any)?.required === true,
     };
   });
+
 
 export const setRequestAutomationSettings = createServerFn({ method: "POST" })
   .middleware([requireAuthMfa])

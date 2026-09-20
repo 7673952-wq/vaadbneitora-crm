@@ -588,6 +588,19 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
           });
           return { ok: true, completed: true, requestId: req.id, mode, decision: "simulated", wouldCreate: true };
         }
+        if (holdForApproval) {
+          // LIVE + manual approval: the proposal (create the system in the
+          // default status) is stored for a human. Nothing is created.
+          await done(supabaseAdmin, req.id, {
+            last_completed_state: "parsed",
+            decision_status: "needs_decision", dry_run: false,
+            proposed_action: "create_system",
+            proposed_status: defaultStatus,
+            last_error: HOLD_MESSAGE,
+          });
+          return { ok: true, completed: true, requestId: req.id, mode, decision: "needs_decision", awaitingApproval: true, wouldCreate: true };
+        }
+
 
         // LIVE: create once, in the configured default status. A brand-new
         // system deliberately does NOT go through the rule engine — the rules

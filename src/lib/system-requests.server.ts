@@ -416,7 +416,9 @@ export async function ingestSystemRequest(supabaseAdmin: any, payload: IngestPay
     received_at: receivedIso,
     processing_state: "received",
     automation_mode: mode,
+    manual_approval_required: holdForApproval,
   };
+
 
   const { error: insertError } = await supabaseAdmin.from("system_requests").insert(insertRow);
   if (insertError) {

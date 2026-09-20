@@ -634,18 +634,22 @@ function RequestAutomationPanel() {
   const [mode, setMode] = useState<"off" | "dry_run" | "live">("dry_run");
   const [defPticha, setDefPticha] = useState("");
   const [defSgira, setDefSgira] = useState("");
+  // Independent of the mode: a `live` automation that only proposes.
+  const [requireApproval, setRequireApproval] = useState(false);
   useEffect(() => {
     if (!data) return;
     setMode((data.mode as any) ?? "dry_run");
     setDefPticha(data.defaultPticha ?? "");
     setDefSgira(data.defaultSgira ?? "");
+    setRequireApproval((data as any).requireManualApproval === true);
   }, [data]);
 
   const [draft, setDraft] = useState<{ request_type: "pticha" | "sgira"; from_status: string; action: "set_status" | "keep" | "needs_decision" | "ignore"; to_status: string }>(
     { request_type: "pticha", from_status: "", action: "set_status", to_status: "" });
 
   const saveSettings = useMutation({
-    mutationFn: () => setFn({ data: { mode, defaultPticha: defPticha || null, defaultSgira: defSgira || null } } as any),
+    mutationFn: () => setFn({ data: { mode, defaultPticha: defPticha || null, defaultSgira: defSgira || null, requireManualApproval: requireApproval } } as any),
+
     onSuccess: () => { toast.success("נשמר"); qc.invalidateQueries({ queryKey: ["request_automation"] }); },
     onError: (e: any) => toast.error(e?.message ?? "שגיאה"),
   });

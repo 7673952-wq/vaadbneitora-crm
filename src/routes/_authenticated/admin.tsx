@@ -722,8 +722,9 @@ function RequestAutomationPanel() {
             </p>
           )}
         </div>
-
+        <div>
           <Field label="סטטוס למערכת חדשה — בקשת פתיחה">
+
             <StatusSelect value={defPticha} onChange={setDefPticha} emptyLabel="ריק = לא ליצור מערכת" />
           </Field>
           <p className="mt-1 max-w-52 text-[11px] text-muted-foreground">

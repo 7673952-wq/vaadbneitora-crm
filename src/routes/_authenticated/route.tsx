@@ -200,7 +200,8 @@ function AuthedLayout() {
     queryClient.clear();
     await supabase.auth.signOut();
     // An explicit sign-out has no destination to return to.
-    navigate({ to: "/auth", replace: true, search: {} });
+    navigate({ to: "/auth", replace: true, search: { next: undefined } });
+
 
   }
 

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
  * limiter. This test reads the real sources so a limiter that gets removed in a
  * future refactor fails the suite instead of silently disappearing.
  */
-const SENSITIVE_ACTIONS: { action: string; scope: string; file: string }[] = [
+const SENSITIVE_ACTIONS: { action: string; scope: string; file: string; via?: string; viaFile?: string }[] = [
   { action: "createUser", scope: "admin_user_manage", file: "src/lib/admin.functions.ts" },
   { action: "deleteUser", scope: "admin_user_manage", file: "src/lib/admin.functions.ts" },
   { action: "setUserRole", scope: "admin_user_manage", file: "src/lib/admin.functions.ts" },
@@ -34,7 +34,11 @@ const SENSITIVE_ACTIONS: { action: string; scope: string; file: string }[] = [
   { action: "decideSystemRequest", scope: "request_decide", file: "src/lib/system-requests.functions.ts" },
   { action: "deleteSystemRequest", scope: "request_delete", file: "src/lib/system-requests.functions.ts" },
   { action: "restoreSystemRequest", scope: "request_delete", file: "src/lib/system-requests.functions.ts" },
-  { action: "requeueMentionDelivery", scope: "mention_requeue", file: "src/lib/queues.functions.ts" },
+  // Both retry entry points delegate to performMentionRetry, which is where the
+  // permission check, the unknown-confirmation guard and the limit all live.
+  { action: "retryMentionDelivery", scope: "mention_requeue", file: "src/lib/mentions.functions.ts", via: "performMentionRetry", viaFile: "src/lib/mentions.functions.ts" },
+  { action: "requeueMentionDelivery", scope: "mention_requeue", file: "src/lib/queues.functions.ts", via: "performMentionRetry", viaFile: "src/lib/mentions.functions.ts" },
+
   { action: "processMentionQueueNow", scope: "mention_process", file: "src/lib/queues.functions.ts" },
   { action: "setAppBaseUrl", scope: "queue_config", file: "src/lib/queues.functions.ts" },
   { action: "setEmailRelayConfig", scope: "admin_integrations", file: "src/lib/email.functions.ts" },
@@ -60,14 +64,25 @@ describe("sensitive actions are rate limited", () => {
     return cache.get(file)!;
   };
 
-  for (const { action, scope, file } of SENSITIVE_ACTIONS) {
+  for (const { action, scope, file, via, viaFile } of SENSITIVE_ACTIONS) {
     it(`${action} enforces the "${scope}" limit`, () => {
       const body = handlerBody(read(file), action);
       expect(body, `${action} not found in ${file}`).not.toBe("");
+      if (via) {
+        // The entry point delegates; the shared helper must carry the limit so
+        // no caller can reach the action without it.
+        expect(body, `${action} must delegate to ${via}`).toContain(via);
+        const helper = read(viaFile!);
+        const helperBody = helper.slice(helper.indexOf(`function ${via}`));
+        expect(helperBody).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
+        expect(helperBody).toContain(`"${scope}"`);
+        return;
+      }
       expect(body).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
       expect(body).toContain(`"${scope}"`);
     });
   }
+
 
   it("every declared scope is used somewhere in production code", () => {
     const limiter = readFileSync("src/lib/db-rate-limit.server.ts", "utf8");

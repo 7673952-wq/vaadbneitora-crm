@@ -15,6 +15,7 @@ import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import { addNoteWithMentions, updateNoteWithMentions } from "@/lib/mentions.functions";
 import { collectMentionPayload, mentionsStillInText, deriveMentionsFromText, type MentionPick } from "@/lib/mention-ids";
 import { listSystemEmailThread, sendSystemEmail, listEmailTemplates, getEmailGeneralName } from "@/lib/email.functions";
+import { getSendIntentKey, clearSendIntentKey } from "@/lib/send-intent-key";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
 } from "@/lib/system-files.functions";
@@ -281,15 +282,22 @@ function SystemDetail() {
   const [inlineReplyText, setInlineReplyText] = useState("");
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
   const sendEmailMut = useMutation({
-    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel }) =>
-      sendEmailFn({ data: { system_id: id, ...v, cleanup_level: v.cleanup_level ?? emailCleanupLevel } }),
-    onSuccess: () => {
-      toast.success("המייל נשלח");
+    mutationFn: (v: { to: string; subject: string; body: string; gmail_thread_id?: string | null; use_general_name?: boolean; cleanup_level?: EmailCleanupLevel }) => {
+      // One key per system+thread send intent: it survives a refresh or a
+      // reopen of the compose box, so a retry after a hiccup is recognised as
+      // the same send instead of a second e-mail.
+      const key = getSendIntentKey(`system-email:${id}:${v.gmail_thread_id ?? "new"}`);
+      return sendEmailFn({ data: { system_id: id, ...v, cleanup_level: v.cleanup_level ?? emailCleanupLevel, idempotencyKey: key } });
+    },
+    onSuccess: (res: any, v) => {
+      clearSendIntentKey(`system-email:${id}:${v.gmail_thread_id ?? "new"}`);
+      toast.success(res?.duplicate ? "המייל כבר נשלח" : "המייל נשלח");
       qc.invalidateQueries({ queryKey: ["system-email-thread", id] });
       setComposeOpen(false); setComposeSubject(""); setComposeBody("");
     },
     onError: (e: any) => toast.error(e.message ?? "שליחת המייל נכשלה"),
   });
+
   function applyTemplate(t: { subject: string; body: string }) {
     const fill = (text: string) => text
       .replace(/\{\{system_code\}\}/g, s.system_code ?? "")

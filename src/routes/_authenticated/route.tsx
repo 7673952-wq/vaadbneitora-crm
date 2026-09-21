@@ -23,17 +23,26 @@ import { getDeviceId } from "@/lib/device-id";
 import { perfMark } from "@/lib/perf";
 import { logAuthEvent } from "@/lib/auth-diagnostics";
 import { clearPersistedSession } from "@/lib/remember-storage";
+import { currentNextParam } from "@/lib/safe-next";
 
 
 
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const { data, error } = await supabase.auth.getSession();
-    if (error || !data.session) throw redirect({ to: "/auth" });
+    if (error || !data.session) {
+      // Keep the deep link the user clicked so login can return them to it.
+      throw redirect({
+        to: "/auth",
+        search: { next: currentNextParam({ pathname: location.pathname, search: location.searchStr, hash: location.hash }) },
+      });
+
+    }
     return { user: data.session.user };
   },
+
   component: () => (
     <GlobalErrorBoundary>
       <AuthedLayout />
@@ -130,7 +139,7 @@ function AuthedLayout() {
       }
       if (data.session) return;
       setSessionReady(false);
-      navigate({ to: "/auth", replace: true });
+      navigate({ to: "/auth", replace: true, search: { next: currentNextParam(window.location) } });
     });
     return () => { active = false; };
   }, [session, sessionResolved, navigate]);
@@ -157,7 +166,7 @@ function AuthedLayout() {
           clearPersistedSession();
           await supabase.auth.signOut();
           toast.error("נדרש אימות נוסף — התחבר מחדש");
-          navigate({ to: "/auth", replace: true });
+          navigate({ to: "/auth", replace: true, search: { next: currentNextParam(window.location) } });
         }
       } catch { /* never lock the user out on a transient failure */ }
     })();
@@ -190,7 +199,10 @@ function AuthedLayout() {
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
+    // An explicit sign-out has no destination to return to.
+    navigate({ to: "/auth", replace: true, search: { next: undefined } });
+
+
   }
 
   if (!sessionReady) {

@@ -1186,3 +1186,96 @@ describe("dedup lookup by gmail_message_id sees soft-deleted rows (no duplicate 
     void writes;
   });
 });
+
+/**
+ * "Require manual approval for every request" is independent of off/dry_run/live.
+ * These tests prove each of the four operating modes still behaves as designed.
+ */
+describe("ingestSystemRequest — live + require manual approval", () => {
+  const RULES = [{ id: "r1", request_type: "pticha", from_status: "closed", action: "set_status", to_status: "open", is_active: true, sort_order: 1 }];
+  const approval = { request_require_manual_approval: { required: true } };
+
+  it("computes the proposal but performs no operational write", async () => {
+    const { client, rpcCalls, getRequest } = makeClient({
+      settings: { request_automation_mode: { mode: "live" }, ...approval },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: RULES,
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "ap1", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ ok: true, completed: true, decision: "needs_decision", awaitingApproval: true, proposed: "set_status" });
+    // No status change, no phone added, no side effects.
+    expect(rpcCalls.map((c) => c.fn)).not.toContain("apply_request_status_change");
+    expect(rpcCalls.map((c) => c.fn)).not.toContain("add_request_caller_phone");
+    // It is NOT a dry run: the proposal is real and stored.
+    expect(getRequest()).toMatchObject({ dry_run: false, proposed_status: "open", manual_approval_required: true });
+  });
+
+  it("proposes creating a new system instead of creating it", async () => {
+    const { client, writes } = makeClient({
+      settings: { request_automation_mode: { mode: "live" }, request_default_status_pticha: { status: "open" }, ...approval },
+      systems: [],
+      rules: RULES,
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "ap2", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ decision: "needs_decision", awaitingApproval: true, wouldCreate: true });
+    expect(writes.filter((w) => w.table === "systems")).toHaveLength(0);
+  });
+
+  it("holds an ignore/keep outcome too — nothing is marked automatically", async () => {
+    const { client, rpcCalls } = makeClient({
+      settings: { request_automation_mode: { mode: "live" }, ...approval },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: [{ id: "r2", request_type: "pticha", from_status: "closed", action: "ignore", is_active: true, sort_order: 1 }],
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "ap3", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ decision: "needs_decision", awaitingApproval: true, proposed: "ignore" });
+    expect(rpcCalls.map((c) => c.fn)).not.toContain("add_request_caller_phone");
+  });
+
+  it("an exact Gmail duplicate is still deduped without asking for approval", async () => {
+    const { client } = makeClient({
+      settings: { request_automation_mode: { mode: "live" }, ...approval },
+      existingRequest: { id: "req-1", processing_state: "done", decision_status: "needs_decision" },
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "ap4", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ ok: true, completed: true, duplicate: true });
+  });
+});
+
+describe("ingestSystemRequest — the other three modes are unchanged", () => {
+  const RULES = [{ id: "r1", request_type: "pticha", from_status: "closed", action: "set_status", to_status: "open", is_active: true, sort_order: 1 }];
+
+  it("live without manual approval still applies the status automatically", async () => {
+    const { client, rpcCalls } = makeClient({
+      settings: { request_automation_mode: { mode: "live" } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: RULES,
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "md1", body: BODY, sourceRequestType: "pticha" });
+    expect(res.decision).toBe("auto_applied");
+    expect(rpcCalls.map((c) => c.fn)).toContain("apply_request_status_change");
+  });
+
+  it("dry_run simulates even when manual approval is switched on", async () => {
+    const { client, rpcCalls } = makeClient({
+      settings: { request_automation_mode: { mode: "dry_run" }, request_require_manual_approval: { required: true } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: RULES,
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "md2", body: BODY, sourceRequestType: "pticha" });
+    expect(res.decision).toBe("simulated");
+    expect(rpcCalls.map((c) => c.fn)).not.toContain("apply_request_status_change");
+  });
+
+  it("off records the request for a human and computes nothing", async () => {
+    const { client, rpcCalls, getRequest } = makeClient({
+      settings: { request_automation_mode: { mode: "off" }, request_require_manual_approval: { required: true } },
+      systems: [{ id: "sys-1", status: "closed" }],
+      rules: RULES,
+    });
+    const res: any = await ingestSystemRequest(client, { gmailMessageId: "md3", body: BODY, sourceRequestType: "pticha" });
+    expect(res).toMatchObject({ mode: "off", decision: "needs_decision" });
+    expect(rpcCalls.map((c) => c.fn)).not.toContain("apply_request_status_change");
+    expect(getRequest()).toMatchObject({ dry_run: false });
+  });
+});

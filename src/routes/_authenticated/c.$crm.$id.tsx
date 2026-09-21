@@ -10,6 +10,7 @@ import { addNoteWithMentions, updateNoteWithMentions } from "@/lib/mentions.func
 import { collectMentionPayload, mentionsStillInText, deriveMentionsFromText, type MentionPick } from "@/lib/mention-ids";
 import { listAgents } from "@/lib/systems.functions";
 import { listRecordEmailThread, sendRecordEmail } from "@/lib/email.functions";
+import { getSendIntentKey, clearSendIntentKey } from "@/lib/send-intent-key";
 import { GENERIC_STATUSES } from "./c.$crm.index";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";
@@ -65,13 +66,19 @@ function RecordDetail() {
 
   async function sendMail(threadId?: string | null) {
     if (!r.email || !mailBody.trim()) return;
+    // Same durable send intent as the mailbox: a refresh or a retry reuses the
+    // key, so the same message is never sent twice.
+    const scope = `record-email:${id}:${threadId ?? "new"}`;
+    const key = getSendIntentKey(scope);
     try {
-      await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId, cleanup_level: emailCleanupLevel } });
+      const res: any = await sendEmailFn({ data: { record_id: id, to: r.email, subject: mailSubject || `פניה ${r.recordCode}`, body: mailBody, gmail_thread_id: threadId, cleanup_level: emailCleanupLevel, idempotencyKey: key } });
+      clearSendIntentKey(scope);
       setMailBody(""); setMailOpen(false);
       await qc.invalidateQueries({ queryKey: ["crm_record_emails", id] });
-      toast.success("המייל נשלח");
+      toast.success(res?.duplicate ? "המייל כבר נשלח" : "המייל נשלח");
     } catch (e: any) { toast.error(e?.message ?? "שליחת המייל נכשלה"); }
   }
+
 
   async function patch(p: Record<string, any>) {
     setBusy(true);

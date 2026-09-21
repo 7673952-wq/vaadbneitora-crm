@@ -10,6 +10,7 @@ import { addNoteWithMentions, updateNoteWithMentions } from "@/lib/mentions.func
 import { collectMentionPayload, mentionsStillInText, deriveMentionsFromText, type MentionPick } from "@/lib/mention-ids";
 import { listAgents } from "@/lib/systems.functions";
 import { listRecordEmailThread, sendRecordEmail } from "@/lib/email.functions";
+import { getSendIntentKey, clearSendIntentKey } from "@/lib/send-intent-key";
 import { GENERIC_STATUSES } from "./c.$crm.index";
 import { EmailContentEditor } from "@/components/EmailContentEditor";
 import type { EmailCleanupLevel } from "@/lib/email-cleanup";

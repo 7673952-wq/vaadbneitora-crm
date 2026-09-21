@@ -15,6 +15,7 @@ import { getMyRole, listStatusSettings } from "@/lib/admin.functions";
 import { addNoteWithMentions, updateNoteWithMentions } from "@/lib/mentions.functions";
 import { collectMentionPayload, mentionsStillInText, deriveMentionsFromText, type MentionPick } from "@/lib/mention-ids";
 import { listSystemEmailThread, sendSystemEmail, listEmailTemplates, getEmailGeneralName } from "@/lib/email.functions";
+import { getSendIntentKey, clearSendIntentKey } from "@/lib/send-intent-key";
 import {
   listSystemFiles, uploadSystemFile, getSystemFileUrl, deleteSystemFile,
 } from "@/lib/system-files.functions";

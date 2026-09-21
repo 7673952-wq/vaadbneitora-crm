@@ -34,7 +34,11 @@ export const Route = createFileRoute("/_authenticated")({
     const { data, error } = await supabase.auth.getSession();
     if (error || !data.session) {
       // Keep the deep link the user clicked so login can return them to it.
-      throw redirect({ to: "/auth", search: { next: currentNextParam(location) } });
+      throw redirect({
+        to: "/auth",
+        search: { next: currentNextParam({ pathname: location.pathname, search: location.searchStr, hash: location.hash }) },
+      });
+
     }
     return { user: data.session.user };
   },

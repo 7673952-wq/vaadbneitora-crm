@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
  * limiter. This test reads the real sources so a limiter that gets removed in a
  * future refactor fails the suite instead of silently disappearing.
  */
-const SENSITIVE_ACTIONS: { action: string; scope: string; file: string }[] = [
+const SENSITIVE_ACTIONS: { action: string; scope: string; file: string; via?: string; viaFile?: string }[] = [
   { action: "createUser", scope: "admin_user_manage", file: "src/lib/admin.functions.ts" },
   { action: "deleteUser", scope: "admin_user_manage", file: "src/lib/admin.functions.ts" },
   { action: "setUserRole", scope: "admin_user_manage", file: "src/lib/admin.functions.ts" },

@@ -12,6 +12,11 @@ import { clearPersistedSession, setSessionPersistence } from "@/lib/remember-sto
 
 
 export const Route = createFileRoute("/auth")({
+  // `next` carries the deep link the user originally clicked (e.g. a mention
+  // e-mail pointing at a system card) so login returns them there.
+  validateSearch: (search: Record<string, unknown>) => ({
+    next: typeof search.next === "string" ? search.next : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "התחברות | CRM ניהול מערכות" },
@@ -27,6 +32,9 @@ export const Route = createFileRoute("/auth")({
 
 function AuthPage() {
   const navigate = useNavigate();
+  const { next } = Route.useSearch();
+  // Only an internal path is ever honoured — see sanitizeNext.
+  const target = afterLoginTarget(next);
   const beginFn = useServerFn(beginLogin);
   const verifyFn = useServerFn(verifyLoginOtp);
   const resendFn = useServerFn(resendLoginOtp);
@@ -40,6 +48,17 @@ function AuthPage() {
   const [challengeId, setChallengeId] = useState<string | null>(null);
   const [code, setCode] = useState("");
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Already signed in (a deep link opened while the session is still valid):
+  // go straight to the target instead of making the user log in again.
+  useEffect(() => {
+    let active = true;
+    void supabase.auth.getSession().then(({ data }) => {
+      if (active && data.session) void navigate({ to: target as any, replace: true });
+    });
+    return () => { active = false; };
+  }, [navigate, target]);
+
 
   useEffect(() => {
     if (resendCooldown <= 0) return;

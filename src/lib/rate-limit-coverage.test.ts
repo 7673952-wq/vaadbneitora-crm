@@ -64,14 +64,25 @@ describe("sensitive actions are rate limited", () => {
     return cache.get(file)!;
   };
 
-  for (const { action, scope, file } of SENSITIVE_ACTIONS) {
+  for (const { action, scope, file, via, viaFile } of SENSITIVE_ACTIONS) {
     it(`${action} enforces the "${scope}" limit`, () => {
       const body = handlerBody(read(file), action);
       expect(body, `${action} not found in ${file}`).not.toBe("");
+      if (via) {
+        // The entry point delegates; the shared helper must carry the limit so
+        // no caller can reach the action without it.
+        expect(body, `${action} must delegate to ${via}`).toContain(via);
+        const helper = read(viaFile!);
+        const helperBody = helper.slice(helper.indexOf(`function ${via}`));
+        expect(helperBody).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
+        expect(helperBody).toContain(`"${scope}"`);
+        return;
+      }
       expect(body).toMatch(/limitSensitiveAction|enforceDbRateLimit/);
       expect(body).toContain(`"${scope}"`);
     });
   }
+
 
   it("every declared scope is used somewhere in production code", () => {
     const limiter = readFileSync("src/lib/db-rate-limit.server.ts", "utf8");

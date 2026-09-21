@@ -34,7 +34,11 @@ const SENSITIVE_ACTIONS: { action: string; scope: string; file: string }[] = [
   { action: "decideSystemRequest", scope: "request_decide", file: "src/lib/system-requests.functions.ts" },
   { action: "deleteSystemRequest", scope: "request_delete", file: "src/lib/system-requests.functions.ts" },
   { action: "restoreSystemRequest", scope: "request_delete", file: "src/lib/system-requests.functions.ts" },
-  { action: "requeueMentionDelivery", scope: "mention_requeue", file: "src/lib/queues.functions.ts" },
+  // Both retry entry points delegate to performMentionRetry, which is where the
+  // permission check, the unknown-confirmation guard and the limit all live.
+  { action: "retryMentionDelivery", scope: "mention_requeue", file: "src/lib/mentions.functions.ts", via: "performMentionRetry", viaFile: "src/lib/mentions.functions.ts" },
+  { action: "requeueMentionDelivery", scope: "mention_requeue", file: "src/lib/queues.functions.ts", via: "performMentionRetry", viaFile: "src/lib/mentions.functions.ts" },
+
   { action: "processMentionQueueNow", scope: "mention_process", file: "src/lib/queues.functions.ts" },
   { action: "setAppBaseUrl", scope: "queue_config", file: "src/lib/queues.functions.ts" },
   { action: "setEmailRelayConfig", scope: "admin_integrations", file: "src/lib/email.functions.ts" },

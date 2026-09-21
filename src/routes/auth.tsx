@@ -9,7 +9,7 @@ import { getDeviceId, describeDevice } from "@/lib/device-id";
 import { perfMark, resetPerfTimings } from "@/lib/perf";
 import { primeAccessToken } from "@/lib/session-cache";
 import { clearPersistedSession, setSessionPersistence } from "@/lib/remember-storage";
-import { afterLoginTarget, currentNextParam } from "@/lib/safe-next";
+import { afterLoginTarget } from "@/lib/safe-next";
 
 
 export const Route = createFileRoute("/auth")({

@@ -23,6 +23,7 @@ import { getDeviceId } from "@/lib/device-id";
 import { perfMark } from "@/lib/perf";
 import { logAuthEvent } from "@/lib/auth-diagnostics";
 import { clearPersistedSession } from "@/lib/remember-storage";
+import { currentNextParam } from "@/lib/safe-next";
 
 
 
@@ -134,7 +135,7 @@ function AuthedLayout() {
       }
       if (data.session) return;
       setSessionReady(false);
-      navigate({ to: "/auth", replace: true });
+      navigate({ to: "/auth", replace: true, search: { next: currentNextParam(window.location) } });
     });
     return () => { active = false; };
   }, [session, sessionResolved, navigate]);
@@ -161,7 +162,7 @@ function AuthedLayout() {
           clearPersistedSession();
           await supabase.auth.signOut();
           toast.error("נדרש אימות נוסף — התחבר מחדש");
-          navigate({ to: "/auth", replace: true });
+          navigate({ to: "/auth", replace: true, search: { next: currentNextParam(window.location) } });
         }
       } catch { /* never lock the user out on a transient failure */ }
     })();
@@ -194,7 +195,7 @@ function AuthedLayout() {
     await queryClient.cancelQueries();
     queryClient.clear();
     await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
+    navigate({ to: "/auth", replace: true, search: { next: currentNextParam(window.location) } });
   }
 
   if (!sessionReady) {

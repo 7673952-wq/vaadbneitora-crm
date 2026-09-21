@@ -29,11 +29,15 @@ import { clearPersistedSession } from "@/lib/remember-storage";
 
 export const Route = createFileRoute("/_authenticated")({
   ssr: false,
-  beforeLoad: async () => {
+  beforeLoad: async ({ location }) => {
     const { data, error } = await supabase.auth.getSession();
-    if (error || !data.session) throw redirect({ to: "/auth" });
+    if (error || !data.session) {
+      // Keep the deep link the user clicked so login can return them to it.
+      throw redirect({ to: "/auth", search: { next: currentNextParam(location) } });
+    }
     return { user: data.session.user };
   },
+
   component: () => (
     <GlobalErrorBoundary>
       <AuthedLayout />

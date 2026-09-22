@@ -422,7 +422,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         .in("decision_status", OPEN).select("id");
       if (error) throw new Error(error.message);
       if (!updated?.length) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
-      return { ok: true };
+      return { ok: true, systemId: resultSystemId ?? undefined };
     } catch (e: any) {
       // A failed attempt must never leave the request locked for the next try,
       // and the recorded intent stays so the retry resumes the same decision.

@@ -268,8 +268,35 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
             message: "נמצאה מערכת בשם דומה — יש לבדוק ולאשר שוב",
           };
         }
-        await release();
-        return { ok: true, systemId: result.systemId };
+        resultSystemId = result.systemId ?? null;
+
+        // One step, one click: the status chosen together with the name/kind is
+        // applied to the system right here. It comes from the durable intent, so
+        // a retry finishes the SAME decision instead of asking again. Writing
+        // the same status twice is a no-op, and the status side effects are
+        // guarded by `side_effects_completed_at`.
+        const toStatus = String(intentStatus ?? data.toStatus ?? req.proposed_status ?? "").trim();
+        if (toStatus && resultSystemId) {
+          await assertKnownStatus(supabaseAdmin, toStatus);
+          await supabaseAdmin.rpc("set_change_reason", { p_reason: "החלטה על בקשה מהמייל" });
+          const { data: statusRows, error: statusError } = await supabaseAdmin
+            .from("systems").update({ status: toStatus as any })
+            .eq("id", resultSystemId).select("id");
+          if (statusError) throw new Error(`עדכון הסטטוס נכשל: ${statusError.message}`);
+          if (!statusRows?.length) throw new Error("עדכון הסטטוס לא בוצע — רענן ונסה שוב");
+
+          const { data: markRows, error: markError } = await supabaseAdmin
+            .from("system_requests").update({
+              new_status: toStatus,
+              status_applied_at: new Date().toISOString(),
+              last_completed_state: "matched",
+            }).eq("id", data.id).select("id");
+          if (markError) throw new Error(`רישום הסטטוס על הבקשה נכשל: ${markError.message}`);
+          if (!markRows?.length) throw new Error("רישום הסטטוס על הבקשה לא בוצע — רענן ונסה שוב");
+
+          await runSideEffectsOnce(resultSystemId, toStatus);
+        }
+        patch.decision_status = "manual_applied";
       } else if (data.action === "create_system") {
         const codeNorm = String(req.system_code_norm ?? "").trim();
         if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");

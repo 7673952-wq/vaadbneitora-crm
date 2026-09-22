@@ -220,6 +220,12 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       manual_last_error: null,
     };
 
+    // Set when the decision created/linked a system, so the caller can send the
+    // user straight to that card.
+    let resultSystemId: string | null = null;
+
+
+
 
     /** Side effects run once per request; a resume skips what already ran. */
     const runSideEffectsOnce = async (systemId: string, toStatus: string) => {
@@ -268,8 +274,35 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
             message: "נמצאה מערכת בשם דומה — יש לבדוק ולאשר שוב",
           };
         }
-        await release();
-        return { ok: true, systemId: result.systemId };
+        resultSystemId = result.systemId ?? null;
+
+        // One step, one click: the status chosen together with the name/kind is
+        // applied to the system right here. It comes from the durable intent, so
+        // a retry finishes the SAME decision instead of asking again. Writing
+        // the same status twice is a no-op, and the status side effects are
+        // guarded by `side_effects_completed_at`.
+        const toStatus = String(intentStatus ?? data.toStatus ?? req.proposed_status ?? "").trim();
+        if (toStatus && resultSystemId) {
+          await assertKnownStatus(supabaseAdmin, toStatus);
+          await supabaseAdmin.rpc("set_change_reason", { p_reason: "החלטה על בקשה מהמייל" });
+          const { data: statusRows, error: statusError } = await supabaseAdmin
+            .from("systems").update({ status: toStatus as any })
+            .eq("id", resultSystemId).select("id");
+          if (statusError) throw new Error(`עדכון הסטטוס נכשל: ${statusError.message}`);
+          if (!statusRows?.length) throw new Error("עדכון הסטטוס לא בוצע — רענן ונסה שוב");
+
+          const { data: markRows, error: markError } = await supabaseAdmin
+            .from("system_requests").update({
+              new_status: toStatus,
+              status_applied_at: new Date().toISOString(),
+              last_completed_state: "matched",
+            }).eq("id", data.id).select("id");
+          if (markError) throw new Error(`רישום הסטטוס על הבקשה נכשל: ${markError.message}`);
+          if (!markRows?.length) throw new Error("רישום הסטטוס על הבקשה לא בוצע — רענן ונסה שוב");
+
+          await runSideEffectsOnce(resultSystemId, toStatus);
+        }
+        patch.decision_status = "manual_applied";
       } else if (data.action === "create_system") {
         const codeNorm = String(req.system_code_norm ?? "").trim();
         if (!codeNorm) throw new Error("אין מספר מערכת לבקשה זו");
@@ -395,7 +428,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
         .in("decision_status", OPEN).select("id");
       if (error) throw new Error(error.message);
       if (!updated?.length) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
-      return { ok: true };
+      return { ok: true, systemId: resultSystemId ?? undefined };
     } catch (e: any) {
       // A failed attempt must never leave the request locked for the next try,
       // and the recorded intent stays so the retry resumes the same decision.

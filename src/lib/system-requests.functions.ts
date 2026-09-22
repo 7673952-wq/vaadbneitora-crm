@@ -220,6 +220,12 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       manual_last_error: null,
     };
 
+    // Set when the decision created/linked a system, so the caller can send the
+    // user straight to that card.
+    let resultSystemId: string | null = null;
+
+
+
 
     /** Side effects run once per request; a resume skips what already ran. */
     const runSideEffectsOnce = async (systemId: string, toStatus: string) => {

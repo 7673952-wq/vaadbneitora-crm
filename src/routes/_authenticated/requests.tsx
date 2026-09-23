@@ -728,7 +728,11 @@ function RequestCard({
 
               {!hasSystem && (
                 <>
-                  <SystemMatcher requestId={r.id} name={nameDraft} disabled={busy} onDecideAsync={onDecideAsync} />
+                  <SystemMatcher
+                    requestId={r.id} name={nameDraft} disabled={busy}
+                    statuses={statuses} status={choice} onStatusChange={setChoice}
+                    onDecideAsync={onDecideAsync}
+                  />
                   <Button size="sm" variant="ghost" disabled={busy}
                     onClick={() => onDecide({ id: r.id, action: "ignore" })}>
                     <SkipForward className="size-4" />

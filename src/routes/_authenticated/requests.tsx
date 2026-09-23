@@ -376,11 +376,14 @@ type MatchOption = { id: string; system_code?: string | null; name: string };
  * matching ROOT systems. Sub-systems sharing the name are never listed.
  * Matching always runs on the server (`matchRequestSystemName`). */
 function SystemMatcher({
-  requestId, name, disabled, onDecideAsync,
+  requestId, name, disabled, statuses, status, onStatusChange, onDecideAsync,
 }: {
   requestId: string;
   name: string;
   disabled: boolean;
+  statuses: Array<{ status_key: string; label: string }>;
+  status: string;
+  onStatusChange: (value: string) => void;
   onDecideAsync: (vars: DecideVars) => Promise<any>;
 }) {
   const matchFn = useServerFn(matchRequestSystemName);
@@ -406,18 +409,22 @@ function SystemMatcher({
   const parentOptions = ((match.data as any)?.parentOptions ?? []) as MatchOption[];
   const nameExists = parentOptions.length > 0 || Boolean((match.data as any)?.exactMatches?.length);
 
+  // One click does everything: name + kind + status are sent together, so the
+  // card is created, linked and given its status in a single decision.
+  const ready = Boolean(name.trim()) && Boolean(status);
+
   const runCreateSub = async (parentId: string) => {
     await onDecideAsync({
-      id: requestId, action: "create_system", name: name.trim() || null,
+      id: requestId, action: "create_system", name: name.trim() || null, toStatus: status,
       systemAction: "create_sub", parentSystemId: parentId,
     });
   };
 
   const runCreateRoot = async () => {
-    if (!name.trim()) return;
+    if (!ready) return;
     const confirmedMatches = (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
     const res: any = await onDecideAsync({
-      id: requestId, action: "create_system", name: name.trim() || null,
+      id: requestId, action: "create_system", name: name.trim() || null, toStatus: status,
       systemAction: "create_root", confirmedMatches,
     });
     setConflictMatches(res?.conflict ? (res.matches ?? []) : null);
@@ -433,18 +440,37 @@ function SystemMatcher({
         <p className="text-[11px] text-muted-foreground">השם לא קיים במערכת — ייפתח כמערכת ראשית.</p>
       )}
 
+      <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+        סטטוס המערכת החדשה
+        <select
+          value={status}
+          onChange={(e) => onStatusChange(e.target.value)}
+          disabled={disabled}
+          className="min-w-52 rounded-md border border-input bg-background px-2 py-1.5 text-sm text-foreground"
+        >
+          <option value="">— בחר סטטוס —</option>
+          {statuses.map((s) => (
+            <option key={s.status_key} value={s.status_key}>{s.label}</option>
+          ))}
+        </select>
+      </label>
+
       <div className="flex flex-wrap gap-2">
         {parentOptions.map((m) => (
-          <Button key={m.id} size="sm" variant="outline" disabled={disabled} onClick={() => runCreateSub(m.id)}>
+          <Button key={m.id} size="sm" variant="outline" disabled={disabled || !ready} onClick={() => runCreateSub(m.id)}>
             <Plus className="size-4" />
             תת-מערכת תחת {m.name}{m.system_code ? ` · ${m.system_code}` : ""}
           </Button>
         ))}
-        <Button size="sm" variant={nameExists ? "outline" : "default"} disabled={disabled || !name.trim()} onClick={runCreateRoot}>
+        <Button size="sm" variant={nameExists ? "outline" : "default"} disabled={disabled || !ready} onClick={runCreateRoot}>
           <Plus className="size-4" />
           {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחה כמערכת ראשית"}
         </Button>
       </div>
+
+      {!ready && (
+        <p className="text-[11px] text-muted-foreground">יש למלא שם מערכת ולבחור סטטוס — הפתיחה והסטטוס יתבצעו בלחיצה אחת.</p>
+      )}
 
       {conflictMatches && conflictMatches.length > 0 && (
         <p className="text-[11px] text-amber-700">

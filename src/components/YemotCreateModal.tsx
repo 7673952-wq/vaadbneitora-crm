@@ -8,10 +8,11 @@ import { CornerUpRight } from "lucide-react";
 import { createPortal } from "react-dom";
 import { CALLER_SOURCES, buildDialNumber } from "@/lib/status";
 import {
-  createSystem, findSystemByName, findSystemByCode,
+  createSystem, findSystemByCode,
   findSystemsByCallerPhone, addSubSystem, ensureCategoryRoot,
 } from "@/lib/systems.functions";
-import { computeNameMatch, isCategoryName, virtualCategoryOption, VIRTUAL_PARENT_ID } from "@/lib/system-matching";
+import { VIRTUAL_PARENT_ID } from "@/lib/system-matching";
+import { useSystemNameMatch, SystemNameMatchChoice } from "@/components/SystemNameMatchPicker";
 
 export type CreateInitial = {
   system_code?: string;
@@ -23,14 +24,11 @@ export type CreateInitial = {
 
 export function YemotCreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "", is_blocking_number: false });
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
-  const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);
-  // When a duplicate name is detected the user must choose: create a sub-system
-  // under the matched parent, or open a new root with the same name.
-  const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
+  // The name-match picker (sub-system vs new root) is the SHARED one — the
+  // requests screen renders the exact same hook + component.
+  const nameMatch = useSystemNameMatch(form.name, initial);
+  const { suggestions, matchedParent, createMode } = nameMatch;
   const [busy, setBusy] = useState(false);
-  const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
   const subFn = useServerFn(addSubSystem);
   const ensureCategoryRootFn = useServerFn(ensureCategoryRoot);
@@ -72,40 +70,6 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.caller_phone, callerLookupFn]);
-  useEffect(() => {
-    const v = form.name.trim();
-    if (v.length < 2) { setSuggestions([]); setMatchedParent(null); setMatchedParentOptions([]); return; }
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const rows = await findFn({ data: { name: v } });
-        if (cancelled) return;
-        setSuggestions(rows ?? []);
-        const { parentOptions: opts, isVirtualCategory } = computeNameMatch(v, rows ?? []);
-        const isValidParent = (p: any) =>
-          !!p && typeof p.id === "string" && p.id.trim()
-            && typeof p.name === "string" && p.name.trim();
-        const initialParent = isValidParent(initial?.parent) ? initial!.parent : null;
-        const initialPick = initial?.parent_id
-          ? (opts.find((p: any) => p.id === initial.parent_id) ?? initialParent ?? null)
-          : (opts[0] ?? null);
-        setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
-        setMatchedParent(initialPick);
-        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
-        // Category-name fallback: even when no root match was found, present the
-        // sub/root choice so users can always attach a new sub under the category.
-        if (!initialPick && isVirtualCategory) {
-          const virtual = virtualCategoryOption(v);
-          setMatchedParent(virtual);
-          setMatchedParentOptions([virtual]);
-          setCreateMode((current) => initial?.createMode ?? current);
-        }
-      } catch { /* ignore */ }
-    }, 250);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [form.name, findFn, initial?.parent_id, initial?.createMode]);
-
-
   const willCreateAsSub = !!matchedParent && createMode === "sub";
 
   async function handleSubmit(e: React.FormEvent) {
@@ -210,33 +174,7 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
                 ))}
               </div>
             )}
-            {matchedParent && (
-              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2 space-y-1.5">
-                <div className="font-medium">{matchedParent.id === VIRTUAL_PARENT_ID ? `"${matchedParent.name}" היא קטגוריה קיימת. מה לעשות?` : `שם זה כבר קיים כאב-מערכת (${matchedParent.system_code}). מה לעשות?`}</div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
-                  <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>
-                </label>
-                {createMode === "sub" && matchedParentOptions.length > 1 && (
-                  <select
-                    value={matchedParent.id}
-                    onChange={(e) => {
-                      const chosen = matchedParentOptions.find((p: any) => p.id === e.target.value);
-                      if (chosen) setMatchedParent(chosen);
-                    }}
-                    className="w-full rounded-md border border-amber-300 bg-white px-2 py-1 text-xs"
-                  >
-                    {matchedParentOptions.map((p: any) => (
-                      <option key={p.id} value={p.id}>{p.system_code} · {p.name}</option>
-                    ))}
-                  </select>
-                )}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="createMode" checked={createMode === "root"} onChange={() => setCreateMode("root")} />
-                  <span>פתח אב-מערכת חדשה עם אותו שם</span>
-                </label>
-              </div>
-            )}
+            <SystemNameMatchChoice match={nameMatch} disabled={busy} />
           </div>
           <div>
             <label className="text-sm font-medium block mb-1">טלפון לחיוג (אופציונלי)</label>

@@ -1212,6 +1212,7 @@ export type Database = {
           decided_by: string | null
           decision_claim_at: string | null
           decision_claim_by: string | null
+          decision_claim_token: string | null
           decision_status: string | null
           delete_reason: string | null
           deleted_at: string | null
@@ -1269,6 +1270,7 @@ export type Database = {
           decided_by?: string | null
           decision_claim_at?: string | null
           decision_claim_by?: string | null
+          decision_claim_token?: string | null
           decision_status?: string | null
           delete_reason?: string | null
           deleted_at?: string | null
@@ -1326,6 +1328,7 @@ export type Database = {
           decided_by?: string | null
           decision_claim_at?: string | null
           decision_claim_by?: string | null
+          decision_claim_token?: string | null
           decision_status?: string | null
           delete_reason?: string | null
           deleted_at?: string | null
@@ -1851,6 +1854,18 @@ export type Database = {
           voice_pending_reason: string
         }[]
       }
+      create_request_system: {
+        Args: {
+          _caller_phone: string
+          _claim_token: string
+          _name: string
+          _name_pending: boolean
+          _parent_system_id: string
+          _request_id: string
+          _system_code: string
+        }
+        Returns: Json
+      }
       cron_token_valid: {
         Args: { _name: string; _token: string }
         Returns: boolean
@@ -1859,6 +1874,10 @@ export type Database = {
       drain_voice_queue_job: { Args: never; Returns: boolean }
       ensure_mention_queue_job: { Args: never; Returns: boolean }
       ensure_voice_queue_job: { Args: never; Returns: boolean }
+      finalize_system_request: {
+        Args: { _claim_token: string; _patch: Json; _request_id: string }
+        Returns: boolean
+      }
       find_systems_by_code_key: {
         Args: { _key: string }
         Returns: {

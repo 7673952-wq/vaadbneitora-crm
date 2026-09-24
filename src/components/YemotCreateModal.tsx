@@ -8,7 +8,7 @@ import { CornerUpRight } from "lucide-react";
 import { createPortal } from "react-dom";
 import { CALLER_SOURCES, buildDialNumber } from "@/lib/status";
 import {
-  createSystem, findSystemByName, findSystemByCode,
+  createSystem, findSystemByCode,
   findSystemsByCallerPhone, addSubSystem, ensureCategoryRoot,
 } from "@/lib/systems.functions";
 import { VIRTUAL_PARENT_ID } from "@/lib/system-matching";

@@ -7,7 +7,7 @@ import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, Headphones, Inbox,
 import { Button } from "@/components/ui/button";
 import {
   listSystemRequests, decideSystemRequest, getRequestAutomationSettings, getRequestAudio,
-  setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem, matchRequestSystemName,
+  setRequestSystemCode, repairUnlinkedRequests, renameRequestSystem,
   getSystemRequestById, deleteSystemRequest, restoreSystemRequest,
 } from "@/lib/system-requests.functions";
 
@@ -371,7 +371,6 @@ function ReportDescription({ text }: { text: string | null | undefined }) {
   );
 }
 
-type MatchOption = { id: string; system_code?: string | null; name: string };
 
 /** The "which system does this request belong to" flow, kept deliberately
  * small: when the typed name already exists, the user gets exactly two

@@ -11,7 +11,8 @@ import {
   createSystem, findSystemByName, findSystemByCode,
   findSystemsByCallerPhone, addSubSystem, ensureCategoryRoot,
 } from "@/lib/systems.functions";
-import { computeNameMatch, isCategoryName, virtualCategoryOption, VIRTUAL_PARENT_ID } from "@/lib/system-matching";
+import { VIRTUAL_PARENT_ID } from "@/lib/system-matching";
+import { useSystemNameMatch, SystemNameMatchChoice } from "@/components/SystemNameMatchPicker";
 
 export type CreateInitial = {
   system_code?: string;

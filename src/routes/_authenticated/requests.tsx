@@ -12,6 +12,9 @@ import {
 } from "@/lib/system-requests.functions";
 
 import { getMyRole } from "@/lib/admin.functions";
+import { ensureCategoryRoot } from "@/lib/systems.functions";
+import { VIRTUAL_PARENT_ID } from "@/lib/system-matching";
+import { useSystemNameMatch, SystemNameMatchChoice } from "@/components/SystemNameMatchPicker";
 import { useStatusSettings } from "@/lib/use-status-settings";
 
 export const Route = createFileRoute("/_authenticated/requests")({

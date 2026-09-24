@@ -174,33 +174,7 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
                 ))}
               </div>
             )}
-            {matchedParent && (
-              <div className="mt-2 text-xs bg-amber-50 border border-amber-300 text-amber-900 rounded-md p-2 space-y-1.5">
-                <div className="font-medium">{matchedParent.id === VIRTUAL_PARENT_ID ? `"${matchedParent.name}" היא קטגוריה קיימת. מה לעשות?` : `שם זה כבר קיים כאב-מערכת (${matchedParent.system_code}). מה לעשות?`}</div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="createMode" checked={createMode === "sub"} onChange={() => setCreateMode("sub")} />
-                  <span>פתח כתת-מערכת תחת "{matchedParent.name}"</span>
-                </label>
-                {createMode === "sub" && matchedParentOptions.length > 1 && (
-                  <select
-                    value={matchedParent.id}
-                    onChange={(e) => {
-                      const chosen = matchedParentOptions.find((p: any) => p.id === e.target.value);
-                      if (chosen) setMatchedParent(chosen);
-                    }}
-                    className="w-full rounded-md border border-amber-300 bg-white px-2 py-1 text-xs"
-                  >
-                    {matchedParentOptions.map((p: any) => (
-                      <option key={p.id} value={p.id}>{p.system_code} · {p.name}</option>
-                    ))}
-                  </select>
-                )}
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <input type="radio" name="createMode" checked={createMode === "root"} onChange={() => setCreateMode("root")} />
-                  <span>פתח אב-מערכת חדשה עם אותו שם</span>
-                </label>
-              </div>
-            )}
+            <SystemNameMatchChoice match={nameMatch} disabled={busy} />
           </div>
           <div>
             <label className="text-sm font-medium block mb-1">טלפון לחיוג (אופציונלי)</label>

@@ -376,7 +376,7 @@ function ReportDescription({ text }: { text: string | null | undefined }) {
  * small: when the typed name already exists, the user gets exactly two
  * choices — open a NEW root system, or open it as a sub-system under one of the
  * matching ROOT systems. Sub-systems sharing the name are never listed.
- * Matching always runs on the server (`matchRequestSystemName`). */
+ * Shared with the "הוסף מערכת" modal via useSystemNameMatch. */
 function SystemMatcher({
   requestId, name, disabled, statuses, status, onStatusChange, onDecideAsync,
 }: {

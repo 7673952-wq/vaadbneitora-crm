@@ -386,42 +386,36 @@ function SystemMatcher({
   onStatusChange: (value: string) => void;
   onDecideAsync: (vars: DecideVars) => Promise<any>;
 }) {
-  const matchFn = useServerFn(matchRequestSystemName);
-  const [debouncedName, setDebouncedName] = useState(name.trim());
+  // SHARED picker — the very same hook + component the "הוסף מערכת" modal uses.
+  const nameMatch = useSystemNameMatch(name, undefined, { debounceMs: 400 });
+  const { matchedParent, createMode, parentOptions } = nameMatch;
+  const ensureCategoryRootFn = useServerFn(ensureCategoryRoot);
   const [conflictMatches, setConflictMatches] = useState<Array<{ id: string; name: string; system_code?: string | null }> | null>(null);
 
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedName(name.trim()), 400);
-    return () => clearTimeout(t);
-  }, [name]);
-
   // A new name invalidates any earlier conflict warning.
-  useEffect(() => { setConflictMatches(null); }, [debouncedName]);
-
-  const enabled = !disabled && debouncedName.length >= 2;
-  const match = useQuery({
-    queryKey: ["request-system-name-match", requestId, debouncedName],
-    queryFn: () => matchFn({ data: { id: requestId, name: debouncedName } }),
-    enabled,
-  });
-
-  // Only root systems — the parent a sub-system could hang off.
-  const parentOptions = ((match.data as any)?.parentOptions ?? []) as MatchOption[];
-  const nameExists = parentOptions.length > 0 || Boolean((match.data as any)?.exactMatches?.length);
+  useEffect(() => { setConflictMatches(null); }, [name]);
 
   // One click does everything: name + kind + status are sent together, so the
   // card is created, linked and given its status in a single decision.
   const ready = Boolean(name.trim()) && Boolean(status);
+  const willCreateAsSub = Boolean(matchedParent) && createMode === "sub";
 
-  const runCreateSub = async (parentId: string) => {
-    await onDecideAsync({
-      id: requestId, action: "create_system", name: name.trim() || null, toStatus: status,
-      systemAction: "create_sub", parentSystemId: parentId,
-    });
-  };
-
-  const runCreateRoot = async () => {
+  const run = async () => {
     if (!ready) return;
+    if (willCreateAsSub && matchedParent) {
+      let parentId = matchedParent.id;
+      if (parentId === VIRTUAL_PARENT_ID) {
+        const root: any = await ensureCategoryRootFn({ data: { name: matchedParent.name } });
+        if (!root?.id) throw new Error("לא הצלחתי לוודא את מערכת האב");
+        parentId = root.id;
+      }
+      await onDecideAsync({
+        id: requestId, action: "create_system", name: name.trim() || null, toStatus: status,
+        systemAction: "create_sub", parentSystemId: parentId,
+      });
+      setConflictMatches(null);
+      return;
+    }
     const confirmedMatches = (conflictMatches ?? parentOptions).map((m) => m.id).filter((id) => UUID_RE.test(id));
     const res: any = await onDecideAsync({
       id: requestId, action: "create_system", name: name.trim() || null, toStatus: status,
@@ -432,13 +426,7 @@ function SystemMatcher({
 
   return (
     <div className="rounded-md bg-muted/30 p-2.5 space-y-2">
-      {match.isFetching ? (
-        <p className="text-[11px] text-muted-foreground">בודק אם השם קיים…</p>
-      ) : nameExists ? (
-        <p className="text-[11px] text-amber-700">השם הזה כבר קיים — בחר כיצד לפתוח:</p>
-      ) : (
-        <p className="text-[11px] text-muted-foreground">השם לא קיים במערכת — ייפתח כמערכת ראשית.</p>
-      )}
+      <SystemNameMatchChoice match={nameMatch} disabled={disabled} />
 
       <label className="flex flex-col gap-1 text-xs text-muted-foreground">
         סטטוס המערכת החדשה
@@ -456,15 +444,11 @@ function SystemMatcher({
       </label>
 
       <div className="flex flex-wrap gap-2">
-        {parentOptions.map((m) => (
-          <Button key={m.id} size="sm" variant="outline" disabled={disabled || !ready} onClick={() => runCreateSub(m.id)}>
-            <Plus className="size-4" />
-            תת-מערכת תחת {m.name}{m.system_code ? ` · ${m.system_code}` : ""}
-          </Button>
-        ))}
-        <Button size="sm" variant={nameExists ? "outline" : "default"} disabled={disabled || !ready} onClick={runCreateRoot}>
+        <Button size="sm" disabled={disabled || !ready || Boolean(nameMatch.error)} onClick={run}>
           <Plus className="size-4" />
-          {conflictMatches ? "אשר ופתח מערכת ראשית חדשה" : "פתיחה כמערכת ראשית"}
+          {willCreateAsSub && matchedParent
+            ? `פתח תת-מערכת תחת ${matchedParent.name}`
+            : conflictMatches ? "אשר ופתח אב-מערכת חדשה" : "פתח אב-מערכת חדשה"}
         </Button>
       </div>
 

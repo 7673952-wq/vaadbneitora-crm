@@ -24,14 +24,11 @@ export type CreateInitial = {
 
 export function YemotCreateModal({ initial, onClose, agents: _agents, statusOptions, onDone }: { initial?: CreateInitial; onClose: () => void; agents: any[]; statusOptions: any[]; onDone: () => void }) {
   const [form, setForm] = useState({ system_code: initial?.system_code ?? "", name: initial?.name ?? "", status: "", assigned_agent_id: "", notes: "", phone: "", caller_phone: "", source: "", email: "", is_blocking_number: false });
-  const [suggestions, setSuggestions] = useState<any[]>([]);
-  const [matchedParent, setMatchedParent] = useState<any | null>(initial?.parent ?? null);
-  const [matchedParentOptions, setMatchedParentOptions] = useState<any[]>(initial?.parent ? [initial.parent] : []);
-  // When a duplicate name is detected the user must choose: create a sub-system
-  // under the matched parent, or open a new root with the same name.
-  const [createMode, setCreateMode] = useState<"sub" | "root">(initial?.createMode ?? (initial?.parent_id ? "sub" : "root"));
+  // The name-match picker (sub-system vs new root) is the SHARED one — the
+  // requests screen renders the exact same hook + component.
+  const nameMatch = useSystemNameMatch(form.name, initial);
+  const { suggestions, matchedParent, createMode } = nameMatch;
   const [busy, setBusy] = useState(false);
-  const findFn = useServerFn(findSystemByName);
   const createFn = useServerFn(createSystem);
   const subFn = useServerFn(addSubSystem);
   const ensureCategoryRootFn = useServerFn(ensureCategoryRoot);

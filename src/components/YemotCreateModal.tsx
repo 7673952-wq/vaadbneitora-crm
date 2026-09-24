@@ -70,40 +70,6 @@ export function YemotCreateModal({ initial, onClose, agents: _agents, statusOpti
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
   }, [form.caller_phone, callerLookupFn]);
-  useEffect(() => {
-    const v = form.name.trim();
-    if (v.length < 2) { setSuggestions([]); setMatchedParent(null); setMatchedParentOptions([]); return; }
-    let cancelled = false;
-    const t = setTimeout(async () => {
-      try {
-        const rows = await findFn({ data: { name: v } });
-        if (cancelled) return;
-        setSuggestions(rows ?? []);
-        const { parentOptions: opts, isVirtualCategory } = computeNameMatch(v, rows ?? []);
-        const isValidParent = (p: any) =>
-          !!p && typeof p.id === "string" && p.id.trim()
-            && typeof p.name === "string" && p.name.trim();
-        const initialParent = isValidParent(initial?.parent) ? initial!.parent : null;
-        const initialPick = initial?.parent_id
-          ? (opts.find((p: any) => p.id === initial.parent_id) ?? initialParent ?? null)
-          : (opts[0] ?? null);
-        setMatchedParentOptions(initial?.parent_id && initialPick ? [initialPick] : opts);
-        setMatchedParent(initialPick);
-        setCreateMode((current) => initial?.createMode ?? (initial?.parent_id ? "sub" : (initialPick ? current : "root")));
-        // Category-name fallback: even when no root match was found, present the
-        // sub/root choice so users can always attach a new sub under the category.
-        if (!initialPick && isVirtualCategory) {
-          const virtual = virtualCategoryOption(v);
-          setMatchedParent(virtual);
-          setMatchedParentOptions([virtual]);
-          setCreateMode((current) => initial?.createMode ?? current);
-        }
-      } catch { /* ignore */ }
-    }, 250);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, [form.name, findFn, initial?.parent_id, initial?.createMode]);
-
-
   const willCreateAsSub = !!matchedParent && createMode === "sub";
 
   async function handleSubmit(e: React.FormEvent) {

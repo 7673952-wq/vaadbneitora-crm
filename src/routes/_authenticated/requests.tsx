@@ -500,9 +500,23 @@ function RequestCard({
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
-  // Expanded by default — the queue is worked through, not just scanned.
+  // Expanded by default — the queue is worked through, not just scanned. The
+  // user's own choice per request survives a refresh. It is read in an effect
+  // (never in the initial state) so server and first client render match.
   const [open, setOpen] = useState(true);
-  useEffect(() => { if (highlighted) setOpen(true); }, [highlighted]);
+  useEffect(() => {
+    if (highlighted) { setOpen(true); return; } // a deep link always opens its request
+    try {
+      const saved = window.localStorage.getItem(`request-open:${r.id}`);
+      if (saved === "0") setOpen(false);
+      else if (saved === "1") setOpen(true);
+    } catch { /* storage unavailable */ }
+  }, [highlighted, r.id]);
+  const toggleOpen = () => setOpen((v) => {
+    const next = !v;
+    try { window.localStorage.setItem(`request-open:${r.id}`, next ? "1" : "0"); } catch { /* ignore */ }
+    return next;
+  });
 
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
   const awaitingApproval = mode === "live" && (r as any).manual_approval_required === true;
@@ -527,7 +541,7 @@ function RequestCard({
       <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           aria-expanded={open}
           aria-label={open ? "כווץ בקשה" : "הרחב בקשה"}
           className="flex shrink-0 items-center gap-2 text-sm"
@@ -557,7 +571,7 @@ function RequestCard({
         )}
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           aria-hidden
           tabIndex={-1}
           className="flex min-w-0 flex-1 items-center gap-2 text-right text-sm"
@@ -591,6 +605,19 @@ function RequestCard({
       {open && (
       <div className="border-t border-border px-3 pb-3 pt-2">
       <div className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+        {r.system && (
+          <span>
+            מערכת:{" "}
+            <Link
+              to="/systems/$id"
+              params={{ id: r.system.id }}
+              onClick={(e) => e.stopPropagation()}
+              className="font-medium text-foreground underline decoration-dotted hover:text-primary"
+            >
+              {r.system.system_code} · {r.system.name}
+            </Link>
+          </span>
+        )}
         <span>מספר בקשה: {r.request_number || "—"}</span>
         <span>טלפון פונה: {r.caller_phone || "—"}</span>
         <span>סטטוס נוכחי: {hasSystem ? label(r.system?.status ?? r.prev_status) : "אין מערכת"}</span>

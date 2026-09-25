@@ -1,0 +1,2 @@
+REVOKE EXECUTE ON FUNCTION public.create_request_system(uuid, uuid, uuid, text, boolean, text, text) FROM anon, authenticated;
+REVOKE EXECUTE ON FUNCTION public.finalize_system_request(uuid, uuid, jsonb) FROM anon, authenticated;

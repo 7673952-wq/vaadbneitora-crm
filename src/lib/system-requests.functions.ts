@@ -211,12 +211,14 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     const intentStatus = plan.targetStatus;
     const intentName = plan.targetName;
 
+    // Token of THIS attempt's claim. Every manual write below is fenced with
+    // it in the database, so an older attempt that comes back to life cannot
+    // write to a request a newer claim now owns.
+    const claimToken = (req.decision_claim_token ?? null) as string | null;
+
     const patch: any = {
       decided_by: context.userId,
-      decided_at: new Date().toISOString(),
       dry_run: false,
-      decision_claim_at: null,
-      decision_claim_by: null,
       manual_last_error: null,
     };
 
@@ -265,9 +267,12 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           parentSystemId: data.parentSystemId ?? null,
           confirmedMatches,
           name: intentName ?? data.name ?? null,
+          claimToken,
         });
-        await clearIntent();
         if (!result.ok) {
+          // Nothing was created: the decision is abandoned, so the intent is
+          // cleared here (and only here) before the claim is released.
+          await clearIntent();
           await release();
           return {
             ok: false as const, status: "conflict" as const, conflict: true, matches: result.matches,
@@ -423,16 +428,30 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       }
       patch.processing_state = "done";
 
-      const { data: updated, error } = await supabaseAdmin
-        .from("system_requests").update(patch).eq("id", data.id)
-        .in("decision_status", OPEN).select("id");
-      if (error) throw new Error(error.message);
-      if (!updated?.length) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
+      // Atomic finalize: the decision, the clearing of the durable intent and
+      // the release of the claim happen in ONE fenced transaction. If it fails,
+      // the intent stays in place and the next attempt resumes from the last
+      // step that did succeed — the intent is never cleared mid-flight.
+      const { data: finalized, error } = await supabaseAdmin.rpc("finalize_system_request", {
+        _request_id: data.id,
+        _claim_token: claimToken,
+        _patch: patch,
+      });
+      if (error) throw new Error(`סיום ההחלטה נכשל: ${error.message}`);
+      if (finalized !== true) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
       return { ok: true, systemId: resultSystemId ?? undefined };
     } catch (e: any) {
       // A failed attempt must never leave the request locked for the next try,
       // and the recorded intent stays so the retry resumes the same decision.
-      await release(String(e?.message ?? e).slice(0, 300)).catch(() => {});
+      // A failed release is NOT swallowed: it is reported together with the
+      // original error, so nothing here can look like a clean failure when the
+      // cleanup itself did not go through.
+      const original = String(e?.message ?? e);
+      try {
+        await release(original.slice(0, 300));
+      } catch (releaseError: any) {
+        throw new Error(`${original} (שחרור הנעילה נכשל גם כן: ${String(releaseError?.message ?? releaseError)})`);
+      }
       throw e;
     }
   });
@@ -605,7 +624,10 @@ export const getRequestAutomationSettings = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
     const allowed = await requireCrmKeysWithPermission(context.userId, "requests_view");
-    const crmKey = data.crmKey && allowed.includes(data.crmKey) ? data.crmKey : (allowed.includes("yemot") ? "yemot" : allowed[0]!);
+    // An explicitly requested CRM is never silently swapped for another: the
+    // screen must show the settings of the CRM the user actually picked.
+    if (data.crmKey && !allowed.includes(data.crmKey)) throw new Error("אין לך גישה ל-CRM זה");
+    const crmKey = data.crmKey || (allowed.includes("yemot") ? "yemot" : allowed[0]!);
     // Read through the service-role client: a requests_view user without admin
     // rights would otherwise be filtered by RLS and silently see "dry_run".
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

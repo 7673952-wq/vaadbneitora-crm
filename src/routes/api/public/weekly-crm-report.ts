@@ -12,21 +12,17 @@ export const Route = createFileRoute("/api/public/weekly-crm-report")({
   server: {
     handlers: {
       GET: async ({ request }) => {
-        // Prefer the token in a header — query params leak into proxy logs
-        // and browser history, and this endpoint returns caller PII.
+        // The token is accepted ONLY in a header. A query parameter leaks into
+        // proxy logs, browser history and referrers, and this endpoint returns
+        // caller PII — so `?token=` is rejected even when the value is correct.
         const expected = process.env.WEEKLY_CRM_REPORT_TOKEN ?? "";
         const headerToken =
           request.headers.get("apikey") ??
           request.headers.get("authorization")?.replace(/^Bearer\s+/i, "") ??
           "";
-        const queryToken = new URL(request.url).searchParams.get("token") ?? "";
         const okHeader = timingSafeEqualStr(headerToken, expected);
-        const okQuery = timingSafeEqualStr(queryToken, expected);
-        if (!expected || (!okHeader && !okQuery)) {
+        if (!expected || !okHeader) {
           return new Response("Unauthorized", { status: 401 });
-        }
-        if (!okHeader) {
-          console.warn("[weekly-crm-report] token passed via query param — move it to the apikey header");
         }
 
         const limited = await enforcePublicRateLimit(request, "weekly-crm-report", 10, 3600);

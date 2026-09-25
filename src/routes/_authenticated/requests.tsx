@@ -605,6 +605,19 @@ function RequestCard({
       {open && (
       <div className="border-t border-border px-3 pb-3 pt-2">
       <div className="grid gap-x-6 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2">
+        {r.system && (
+          <span>
+            מערכת:{" "}
+            <Link
+              to="/systems/$id"
+              params={{ id: r.system.id }}
+              onClick={(e) => e.stopPropagation()}
+              className="font-medium text-foreground underline decoration-dotted hover:text-primary"
+            >
+              {r.system.system_code} · {r.system.name}
+            </Link>
+          </span>
+        )}
         <span>מספר בקשה: {r.request_number || "—"}</span>
         <span>טלפון פונה: {r.caller_phone || "—"}</span>
         <span>סטטוס נוכחי: {hasSystem ? label(r.system?.status ?? r.prev_status) : "אין מערכת"}</span>

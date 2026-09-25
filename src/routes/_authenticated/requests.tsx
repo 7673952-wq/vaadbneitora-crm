@@ -500,9 +500,23 @@ function RequestCard({
   const [choice, setChoice] = useState<string>(r.proposed_status ?? "");
   const [codeDraft, setCodeDraft] = useState<string>(r.system_code_raw ?? "");
   const [nameDraft, setNameDraft] = useState<string>(r.system?.name ?? "");
-  // Expanded by default — the queue is worked through, not just scanned.
+  // Expanded by default — the queue is worked through, not just scanned. The
+  // user's own choice per request survives a refresh. It is read in an effect
+  // (never in the initial state) so server and first client render match.
   const [open, setOpen] = useState(true);
-  useEffect(() => { if (highlighted) setOpen(true); }, [highlighted]);
+  useEffect(() => {
+    if (highlighted) { setOpen(true); return; } // a deep link always opens its request
+    try {
+      const saved = window.localStorage.getItem(`request-open:${r.id}`);
+      if (saved === "0") setOpen(false);
+      else if (saved === "1") setOpen(true);
+    } catch { /* storage unavailable */ }
+  }, [highlighted, r.id]);
+  const toggleOpen = () => setOpen((v) => {
+    const next = !v;
+    try { window.localStorage.setItem(`request-open:${r.id}`, next ? "1" : "0"); } catch { /* ignore */ }
+    return next;
+  });
 
   const mode = (r.automation_mode as string | null) ?? (r.dry_run ? "dry_run" : null);
   const awaitingApproval = mode === "live" && (r as any).manual_approval_required === true;

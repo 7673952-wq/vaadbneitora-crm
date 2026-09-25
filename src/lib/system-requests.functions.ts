@@ -624,7 +624,10 @@ export const getRequestAutomationSettings = createServerFn({ method: "GET" })
   .handler(async ({ data, context }) => {
     const { requireCrmKeysWithPermission } = await import("@/lib/requests-access.server");
     const allowed = await requireCrmKeysWithPermission(context.userId, "requests_view");
-    const crmKey = data.crmKey && allowed.includes(data.crmKey) ? data.crmKey : (allowed.includes("yemot") ? "yemot" : allowed[0]!);
+    // An explicitly requested CRM is never silently swapped for another: the
+    // screen must show the settings of the CRM the user actually picked.
+    if (data.crmKey && !allowed.includes(data.crmKey)) throw new Error("אין לך גישה ל-CRM זה");
+    const crmKey = data.crmKey || (allowed.includes("yemot") ? "yemot" : allowed[0]!);
     // Read through the service-role client: a requests_view user without admin
     // rights would otherwise be filtered by RLS and silently see "dry_run".
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");

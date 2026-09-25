@@ -266,9 +266,12 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
           parentSystemId: data.parentSystemId ?? null,
           confirmedMatches,
           name: intentName ?? data.name ?? null,
+          claimToken,
         });
-        await clearIntent();
         if (!result.ok) {
+          // Nothing was created: the decision is abandoned, so the intent is
+          // cleared here (and only here) before the claim is released.
+          await clearIntent();
           await release();
           return {
             ok: false as const, status: "conflict" as const, conflict: true, matches: result.matches,

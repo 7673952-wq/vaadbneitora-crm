@@ -541,7 +541,7 @@ function RequestCard({
       <div className="flex items-center gap-2 px-3 py-2">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           aria-expanded={open}
           aria-label={open ? "כווץ בקשה" : "הרחב בקשה"}
           className="flex shrink-0 items-center gap-2 text-sm"
@@ -571,7 +571,7 @@ function RequestCard({
         )}
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           aria-hidden
           tabIndex={-1}
           className="flex min-w-0 flex-1 items-center gap-2 text-right text-sm"

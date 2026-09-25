@@ -427,16 +427,30 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
       }
       patch.processing_state = "done";
 
-      const { data: updated, error } = await supabaseAdmin
-        .from("system_requests").update(patch).eq("id", data.id)
-        .in("decision_status", OPEN).select("id");
-      if (error) throw new Error(error.message);
-      if (!updated?.length) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
+      // Atomic finalize: the decision, the clearing of the durable intent and
+      // the release of the claim happen in ONE fenced transaction. If it fails,
+      // the intent stays in place and the next attempt resumes from the last
+      // step that did succeed — the intent is never cleared mid-flight.
+      const { data: finalized, error } = await supabaseAdmin.rpc("finalize_system_request", {
+        _request_id: data.id,
+        _claim_token: claimToken,
+        _patch: patch,
+      });
+      if (error) throw new Error(`סיום ההחלטה נכשל: ${error.message}`);
+      if (finalized !== true) throw new Error("הבקשה כבר טופלה בינתיים — רענן ונסה שוב");
       return { ok: true, systemId: resultSystemId ?? undefined };
     } catch (e: any) {
       // A failed attempt must never leave the request locked for the next try,
       // and the recorded intent stays so the retry resumes the same decision.
-      await release(String(e?.message ?? e).slice(0, 300)).catch(() => {});
+      // A failed release is NOT swallowed: it is reported together with the
+      // original error, so nothing here can look like a clean failure when the
+      // cleanup itself did not go through.
+      const original = String(e?.message ?? e);
+      try {
+        await release(original.slice(0, 300));
+      } catch (releaseError: any) {
+        throw new Error(`${original} (שחרור הנעילה נכשל גם כן: ${String(releaseError?.message ?? releaseError)})`);
+      }
       throw e;
     }
   });

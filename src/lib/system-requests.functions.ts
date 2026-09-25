@@ -218,6 +218,7 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
 
     const patch: any = {
       decided_by: context.userId,
+      dry_run: false,
       manual_last_error: null,
     };
 

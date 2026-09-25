@@ -824,6 +824,10 @@ export async function executeManualSystemAction(
     parentSystemId?: string | null;
     confirmedMatches?: ConfirmedMatch[] | null;
     name?: string | null;
+    /** Token of the attempt that currently holds the request's claim. Every
+     * write below is fenced with it in the DB, so a stale attempt coming back
+     * to life cannot touch a request a newer attempt now owns. */
+    claimToken?: string | null;
   },
 ): Promise<ManualSystemActionResult> {
   const crmKey = String(req.crm_key ?? "yemot");

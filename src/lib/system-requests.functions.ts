@@ -211,12 +211,13 @@ export const decideSystemRequest = createServerFn({ method: "POST" })
     const intentStatus = plan.targetStatus;
     const intentName = plan.targetName;
 
+    // Token of THIS attempt's claim. Every manual write below is fenced with
+    // it in the database, so an older attempt that comes back to life cannot
+    // write to a request a newer claim now owns.
+    const claimToken = (req.decision_claim_token ?? null) as string | null;
+
     const patch: any = {
       decided_by: context.userId,
-      decided_at: new Date().toISOString(),
-      dry_run: false,
-      decision_claim_at: null,
-      decision_claim_by: null,
       manual_last_error: null,
     };
 

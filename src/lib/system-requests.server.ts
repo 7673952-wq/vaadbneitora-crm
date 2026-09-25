@@ -962,67 +962,61 @@ export async function executeManualSystemAction(
     return { ok: true, systemId: targetSystemId };
   }
 
-  // Resume path for BOTH create actions: this decision already created a
-  // system. Never insert again, never re-run the conflict check — only finish
-  // the remaining step (linking the request to it).
-  if (createdCheckpoint) {
-    await linkRequest(createdCheckpoint);
-    return { ok: true, systemId: createdCheckpoint };
-  }
+  // ---- create_sub / create_root: ONE atomic DB call ------------------------
+  // `create_request_system` locks the request row, verifies the claim token,
+  // reuses an existing creation checkpoint instead of inserting again, and
+  // otherwise inserts the system + writes the checkpoint + links the request
+  // inside a single transaction. Two concurrent attempts therefore produce
+  // exactly one system, and a failure anywhere rolls the whole step back —
+  // there is never an orphan system or a checkpoint without a link.
+  const createViaRpc = async (parent: string | null, name: string, namePending: boolean) => {
+    const { data, error } = await supabaseAdmin.rpc("create_request_system", {
+      _request_id: req.id,
+      _claim_token: params.claimToken ?? null,
+      _parent_system_id: parent,
+      _name: name,
+      _name_pending: namePending,
+      _system_code: req.system_code_raw ?? req.system_code_norm ?? null,
+      _caller_phone: req.caller_phone ?? null,
+    });
+    if (error) throw new Error(`יצירת המערכת נכשלה: ${error.message}`);
+    const res = (data ?? {}) as { system_id?: string; conflict?: boolean; matches?: ConfirmedMatch[] };
+    return res;
+  };
 
   if (systemAction === "create_sub") {
     if (!parentSystemId) throw new Error("יש לבחור מערכת אב");
     await verifySystemInCrm(parentSystemId, "מערכת האב");
     const name = String(params.name ?? "").trim();
-    const { data: created, error } = await supabaseAdmin.from("systems").insert({
-      system_code: req.system_code_raw ?? req.system_code_norm ?? null,
-      name: name || `מערכת ${req.system_code_norm ?? ""}`.trim(),
-      name_pending: !name,
-      parent_system_id: parentSystemId,
-      caller_phone: req.caller_phone ?? null,
-      source: "בקשה מהמייל",
-    }).select("id").maybeSingle();
-    if (error) throw new Error(`יצירת תת-המערכת נכשלה: ${error.message}`);
-    const inserted = (created as any)?.id as string | undefined;
-    if (!inserted) throw new Error("יצירת תת-המערכת נכשלה");
-    const systemId = await checkpointCreated(inserted);
-    await linkRequest(systemId);
-    return { ok: true, systemId };
+    const res = await createViaRpc(
+      parentSystemId,
+      name || `מערכת ${req.system_code_norm ?? ""}`.trim(),
+      !name,
+    );
+    if (res.conflict) return { ok: false, conflict: true, matches: res.matches ?? [] };
+    if (!res.system_id) throw new Error("יצירת תת-המערכת נכשלה");
+    return { ok: true, systemId: res.system_id };
   }
 
   // create_root
   const name = String(params.name ?? "").trim();
   if (!name) throw new Error("יש לבחור שם למערכת החדשה");
-  const decision = await checkManualRootCreation(supabaseAdmin, req.crm_key, name, confirmedMatches ?? null);
-  if (decision.outcome === "conflict") {
-    return { ok: false, conflict: true, matches: decision.matches };
+  // The name-conflict check only runs when nothing was created yet: on a resume
+  // the RPC short-circuits to the existing system and never re-asks.
+  if (!createdCheckpoint) {
+    const decision = await checkManualRootCreation(supabaseAdmin, req.crm_key, name, confirmedMatches ?? null);
+    if (decision.outcome === "conflict") {
+      return { ok: false, conflict: true, matches: decision.matches };
+    }
   }
+  const res = await createViaRpc(null, name, false);
+  // A unique violation on the system CODE is reported with the CONFLICTING
+  // system(s) found by that code — never an empty list, which would let the
+  // "confirm and open" button loop on the same failure forever.
+  if (res.conflict) return { ok: false, conflict: true, matches: res.matches ?? [] };
+  if (!res.system_id) throw new Error("יצירת המערכת נכשלה");
+  return { ok: true, systemId: res.system_id };
 
-  const { data: created, error } = await supabaseAdmin.from("systems").insert({
-    system_code: req.system_code_raw ?? req.system_code_norm ?? null,
-    name,
-    name_pending: false,
-    parent_system_id: null,
-    caller_phone: req.caller_phone ?? null,
-    source: "בקשה מהמייל",
-  }).select("id").maybeSingle();
-  if (error) {
-    // A concurrent creation of the same root name is a business conflict,
-    // never a technical failure to surface as a throw.
-    const text = `${(error as any).code ?? ""} ${error.message ?? ""}`.toLowerCase();
-    const isUniqueViolation = (error as any).code === "23505" || /unique|duplicate/.test(text);
-    if (!isUniqueViolation) throw new Error(`יצירת המערכת נכשלה: ${error.message}`);
-    const match = await matchSystemNameForRequest(supabaseAdmin, req.crm_key, name);
-    const currentMatches: ConfirmedMatch[] = match.parentOptions.map((o) => ({
-      id: o.id, name: o.name, system_code: o.system_code,
-    }));
-    return { ok: false, conflict: true, matches: currentMatches };
-  }
-  const inserted = (created as any)?.id as string | undefined;
-  if (!inserted) throw new Error("יצירת המערכת נכשלה");
-  const systemId = await checkpointCreated(inserted);
-  await linkRequest(systemId);
-  return { ok: true, systemId };
 
 }
 

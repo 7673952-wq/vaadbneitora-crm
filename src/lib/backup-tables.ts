@@ -12,6 +12,24 @@ export const BACKUP_TABLES = [
   "crm_records", "crm_record_notes", "crm_record_activity",
   "kosher_instructions", "notification_role_defaults", "notification_user_overrides",
   "dashboard_saved_views",
+  // Request automation + delivery/audit trails. These are durable business and
+  // audit data: losing them loses the email-request history, who was mentioned,
+  // what was delivered and the login audit trail.
+  "system_request_rules", "system_requests",
+  "note_mentions", "mention_email_deliveries", "email_deliveries", "voice_deliveries",
+  "login_events", "mail_thread_state", "user_security",
+] as const;
+
+/**
+ * Deliberately NOT backed up: transient session/anti-abuse state that is
+ * meaningless once restored (and in some cases actively harmful to restore) —
+ * `api_rate_limits`, `login_otp_challenges`, `mfa_grants`,
+ * `mfa_passed_sessions`, `mfa_trusted_devices`. A backup therefore covers all
+ * durable data, not literally every table.
+ */
+export const TRANSIENT_TABLES = [
+  "api_rate_limits", "login_otp_challenges", "mfa_grants",
+  "mfa_passed_sessions", "mfa_trusted_devices",
 ] as const;
 
 export type BackupTable = (typeof BACKUP_TABLES)[number];
@@ -26,6 +44,9 @@ export const RESTORE_ORDER: readonly string[] = [
   "voice_message_log", "kosher_instructions",
   "notification_role_defaults", "notification_user_overrides",
   "dashboard_saved_views",
+  "system_request_rules", "system_requests",
+  "note_mentions", "mention_email_deliveries", "email_deliveries", "voice_deliveries",
+  "login_events", "mail_thread_state", "user_security",
 ];
 
 // Storage buckets whose actual files (not just their DB rows) are copied into
